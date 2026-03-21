@@ -1,0 +1,29 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch appqt_test",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/appqt_test.app/Contents/MacOS/appqt_test",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "CMake Build",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for lldb",
+                    "text": "settings set target.max-children-count 256",
+                    "ignoreFailures": true
+                }
+            ],
+            "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/da0e2d974836bd5b1e828aee3d885761/tonka3000.qtvsctools/qt.natvis.xml"
+        }
+    ]
+}
