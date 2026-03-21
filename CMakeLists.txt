@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(qt_test VERSION 0.1 LANGUAGES CXX)
+project(qttest VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,13 +13,16 @@ find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebEngineCore WebChannel Posi
 
 qt_standard_project_setup()
 
-qt_add_executable(appqt_test
+qt_add_executable(qttest
     main.cpp
+    src/CesiumScenePage.cpp
+    src/CesiumScenePage.h
     src/MainWindow.cpp
     src/MainWindow.h
+    src/MainWindow.ui
 )
 
-target_link_libraries(appqt_test
+target_link_libraries(qttest
     PRIVATE
         Qt6::Widgets
         Qt6::Gui
@@ -31,25 +34,29 @@ if(
     AND Qt6WebChannel_FOUND
     AND Qt6Positioning_FOUND
 )
-    target_link_libraries(appqt_test PRIVATE
+    target_link_libraries(qttest PRIVATE
         Qt6::WebEngineWidgets
         Qt6::WebChannel
     )
-    target_compile_definitions(appqt_test PRIVATE QT_CESIUMJS_WEBENGINE_AVAILABLE=1)
+    target_compile_definitions(qttest PRIVATE QT_CESIUMJS_WEBENGINE_AVAILABLE=1)
 endif()
 
-target_include_directories(appqt_test PRIVATE
+target_include_directories(qttest PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-set_target_properties(appqt_test PROPERTIES
+target_compile_definitions(qttest PRIVATE
+    QTTEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+set_target_properties(qttest PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
 )
 
-install(TARGETS appqt_test
+install(TARGETS qttest
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

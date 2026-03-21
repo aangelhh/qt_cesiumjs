@@ -1,4 +1,4 @@
-# qt_cesium_native
+# qttest
 
 Visor base en C++ con Qt 6 que carga `CesiumJS` dentro de `Qt WebEngine`.
 
@@ -7,7 +7,8 @@ Visor base en C++ con Qt 6 que carga `CesiumJS` dentro de `Qt WebEngine`.
 - compila una app Qt para macOS
 - lee el token de Cesium ion desde `cesium.conf`
 - abre `CesiumJS` dentro de la ventana con `QWebEngineView`
-- carga el globo 3D de Cesium online
+- carga `CesiumJS` desde una copia local en `vendor/cesiumjs`
+- carga el globo 3D usando servicios online de Cesium ion
 
 ## Requisitos
 
@@ -52,24 +53,32 @@ cmake -S . -B build \
 ## Compilar
 
 ```bash
-cmake --build build --target appqt_test -- -j4
+cmake --build build --target qttest -- -j4
 ```
 
 ## Ejecutar
 
 ```bash
-./build/appqt_test.app/Contents/MacOS/appqt_test
+./build/qttest.app/Contents/MacOS/qttest
 ```
 
 ## Usar VS Code
 
 El repo incluye estas configuraciones:
 
-- [tasks.json](/Users/angelconde/qt_test/.vscode/tasks.json)
-- [launch.json](/Users/angelconde/qt_test/.vscode/launch.json)
+- `.vscode/tasks.json`
+- `.vscode/launch.json`
 
 Flujo recomendado:
 
-1. Lanzar `Launch appqt_test`
+1. Lanzar `Launch qttest`
 
 La tarea de build ya ejecuta antes `CMake Configure`, asi que no hace falta hacerlo a mano desde VS Code.
+
+## Qt Designer
+
+Puedes abrir directamente:
+
+- `src/MainWindow.ui`
+
+Ese archivo contiene la estructura visual principal de la ventana. El visor de `CesiumJS` se inserta despues en tiempo de ejecucion dentro de `viewerHost`.

@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch appqt_test",
+            "name": "Launch qttest",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/appqt_test.app/Contents/MacOS/appqt_test",
+            "program": "${workspaceFolder}/build/qttest.app/Contents/MacOS/qttest",
             "args": [],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,
@@ -23,7 +23,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/da0e2d974836bd5b1e828aee3d885761/tonka3000.qtvsctools/qt.natvis.xml"
+            "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/a28ff8648ac2781d8eb182ab132ab968/tonka3000.qtvsctools/qt.natvis.xml"
         }
     ]
 }
