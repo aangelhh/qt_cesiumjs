@@ -21,6 +21,10 @@
         },
         {
             "label": "CMake Build",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "CMake Configure"
+            ],
             "type": "shell",
             "command": "cmake",
             "args": [
