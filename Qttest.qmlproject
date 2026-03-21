@@ -1,0 +1,52 @@
+import QmlProject
+
+Project {
+    qt6Project: true
+    widgetApp: true
+    enableCMakeGeneration: true
+
+    /* Proyecto real basado en Widgets + Qt Designer + CesiumJS local */
+    Files {
+        files: [
+            "CMakeLists.txt",
+            "main.cpp",
+            "README.md",
+            "cesium.conf"
+        ]
+    }
+
+    Files {
+        directory: "src"
+        filter: "*.h;*.cpp;*.ui"
+    }
+
+    Files {
+        directory: ".vscode"
+        filter: "*.json"
+    }
+
+    JavaScriptFiles {
+        directory: "vendor/cesiumjs/Cesium"
+    }
+
+    Files {
+        directory: "vendor/cesiumjs/Cesium"
+        filter: "*.css;*.json;*.glsl;*.vert;*.frag;*.html;*.js;*.bin;*.data;*.wasm"
+    }
+
+    Files {
+        directory: "vendor/cesiumjs/Cesium/Assets"
+    }
+
+    Files {
+        directory: "vendor/cesiumjs/Cesium/Widgets"
+    }
+
+    Files {
+        directory: "vendor/cesiumjs/Cesium/Workers"
+    }
+
+    importPaths: [ "." ]
+    targetDirectory: "/opt/qttest"
+    qdsVersion: "4.8"
+}
