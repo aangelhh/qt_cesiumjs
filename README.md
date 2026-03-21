@@ -1,22 +1,21 @@
 # qt_cesium_native
 
-Base de una aplicacion en C++ con Qt 6 y Cesium Native.
+Visor base en C++ con Qt 6 que carga `CesiumJS` dentro de `Qt WebEngine`.
 
 ## Que hace ahora mismo
 
-- compila una app Qt nativa
-- integra `cesium-native` dentro del proyecto con CMake
-- carga configuracion de Cesium ion desde `cesium.conf`
-- crea un `Tileset` de ion en runtime
-- deja preparada la base para conectar camara y render OpenGL
+- compila una app Qt para macOS
+- lee el token de Cesium ion desde `cesium.conf`
+- abre `CesiumJS` dentro de la ventana con `QWebEngineView`
+- carga el globo 3D de Cesium online
 
 ## Requisitos
 
 - macOS
 - CMake `>= 3.21`
 - compilador C++ con soporte C++17
-- Qt 6 con estos modulos:
-  `Widgets`, `OpenGL`, `OpenGLWidgets`, `Gui`
+- Qt 6.10.2 con estos modulos:
+  `Widgets`, `Gui`, `WebEngineWidgets`, `WebEngineCore`, `WebChannel`, `Positioning`
 
 En este proyecto se ha usado Qt en:
 
@@ -24,7 +23,7 @@ En este proyecto se ha usado Qt en:
 /Users/angelconde/Qt/6.10.2/macos
 ```
 
-Si tu instalacion de Qt está en otra ruta, cambia `CMAKE_PREFIX_PATH`.
+Si tu instalacion de Qt esta en otra ruta, cambia `CMAKE_PREFIX_PATH`.
 
 ## Configuracion de Cesium ion
 
@@ -40,7 +39,7 @@ ion_asset_id=1
 Campos:
 
 - `ion_access_token`: token de Cesium ion
-- `ion_asset_id`: id numerico del asset que quieres abrir
+- `ion_asset_id`: id numerico mostrado por la UI
 
 ## Configurar el proyecto
 
@@ -53,11 +52,8 @@ cmake -S . -B build \
 ## Compilar
 
 ```bash
-cmake --build build -- -j1
+cmake --build build --target appqt_test -- -j4
 ```
-
-Nota:
-en macOS este proyecto se está compilando en modo estable con `-j1` para evitar problemas intermitentes al archivar librerias estaticas de `cesium-native`.
 
 ## Ejecutar
 
@@ -74,17 +70,6 @@ El repo incluye estas configuraciones:
 
 Flujo recomendado:
 
-1. Ejecutar la tarea `CMake Configure`
-2. Ejecutar la tarea `CMake Build`
-3. Lanzar `Launch appqt_test`
+1. Lanzar `Launch appqt_test`
 
-## Estado actual
-
-La app ya crea el runtime de Cesium Native y puede inicializar un `Tileset` de ion, pero todavia no renderiza geometria 3D en pantalla.
-
-Lo siguiente por implementar es:
-
-- camara
-- `updateView()`
-- subida de mallas a GPU
-- render OpenGL dentro de Qt
+La tarea de build ya ejecuta antes `CMake Configure`, asi que no hace falta hacerlo a mano desde VS Code.
