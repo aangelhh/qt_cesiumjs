@@ -15,11 +15,21 @@ qt_standard_project_setup()
 
 qt_add_executable(qttest
     main.cpp
-    src/CesiumScenePage.cpp
-    src/CesiumScenePage.h
+    src/AddEntityDialog.cpp
+    src/AddEntityDialog.h
+    src/infrastructure/CesiumScenePage.cpp
+    src/infrastructure/CesiumScenePage.h
     src/MainWindow.cpp
     src/MainWindow.h
     src/MainWindow.ui
+    src/infrastructure/MapBridge.h
+    src/infrastructure/ModelCatalog.cpp
+    src/infrastructure/ModelCatalog.h
+    src/application/ScenarioState.cpp
+    src/application/ScenarioState.h
+    src/domain/Entity.h
+    src/presentation/EntityTextFormatter.cpp
+    src/presentation/EntityTextFormatter.h
 )
 
 target_link_libraries(qttest

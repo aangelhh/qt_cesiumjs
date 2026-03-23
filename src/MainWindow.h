@@ -1,11 +1,15 @@
 #pragma once
 
 #include <QMainWindow>
-#include <QObject>
+#include <QModelIndex>
 #include <QPointer>
+#include <QVariantMap>
 
-class QDialog;
-class QDoubleSpinBox;
+class AddEntityDialog;
+class MapBridge;
+class ScenarioState;
+class QStandardItem;
+class QStandardItemModel;
 class QWidget;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
 class QWebEngineView;
@@ -15,26 +19,6 @@ namespace Ui {
 class MainWindow;
 }
 
-class MapBridge : public QObject {
-  Q_OBJECT
-
-public:
-  explicit MapBridge(QObject* parent = nullptr) : QObject(parent) {}
-
-public slots:
-  void reportPickedCoordinate(double longitude, double latitude, double height) {
-    emit pickedCoordinate(longitude, latitude, height);
-  }
-
-  void reportMapStatus(const QString& message) {
-    emit mapStatus(message);
-  }
-
-signals:
-  void pickedCoordinate(double longitude, double latitude, double height);
-  void mapStatus(const QString& message);
-};
-
 class MainWindow : public QMainWindow {
   Q_OBJECT
 
@@ -43,19 +27,36 @@ public:
   ~MainWindow();
 
 private slots:
-  void openAddFighterDialog();
-  void beginFighterCoordinatePick();
+  void openAddEntityDialog();
+  void beginEntityCoordinatePick();
   void reportPickedCoordinate(double longitude, double latitude, double height);
   void reportMapStatus(const QString& message);
+  void updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex& previous);
+  void handleMapTrackSelection(const QString& trackName);
+  void toggleTacticalOverlays(bool enabled);
 
 private:
+  void initializeModels();
+  void appendEntityToUi(const class Entity& entity);
+  QStandardItem* rootItemForForceIdentifier(int forceIdentifier) const;
+  QStandardItem* ensureGroupItem(QStandardItem* parent, const QString& label, const QVariantMap& summary);
+  void appendLogMessage(const QString& message);
+  void setSelectedTrackDetails(const QVariantMap& summary);
+  void sendTrackToMap(const QVariantMap& summary, bool focus = false);
+  void syncTracksToMap();
+  void selectObjectByName(const QString& trackName, bool notifyMap);
+  QStandardItem* findTrackItemByName(QStandardItem* parent, const QString& trackName) const;
+
   Ui::MainWindow* _ui;
   QWidget* _contentWidget;
   MapBridge* _mapBridge;
-  QPointer<QDialog> _fighterDialog;
-  QPointer<QDoubleSpinBox> _fighterLatitudeSpin;
-  QPointer<QDoubleSpinBox> _fighterLongitudeSpin;
-  QPointer<QDoubleSpinBox> _fighterHeightSpin;
+  ScenarioState* _scenarioState;
+  QStandardItemModel* _objectsModel;
+  QStandardItem* _friendlyRootItem;
+  QStandardItem* _opposingRootItem;
+  QStandardItem* _neutralRootItem;
+  QPointer<AddEntityDialog> _entityDialog;
+  bool _applyingMapSelection;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif

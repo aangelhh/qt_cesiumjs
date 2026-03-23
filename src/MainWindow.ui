@@ -6,128 +6,485 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1440</width>
-    <height>900</height>
+    <width>1680</width>
+    <height>980</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Qt + CesiumJS</string>
+   <string>Qt Tactical Viewer</string>
+  </property>
+  <property name="dockNestingEnabled">
+   <bool>true</bool>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QVBoxLayout" name="verticalLayout">
+   <layout class="QVBoxLayout" name="centralLayout">
     <property name="spacing">
-     <number>10</number>
+     <number>8</number>
     </property>
     <property name="leftMargin">
-     <number>12</number>
+     <number>8</number>
     </property>
     <property name="topMargin">
-     <number>12</number>
+     <number>8</number>
     </property>
     <property name="rightMargin">
-     <number>12</number>
+     <number>8</number>
     </property>
     <property name="bottomMargin">
-     <number>12</number>
+     <number>8</number>
     </property>
     <item>
-     <widget class="QLabel" name="titleLabel">
-      <property name="text">
-       <string>Qt + CesiumJS local</string>
+     <widget class="QFrame" name="topStatusFrame">
+      <property name="frameShape">
+       <enum>QFrame::StyledPanel</enum>
       </property>
-      <property name="wordWrap">
-       <bool>true</bool>
+      <property name="frameShadow">
+       <enum>QFrame::Raised</enum>
       </property>
+      <layout class="QHBoxLayout" name="topStatusLayout">
+       <property name="spacing">
+        <number>12</number>
+       </property>
+       <property name="leftMargin">
+        <number>10</number>
+       </property>
+       <property name="topMargin">
+        <number>8</number>
+       </property>
+       <property name="rightMargin">
+        <number>10</number>
+       </property>
+       <property name="bottomMargin">
+        <number>8</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="titleLabel">
+         <property name="styleSheet">
+          <string notr="true">font-size: 16px; font-weight: 700;</string>
+         </property>
+         <property name="text">
+          <string>Operational Picture</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="designerHintLabel">
+         <property name="styleSheet">
+          <string notr="true">color: rgb(120, 120, 120);</string>
+         </property>
+         <property name="text">
+          <string>CesiumJS se incrusta al ejecutar la app dentro de la vista central.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="statusLabel">
+         <property name="styleSheet">
+          <string notr="true">color: rgb(215, 215, 215);</string>
+         </property>
+         <property name="text">
+          <string>Operational status ready.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="topStatusSpacer">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QLabel" name="modeBadgeLabel">
+         <property name="styleSheet">
+          <string notr="true">padding: 4px 10px; border: 1px solid rgb(90, 90, 90); border-radius: 10px; color: rgb(220, 220, 220); background-color: rgb(44, 44, 44);</string>
+         </property>
+         <property name="text">
+          <string>Observer Mode</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </widget>
     </item>
     <item>
-     <widget class="QLabel" name="statusLabel">
-      <property name="text">
-       <string>Cargando estado...</string>
+     <widget class="QFrame" name="viewerFrame">
+      <property name="frameShape">
+       <enum>QFrame::StyledPanel</enum>
       </property>
-      <property name="wordWrap">
-       <bool>true</bool>
+      <property name="frameShadow">
+       <enum>QFrame::Sunken</enum>
       </property>
+      <layout class="QVBoxLayout" name="viewerFrameLayout">
+       <property name="spacing">
+        <number>0</number>
+       </property>
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QWidget" name="viewerHost" native="true"/>
+       </item>
+      </layout>
      </widget>
     </item>
-    <item>
-     <widget class="QLabel" name="designerHintLabel">
-      <property name="styleSheet">
-       <string notr="true">color: rgb(110, 110, 110);</string>
-      </property>
-      <property name="text">
-       <string>Nota: el visor 3D de CesiumJS se inserta al ejecutar la app. En Qt Designer solo verás este formulario y el contenedor viewerHost.</string>
-      </property>
-      <property name="wordWrap">
-       <bool>true</bool>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QSplitter" name="mainSplitter">
-      <property name="orientation">
-       <enum>Qt::Horizontal</enum>
-      </property>
-      <widget class="QWidget" name="entitiesPanel">
-       <layout class="QVBoxLayout" name="entitiesPanelLayout">
-        <property name="spacing">
-         <number>8</number>
-        </property>
-        <property name="leftMargin">
-         <number>0</number>
-        </property>
-        <property name="topMargin">
-         <number>0</number>
-        </property>
-        <property name="rightMargin">
-         <number>0</number>
-        </property>
-        <property name="bottomMargin">
-         <number>0</number>
-        </property>
-        <item>
-         <widget class="QLabel" name="entitiesTitleLabel">
+   </layout>
+  </widget>
+  <widget class="QDockWidget" name="objectsDockWidget">
+   <property name="windowTitle">
+    <string>Objects List</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="QWidget" name="objectsDockContents">
+    <layout class="QVBoxLayout" name="objectsDockLayout">
+     <property name="spacing">
+      <number>8</number>
+     </property>
+     <property name="leftMargin">
+      <number>8</number>
+     </property>
+     <property name="topMargin">
+      <number>8</number>
+     </property>
+     <property name="rightMargin">
+      <number>8</number>
+     </property>
+     <property name="bottomMargin">
+      <number>8</number>
+     </property>
+     <item>
+      <widget class="QLineEdit" name="objectsSearchLineEdit">
+       <property name="placeholderText">
+        <string>Search objects</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QTreeView" name="objectsTreeView">
+       <property name="alternatingRowColors">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QGroupBox" name="selectedTrackGroupBox">
+       <property name="title">
+        <string>Selected Track</string>
+       </property>
+       <layout class="QFormLayout" name="selectedTrackFormLayout">
+        <item row="0" column="0">
+         <widget class="QLabel" name="selectedTrackNameLabel">
           <property name="text">
-           <string>Entidades</string>
+           <string>Name</string>
           </property>
          </widget>
         </item>
-        <item>
-         <widget class="QListWidget" name="entitiesListWidget">
-          <property name="minimumSize">
-           <size>
-            <width>260</width>
-            <height>0</height>
-           </size>
+        <item row="0" column="1">
+         <widget class="QLabel" name="selectedTrackNameValueLabel">
+          <property name="text">
+           <string>No selection</string>
           </property>
-          <property name="alternatingRowColors">
-           <bool>true</bool>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <widget class="QLabel" name="selectedTrackTypeLabel">
+          <property name="text">
+           <string>Type</string>
           </property>
-          <item>
-           <property name="text">
-            <string>Tu entidad 1</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>Tu entidad 2</string>
-           </property>
-          </item>
+         </widget>
+        </item>
+        <item row="1" column="1">
+         <widget class="QLabel" name="selectedTrackTypeValueLabel">
+          <property name="text">
+           <string>-</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="selectedTrackTeamLabel">
+          <property name="text">
+           <string>Force Identifier</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QLabel" name="selectedTrackTeamValueLabel">
+          <property name="text">
+           <string>-</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="0">
+         <widget class="QLabel" name="selectedTrackAltitudeLabel">
+          <property name="text">
+           <string>Altitude</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="1">
+         <widget class="QLabel" name="selectedTrackAltitudeValueLabel">
+          <property name="text">
+           <string>-</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="0">
+         <widget class="QLabel" name="selectedTrackPositionLabel">
+          <property name="text">
+           <string>Position</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="1">
+         <widget class="QLabel" name="selectedTrackPositionValueLabel">
+          <property name="text">
+           <string>-</string>
+          </property>
          </widget>
         </item>
        </layout>
       </widget>
-      <widget class="QWidget" name="viewerHost" native="true"/>
-     </widget>
-    </item>
-   </layout>
+     </item>
+    </layout>
+   </widget>
+  </widget>
+  <widget class="QDockWidget" name="controlDockWidget">
+   <property name="windowTitle">
+    <string>Command Panel</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>2</number>
+   </attribute>
+   <widget class="QWidget" name="controlDockContents">
+    <layout class="QVBoxLayout" name="controlDockLayout">
+     <property name="spacing">
+      <number>8</number>
+     </property>
+     <property name="leftMargin">
+      <number>8</number>
+     </property>
+     <property name="topMargin">
+      <number>8</number>
+     </property>
+     <property name="rightMargin">
+      <number>8</number>
+     </property>
+     <property name="bottomMargin">
+      <number>8</number>
+     </property>
+     <item>
+      <widget class="QTabWidget" name="rightTabWidget">
+       <property name="currentIndex">
+        <number>0</number>
+       </property>
+       <widget class="QWidget" name="propertiesTab">
+        <attribute name="title">
+         <string>Properties</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="propertiesTabLayout">
+         <property name="leftMargin">
+          <number>8</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="rightMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>8</number>
+         </property>
+         <item>
+          <layout class="QFormLayout" name="selectionFormLayout">
+           <item row="0" column="0">
+            <widget class="QLabel" name="selectionNameLabel">
+             <property name="text">
+              <string>Name</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QLabel" name="selectionNameValueLabel">
+             <property name="text">
+              <string>SSN 1</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="selectionTypeLabel">
+             <property name="text">
+              <string>Type</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QLabel" name="selectionTypeValueLabel">
+             <property name="text">
+              <string>Submarine</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="0">
+            <widget class="QLabel" name="selectionStateLabel">
+             <property name="text">
+              <string>Status</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <widget class="QLabel" name="selectionStateValueLabel">
+             <property name="text">
+              <string>Idle</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="0">
+            <widget class="QLabel" name="selectionPositionLabel">
+             <property name="text">
+              <string>Position</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <widget class="QLabel" name="selectionPositionValueLabel">
+             <property name="text">
+              <string>54.5000, -3.2000</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="tasksTab">
+        <attribute name="title">
+         <string>Tasks</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="tasksTabLayout">
+         <property name="leftMargin">
+          <number>8</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="rightMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLineEdit" name="tasksSearchLineEdit">
+           <property name="placeholderText">
+            <string>Search tasks</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QListWidget" name="tasksListWidget">
+           <item>
+            <property name="text">
+             <string>Set Ordered Speed...</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Follow Entity...</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Launch Anti-Ship Missile...</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="logTab">
+        <attribute name="title">
+         <string>Log</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="logTabLayout">
+         <property name="leftMargin">
+          <number>8</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="rightMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QPlainTextEdit" name="eventLogPlainTextEdit">
+           <property name="plainText">
+            <string>Operational log ready.
+Cesium map connected.
+Awaiting commands...</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+  </widget>
+  <widget class="QToolBar" name="mainToolBar">
+   <property name="windowTitle">
+    <string>Main Toolbar</string>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="actionNew"/>
+   <addaction name="actionOpen"/>
+   <addaction name="actionSave"/>
+   <addaction name="separator"/>
+   <addaction name="actionAddEntity"/>
+   <addaction name="actionAddFolder"/>
+   <addaction name="separator"/>
+   <addaction name="actionResetCamera"/>
+   <addaction name="actionReloadScene"/>
+   <addaction name="actionToggleOverlays"/>
+   <addaction name="actionToggleEntitiesPanel"/>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1440</width>
+     <width>1680</width>
      <height>24</height>
     </rect>
    </property>
@@ -159,6 +516,7 @@
      <string>View</string>
     </property>
     <addaction name="actionResetCamera"/>
+    <addaction name="actionToggleOverlays"/>
     <addaction name="actionToggleEntitiesPanel"/>
     <addaction name="actionReloadScene"/>
    </widget>
@@ -166,7 +524,7 @@
     <property name="title">
      <string>Add Entity</string>
     </property>
-    <addaction name="actionAddFighter"/>
+    <addaction name="actionAddEntity"/>
    </widget>
    <widget class="QMenu" name="menuInsert">
     <property name="title">
@@ -174,6 +532,13 @@
     </property>
     <addaction name="menuAddEntity"/>
     <addaction name="actionAddFolder"/>
+   </widget>
+   <widget class="QMenu" name="menuSimulation">
+    <property name="title">
+     <string>Simulation</string>
+    </property>
+    <addaction name="actionStartSimulation"/>
+    <addaction name="actionPauseSimulation"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
@@ -185,9 +550,14 @@
    <addaction name="menuEdit"/>
    <addaction name="menuView"/>
    <addaction name="menuInsert"/>
+   <addaction name="menuSimulation"/>
    <addaction name="menuHelp"/>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
+  <widget class="QStatusBar" name="statusbar">
+   <property name="sizeGripEnabled">
+    <bool>true</bool>
+   </property>
+  </widget>
   <action name="actionNew">
    <property name="text">
     <string>New</string>
@@ -250,7 +620,7 @@
   </action>
   <action name="actionToggleEntitiesPanel">
    <property name="text">
-    <string>Toggle Entities Panel</string>
+    <string>Toggle Objects Panel</string>
    </property>
   </action>
   <action name="actionReloadScene">
@@ -258,14 +628,35 @@
     <string>Reload Scene</string>
    </property>
   </action>
-  <action name="actionAddFighter">
+  <action name="actionToggleOverlays">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
    <property name="text">
-    <string>Fighter...</string>
+    <string>Tactical Overlays</string>
+   </property>
+  </action>
+  <action name="actionAddEntity">
+   <property name="text">
+    <string>Add Entity...</string>
    </property>
   </action>
   <action name="actionAddFolder">
    <property name="text">
     <string>Add Folder</string>
+   </property>
+  </action>
+  <action name="actionStartSimulation">
+   <property name="text">
+    <string>Start</string>
+   </property>
+  </action>
+  <action name="actionPauseSimulation">
+   <property name="text">
+    <string>Pause</string>
    </property>
   </action>
   <action name="actionAbout">

@@ -1,0 +1,1693 @@
+#Fighter
+AircraftModels:
+  - name: F-2000A Italian
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 106
+      Category: 1
+      Subcategory: 27
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/F-2000A_italian.glb"
+
+  - name: A-10 Thunderbolt II (base)
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 2
+      Subcategory: 4
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/a-10_thunderbolt_ii.glb"
+
+  - name: A-10A Thunderbolt II
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 2
+      Subcategory: 4
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/a-10a_thunderbolt_ii.glb"
+
+  - name: A-10C Thunderbolt II
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 2
+      Subcategory: 4
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/a-10c.glb"
+
+  - name: F-16 Fighting Falcon (generic)
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 1
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+  - name: F-16A
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 1
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16a.glb"
+
+  - name: F-16B
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 3
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+  - name: F-16C
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 3
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+  - name: F-16D
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 3
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+  - name: F-16E
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 3
+      Specific: 5
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+  - name: F-16N
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 3
+      Specific: 6
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+  - name: F-16A Air Defense Fighter
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 3
+      Specific: 7
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+  - name: F-16 Reconnaissance
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 3
+      Specific: 8
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+  - name: F/A-16
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 3
+      Specific: 9
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+  - name: F-16CJ SEAD
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 3
+      Specific: 10
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+  - name: F-16CG
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 3
+      Specific: 11
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
+
+EurofighterTyphoon:
+  - name: Generic Typhoon
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/eurofighter_typhoon.glb"
+
+  - name: Typhoon F2
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/typhoon_f2.glb"
+
+  - name: Typhoon FGR4
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/typhoon_fgr4.glb"
+
+  - name: Typhoon Tranche 1
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/typhoon_tranche1.glb"
+
+  - name: Typhoon Tranche 2
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/typhoon_tranche2.glb"
+
+  - name: Typhoon Tranche 3
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 5
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/typhoon_tranche3.glb"
+
+  - name: Typhoon Tranche 4
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 6
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/typhoon_tranche4.glb"
+
+  - name: Typhoon Italy
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 7
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/typhoon_italy.glb"
+
+  - name: Typhoon Germany
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 8
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/typhoon_germany.glb"
+
+  - name: Typhoon Spain
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 9
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/typhoon_spain.glb"
+
+  - name: Typhoon Saudi Arabia
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 1
+      Subcategory: 3
+      Specific: 10
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/typhoon_saudi.glb"
+
+F22Raptor:
+  - name: F-22 Raptor (Generic)
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 5   # F-22 Raptor (verificar SISO REF-010)
+      Specific: 0      # Variante genérica
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-22_raptor.glb"
+
+F22Raptor:
+  - name: F-22A
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 1
+      Subcategory: 6
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-22_raptor.glb"
+
+  - name: F-22B
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 1
+      Subcategory: 6
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-22_raptor.glb"
+
+F35Lightning:
+  - name: F-35 Lightning II (Generic)
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 12
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-35_lightning_ii.glb"
+
+  - name: F-35A CTOL
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 1
+      Subcategory: 12
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-35_lightning_ii.glb"
+
+  - name: F-35C Naval
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 1
+      Subcategory: 12
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-35_lightning_ii.glb"
+
+  - name: F-35B STOVL
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 1
+      Subcategory: 12
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/f-35b_lightning_ii.glb"
+
+FA18_Hornet:
+  - name: F/A-18A
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 9
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
+
+  - name: F/A-18B
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 9
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
+
+  - name: F/A-18C
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 9
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
+
+  - name: F/A-18D
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 9
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
+
+  - name: F/A-18E Super Hornet
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 9
+      Specific: 10
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18ef_super_hornet.glb"
+
+  - name: F/A-18F Super Hornet
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 225
+      Category: 1
+      Subcategory: 9
+      Specific: 11
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18ef_super_hornet.glb"
+
+EF18_Hornet:
+  - name: McDonnell Douglas EF-18 Hornet (Generic)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 198    # España
+      Category: 1
+      Subcategory: 1
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
+
+  - name: EF-18A (C.15)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 198
+      Category: 1
+      Subcategory: 1
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
+
+  - name: EF-18B (CE.15)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 198
+      Category: 1
+      Subcategory: 1
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
+
+CF18_Hornet:
+  - name: McDonnell Douglas CF-18 Hornet (Generic)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 39    # Canadá
+      Category: 1
+      Subcategory: 1
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
+
+  - name: CF-188A
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 39
+      Category: 1
+      Subcategory: 1
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
+
+  - name: CF-188B
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 39
+      Category: 1
+      Subcategory: 1
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
+
+Mirage2000:
+  - name: Mirage 2000 (Generic)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000AD
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000BGM
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000C
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_2000c-s5.glb"
+
+  - name: Mirage 2000D
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_2000d.glb"
+
+  - name: Mirage 2000DAD
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 5
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_2000d.glb"
+
+  - name: Mirage 2000DP
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 6
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000E
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 7
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000EAD
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 8
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000EGM
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 9
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000H (KF-101)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 10
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000N
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 11
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000P
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 12
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000RAD
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 13
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000TH (KT-201)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 14
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000-5
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 15
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_2000-5.glb"
+
+  - name: Mirage 2000-5F SF1
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 15
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_2000-5.glb"
+
+  - name: Mirage 2000-5F SF1-C
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 15
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_2000-5.glb"
+
+  - name: Mirage 2000-5F SF1-IR
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 15
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_2000-5.glb"
+
+  - name: Mirage 2000-5F Vi
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 15
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_2000-5.glb"
+
+  - name: Vajra (Divine Thunder) (deprecated)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 16
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_2000.glb"
+
+  - name: Mirage 2000-9
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 17
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_2000-5.glb"
+
+  - name: Mirage 2000-5 Mk 2
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 4
+      Specific: 18
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage2000-5_mk2.glb"
+
+Rafale:
+  - name: Dassault Rafale (Squall) (Generic)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 5
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_rafale.glb"
+
+  - name: Rafale B
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 5
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/rafale_b.glb"
+
+  - name: Rafale C
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 5
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_rafale_c_f3.glb"
+
+  - name: Rafale S-1 Standard
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 5
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/rafale_s1.glb"
+
+  - name: Rafale M
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 5
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_rafale_m.glb"
+
+MiG29Fulcrum:
+  - name: MiG-29 Fulcrum (Generic)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 222
+      Category: 1
+      Subcategory: 2
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mig-29_fighter.glb"
+
+  - name: MiG-29 Fulcrum A
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 222
+      Category: 1
+      Subcategory: 2
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mig-29a.glb"
+
+  - name: MiG-29UB Fulcrum B
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 222
+      Category: 1
+      Subcategory: 2
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mig-29ub.glb"
+
+  - name: MiG-29S Fulcrum C
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 222
+      Category: 1
+      Subcategory: 2
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mig-29s.glb"
+
+  - name: MiG-29K Fulcrum D
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 222
+      Category: 1
+      Subcategory: 2
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mig-29k.glb"
+
+  - name: MiG-29M Fulcrum E
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 222
+      Category: 1
+      Subcategory: 2
+      Specific: 5
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mig-29m.glb"
+
+  - name: MiG-29OVT
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 222
+      Category: 1
+      Subcategory: 2
+      Specific: 6
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mig-29ovt.glb"
+
+  - name: MiG-29KUB Fulcrum D
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 222
+      Category: 1
+      Subcategory: 2
+      Specific: 7
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mig-29kub.glb"
+
+  - name: MiG-29SMT
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 222
+      Category: 1
+      Subcategory: 2
+      Specific: 8
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mig-29_figther_smt.glb"
+
+  - name: MiG-29SM Fulcrum C
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 222
+      Category: 1
+      Subcategory: 2
+      Specific: 9
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mig-29sm.glb"
+
+Mirage_F1:
+  - name: Mirage F-1 AD
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_ad.glb"
+
+  - name: Mirage F-1 AZ
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_az.glb"
+
+  - name: Mirage F-1 B
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_b.glb"
+
+  - name: Mirage F-1 BD
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_bd.glb"
+
+  - name: Mirage F-1 BE
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 5
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_be.glb"
+
+  - name: Mirage F-1 BJ
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 6
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_bj.glb"
+
+  - name: Mirage F-1 BK
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 7
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_bk.glb"
+
+  - name: Mirage F-1 BQ
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 8
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_bq.glb"
+
+  - name: Mirage F-1 B & E
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 9
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_b_e.glb"
+
+  - name: Mirage F-1 C
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 10
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_c.glb"
+
+  - name: Mirage F-1 CE
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 11
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_ce.glb"
+
+  - name: Mirage F-1 CG
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 12
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_cg.glb"
+
+  - name: Mirage F-1 CH
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 13
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_ch.glb"
+
+  - name: Mirage F-1 CJ
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 14
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_cj.glb"
+
+  - name: Mirage F-1 CK
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 15
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_ck.glb"
+
+  - name: Mirage F-1 CR-200
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 16
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_cr200.glb"
+
+  - name: Mirage F-1 CZ
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 17
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_cz.glb"
+
+  - name: Mirage F-1 C-200s
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 18
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_f1c-200.glb"
+
+  - name: Mirage F-1 DDA
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 19
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_dda.glb"
+
+  - name: Mirage F-1 ED
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 20
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_ed.glb"
+
+  - name: Mirage F-1 EDA
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 21
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_eda.glb"
+
+  - name: Mirage F-1 EE
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 22
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_ee.glb"
+
+  - name: Mirage F-1 EH
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 23
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_eh.glb"
+
+  - name: Mirage F-1 EJ
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 24
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_ej.glb"
+
+  - name: Mirage F-1 EQ
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 25
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_eq.glb"
+
+  - name: Mirage F-1 JA
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 26
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_ja.glb"
+
+  - name: Mirage F-1 JE
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 1
+      Specific: 27
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_f1_je.glb"
+
+Mirage_III:
+  - name: Mirage IIID
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 3
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_iiid.glb"
+
+  - name: Mirage IIIE
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 3
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/dassault_mirage_iiie.glb"
+
+  - name: Mirage IIIC
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 3
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_iiic.glb"
+
+  - name: Mirage IIIO
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 1
+      Subcategory: 3
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Fighter/mirage_iiio.glb"
+
+
+#Transport
+
+A400M_Atlas:
+  - name: Airbus A400M Atlas
+    entityType:
+      Kind: 1          
+      Domain: 2        
+      Country: 71      
+      Category: 4      
+      Subcategory: 7   
+      Specific: 0      
+      Extra: 0
+    urlLocation: "/models/Air/Transport/airbus_a400m.glb"
+
+  - name: A400M Transport
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 4
+      Subcategory: 7
+      Specific: 1      
+      Extra: 0
+    urlLocation: "/models/Air/Transport/airbus_a400m.glb"
+
+  - name: A400M Tanker
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 4
+      Subcategory: 7
+      Specific: 2      
+      Extra: 0
+    urlLocation: "/models/Air/Transport/airbus_a400m.glb"
+
+  - name: A400M MedEvac
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71
+      Category: 4
+      Subcategory: 7
+      Specific: 3      
+      Extra: 0
+    hlaType: HlaAircraft
+    urlLocation: "/models/Air/Transport/airbus_a400m.glb"
+
+C130_Hercules:
+  - name: Lockheed C-130 Hercules
+    entityType:
+      Kind: 1        # Plataforma
+      Domain: 2      # Aire
+      Country: 224   # Reino Unido
+      Category: 4    # Transporte
+      Subcategory: 2 # Hercules C-130
+      Specific: 0    # Variante base
+      Extra: 0
+    urlLocation: "/models/Air/Transport/c-130j_super_hercules.glb"
+
+  - name: Hercules C. Mk 1
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 4
+      Subcategory: 2
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Transport/c-130_c_mk1.glb"
+
+  - name: Hercules C. Mk 1P
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 4
+      Subcategory: 2
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Transport/c-130_c_mk1p.glb"
+
+  - name: Hercules C. Mk 1K
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 4
+      Subcategory: 2
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Transport/c-130_c_mk1k.glb"
+
+  - name: Hercules C. Mk 3P
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 224
+      Category: 4
+      Subcategory: 2
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Transport/c-130_c_mk3p.glb"
+
+
+
+# Bomber
+
+
+B2_Spirit:
+  - name: Northrop B-2 Spirit
+    entityType:
+      Kind: 1          # Plataforma
+      Domain: 2        # Aire
+      Country: 225      # Estados Unidos
+      Category: 3       # Bomber
+      Subcategory: 2    # Northrop B-2
+      Specific: 0       # Variante base
+      Extra: 0
+    urlLocation: "/models/Air/Bomber/b-2_spirit.glb"
+
+  - name: B-2A Block 10
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 3
+      Subcategory: 2
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Bomber/b-2_spirit.glb"
+
+  - name: B-2A Block 20
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 3
+      Subcategory: 2
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Bomber/b-2_spirit.glb"
+
+  - name: B-2A Block 30
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 3
+      Subcategory: 2
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Bomber/b-2_spirit.glb"
+
+B52_Stratofortress:
+  - name: B-52G
+    entityType:
+      Kind: 1          # Plataforma
+      Domain: 2        # Aire
+      Country: 225     # Estados Unidos
+      Category: 3      # Bomber
+      Subcategory: 3   # Boeing B-52
+      Specific: 1      # Variante G
+      Extra: 0
+    urlLocation: "/models/Air/Bomber/boeing_b-52_stratofortress.glb"
+
+  - name: B-52H
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 3
+      Subcategory: 3
+      Specific: 2      # Variante H
+      Extra: 0
+    urlLocation: "/models/Air/Bomber/boeing_b-52_stratofortress.glb"
+
+US_Bombers:
+  - name: B-1B
+    entityType:
+      Kind: 1          # Plataforma
+      Domain: 2        # Aire
+      Country: 225     # Estados Unidos
+      Category: 3      # Bomber
+      Subcategory: 1   # Rockwell International B-1
+      Specific: 1      # B-1B
+      Extra: 0
+    urlLocation: "/models/Air/Bomber/rockwell_b-1b_lancer.glb"
+
+#Helicopter
+
+US_Helicopters:
+  - name: CH-47 Chinook
+    entityType:
+      Kind: 1          # Plataforma
+      Domain: 2        # Aire
+      Country: 225     # Estados Unidos
+      Category: 23     # Helicopter
+      Subcategory: 1   # Boeing Models 114/414
+      Specific: 1      # CH-47 Chinook
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/boeing_ch-47_chinook.glb"
+
+  - name: CH-47B
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/ch-47b.glb"
+
+  - name: CH-47C
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/ch-47c.glb"
+
+  - name: CH-47D
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/ch-47d.glb"
+
+  - name: CH-47D with ATIRCM
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 42    # 4.2 según la enumeración
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/ch-47d_atircm.glb"
+
+  - name: CH-147
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 5
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/ch-147.glb"
+
+  - name: Chinook HC.Mk 1
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 6
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/chinook_hc_mk1.glb"
+
+  - name: Chinook HC.Mk 2
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 7
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/chinook_hc_mk2.glb"
+
+  - name: HT.17
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 8
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/ht17.glb"
+
+  - name: CH-47F266
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 9
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/ch-47f266.glb"
+
+  - name: CH-47F w/ 3 x M240H
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 91    # 9.1 según la enumeración
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/ch-47f_3_m240h.glb"
+
+  - name: CH-47F with ATIRCM
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 225
+      Category: 23
+      Subcategory: 1
+      Specific: 92    # 9.2 según la enumeración
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/ch-47f_atircm.glb"
+
+Sling_Loads:
+  - name: Sling Load, Apache AH-64
+    entityType:
+      Kind: 6           # Munición/Equipo/Objeto
+      Domain: 12        # Sling Load
+      Country: 0        # Neutral / Genérico
+      Category: 10      # Sling Load, Helicopters
+      Subcategory: 1    # Apache AH-64
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/boeing_ah-64d_apache.glb"
+
+  - name: Sling Load, Apache AH-64, Stripped Down, 8000 lb
+    entityType:
+      Kind: 6
+      Domain: 12
+      Country: 0
+      Category: 10
+      Subcategory: 1
+      Specific: 1
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/boeing_ah-64d_apache.glb"
+
+  - name: Sling Load, Apache AH-64, Center Hook, 11500 lb
+    entityType:
+      Kind: 6
+      Domain: 12
+      Country: 0
+      Category: 10
+      Subcategory: 1
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/boeing_ah-64d_apache.glb"
+
+  - name: Sling Load, CH-146 Griffon
+    entityType:
+      Kind: 6
+      Domain: 12
+      Country: 0
+      Category: 10
+      Subcategory: 1
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/boeing_ah-64d_apache.glb"
+
+Eurocopter_Tiger:
+  - name: Eurocopter EC665 HAP Tiger
+    entityType:
+      Kind: 1          # Plataforma
+      Domain: 2        # Aire
+      Country: 71      # Francia
+      Category: 20     # Helicopter
+      Subcategory: 4   # Eurocopter Tiger
+      Specific: 1      # EC665 HAP Tiger
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/eurocopter_ec665_tigre.glb"
+
+  - name: Eurocopter UH Tiger (Germany)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71      # Francia (o Alemania si lo prefieres)
+      Category: 20
+      Subcategory: 4
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/eurocopter_ec665_tigre.glb"
+
+  - name: Eurocopter ARH Tiger (Australia)  # deprecated
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71      # Francia (original) o Australia si quieres reflejar país
+      Category: 20
+      Subcategory: 4
+      Specific: 3
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/eurocopter_ec665_tigre.glb"
+
+  - name: Eurocopter HAD Tiger (Spain)
+    entityType:
+      Kind: 1
+      Domain: 2
+      Country: 71      # Francia (o España si lo prefieres)
+      Category: 20
+      Subcategory: 4
+      Specific: 4
+      Extra: 0
+    urlLocation: "/models/Air/Helicopter/eurocopter_ec665_tigre.glb"
