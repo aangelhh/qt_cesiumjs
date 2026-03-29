@@ -3,16 +3,21 @@ Layered frontend layout
 - ui
   - MainWindow
   - MainWindow.ui
-  - AddFighterDialog
+  - AddEntityDialog
 - presentation
-  - FighterTextFormatter
+  - EntityTextFormatter
 - application
   - ScenarioState
+  - SensorEngine
+  - FlightDynamicsEngine
 - domain
-  - FighterEntity
+  - Entity
+  - Sensor
 - infrastructure
   - CesiumScenePage
   - MapBridge
+  - ModelCatalog
+  - DisEntityCatalog
 
 Intent
 - MainWindow orchestrates widgets and workflows.

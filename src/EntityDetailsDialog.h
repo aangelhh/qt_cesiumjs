@@ -22,6 +22,7 @@ private:
   void buildUi();
   void populateHeader();
   void populateStateData();
+  void populateSensorInformation();
   void populatePlaceholderSection(const QString& sectionName);
   void setTableRows(const QList<QPair<QString, QString>>& rows);
   QString value(const char* key, const QString& fallback = QStringLiteral("-")) const;

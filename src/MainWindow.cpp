@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "AddEntityDialog.h"
+#include "AssignTaskDialog.h"
 #include "EntityDetailsDialog.h"
 #include "application/ScenarioState.h"
 #include "domain/Entity.h"
@@ -15,8 +16,11 @@
 #include <QColor>
 #include <QHeaderView>
 #include <QIcon>
+#include <QListWidget>
+#include <QMenu>
 #include <QPainter>
 #include <QPixmap>
+#include <QPoint>
 #include <QItemSelectionModel>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -24,8 +28,10 @@
 #include <QSizePolicy>
 #include <QStandardItem>
 #include <QStandardItemModel>
+#include <QVariantList>
 #include <QVariantMap>
 #include <QVBoxLayout>
+#include <QTimer>
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
 #include <QWebChannel>
 #include <QWebEngineSettings>
@@ -67,6 +73,21 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("entityTypeCode"), QString()},
       {QStringLiteral("modelName"), QString()},
       {QStringLiteral("modelUri"), QString()},
+      {QStringLiteral("headingDegrees"), 0.0},
+      {QStringLiteral("flightDynamicsEnabled"), false},
+      {QStringLiteral("flightDynamicsMode"), QStringLiteral("kinematic")},
+      {QStringLiteral("jsbsimAircraftModel"), QString()},
+      {QStringLiteral("speedKnots"), 0.0},
+      {QStringLiteral("verticalSpeedMetersPerSecond"), 0.0},
+      {QStringLiteral("taskType"), QString()},
+      {QStringLiteral("taskEnabled"), false},
+      {QStringLiteral("taskStatus"), QStringLiteral("Idle")},
+      {QStringLiteral("taskTargetHeadingDegrees"), 0.0},
+      {QStringLiteral("taskTargetAltitudeMeters"), 0},
+      {QStringLiteral("taskTargetSpeedKnots"), 0.0},
+      {QStringLiteral("taskTargetLatitude"), 0.0},
+      {QStringLiteral("taskTargetLongitude"), 0.0},
+      {QStringLiteral("taskTargetEntityName"), QString()},
   };
 }
 
@@ -113,6 +134,51 @@ QVariantMap makeTrackSummary(const Entity& entity) {
   summary.insert(QStringLiteral("entityTypeCode"), entity.entityTypeCode);
   summary.insert(QStringLiteral("modelName"), entity.modelName);
   summary.insert(QStringLiteral("modelUri"), entity.modelUri);
+  summary.insert(QStringLiteral("headingDegrees"), entity.headingDegrees);
+  summary.insert(QStringLiteral("flightDynamicsEnabled"), entity.flightDynamicsEnabled);
+  summary.insert(QStringLiteral("flightDynamicsMode"), entity.flightDynamicsMode);
+  summary.insert(QStringLiteral("jsbsimAircraftModel"), entity.jsbsimAircraftModel);
+  summary.insert(QStringLiteral("speedKnots"), entity.speedKnots);
+  summary.insert(QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond);
+  summary.insert(QStringLiteral("taskType"), entity.currentTask.taskType);
+  summary.insert(QStringLiteral("taskEnabled"), entity.currentTask.enabled);
+  summary.insert(QStringLiteral("taskStatus"), entity.currentTask.status);
+  summary.insert(QStringLiteral("taskTargetHeadingDegrees"), entity.currentTask.targetHeadingDegrees);
+  summary.insert(QStringLiteral("taskTargetAltitudeMeters"), entity.currentTask.targetAltitudeMeters);
+  summary.insert(QStringLiteral("taskTargetSpeedKnots"), entity.currentTask.targetSpeedKnots);
+  summary.insert(QStringLiteral("taskTargetLatitude"), entity.currentTask.targetLatitude);
+  summary.insert(QStringLiteral("taskTargetLongitude"), entity.currentTask.targetLongitude);
+  summary.insert(QStringLiteral("taskTargetEntityName"), entity.currentTask.targetEntityName);
+  summary.insert(QStringLiteral("sensorCount"), entity.sensors.size());
+  summary.insert(QStringLiteral("contactCount"), entity.sensorContacts.size());
+
+  QVariantList sensors;
+  for (const SensorDefinition& sensor : entity.sensors) {
+    sensors.push_back(QVariantMap{
+        {QStringLiteral("id"), sensor.id},
+        {QStringLiteral("name"), sensor.name},
+        {QStringLiteral("sensorType"), sensor.sensorType},
+        {QStringLiteral("enabled"), sensor.enabled},
+        {QStringLiteral("emitting"), sensor.emitting},
+        {QStringLiteral("maxRangeMeters"), sensor.maxRangeMeters},
+        {QStringLiteral("azimuthWidthDegrees"), sensor.azimuthWidthDegrees},
+        {QStringLiteral("maxTracks"), sensor.maxTracks},
+    });
+  }
+  summary.insert(QStringLiteral("sensors"), sensors);
+
+  QVariantList contacts;
+  for (const SensorContact& contact : entity.sensorContacts) {
+    contacts.push_back(QVariantMap{
+        {QStringLiteral("sensorId"), contact.sensorId},
+        {QStringLiteral("targetEntityName"), contact.targetEntityName},
+        {QStringLiteral("rangeMeters"), contact.rangeMeters},
+        {QStringLiteral("bearingDegrees"), contact.bearingDegrees},
+        {QStringLiteral("lineOfSight"), contact.lineOfSight},
+        {QStringLiteral("detected"), contact.detected},
+    });
+  }
+  summary.insert(QStringLiteral("sensorContacts"), contacts);
   return summary;
 }
 
@@ -157,6 +223,42 @@ QString categoryGlyph(const QString& category) {
   return QStringLiteral("E");
 }
 
+QIcon makeTacticalGraphicIcon(const QString& graphicType) {
+  QPixmap pixmap(18, 18);
+  pixmap.fill(Qt::transparent);
+
+  QPainter painter(&pixmap);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+
+  const QString normalized = graphicType.trimmed().toLower();
+  if (normalized == QStringLiteral("route")) {
+    QPen pen(QColor(QStringLiteral("#ff6c52")));
+    pen.setWidth(2);
+    pen.setStyle(Qt::DashLine);
+    painter.setPen(pen);
+    painter.drawLine(3, 15, 15, 3);
+  } else if (normalized == QStringLiteral("waypoint")) {
+    QPen pen(QColor(QStringLiteral("#b6f4b2")));
+    pen.setWidth(1);
+    painter.setPen(pen);
+    painter.setBrush(QColor(QStringLiteral("#dff9da")));
+    painter.drawRect(5, 3, 8, 10);
+  } else if (normalized == QStringLiteral("engagement area")) {
+    QPen pen(QColor(QStringLiteral("#ff5656")));
+    pen.setWidth(2);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRect(4, 4, 10, 10);
+  } else {
+    QPen pen(QColor(QStringLiteral("#ffd85e")));
+    pen.setWidth(2);
+    painter.setPen(pen);
+    painter.drawEllipse(4, 4, 10, 10);
+  }
+
+  return QIcon(pixmap);
+}
+
 QIcon makeTrackIcon(const QString& team, const QString& category, bool isGroup) {
   QPixmap pixmap(18, 18);
   pixmap.fill(Qt::transparent);
@@ -196,8 +298,12 @@ MainWindow::MainWindow(QWidget* parent)
       _friendlyRootItem(nullptr),
       _opposingRootItem(nullptr),
       _neutralRootItem(nullptr),
+      _tacticalGraphicsRootItem(nullptr),
       _entityDialog(nullptr),
-      _applyingMapSelection(false)
+      _taskDialog(nullptr),
+      _simulationTimer(new QTimer(this)),
+      _applyingMapSelection(false),
+      _simulationRunning(false)
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
       , _webView(nullptr)
 #endif
@@ -207,6 +313,15 @@ MainWindow::MainWindow(QWidget* parent)
   this->_ui->viewerHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
   this->initializeModels();
+  this->populateTaskCommands();
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    this->appendEntityToUi(entity);
+  }
+  _simulationTimer->setInterval(1000);
+  QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
+    this->_scenarioState->advanceSimulation(1.0);
+    this->syncScenarioStateToUi();
+  });
 
   QObject::connect(this->_ui->actionQuit, &QAction::triggered, this, &QWidget::close);
   QObject::connect(
@@ -226,6 +341,21 @@ MainWindow::MainWindow(QWidget* parent)
       [this]() {
         this->_ui->objectsDockWidget->setVisible(!this->_ui->objectsDockWidget->isVisible());
       });
+  QObject::connect(
+      this->_ui->actionStartSimulation,
+      &QAction::triggered,
+      this,
+      &MainWindow::startSimulation);
+  QObject::connect(
+      this->_ui->actionPauseSimulation,
+      &QAction::triggered,
+      this,
+      &MainWindow::pauseSimulation);
+  QObject::connect(
+      this->_ui->actionStopSimulation,
+      &QAction::triggered,
+      this,
+      &MainWindow::stopSimulation);
   QObject::connect(
       this->_mapBridge,
       &MapBridge::pickedCoordinate,
@@ -247,6 +377,31 @@ MainWindow::MainWindow(QWidget* parent)
       &QTreeView::doubleClicked,
       this,
       [this](const QModelIndex&) { this->openSelectedEntityDetails(); });
+  this->_ui->objectsTreeView->setContextMenuPolicy(Qt::CustomContextMenu);
+  QObject::connect(
+      this->_ui->objectsTreeView,
+      &QWidget::customContextMenuRequested,
+      this,
+      &MainWindow::openObjectsContextMenu);
+  QObject::connect(
+      this->_ui->tasksListWidget,
+      &QListWidget::itemDoubleClicked,
+      this,
+      [this](QListWidgetItem* item) {
+        if (!item) {
+          return;
+        }
+        const QString taskType = item->data(Qt::UserRole).toString();
+        if (taskType == QStringLiteral("FlyHeadingAltitudeSpeed")) {
+          this->assignFlyHeadingAltitudeSpeedTask();
+        } else if (taskType == QStringLiteral("MoveToLocation")) {
+          this->assignMoveToLocationTask();
+        } else if (taskType == QStringLiteral("FollowEntity")) {
+          this->assignFollowEntityTask();
+        } else if (taskType == QStringLiteral("ClearTask")) {
+          this->clearSelectedTask();
+        }
+      });
 
   const QString accessToken = []() {
     const QString configured =
@@ -359,6 +514,7 @@ MainWindow::MainWindow(QWidget* parent)
   auto* hostLayout = new QVBoxLayout(this->_ui->viewerHost);
   hostLayout->setContentsMargins(0, 0, 0, 0);
   hostLayout->addWidget(this->_contentWidget);
+  this->updateSimulationControls();
 }
 
 MainWindow::~MainWindow() {
@@ -395,7 +551,12 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
 
   this->_ui->selectionNameValueLabel->setText(name);
   this->_ui->selectionTypeValueLabel->setText(type);
-  this->_ui->selectionStateValueLabel->setText(status);
+  const QString taskType = value("taskType", QStringLiteral("No current tasks"));
+  const QString taskStatus = value("taskStatus", QStringLiteral("-"));
+  this->_ui->selectionStateValueLabel->setText(
+      taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
+          ? status
+          : QStringLiteral("%1 (%2)").arg(taskType, taskStatus));
   this->_ui->selectionPositionValueLabel->setText(position);
 }
 
@@ -408,6 +569,8 @@ void MainWindow::initializeModels() {
   this->_opposingRootItem->setIcon(makeTrackIcon(QStringLiteral("Opposing"), QStringLiteral("Side"), true));
   this->_neutralRootItem = new QStandardItem(QStringLiteral("Neutral"));
   this->_neutralRootItem->setIcon(makeTrackIcon(QStringLiteral("Neutral"), QStringLiteral("Side"), true));
+  this->_tacticalGraphicsRootItem = new QStandardItem(QStringLiteral("Tactical Graphics"));
+  this->_tacticalGraphicsRootItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Graphic")));
   setTrackData(
       this->_friendlyRootItem,
       makeTrackSummary(
@@ -439,6 +602,17 @@ void MainWindow::initializeModels() {
           QStringLiteral("-"),
           QStringLiteral("Multiple tracks"),
           QStringLiteral("0 tracks"),
+          0.0,
+          0.0));
+  setTrackData(
+      this->_tacticalGraphicsRootItem,
+      makeTrackSummary(
+          QStringLiteral("Tactical Graphics"),
+          QStringLiteral("Graphic"),
+          QStringLiteral("Overlay"),
+          QStringLiteral("-"),
+          QStringLiteral("Mission overlays"),
+          QStringLiteral("Graphics"),
           0.0,
           0.0));
 
@@ -523,11 +697,13 @@ void MainWindow::initializeModels() {
   this->_objectsModel->appendRow(this->_friendlyRootItem);
   this->_objectsModel->appendRow(this->_opposingRootItem);
   this->_objectsModel->appendRow(this->_neutralRootItem);
+  this->_objectsModel->appendRow(this->_tacticalGraphicsRootItem);
 
   this->_ui->objectsTreeView->setModel(this->_objectsModel);
   this->_ui->objectsTreeView->expandAll();
   this->_ui->objectsTreeView->header()->setStretchLastSection(true);
   this->_ui->objectsTreeView->setHeaderHidden(false);
+  this->_ui->objectsTreeView->setSelectionMode(QAbstractItemView::SingleSelection);
 
   QObject::connect(
       this->_ui->objectsTreeView->selectionModel(),
@@ -543,6 +719,7 @@ void MainWindow::initializeModels() {
   const QModelIndex initialIndex = trackAlpha->index();
   this->_ui->objectsTreeView->setCurrentIndex(initialIndex);
   this->setSelectedTrackDetails(initialIndex.data(kTrackSummaryRole).toMap());
+  this->rebuildTacticalGraphicsTree();
 }
 
 void MainWindow::appendEntityToUi(const Entity& entity) {
@@ -670,6 +847,9 @@ void MainWindow::beginEntityCoordinatePick() {
   if (this->_entityDialog) {
     this->_entityDialog->hide();
   }
+  if (this->_taskDialog) {
+    this->_taskDialog->hide();
+  }
 
   this->_ui->statusLabel->setText(
       QStringLiteral("Haz clic en el mapa para rellenar latitud y longitud."));
@@ -687,6 +867,12 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
     this->_entityDialog->show();
     this->_entityDialog->raise();
     this->_entityDialog->activateWindow();
+  }
+  if (this->_taskDialog) {
+    this->_taskDialog->setPickedCoordinate(longitude, latitude, height);
+    this->_taskDialog->show();
+    this->_taskDialog->raise();
+    this->_taskDialog->activateWindow();
   }
 
   this->_ui->statusLabel->setText(
@@ -716,6 +902,40 @@ void MainWindow::reportMapStatus(const QString& message) {
   if (!message.trimmed().isEmpty()) {
     this->_ui->statusLabel->setText(message);
   }
+}
+
+void MainWindow::startSimulation() {
+  if (this->_simulationRunning) {
+    return;
+  }
+
+  this->_simulationRunning = true;
+  this->_simulationTimer->start();
+  this->_ui->statusLabel->setText(QStringLiteral("Simulacion en marcha."));
+  this->appendLogMessage(QStringLiteral("Simulation started."));
+  this->updateSimulationControls();
+}
+
+void MainWindow::pauseSimulation() {
+  if (!this->_simulationRunning) {
+    return;
+  }
+
+  this->_simulationRunning = false;
+  this->_simulationTimer->stop();
+  this->_ui->statusLabel->setText(QStringLiteral("Simulacion en pausa."));
+  this->appendLogMessage(QStringLiteral("Simulation paused."));
+  this->updateSimulationControls();
+}
+
+void MainWindow::stopSimulation() {
+  this->_simulationRunning = false;
+  this->_simulationTimer->stop();
+  this->_scenarioState->stopMission();
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(QStringLiteral("Mision detenida. Todas las tasks han terminado."));
+  this->appendLogMessage(QStringLiteral("Simulation stopped. Mission state cleared."));
+  this->updateSimulationControls();
 }
 
 void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex&) {
@@ -805,6 +1025,80 @@ void MainWindow::syncTracksToMap() {
   syncBranch(this->_neutralRootItem);
 }
 
+void MainWindow::syncScenarioStateToUi() {
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entity.name);
+    if (!item) {
+      item = this->findTrackItemByName(this->_opposingRootItem, entity.name);
+    }
+    if (!item) {
+      item = this->findTrackItemByName(this->_neutralRootItem, entity.name);
+    }
+
+    const QVariantMap summary = makeTrackSummary(entity);
+    if (!item) {
+      this->appendEntityToUi(entity);
+      continue;
+    }
+
+    setTrackData(item, summary);
+    this->sendTrackToMap(summary, false);
+    if (this->_ui->objectsTreeView->currentIndex() == item->index()) {
+      this->setSelectedTrackDetails(summary);
+    }
+  }
+
+  this->rebuildTacticalGraphicsTree();
+}
+
+void MainWindow::openObjectsContextMenu(const QPoint& position) {
+  const QModelIndex index = this->_ui->objectsTreeView->indexAt(position);
+  if (!index.isValid()) {
+    return;
+  }
+
+  this->_ui->objectsTreeView->setCurrentIndex(index);
+  if (!this->currentSelectionIsEntity()) {
+    return;
+  }
+
+  QMenu menu(this);
+  QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
+  QMenu* movementMenu = taskMenu->addMenu(QStringLiteral("Movement"));
+  movementMenu->addAction(QStringLiteral("Fly Heading / Altitude / Speed..."), this, &MainWindow::assignFlyHeadingAltitudeSpeedTask);
+  movementMenu->addAction(QStringLiteral("Move To Location..."), this, &MainWindow::assignMoveToLocationTask);
+  movementMenu->addAction(QStringLiteral("Follow Entity..."), this, &MainWindow::assignFollowEntityTask);
+  taskMenu->addSeparator();
+  taskMenu->addAction(QStringLiteral("Clear Current Task"), this, &MainWindow::clearSelectedTask);
+  menu.addSeparator();
+  menu.addAction(QStringLiteral("Entity Details..."), this, &MainWindow::openSelectedEntityDetails);
+  menu.exec(this->_ui->objectsTreeView->viewport()->mapToGlobal(position));
+}
+
+void MainWindow::assignFlyHeadingAltitudeSpeedTask() {
+  this->openAssignTaskDialog(QStringLiteral("FlyHeadingAltitudeSpeed"));
+}
+
+void MainWindow::assignMoveToLocationTask() {
+  this->openAssignTaskDialog(QStringLiteral("MoveToLocation"));
+}
+
+void MainWindow::assignFollowEntityTask() {
+  this->openAssignTaskDialog(QStringLiteral("FollowEntity"));
+}
+
+void MainWindow::clearSelectedTask() {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  if (this->_scenarioState->clearTask(entityName)) {
+    this->appendLogMessage(QStringLiteral("Task cleared for %1").arg(entityName));
+    this->syncScenarioStateToUi();
+  }
+}
+
 void MainWindow::selectObjectByName(const QString& trackName, bool notifyMap) {
   QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, trackName);
   if (!item) {
@@ -847,4 +1141,196 @@ QStandardItem* MainWindow::findTrackItemByName(QStandardItem* parent, const QStr
   }
 
   return nullptr;
+}
+
+QString MainWindow::selectedEntityName() const {
+  if (!this->currentSelectionIsEntity()) {
+    return QString();
+  }
+  return this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+}
+
+bool MainWindow::currentSelectionIsEntity() const {
+  const QModelIndex currentIndex = this->_ui->objectsTreeView->currentIndex();
+  if (!currentIndex.isValid()) {
+    return false;
+  }
+
+  QStandardItem* item = this->_objectsModel->itemFromIndex(currentIndex);
+  if (!item || item->rowCount() != 0 || !currentIndex.parent().isValid()) {
+    return false;
+  }
+  return !this->_tacticalGraphicsRootItem || currentIndex.parent() != this->_tacticalGraphicsRootItem->index();
+}
+
+void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
+  if (this->_taskDialog) {
+    this->_taskDialog->show();
+    this->_taskDialog->raise();
+    this->_taskDialog->activateWindow();
+    return;
+  }
+
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  const QVariantMap currentSummary =
+      this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  EntityTask currentTask;
+  currentTask.taskType = currentSummary.value(QStringLiteral("taskType")).toString();
+  currentTask.enabled = currentSummary.value(QStringLiteral("taskEnabled")).toBool();
+  currentTask.status = currentSummary.value(QStringLiteral("taskStatus")).toString();
+  currentTask.targetHeadingDegrees = currentSummary.value(QStringLiteral("taskTargetHeadingDegrees")).toDouble();
+  currentTask.targetAltitudeMeters = currentSummary.value(QStringLiteral("taskTargetAltitudeMeters")).toInt();
+  currentTask.targetSpeedKnots = currentSummary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble();
+  currentTask.targetLatitude = currentSummary.value(QStringLiteral("taskTargetLatitude")).toDouble();
+  currentTask.targetLongitude = currentSummary.value(QStringLiteral("taskTargetLongitude")).toDouble();
+  currentTask.targetEntityName = currentSummary.value(QStringLiteral("taskTargetEntityName")).toString();
+
+  QStringList availableTargets;
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    if (entity.name != entityName) {
+      availableTargets.append(entity.name);
+    }
+  }
+
+  auto* dialog = new AssignTaskDialog(entityName, availableTargets, currentTask, initialTaskType, this);
+  dialog->setAttribute(Qt::WA_DeleteOnClose);
+  this->_taskDialog = dialog;
+
+  QObject::connect(
+      dialog,
+      &QObject::destroyed,
+      this,
+      [this]() { this->_taskDialog = nullptr; });
+  QObject::connect(
+      dialog,
+      &AssignTaskDialog::pickOnMapRequested,
+      this,
+      &MainWindow::beginTaskCoordinatePick);
+  QObject::connect(
+      dialog,
+      &QDialog::accepted,
+      this,
+      [this, dialog, entityName]() {
+        const EntityTask task = dialog->task();
+        if (this->_scenarioState->assignTask(entityName, task)) {
+          this->appendLogMessage(
+              QStringLiteral("Task %1 assigned to %2").arg(task.taskType, entityName));
+          this->syncScenarioStateToUi();
+        }
+      });
+
+  dialog->show();
+  dialog->raise();
+  dialog->activateWindow();
+}
+
+void MainWindow::populateTaskCommands() {
+  this->_ui->tasksListWidget->clear();
+
+  auto* flyItem = new QListWidgetItem(QStringLiteral("Movement: Fly Heading / Altitude / Speed..."));
+  flyItem->setData(Qt::UserRole, QStringLiteral("FlyHeadingAltitudeSpeed"));
+  this->_ui->tasksListWidget->addItem(flyItem);
+
+  auto* moveItem = new QListWidgetItem(QStringLiteral("Movement: Move To Location..."));
+  moveItem->setData(Qt::UserRole, QStringLiteral("MoveToLocation"));
+  this->_ui->tasksListWidget->addItem(moveItem);
+
+  auto* followItem = new QListWidgetItem(QStringLiteral("Movement: Follow Entity..."));
+  followItem->setData(Qt::UserRole, QStringLiteral("FollowEntity"));
+  this->_ui->tasksListWidget->addItem(followItem);
+
+  auto* clearItem = new QListWidgetItem(QStringLiteral("Other: Clear Current Task"));
+  clearItem->setData(Qt::UserRole, QStringLiteral("ClearTask"));
+  this->_ui->tasksListWidget->addItem(clearItem);
+}
+
+void MainWindow::rebuildTacticalGraphicsTree() {
+  if (!this->_tacticalGraphicsRootItem) {
+    return;
+  }
+
+  this->_tacticalGraphicsRootItem->removeRows(0, this->_tacticalGraphicsRootItem->rowCount());
+
+  int routeCount = 0;
+  int waypointCount = 0;
+  bool engagementAreaAdded = false;
+
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    const QVariantMap entitySummary = makeTrackSummary(entity);
+
+    const bool hasRouteGraphic =
+        entity.category.compare(QStringLiteral("Fighter"), Qt::CaseInsensitive) == 0 ||
+        entity.type.contains(QStringLiteral("AEW"), Qt::CaseInsensitive);
+    if (hasRouteGraphic) {
+      ++routeCount;
+      QVariantMap routeSummary = entitySummary;
+      routeSummary.insert(QStringLiteral("name"), QStringLiteral("Route %1").arg(routeCount));
+      routeSummary.insert(QStringLiteral("type"), QStringLiteral("Route"));
+      routeSummary.insert(QStringLiteral("status"), QStringLiteral("Assigned to %1").arg(entity.name));
+      auto* routeItem = new QStandardItem(routeSummary.value(QStringLiteral("name")).toString());
+      routeItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Route")));
+      setTrackData(routeItem, routeSummary);
+      this->_tacticalGraphicsRootItem->appendRow(routeItem);
+    }
+
+    if (!engagementAreaAdded &&
+        entity.category.compare(QStringLiteral("Fighter"), Qt::CaseInsensitive) == 0) {
+      engagementAreaAdded = true;
+      QVariantMap areaSummary = entitySummary;
+      areaSummary.insert(QStringLiteral("name"), QStringLiteral("Engagement Area"));
+      areaSummary.insert(QStringLiteral("type"), QStringLiteral("Engagement Area"));
+      areaSummary.insert(QStringLiteral("status"), QStringLiteral("Overlay"));
+      auto* areaItem = new QStandardItem(areaSummary.value(QStringLiteral("name")).toString());
+      areaItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Engagement Area")));
+      setTrackData(areaItem, areaSummary);
+      this->_tacticalGraphicsRootItem->appendRow(areaItem);
+    }
+
+    if (entity.currentTask.enabled &&
+        (entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
+         entity.currentTask.taskType == QStringLiteral("FollowEntity"))) {
+      ++waypointCount;
+      QVariantMap waypointSummary = entitySummary;
+      waypointSummary.insert(QStringLiteral("name"), QStringLiteral("Waypoint %1").arg(waypointCount));
+      waypointSummary.insert(QStringLiteral("type"), QStringLiteral("Waypoint"));
+      waypointSummary.insert(
+          QStringLiteral("position"),
+          QStringLiteral("%1, %2")
+              .arg(entity.currentTask.targetLatitude, 0, 'f', 4)
+              .arg(entity.currentTask.targetLongitude, 0, 'f', 4));
+      waypointSummary.insert(
+          QStringLiteral("status"),
+          entity.currentTask.taskType == QStringLiteral("FollowEntity")
+              ? QStringLiteral("Follow target: %1").arg(entity.currentTask.targetEntityName)
+              : QStringLiteral("Move target for %1").arg(entity.name));
+      waypointSummary.insert(QStringLiteral("latitude"), entity.currentTask.targetLatitude);
+      waypointSummary.insert(QStringLiteral("longitude"), entity.currentTask.targetLongitude);
+      auto* waypointItem = new QStandardItem(waypointSummary.value(QStringLiteral("name")).toString());
+      waypointItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Waypoint")));
+      setTrackData(waypointItem, waypointSummary);
+      this->_tacticalGraphicsRootItem->appendRow(waypointItem);
+    }
+  }
+
+  if (this->_tacticalGraphicsRootItem->rowCount() > 0) {
+    this->_ui->objectsTreeView->expand(this->_tacticalGraphicsRootItem->index());
+  }
+}
+
+void MainWindow::beginTaskCoordinatePick() {
+  this->beginEntityCoordinatePick();
+}
+
+void MainWindow::updateSimulationControls() {
+  this->_ui->actionStartSimulation->setEnabled(!this->_simulationRunning);
+  this->_ui->actionPauseSimulation->setEnabled(this->_simulationRunning);
+  this->_ui->actionStopSimulation->setEnabled(this->_simulationRunning || !this->_scenarioState->entities().isEmpty());
+  this->_ui->modeBadgeLabel->setText(
+      this->_simulationRunning
+          ? QStringLiteral("Simulation Running")
+          : QStringLiteral("Simulation Paused"));
 }

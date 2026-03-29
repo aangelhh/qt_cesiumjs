@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QVariantList>
 #include <QVBoxLayout>
 
 namespace {
@@ -232,6 +233,23 @@ void EntityDetailsDialog::populateStateData() {
   rows.append({QStringLiteral("Domain"), this->value("domain")});
   rows.append({QStringLiteral("Category"), this->value("category")});
   rows.append({QStringLiteral("Model"), this->value("modelName")});
+  rows.append({QStringLiteral("Heading"), QStringLiteral("%1 deg").arg(this->value("headingDegrees"))});
+  rows.append({QStringLiteral("Flight Dynamics"), this->value("flightDynamicsEnabled", QStringLiteral("false")) == QStringLiteral("true") ? QStringLiteral("Enabled") : QStringLiteral("Disabled")});
+  rows.append({QStringLiteral("Dynamics Mode"), this->value("flightDynamicsMode", QStringLiteral("-"))});
+  rows.append({QStringLiteral("JSBSim Aircraft"), this->value("jsbsimAircraftModel", QStringLiteral("-"))});
+  rows.append({QStringLiteral("Speed"), QStringLiteral("%1 kts").arg(this->value("speedKnots", QStringLiteral("0")))});
+  rows.append({QStringLiteral("Vertical Speed"), QStringLiteral("%1 m/s").arg(this->value("verticalSpeedMetersPerSecond", QStringLiteral("0")))});
+  rows.append({QStringLiteral("Current Task"), this->value("taskType", QStringLiteral("-"))});
+  rows.append({QStringLiteral("Task Status"), this->value("taskStatus", QStringLiteral("-"))});
+  rows.append({QStringLiteral("Task Target Heading"), QStringLiteral("%1 deg").arg(this->value("taskTargetHeadingDegrees", QStringLiteral("0")))});
+  rows.append({QStringLiteral("Task Target Altitude"), QStringLiteral("%1 m").arg(this->value("taskTargetAltitudeMeters", QStringLiteral("0")))});
+  rows.append({QStringLiteral("Task Target Speed"), QStringLiteral("%1 kts").arg(this->value("taskTargetSpeedKnots", QStringLiteral("0")))});
+  rows.append({QStringLiteral("Task Target Location"), QStringLiteral("%1, %2")
+                                                    .arg(this->value("taskTargetLatitude", QStringLiteral("0")))
+                                                    .arg(this->value("taskTargetLongitude", QStringLiteral("0")))});
+  rows.append({QStringLiteral("Task Target Entity"), this->value("taskTargetEntityName", QStringLiteral("-"))});
+  rows.append({QStringLiteral("Sensors"), this->value("sensorCount", QStringLiteral("0"))});
+  rows.append({QStringLiteral("Sensor Contacts"), this->value("contactCount", QStringLiteral("0"))});
   rows.append({QStringLiteral("Entity Type Code"), entityTypeCode});
   rows.append({QStringLiteral("DIS Entity"), disInfo.displayName().isEmpty() ? QStringLiteral("-") : disInfo.displayName()});
   rows.append({QStringLiteral("DIS Kind Description"), disInfo.kindDescription.isEmpty() ? QStringLiteral("-") : disInfo.kindDescription});
@@ -255,6 +273,47 @@ void EntityDetailsDialog::populateStateData() {
   }
   rows.append({QStringLiteral("Invisible"), QStringLiteral("No")});
   rows.append({QStringLiteral("Invulnerable"), QStringLiteral("No")});
+  this->setTableRows(rows);
+}
+
+void EntityDetailsDialog::populateSensorInformation() {
+  QList<QPair<QString, QString>> rows;
+  const QVariantList sensors = _summary.value(QStringLiteral("sensors")).toList();
+  const QVariantList contacts = _summary.value(QStringLiteral("sensorContacts")).toList();
+
+  rows.append({QStringLiteral("Configured Sensors"), QString::number(sensors.size())});
+  if (sensors.isEmpty()) {
+    rows.append({QStringLiteral("Sensor"), QStringLiteral("No sensors configured")});
+  } else {
+    for (int index = 0; index < sensors.size(); ++index) {
+      const QVariantMap sensor = sensors.at(index).toMap();
+      const QString prefix = QStringLiteral("Sensor %1").arg(index + 1);
+      rows.append({prefix + QStringLiteral(" Name"), sensor.value(QStringLiteral("name")).toString()});
+      rows.append({prefix + QStringLiteral(" Type"), sensor.value(QStringLiteral("sensorType")).toString()});
+      rows.append({prefix + QStringLiteral(" Enabled"), sensor.value(QStringLiteral("enabled")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
+      rows.append({prefix + QStringLiteral(" Emitting"), sensor.value(QStringLiteral("emitting")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
+      rows.append({prefix + QStringLiteral(" Range"), QStringLiteral("%1 km").arg(sensor.value(QStringLiteral("maxRangeMeters")).toDouble() / 1000.0, 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Azimuth"), QStringLiteral("%1 deg").arg(sensor.value(QStringLiteral("azimuthWidthDegrees")).toDouble(), 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Max Tracks"), QString::number(sensor.value(QStringLiteral("maxTracks")).toInt())});
+    }
+  }
+
+  rows.append({QStringLiteral("Detected Contacts"), QString::number(contacts.size())});
+  if (contacts.isEmpty()) {
+    rows.append({QStringLiteral("Contact"), QStringLiteral("No current contacts")});
+  } else {
+    for (int index = 0; index < contacts.size(); ++index) {
+      const QVariantMap contact = contacts.at(index).toMap();
+      const QString prefix = QStringLiteral("Contact %1").arg(index + 1);
+      rows.append({prefix + QStringLiteral(" Target"), contact.value(QStringLiteral("targetEntityName")).toString()});
+      rows.append({prefix + QStringLiteral(" Sensor"), contact.value(QStringLiteral("sensorId")).toString()});
+      rows.append({prefix + QStringLiteral(" Range"), QStringLiteral("%1 km").arg(contact.value(QStringLiteral("rangeMeters")).toDouble() / 1000.0, 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Bearing"), QStringLiteral("%1 deg").arg(contact.value(QStringLiteral("bearingDegrees")).toDouble(), 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" LOS"), contact.value(QStringLiteral("lineOfSight")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
+      rows.append({prefix + QStringLiteral(" Detected"), contact.value(QStringLiteral("detected")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
+    }
+  }
+
   this->setTableRows(rows);
 }
 
@@ -288,6 +347,8 @@ void EntityDetailsDialog::updateSection(QListWidgetItem* current, QListWidgetIte
   const QString sectionName = current->text();
   if (sectionName == QStringLiteral("State Data")) {
     this->populateStateData();
+  } else if (sectionName == QStringLiteral("Sensor Information")) {
+    this->populateSensorInformation();
   } else {
     this->populatePlaceholderSection(sectionName);
   }

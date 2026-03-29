@@ -344,6 +344,11 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         if (bundle.label) {
           bundle.label.show = visible && bundle.trackName === selectedQtTrackName;
         }
+        if (bundle.radarFans) {
+          for (const fan of bundle.radarFans) {
+            fan.show = visible;
+          }
+        }
       }
 
       function refreshSimulationLabelVisibility() {
@@ -413,6 +418,80 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const meters = altitudeMatch ? Number(altitudeMatch[0]) : 0.0;
         const feet = Math.round(meters * 3.28084);
         return feet + ' ft MSL';
+      }
+
+      function destinationPoint(latitude, longitude, bearingDegrees, distanceMeters) {
+        const angularDistance = distanceMeters / 6371000.0;
+        const bearing = Cesium.Math.toRadians(bearingDegrees);
+        const lat1 = Cesium.Math.toRadians(Number(latitude || 0.0));
+        const lon1 = Cesium.Math.toRadians(Number(longitude || 0.0));
+
+        const sinLat1 = Math.sin(lat1);
+        const cosLat1 = Math.cos(lat1);
+        const sinAngular = Math.sin(angularDistance);
+        const cosAngular = Math.cos(angularDistance);
+
+        const lat2 = Math.asin(
+          sinLat1 * cosAngular +
+          cosLat1 * sinAngular * Math.cos(bearing)
+        );
+        const lon2 = lon1 + Math.atan2(
+          Math.sin(bearing) * sinAngular * cosLat1,
+          cosAngular - sinLat1 * Math.sin(lat2)
+        );
+
+        return {
+          latitude: Cesium.Math.toDegrees(lat2),
+          longitude: Cesium.Math.toDegrees(lon2),
+        };
+      }
+
+      function buildRadarFanPositions(track, sensor, altitude) {
+        const centerBearing = Number(track.headingDegrees || 0.0) +
+          Number(sensor.azimuthCenterDegrees || 0.0);
+        const azimuthWidth = Math.max(1.0, Number(sensor.azimuthWidthDegrees || 360.0));
+        const rangeMeters = Math.max(1.0, Number(sensor.maxRangeMeters || 0.0));
+        const steps = Math.max(12, Math.ceil(azimuthWidth / 8.0));
+        const startBearing = centerBearing - azimuthWidth / 2.0;
+        const positions = [
+          Cesium.Cartesian3.fromDegrees(
+            Number(track.longitude || 0.0),
+            Number(track.latitude || 0.0),
+            altitude
+          )
+        ];
+
+        for (let step = 0; step <= steps; ++step) {
+          const bearing = startBearing + (azimuthWidth * step / steps);
+          const destination = destinationPoint(
+            track.latitude,
+            track.longitude,
+            bearing,
+            rangeMeters
+          );
+          positions.push(
+            Cesium.Cartesian3.fromDegrees(
+              destination.longitude,
+              destination.latitude,
+              altitude
+            )
+          );
+        }
+
+        return positions;
+      }
+
+      function radarSensorsForTrack(track) {
+        if (!Array.isArray(track.sensors)) {
+          return [];
+        }
+        return track.sensors.filter(function(sensor) {
+          return sensor &&
+            String(sensor.sensorType || '').toLowerCase() === 'radar' &&
+            sensor.enabled !== false &&
+            sensor.emitting !== false &&
+            Number(sensor.maxRangeMeters || 0.0) > 0.0;
+        });
       }
 
       function buildSimulationObjectLabel(track) {
@@ -495,6 +574,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           route: null,
           area: null,
           label: null,
+          radarFans: [],
           trackName: track.name,
         };
         overlayBundle.trackName = track.name;
@@ -653,6 +733,32 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           overlayBundle.label.position = position;
           overlayBundle.label.label.text = simulationLabelText;
         }
+
+        if (overlayBundle.radarFans && overlayBundle.radarFans.length > 0) {
+          for (const fan of overlayBundle.radarFans) {
+            viewer.entities.remove(fan);
+          }
+        }
+        overlayBundle.radarFans = [];
+
+        const radarSensors = radarSensorsForTrack(track);
+        radarSensors.forEach(function(sensor, index) {
+          const fanPositions = buildRadarFanPositions(track, sensor, altitude);
+          const radarColor = color.withAlpha(0.12 + Math.min(index, 3) * 0.04);
+          const outlineColor = color.withAlpha(0.65);
+          const fanEntity = viewer.entities.add({
+            id: entityId + ':radar:' + index,
+            polygon: {
+              hierarchy: fanPositions,
+              material: radarColor,
+              outline: true,
+              outlineColor,
+              perPositionHeight: true,
+            },
+            show: overlaysVisible,
+          });
+          overlayBundle.radarFans.push(fanEntity);
+        });
 
         setOverlayVisibility(overlayBundle, overlaysVisible);
         qtOverlayEntitiesByName.set(track.name, overlayBundle);

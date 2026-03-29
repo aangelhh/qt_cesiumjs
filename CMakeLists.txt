@@ -13,8 +13,20 @@ find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebEngineCore WebChannel Posi
 
 qt_standard_project_setup()
 
+option(QTTEST_ENABLE_JSBSIM "Enable JSBSim flight dynamics backend when available" ON)
+
+if(QTTEST_ENABLE_JSBSIM AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Dependencies/jsbsim/CMakeLists.txt")
+    set(BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    set(BUILD_PYTHON_MODULE OFF CACHE BOOL "" FORCE)
+    set(BUILD_JULIA_PACKAGE OFF CACHE BOOL "" FORCE)
+    set(BUILD_MATLAB_SFUNCTION OFF CACHE BOOL "" FORCE)
+    add_subdirectory(Dependencies/jsbsim EXCLUDE_FROM_ALL)
+endif()
+
 qt_add_executable(qttest
     main.cpp
+    src/AssignTaskDialog.cpp
+    src/AssignTaskDialog.h
     src/AddEntityDialog.cpp
     src/AddEntityDialog.h
     src/EntityDetailsDialog.cpp
@@ -31,7 +43,13 @@ qt_add_executable(qttest
     src/infrastructure/ModelCatalog.h
     src/application/ScenarioState.cpp
     src/application/ScenarioState.h
+    src/application/FlightDynamicsEngine.cpp
+    src/application/FlightDynamicsEngine.h
+    src/application/SensorEngine.cpp
+    src/application/SensorEngine.h
     src/domain/Entity.h
+    src/domain/Sensor.h
+    src/domain/Task.h
     src/presentation/EntityTextFormatter.cpp
     src/presentation/EntityTextFormatter.h
 )
@@ -41,6 +59,11 @@ target_link_libraries(qttest
         Qt6::Widgets
         Qt6::Gui
 )
+
+if(TARGET libJSBSim)
+    target_link_libraries(qttest PRIVATE libJSBSim)
+    target_compile_definitions(qttest PRIVATE QTTEST_HAS_JSBSIM=1)
+endif()
 
 if(
     Qt6WebEngineWidgets_FOUND

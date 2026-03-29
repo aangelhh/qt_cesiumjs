@@ -476,6 +476,11 @@ Awaiting commands...</string>
    <addaction name="separator"/>
    <addaction name="actionResetCamera"/>
    <addaction name="actionReloadScene"/>
+   <addaction name="separator"/>
+   <addaction name="actionStartSimulation"/>
+   <addaction name="actionPauseSimulation"/>
+   <addaction name="actionStopSimulation"/>
+   <addaction name="separator"/>
    <addaction name="actionToggleOverlays"/>
    <addaction name="actionToggleEntitiesPanel"/>
   </widget>
@@ -537,8 +542,9 @@ Awaiting commands...</string>
     <property name="title">
      <string>Simulation</string>
     </property>
-    <addaction name="actionStartSimulation"/>
-    <addaction name="actionPauseSimulation"/>
+   <addaction name="actionStartSimulation"/>
+   <addaction name="actionPauseSimulation"/>
+    <addaction name="actionStopSimulation"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
@@ -657,6 +663,11 @@ Awaiting commands...</string>
   <action name="actionPauseSimulation">
    <property name="text">
     <string>Pause</string>
+   </property>
+  </action>
+  <action name="actionStopSimulation">
+   <property name="text">
+    <string>Stop</string>
    </property>
   </action>
   <action name="actionAbout">

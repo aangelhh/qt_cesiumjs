@@ -1,0 +1,39 @@
+#pragma once
+
+#include "domain/Task.h"
+
+#include <QDialog>
+#include <QStringList>
+
+class QComboBox;
+class QDoubleSpinBox;
+class QSpinBox;
+
+class AssignTaskDialog : public QDialog {
+  Q_OBJECT
+
+public:
+  explicit AssignTaskDialog(
+      const QString& entityName,
+      const QStringList& availableTargets,
+      const EntityTask& currentTask,
+      const QString& initialTaskType,
+      QWidget* parent = nullptr);
+
+  EntityTask task() const;
+  void setPickedCoordinate(double longitude, double latitude, double height);
+
+signals:
+  void pickOnMapRequested();
+
+private:
+  void syncUiForTaskType();
+
+  QComboBox* _taskTypeCombo;
+  QDoubleSpinBox* _headingSpin;
+  QDoubleSpinBox* _altitudeSpin;
+  QDoubleSpinBox* _speedSpin;
+  QDoubleSpinBox* _latitudeSpin;
+  QDoubleSpinBox* _longitudeSpin;
+  QComboBox* _followTargetCombo;
+};

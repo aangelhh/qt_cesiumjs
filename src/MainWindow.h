@@ -6,10 +6,13 @@
 #include <QVariantMap>
 
 class AddEntityDialog;
+class AssignTaskDialog;
 class MapBridge;
 class ScenarioState;
 class QStandardItem;
 class QStandardItemModel;
+class QTimer;
+class QPoint;
 class QWidget;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
 class QWebEngineView;
@@ -35,18 +38,34 @@ private slots:
   void handleMapTrackSelection(const QString& trackName);
   void toggleTacticalOverlays(bool enabled);
   void openSelectedEntityDetails();
+  void openObjectsContextMenu(const QPoint& position);
+  void assignFlyHeadingAltitudeSpeedTask();
+  void assignMoveToLocationTask();
+  void assignFollowEntityTask();
+  void clearSelectedTask();
+  void startSimulation();
+  void pauseSimulation();
+  void stopSimulation();
 
 private:
   void initializeModels();
   void appendEntityToUi(const class Entity& entity);
   QStandardItem* rootItemForForceIdentifier(int forceIdentifier) const;
   QStandardItem* ensureGroupItem(QStandardItem* parent, const QString& label, const QVariantMap& summary);
+  void rebuildTacticalGraphicsTree();
   void appendLogMessage(const QString& message);
   void setSelectedTrackDetails(const QVariantMap& summary);
   void sendTrackToMap(const QVariantMap& summary, bool focus = false);
   void syncTracksToMap();
+  void syncScenarioStateToUi();
   void selectObjectByName(const QString& trackName, bool notifyMap);
   QStandardItem* findTrackItemByName(QStandardItem* parent, const QString& trackName) const;
+  QString selectedEntityName() const;
+  bool currentSelectionIsEntity() const;
+  void openAssignTaskDialog(const QString& initialTaskType);
+  void populateTaskCommands();
+  void beginTaskCoordinatePick();
+  void updateSimulationControls();
 
   Ui::MainWindow* _ui;
   QWidget* _contentWidget;
@@ -56,8 +75,12 @@ private:
   QStandardItem* _friendlyRootItem;
   QStandardItem* _opposingRootItem;
   QStandardItem* _neutralRootItem;
+  QStandardItem* _tacticalGraphicsRootItem;
   QPointer<AddEntityDialog> _entityDialog;
+  QPointer<AssignTaskDialog> _taskDialog;
+  QTimer* _simulationTimer;
   bool _applyingMapSelection;
+  bool _simulationRunning;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif

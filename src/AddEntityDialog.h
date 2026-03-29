@@ -8,6 +8,7 @@
 #include <QVector>
 
 class QComboBox;
+class QCheckBox;
 class QDoubleSpinBox;
 class QLineEdit;
 class QPushButton;
@@ -36,8 +37,10 @@ private:
   void populateDisSubcategoryCombo();
   void populateDisSpecificCombo();
   void populateDisExtraCombo();
+  void populateJsbsimModelCombo();
   void syncModelFromDisSelection();
   void applyModelSelectionToDisFields();
+  void syncDynamicsControls();
 
   QVector<ModelCatalogEntry> _modelCatalog;
   DisEntityCatalog _disCatalog;
@@ -54,6 +57,21 @@ private:
   QComboBox* _disSubcategoryCombo;
   QComboBox* _disSpecificCombo;
   QComboBox* _disExtraCombo;
+  QCheckBox* _addRadarCheck;
+  QLineEdit* _radarNameEdit;
+  QDoubleSpinBox* _headingSpin;
+  QCheckBox* _enableDynamicsCheck;
+  QComboBox* _dynamicsModeCombo;
+  QComboBox* _jsbsimModelCombo;
+  QDoubleSpinBox* _speedSpin;
+  QDoubleSpinBox* _verticalSpeedSpin;
+  QCheckBox* _enableFlightTaskCheck;
+  QDoubleSpinBox* _taskHeadingSpin;
+  QSpinBox* _taskAltitudeSpin;
+  QDoubleSpinBox* _taskSpeedSpin;
+  QDoubleSpinBox* _radarRangeSpin;
+  QDoubleSpinBox* _radarAzimuthSpin;
+  QSpinBox* _radarMaxTracksSpin;
   QDoubleSpinBox* _latitudeSpin;
   QDoubleSpinBox* _longitudeSpin;
   QDoubleSpinBox* _groundHeightSpin;

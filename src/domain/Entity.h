@@ -1,6 +1,10 @@
 #pragma once
 
+#include "domain/Sensor.h"
+#include "domain/Task.h"
+
 #include <QString>
+#include <QVector>
 
 struct Entity {
   static QString buildEntityTypeCode(
@@ -52,4 +56,13 @@ struct Entity {
   int entitySubcategory = 0;
   int entitySpecific = 0;
   int entityExtra = 0;
+  double headingDegrees = 0.0;
+  bool flightDynamicsEnabled = false;
+  QString flightDynamicsMode = QStringLiteral("kinematic");
+  QString jsbsimAircraftModel;
+  double speedKnots = 0.0;
+  double verticalSpeedMetersPerSecond = 0.0;
+  EntityTask currentTask;
+  SensorDefinitions sensors;
+  SensorContacts sensorContacts;
 };

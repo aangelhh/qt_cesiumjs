@@ -1,8 +1,10 @@
 #include "AddEntityDialog.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QDir>
 #include <QFormLayout>
 #include <QLineEdit>
 #include <QMessageBox>
@@ -35,6 +37,69 @@ const ModelCatalogEntry* findSelectedModelEntry(
 
 } // namespace
 
+namespace {
+
+QStringList availableJsbsimAircraftModels() {
+  QStringList models;
+#ifdef QTTEST_SOURCE_DIR
+  const QDir aircraftRoot(
+      QDir(QString::fromUtf8(QTTEST_SOURCE_DIR))
+          .absoluteFilePath(QStringLiteral("Dependencies/jsbsim/aircraft")));
+  const QFileInfoList entries = aircraftRoot.entryInfoList(
+      QDir::Dirs | QDir::NoDotAndDotDot,
+      QDir::Name);
+  for (const QFileInfo& entry : entries) {
+    if (entry.isDir()) {
+      models.append(entry.fileName());
+    }
+  }
+#endif
+  return models;
+}
+
+QString suggestedJsbsimModel(const QString& domain, const QString& category, const QString& modelName) {
+  const QString normalizedDomain = domain.trimmed().toLower();
+  const QString normalizedCategory = category.trimmed().toLower();
+  const QString normalizedModelName = modelName.trimmed().toLower();
+
+  if (normalizedModelName.contains(QStringLiteral("f-16"))) {
+    return QStringLiteral("f16");
+  }
+  if (normalizedModelName.contains(QStringLiteral("f-22"))) {
+    return QStringLiteral("f22");
+  }
+  if (normalizedModelName.contains(QStringLiteral("a-4"))) {
+    return QStringLiteral("A4");
+  }
+  if (normalizedModelName.contains(QStringLiteral("t-38"))) {
+    return QStringLiteral("T38");
+  }
+  if (normalizedModelName.contains(QStringLiteral("dhc"))) {
+    return QStringLiteral("DHC6");
+  }
+  if (normalizedModelName.contains(QStringLiteral("c172"))) {
+    return QStringLiteral("c172r");
+  }
+
+  if (normalizedDomain == QStringLiteral("air")) {
+    if (normalizedCategory == QStringLiteral("fighter")) {
+      return QStringLiteral("f16");
+    }
+    if (normalizedCategory == QStringLiteral("bomber")) {
+      return QStringLiteral("B17");
+    }
+    if (normalizedCategory == QStringLiteral("transport")) {
+      return QStringLiteral("DHC6");
+    }
+    if (normalizedCategory == QStringLiteral("helicopter")) {
+      return QStringLiteral("F450");
+    }
+  }
+  return QStringLiteral("c172r");
+}
+
+} // namespace
+
 AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog, QWidget* parent)
     : QDialog(parent),
       _modelCatalog(modelCatalog),
@@ -52,6 +117,21 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
       _disSubcategoryCombo(new QComboBox(this)),
       _disSpecificCombo(new QComboBox(this)),
       _disExtraCombo(new QComboBox(this)),
+      _addRadarCheck(new QCheckBox(QStringLiteral("Attach primary radar"), this)),
+      _radarNameEdit(new QLineEdit(this)),
+      _headingSpin(new QDoubleSpinBox(this)),
+      _enableDynamicsCheck(new QCheckBox(QStringLiteral("Enable flight dynamics"), this)),
+      _dynamicsModeCombo(new QComboBox(this)),
+      _jsbsimModelCombo(new QComboBox(this)),
+      _speedSpin(new QDoubleSpinBox(this)),
+      _verticalSpeedSpin(new QDoubleSpinBox(this)),
+      _enableFlightTaskCheck(new QCheckBox(QStringLiteral("Assign initial flight task"), this)),
+      _taskHeadingSpin(new QDoubleSpinBox(this)),
+      _taskAltitudeSpin(new QSpinBox(this)),
+      _taskSpeedSpin(new QDoubleSpinBox(this)),
+      _radarRangeSpin(new QDoubleSpinBox(this)),
+      _radarAzimuthSpin(new QDoubleSpinBox(this)),
+      _radarMaxTracksSpin(new QSpinBox(this)),
       _latitudeSpin(new QDoubleSpinBox(this)),
       _longitudeSpin(new QDoubleSpinBox(this)),
       _groundHeightSpin(new QDoubleSpinBox(this)),
@@ -84,12 +164,65 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   _altitudeSpin->setSuffix(QStringLiteral(" m"));
   _altitudeSpin->setValue(1200);
 
+  _headingSpin->setRange(0.0, 359.0);
+  _headingSpin->setDecimals(1);
+  _headingSpin->setSingleStep(5.0);
+  _headingSpin->setSuffix(QStringLiteral(" deg"));
+
+  _radarRangeSpin->setRange(1.0, 1000.0);
+  _radarRangeSpin->setDecimals(1);
+  _radarRangeSpin->setSingleStep(10.0);
+  _radarRangeSpin->setSuffix(QStringLiteral(" km"));
+  _radarRangeSpin->setValue(280.0);
+
+  _radarAzimuthSpin->setRange(1.0, 360.0);
+  _radarAzimuthSpin->setDecimals(1);
+  _radarAzimuthSpin->setSingleStep(5.0);
+  _radarAzimuthSpin->setSuffix(QStringLiteral(" deg"));
+  _radarAzimuthSpin->setValue(120.0);
+
+  _radarMaxTracksSpin->setRange(1, 256);
+  _radarMaxTracksSpin->setValue(16);
+
+  _speedSpin->setRange(0.0, 1200.0);
+  _speedSpin->setDecimals(1);
+  _speedSpin->setSingleStep(10.0);
+  _speedSpin->setSuffix(QStringLiteral(" kts"));
+  _speedSpin->setValue(320.0);
+
+  _verticalSpeedSpin->setRange(-200.0, 200.0);
+  _verticalSpeedSpin->setDecimals(1);
+  _verticalSpeedSpin->setSingleStep(1.0);
+  _verticalSpeedSpin->setSuffix(QStringLiteral(" m/s"));
+
+  _taskHeadingSpin->setRange(0.0, 359.0);
+  _taskHeadingSpin->setDecimals(1);
+  _taskHeadingSpin->setSingleStep(5.0);
+  _taskHeadingSpin->setSuffix(QStringLiteral(" deg"));
+
+  _taskAltitudeSpin->setRange(0, 80000);
+  _taskAltitudeSpin->setSuffix(QStringLiteral(" m"));
+  _taskAltitudeSpin->setValue(1200);
+
+  _taskSpeedSpin->setRange(0.0, 1200.0);
+  _taskSpeedSpin->setDecimals(1);
+  _taskSpeedSpin->setSingleStep(10.0);
+  _taskSpeedSpin->setSuffix(QStringLiteral(" kts"));
+  _taskSpeedSpin->setValue(320.0);
+
   _nameEdit->setPlaceholderText(QStringLiteral("Entity Alpha"));
   _callsignEdit->setPlaceholderText(QStringLiteral("Eagle 1"));
+  _radarNameEdit->setPlaceholderText(QStringLiteral("Primary Radar"));
+  _addRadarCheck->setChecked(true);
 
   _forceIdentifierCombo->addItem(QStringLiteral("Friendly"), 1);
   _forceIdentifierCombo->addItem(QStringLiteral("Opposing"), 2);
   _forceIdentifierCombo->addItem(QStringLiteral("Neutral"), 3);
+
+  _dynamicsModeCombo->addItem(QStringLiteral("Kinematic"), QStringLiteral("kinematic"));
+#if defined(QTTEST_HAS_JSBSIM)
+  _dynamicsModeCombo->addItem(QStringLiteral("JSBSim"), QStringLiteral("jsbsim"));
+#endif
 
   this->populateDomainCombo();
   this->populateCategoryCombo();
@@ -101,13 +234,16 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   this->populateDisSubcategoryCombo();
   this->populateDisSpecificCombo();
   this->populateDisExtraCombo();
+  this->populateJsbsimModelCombo();
 
   QObject::connect(_domainCombo, &QComboBox::currentTextChanged, this, [this]() {
     this->populateCategoryCombo();
     this->populateModelCombo();
+    this->populateJsbsimModelCombo();
   });
   QObject::connect(_categoryCombo, &QComboBox::currentTextChanged, this, [this]() {
     this->populateModelCombo();
+    this->populateJsbsimModelCombo();
   });
   QObject::connect(_modelCombo, &QComboBox::currentTextChanged, this, [this]() {
     this->applyModelSelectionToDisFields();
@@ -151,6 +287,24 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   QObject::connect(_disExtraCombo, &QComboBox::currentIndexChanged, this, [this](int) {
     this->syncModelFromDisSelection();
   });
+  QObject::connect(_addRadarCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+    _radarNameEdit->setEnabled(enabled);
+    _radarRangeSpin->setEnabled(enabled);
+    _radarAzimuthSpin->setEnabled(enabled);
+    _radarMaxTracksSpin->setEnabled(enabled);
+  });
+  QObject::connect(_enableDynamicsCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+    Q_UNUSED(enabled)
+    this->syncDynamicsControls();
+  });
+  QObject::connect(_dynamicsModeCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+    this->syncDynamicsControls();
+  });
+  QObject::connect(_enableFlightTaskCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+    _taskHeadingSpin->setEnabled(enabled);
+    _taskAltitudeSpin->setEnabled(enabled);
+    _taskSpeedSpin->setEnabled(enabled);
+  });
 
   formLayout->addRow(QStringLiteral("Name"), _nameEdit);
   formLayout->addRow(QStringLiteral("forceIdentifier"), _forceIdentifierCombo);
@@ -165,6 +319,21 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   formLayout->addRow(QStringLiteral("DIS Specific"), _disSpecificCombo);
   formLayout->addRow(QStringLiteral("DIS Extra"), _disExtraCombo);
   formLayout->addRow(QStringLiteral("Callsign"), _callsignEdit);
+  formLayout->addRow(QStringLiteral("Heading"), _headingSpin);
+  formLayout->addRow(QStringLiteral("Dynamics"), _enableDynamicsCheck);
+  formLayout->addRow(QStringLiteral("Dynamics Mode"), _dynamicsModeCombo);
+  formLayout->addRow(QStringLiteral("JSBSim Aircraft"), _jsbsimModelCombo);
+  formLayout->addRow(QStringLiteral("Speed"), _speedSpin);
+  formLayout->addRow(QStringLiteral("Vertical Speed"), _verticalSpeedSpin);
+  formLayout->addRow(QStringLiteral("Initial Task"), _enableFlightTaskCheck);
+  formLayout->addRow(QStringLiteral("Initial Task Heading"), _taskHeadingSpin);
+  formLayout->addRow(QStringLiteral("Initial Task Altitude"), _taskAltitudeSpin);
+  formLayout->addRow(QStringLiteral("Initial Task Speed"), _taskSpeedSpin);
+  formLayout->addRow(QStringLiteral("Sensor"), _addRadarCheck);
+  formLayout->addRow(QStringLiteral("Radar Name"), _radarNameEdit);
+  formLayout->addRow(QStringLiteral("Radar Range"), _radarRangeSpin);
+  formLayout->addRow(QStringLiteral("Radar Azimuth"), _radarAzimuthSpin);
+  formLayout->addRow(QStringLiteral("Radar Max Tracks"), _radarMaxTracksSpin);
   formLayout->addRow(QStringLiteral("Latitude"), _latitudeSpin);
   formLayout->addRow(QStringLiteral("Longitude"), _longitudeSpin);
   formLayout->addRow(QStringLiteral("Ground Height"), _groundHeightSpin);
@@ -176,6 +345,14 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
     warningLabel->setWordWrap(true);
     layout->addWidget(warningLabel);
   }
+  _radarNameEdit->setEnabled(_addRadarCheck->isChecked());
+  _radarRangeSpin->setEnabled(_addRadarCheck->isChecked());
+  _radarAzimuthSpin->setEnabled(_addRadarCheck->isChecked());
+  _radarMaxTracksSpin->setEnabled(_addRadarCheck->isChecked());
+  this->syncDynamicsControls();
+  _taskHeadingSpin->setEnabled(_enableFlightTaskCheck->isChecked());
+  _taskAltitudeSpin->setEnabled(_enableFlightTaskCheck->isChecked());
+  _taskSpeedSpin->setEnabled(_enableFlightTaskCheck->isChecked());
   layout->addLayout(formLayout);
 
   auto* buttons = new QDialogButtonBox(
@@ -427,6 +604,33 @@ void AddEntityDialog::populateDisExtraCombo() {
   }
 }
 
+void AddEntityDialog::populateJsbsimModelCombo() {
+  QSignalBlocker blocker(_jsbsimModelCombo);
+  const QString previous = _jsbsimModelCombo->currentText();
+  _jsbsimModelCombo->clear();
+
+  const QStringList models = availableJsbsimAircraftModels();
+  for (const QString& model : models) {
+    _jsbsimModelCombo->addItem(model, model);
+  }
+
+  QString preferred = previous;
+  if (preferred.isEmpty()) {
+    preferred = suggestedJsbsimModel(
+        _domainCombo->currentText(),
+        _categoryCombo->currentText(),
+        _modelCombo->currentText());
+  }
+
+  int index = _jsbsimModelCombo->findData(preferred);
+  if (index < 0 && _jsbsimModelCombo->count() > 0) {
+    index = 0;
+  }
+  if (index >= 0) {
+    _jsbsimModelCombo->setCurrentIndex(index);
+  }
+}
+
 void AddEntityDialog::syncModelFromDisSelection() {
   const int kind = _disKindCombo->currentData().toInt();
   const int domainCode = _disDomainCombo->currentData().toInt();
@@ -532,6 +736,15 @@ void AddEntityDialog::applyModelSelectionToDisFields() {
   }
 }
 
+void AddEntityDialog::syncDynamicsControls() {
+  const bool enabled = _enableDynamicsCheck->isChecked();
+  const bool useJsbsim = enabled && _dynamicsModeCombo->currentData().toString() == QStringLiteral("jsbsim");
+  _dynamicsModeCombo->setEnabled(enabled);
+  _speedSpin->setEnabled(enabled);
+  _verticalSpeedSpin->setEnabled(enabled);
+  _jsbsimModelCombo->setEnabled(useJsbsim);
+}
+
 Entity AddEntityDialog::entity() const {
   Entity entity;
   entity.name = _nameEdit->text().trimmed();
@@ -544,6 +757,27 @@ Entity AddEntityDialog::entity() const {
                         : _categoryCombo->currentText().trimmed();
   entity.type = entity.category;
   entity.callsign = _callsignEdit->text().trimmed();
+  entity.headingDegrees = _headingSpin->value();
+  entity.flightDynamicsEnabled = _enableDynamicsCheck->isChecked();
+  entity.flightDynamicsMode = entity.flightDynamicsEnabled
+      ? _dynamicsModeCombo->currentData().toString()
+      : QStringLiteral("kinematic");
+  entity.jsbsimAircraftModel = entity.flightDynamicsEnabled &&
+          entity.flightDynamicsMode == QStringLiteral("jsbsim")
+      ? _jsbsimModelCombo->currentData().toString()
+      : QString();
+  entity.speedKnots = _speedSpin->value();
+  entity.verticalSpeedMetersPerSecond = _verticalSpeedSpin->value();
+  entity.currentTask.enabled = _enableFlightTaskCheck->isChecked();
+  entity.currentTask.taskType = entity.currentTask.enabled
+      ? QStringLiteral("FlyHeadingAltitudeSpeed")
+      : QString();
+  entity.currentTask.status = entity.currentTask.enabled
+      ? QStringLiteral("Queued")
+      : QStringLiteral("Idle");
+  entity.currentTask.targetHeadingDegrees = _taskHeadingSpin->value();
+  entity.currentTask.targetAltitudeMeters = _taskAltitudeSpin->value();
+  entity.currentTask.targetSpeedKnots = _taskSpeedSpin->value();
   entity.latitude = _latitudeSpin->value();
   entity.longitude = _longitudeSpin->value();
   entity.groundHeight = _groundHeightSpin->value();
@@ -572,6 +806,24 @@ Entity AddEntityDialog::entity() const {
   }
 
   entity.refreshEntityTypeCode();
+
+  if (_addRadarCheck->isChecked()) {
+    SensorDefinition radar;
+    radar.id = QStringLiteral("%1-radar-primary").arg(entity.name.trimmed().isEmpty()
+                                                          ? QStringLiteral("entity")
+                                                          : entity.name.trimmed());
+    radar.name = _radarNameEdit->text().trimmed().isEmpty()
+        ? QStringLiteral("Primary Radar")
+        : _radarNameEdit->text().trimmed();
+    radar.sensorType = QStringLiteral("radar");
+    radar.maxRangeMeters = _radarRangeSpin->value() * 1000.0;
+    radar.azimuthWidthDegrees = _radarAzimuthSpin->value();
+    radar.maxTracks = _radarMaxTracksSpin->value();
+    radar.canDetectAir = true;
+    radar.canDetectGround = true;
+    radar.canDetectSurface = true;
+    entity.sensors.push_back(radar);
+  }
 
   return entity;
 }
