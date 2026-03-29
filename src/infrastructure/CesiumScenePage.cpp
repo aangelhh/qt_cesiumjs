@@ -161,6 +161,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       let coordinatePickEnabled = false;
       let highlightedEntity = null;
       let overlaysVisible = true;
+      let selectedQtTrackName = null;
       const qtEntitiesByName = new Map();
       const qtOverlayEntitiesByName = new Map();
 
@@ -340,6 +341,91 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         if (bundle.area) {
           bundle.area.show = visible;
         }
+        if (bundle.label) {
+          bundle.label.show = visible && bundle.trackName === selectedQtTrackName;
+        }
+      }
+
+      function refreshSimulationLabelVisibility() {
+        for (const bundle of qtOverlayEntitiesByName.values()) {
+          setOverlayVisibility(bundle, overlaysVisible);
+        }
+      }
+
+      function qtLabelMarking(track) {
+        const callsign = String(track.callsign || '').trim();
+        if (callsign.length > 0) {
+          return callsign;
+        }
+        return String(track.name || 'Unknown');
+      }
+
+      function qtLabelType(track) {
+        const entityTypeCode = String(track.entityTypeCode || '').trim();
+        if (entityTypeCode.length > 0) {
+          return entityTypeCode;
+        }
+        return String(track.type || 'Unknown');
+      }
+
+      function qtLabelStableNumber(seedText, minimum, span) {
+        const text = String(seedText || '');
+        let hash = 0;
+        for (let i = 0; i < text.length; ++i) {
+          hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+        }
+        return minimum + Math.abs(hash % span);
+      }
+
+      function qtLabelSpeed(track) {
+        return qtLabelStableNumber(
+          String(track.name || '') + ':' + String(track.type || ''),
+          180,
+          420
+        ) + ' kts';
+      }
+
+      function qtLabelHeading(track) {
+        return qtLabelStableNumber(
+          String(track.name || '') + ':' + String(track.position || ''),
+          0,
+          360
+        ) + ' Deg';
+      }
+
+      function qtDecimalDegreesToDdm(value, positiveSuffix, negativeSuffix) {
+        const numeric = Number(value || 0);
+        const absolute = Math.abs(numeric);
+        const degrees = Math.floor(absolute);
+        const minutes = (absolute - degrees) * 60.0;
+        const suffix = numeric >= 0 ? positiveSuffix : negativeSuffix;
+        return degrees + ':' + minutes.toFixed(2).padStart(5, '0') + ' ' + suffix;
+      }
+
+      function qtLabelLocation(track) {
+        const latitude = qtDecimalDegreesToDdm(track.latitude, 'N', 'S');
+        const longitude = qtDecimalDegreesToDdm(track.longitude, 'E', 'W');
+        return latitude + ' ' + longitude + ' (DDM)';
+      }
+
+      function qtLabelAltitude(track) {
+        const altitudeMatch = String(track.altitude || '').match(/-?\d+(?:\.\d+)?/);
+        const meters = altitudeMatch ? Number(altitudeMatch[0]) : 0.0;
+        const feet = Math.round(meters * 3.28084);
+        return feet + ' ft MSL';
+      }
+
+      function buildSimulationObjectLabel(track) {
+        return [
+          'Marking : ' + qtLabelMarking(track),
+          'Type    : ' + qtLabelType(track),
+          'Force   : ' + String(track.team || 'Unknown'),
+          'Name    : ' + String(track.name || 'Unknown'),
+          'Speed   : ' + qtLabelSpeed(track),
+          'Heading : ' + qtLabelHeading(track),
+          'Location: ' + qtLabelLocation(track),
+          'Altitude: ' + qtLabelAltitude(track),
+        ].join('\n');
       }
 
       window.setQtOverlayVisibility = function(enabled) {
@@ -370,6 +456,10 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         if (highlightedEntity && highlightedEntity.billboard) {
           highlightedEntity.billboard.scale = 1.05;
         }
+        selectedQtTrackName = highlightedEntity && highlightedEntity.name
+          ? highlightedEntity.name
+          : null;
+        refreshSimulationLabelVisibility();
       }
 
       function entityNameFromPick(picked) {
@@ -401,7 +491,13 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const symbolSidc = buildQtSidc(track);
         const entityId = 'qt-track:' + track.name;
         let entity = qtEntitiesByName.get(track.name);
-        let overlayBundle = qtOverlayEntitiesByName.get(track.name) || { route: null, area: null };
+        let overlayBundle = qtOverlayEntitiesByName.get(track.name) || {
+          route: null,
+          area: null,
+          label: null,
+          trackName: track.name,
+        };
+        overlayBundle.trackName = track.name;
 
         const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude);
         if (!entity) {
@@ -528,6 +624,36 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           overlayBundle.area = null;
         }
 
+        const simulationLabelText = buildSimulationObjectLabel(track);
+        if (!overlayBundle.label) {
+          overlayBundle.label = viewer.entities.add({
+            id: entityId + ':label',
+            position,
+            label: {
+              text: simulationLabelText,
+              font: '15px monospace',
+              showBackground: true,
+              backgroundColor: new Cesium.Color(0.02, 0.08, 0.92, 0.72),
+              fillColor: Cesium.Color.WHITE,
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 1,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
+              verticalOrigin: Cesium.VerticalOrigin.TOP,
+              pixelOffset: new Cesium.Cartesian2(72, 56),
+              eyeOffset: new Cesium.Cartesian3(0.0, 0.0, -20.0),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            },
+            properties: {
+              qtTrackName: track.name,
+            },
+            show: overlaysVisible && track.name === selectedQtTrackName,
+          });
+        } else {
+          overlayBundle.label.position = position;
+          overlayBundle.label.label.text = simulationLabelText;
+        }
+
         setOverlayVisibility(overlayBundle, overlaysVisible);
         qtOverlayEntitiesByName.set(track.name, overlayBundle);
 
@@ -611,6 +737,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             const picked = viewer.scene.pick(click.position);
             const trackName = entityNameFromPick(picked);
             if (!trackName) {
+              viewer.selectedEntity = undefined;
+              applyHighlight(null);
+              reportStatus('Seleccion borrada en mapa.');
               return;
             }
 

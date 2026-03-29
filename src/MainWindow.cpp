@@ -53,6 +53,7 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("status"), status},
       {QStringLiteral("latitude"), latitude},
       {QStringLiteral("longitude"), longitude},
+      {QStringLiteral("callsign"), QString()},
       {QStringLiteral("domain"), QString()},
       {QStringLiteral("category"), QString()},
       {QStringLiteral("forceIdentifier"), 0},
@@ -100,6 +101,7 @@ QVariantMap makeTrackSummary(const Entity& entity) {
       entity.longitude);
   summary.insert(QStringLiteral("domain"), entity.domain);
   summary.insert(QStringLiteral("category"), entity.category);
+  summary.insert(QStringLiteral("callsign"), entity.callsign);
   summary.insert(QStringLiteral("forceIdentifier"), entity.forceIdentifier);
   summary.insert(QStringLiteral("entityKind"), entity.entityKind);
   summary.insert(QStringLiteral("entityDomain"), entity.entityDomain);
