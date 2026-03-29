@@ -17,12 +17,16 @@ qt_add_executable(qttest
     main.cpp
     src/AddEntityDialog.cpp
     src/AddEntityDialog.h
+    src/EntityDetailsDialog.cpp
+    src/EntityDetailsDialog.h
     src/infrastructure/CesiumScenePage.cpp
     src/infrastructure/CesiumScenePage.h
     src/MainWindow.cpp
     src/MainWindow.h
     src/MainWindow.ui
     src/infrastructure/MapBridge.h
+    src/infrastructure/DisEntityCatalog.cpp
+    src/infrastructure/DisEntityCatalog.h
     src/infrastructure/ModelCatalog.cpp
     src/infrastructure/ModelCatalog.h
     src/application/ScenarioState.cpp

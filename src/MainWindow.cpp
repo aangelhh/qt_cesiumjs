@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "AddEntityDialog.h"
+#include "EntityDetailsDialog.h"
 #include "application/ScenarioState.h"
 #include "domain/Entity.h"
 #include "infrastructure/CesiumScenePage.h"
@@ -11,7 +12,11 @@
 
 #include <QAction>
 #include <QFileInfo>
+#include <QColor>
 #include <QHeaderView>
+#include <QIcon>
+#include <QPainter>
+#include <QPixmap>
 #include <QItemSelectionModel>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -58,6 +63,7 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("entitySubcategory"), 0},
       {QStringLiteral("entitySpecific"), 0},
       {QStringLiteral("entityExtra"), 0},
+      {QStringLiteral("entityTypeCode"), QString()},
       {QStringLiteral("modelName"), QString()},
       {QStringLiteral("modelUri"), QString()},
   };
@@ -102,6 +108,7 @@ QVariantMap makeTrackSummary(const Entity& entity) {
   summary.insert(QStringLiteral("entitySubcategory"), entity.entitySubcategory);
   summary.insert(QStringLiteral("entitySpecific"), entity.entitySpecific);
   summary.insert(QStringLiteral("entityExtra"), entity.entityExtra);
+  summary.insert(QStringLiteral("entityTypeCode"), entity.entityTypeCode);
   summary.insert(QStringLiteral("modelName"), entity.modelName);
   summary.insert(QStringLiteral("modelUri"), entity.modelUri);
   return summary;
@@ -114,6 +121,67 @@ void setTrackData(QStandardItem* item, const QVariantMap& summary) {
 QJsonObject mapToJsonObject(const QVariantMap& map) {
   return QJsonObject::fromVariantMap(map);
 }
+QColor forceColorFromLabel(const QString& team) {
+  const QString normalized = team.trimmed().toLower();
+  if (normalized.contains(QStringLiteral("opposing"))) {
+    return QColor(QStringLiteral("#ff9b59"));
+  }
+  if (normalized.contains(QStringLiteral("neutral"))) {
+    return QColor(QStringLiteral("#b7c0c9"));
+  }
+  return QColor(QStringLiteral("#55d3ff"));
+}
+
+QString categoryGlyph(const QString& category) {
+  const QString normalized = category.trimmed().toLower();
+  if (normalized == QStringLiteral("fighter")) {
+    return QStringLiteral("F");
+  }
+  if (normalized == QStringLiteral("bomber")) {
+    return QStringLiteral("B");
+  }
+  if (normalized == QStringLiteral("helicopter")) {
+    return QStringLiteral("H");
+  }
+  if (normalized == QStringLiteral("transport")) {
+    return QStringLiteral("T");
+  }
+  if (normalized == QStringLiteral("other")) {
+    return QStringLiteral("O");
+  }
+  if (normalized == QStringLiteral("side")) {
+    return QStringLiteral("S");
+  }
+  return QStringLiteral("E");
+}
+
+QIcon makeTrackIcon(const QString& team, const QString& category, bool isGroup) {
+  QPixmap pixmap(18, 18);
+  pixmap.fill(Qt::transparent);
+
+  QPainter painter(&pixmap);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+
+  const QColor accent = forceColorFromLabel(team);
+  const QRect outerRect(1, 1, 16, 16);
+  const QRect innerRect(3, 3, 12, 12);
+
+  QPen pen(accent);
+  pen.setWidth(isGroup ? 2 : 1);
+  painter.setPen(pen);
+  painter.setBrush(QColor(7, 17, 29, isGroup ? 220 : 245));
+  painter.drawRoundedRect(outerRect, 4, 4);
+
+  QFont font = painter.font();
+  font.setBold(true);
+  font.setPixelSize(isGroup ? 10 : 9);
+  painter.setFont(font);
+  painter.setPen(accent);
+  painter.drawText(innerRect, Qt::AlignCenter, categoryGlyph(category));
+
+  return QIcon(pixmap);
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -125,6 +193,7 @@ MainWindow::MainWindow(QWidget* parent)
       _objectsModel(new QStandardItemModel(this)),
       _friendlyRootItem(nullptr),
       _opposingRootItem(nullptr),
+      _neutralRootItem(nullptr),
       _entityDialog(nullptr),
       _applyingMapSelection(false)
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
@@ -170,6 +239,12 @@ MainWindow::MainWindow(QWidget* parent)
       &MapBridge::selectedTrack,
       this,
       &MainWindow::handleMapTrackSelection);
+
+  QObject::connect(
+      this->_ui->objectsTreeView,
+      &QTreeView::doubleClicked,
+      this,
+      [this](const QModelIndex&) { this->openSelectedEntityDetails(); });
 
   const QString accessToken = []() {
     const QString configured =
@@ -326,7 +401,11 @@ void MainWindow::initializeModels() {
   this->_objectsModel->setHorizontalHeaderLabels({QStringLiteral("Name")});
 
   this->_friendlyRootItem = new QStandardItem(QStringLiteral("Friendly"));
+  this->_friendlyRootItem->setIcon(makeTrackIcon(QStringLiteral("Friendly"), QStringLiteral("Side"), true));
   this->_opposingRootItem = new QStandardItem(QStringLiteral("Opposing"));
+  this->_opposingRootItem->setIcon(makeTrackIcon(QStringLiteral("Opposing"), QStringLiteral("Side"), true));
+  this->_neutralRootItem = new QStandardItem(QStringLiteral("Neutral"));
+  this->_neutralRootItem->setIcon(makeTrackIcon(QStringLiteral("Neutral"), QStringLiteral("Side"), true));
   setTrackData(
       this->_friendlyRootItem,
       makeTrackSummary(
@@ -349,50 +428,99 @@ void MainWindow::initializeModels() {
           QStringLiteral("1 track"),
           0.0,
           0.0));
-
-  auto* trackAlpha = new QStandardItem(QStringLiteral("F-18 Alpha"));
   setTrackData(
-      trackAlpha,
+      this->_neutralRootItem,
       makeTrackSummary(
-          QStringLiteral("F-18 Alpha"),
+          QStringLiteral("Neutral"),
+          QStringLiteral("Side"),
+          QStringLiteral("Neutral"),
+          QStringLiteral("-"),
+          QStringLiteral("Multiple tracks"),
+          QStringLiteral("0 tracks"),
+          0.0,
+          0.0));
+
+  const QVariantMap fighterSummary = makeTrackSummary(
+      QStringLiteral("F-18 Alpha"),
+      QStringLiteral("Fighter"),
+      QStringLiteral("Friendly"),
+      QStringLiteral("18000 m"),
+      QStringLiteral("55.1032, -3.2201"),
+      QStringLiteral("On station"),
+      55.1032,
+      -3.2201);
+  QStandardItem* friendlyFighterGroup = this->ensureGroupItem(
+      this->_friendlyRootItem,
+      QStringLiteral("Fighter"),
+      makeTrackSummary(
           QStringLiteral("Fighter"),
+          QStringLiteral("Category"),
           QStringLiteral("Friendly"),
-          QStringLiteral("18000 m"),
-          QStringLiteral("55.1032, -3.2201"),
-          QStringLiteral("On station"),
-          55.1032,
-          -3.2201));
-  auto* aewNorth = new QStandardItem(QStringLiteral("AEW North"));
-  setTrackData(
-      aewNorth,
-      makeTrackSummary(
-          QStringLiteral("AEW North"),
-          QStringLiteral("AEW"),
-          QStringLiteral("Friendly"),
-          QStringLiteral("9500 m"),
-          QStringLiteral("55.6200, -4.0810"),
-          QStringLiteral("Orbiting"),
-          55.6200,
-          -4.0810));
-  auto* ssnOne = new QStandardItem(QStringLiteral("SSN 1"));
-  setTrackData(
-      ssnOne,
-      makeTrackSummary(
-          QStringLiteral("SSN 1"),
-          QStringLiteral("Submarine"),
-          QStringLiteral("Opposing"),
-          QStringLiteral("-20 m"),
-          QStringLiteral("54.5000, -3.2000"),
-          QStringLiteral("Idle"),
-          54.5000,
-          -3.2000));
+          QStringLiteral("-"),
+          QStringLiteral("Multiple tracks"),
+          QStringLiteral("Category"),
+          0.0,
+          0.0));
+  auto* trackAlpha = new QStandardItem(QStringLiteral("F-18 Alpha"));
+  trackAlpha->setIcon(makeTrackIcon(QStringLiteral("Friendly"), QStringLiteral("Fighter"), false));
+  setTrackData(trackAlpha, fighterSummary);
+  friendlyFighterGroup->appendRow(trackAlpha);
 
-  this->_friendlyRootItem->appendRow(trackAlpha);
-  this->_friendlyRootItem->appendRow(aewNorth);
-  this->_opposingRootItem->appendRow(ssnOne);
+  const QVariantMap aewSummary = makeTrackSummary(
+      QStringLiteral("AEW North"),
+      QStringLiteral("AEW"),
+      QStringLiteral("Friendly"),
+      QStringLiteral("9500 m"),
+      QStringLiteral("55.6200, -4.0810"),
+      QStringLiteral("Orbiting"),
+      55.6200,
+      -4.0810);
+  QStandardItem* friendlyOtherGroup = this->ensureGroupItem(
+      this->_friendlyRootItem,
+      QStringLiteral("Other"),
+      makeTrackSummary(
+          QStringLiteral("Other"),
+          QStringLiteral("Category"),
+          QStringLiteral("Friendly"),
+          QStringLiteral("-"),
+          QStringLiteral("Multiple tracks"),
+          QStringLiteral("Category"),
+          0.0,
+          0.0));
+  auto* aewNorth = new QStandardItem(QStringLiteral("AEW North"));
+  aewNorth->setIcon(makeTrackIcon(QStringLiteral("Friendly"), QStringLiteral("Other"), false));
+  setTrackData(aewNorth, aewSummary);
+  friendlyOtherGroup->appendRow(aewNorth);
+
+  const QVariantMap submarineSummary = makeTrackSummary(
+      QStringLiteral("SSN 1"),
+      QStringLiteral("Submarine"),
+      QStringLiteral("Opposing"),
+      QStringLiteral("-20 m"),
+      QStringLiteral("54.5000, -3.2000"),
+      QStringLiteral("Idle"),
+      54.5000,
+      -3.2000);
+  QStandardItem* opposingOtherGroup = this->ensureGroupItem(
+      this->_opposingRootItem,
+      QStringLiteral("Other"),
+      makeTrackSummary(
+          QStringLiteral("Other"),
+          QStringLiteral("Category"),
+          QStringLiteral("Opposing"),
+          QStringLiteral("-"),
+          QStringLiteral("Multiple tracks"),
+          QStringLiteral("Category"),
+          0.0,
+          0.0));
+  auto* ssnOne = new QStandardItem(QStringLiteral("SSN 1"));
+  ssnOne->setIcon(makeTrackIcon(QStringLiteral("Opposing"), QStringLiteral("Other"), false));
+  setTrackData(ssnOne, submarineSummary);
+  opposingOtherGroup->appendRow(ssnOne);
 
   this->_objectsModel->appendRow(this->_friendlyRootItem);
   this->_objectsModel->appendRow(this->_opposingRootItem);
+  this->_objectsModel->appendRow(this->_neutralRootItem);
 
   this->_ui->objectsTreeView->setModel(this->_objectsModel);
   this->_ui->objectsTreeView->expandAll();
@@ -410,25 +538,84 @@ void MainWindow::initializeModels() {
   this->appendLogMessage(QStringLiteral("Cesium map connected."));
   this->appendLogMessage(QStringLiteral("Awaiting commands..."));
 
-  const QModelIndex initialIndex = this->_friendlyRootItem->child(0)->index();
+  const QModelIndex initialIndex = trackAlpha->index();
   this->_ui->objectsTreeView->setCurrentIndex(initialIndex);
   this->setSelectedTrackDetails(initialIndex.data(kTrackSummaryRole).toMap());
 }
 
 void MainWindow::appendEntityToUi(const Entity& entity) {
-  if (!this->_friendlyRootItem) {
+  QStandardItem* rootItem = this->rootItemForForceIdentifier(entity.forceIdentifier);
+  if (!rootItem) {
     return;
   }
 
-  auto* item = new QStandardItem(entity.name);
+  QString category = entity.category.trimmed();
+  if (category != QStringLiteral("Fighter") &&
+      category != QStringLiteral("Bomber") &&
+      category != QStringLiteral("Helicopter") &&
+      category != QStringLiteral("Transport")) {
+    category = QStringLiteral("Other");
+  }
+
   const QVariantMap summary = makeTrackSummary(entity);
+  QStandardItem* categoryItem = this->ensureGroupItem(
+      rootItem,
+      category,
+      makeTrackSummary(
+          category,
+          QStringLiteral("Category"),
+          forceIdentifierLabel(entity.forceIdentifier),
+          QStringLiteral("-"),
+          QStringLiteral("Multiple tracks"),
+          QStringLiteral("Category"),
+          0.0,
+          0.0));
+
+  auto* item = new QStandardItem(entity.name);
+  item->setIcon(makeTrackIcon(forceIdentifierLabel(entity.forceIdentifier), category, false));
   setTrackData(item, summary);
-  this->_friendlyRootItem->appendRow(item);
-  this->_ui->objectsTreeView->expand(this->_friendlyRootItem->index());
+  categoryItem->appendRow(item);
+  this->_ui->objectsTreeView->expand(rootItem->index());
+  this->_ui->objectsTreeView->expand(categoryItem->index());
   this->_ui->objectsTreeView->setCurrentIndex(item->index());
 
   this->appendLogMessage(EntityTextFormatter::listLabel(entity));
   this->sendTrackToMap(summary, true);
+}
+
+QStandardItem* MainWindow::rootItemForForceIdentifier(int forceIdentifier) const {
+  switch (forceIdentifier) {
+    case 1:
+      return this->_friendlyRootItem;
+    case 2:
+      return this->_opposingRootItem;
+    case 3:
+      return this->_neutralRootItem;
+    default:
+      return this->_neutralRootItem ? this->_neutralRootItem : this->_friendlyRootItem;
+  }
+}
+
+QStandardItem* MainWindow::ensureGroupItem(
+    QStandardItem* parent,
+    const QString& label,
+    const QVariantMap& summary) {
+  if (!parent) {
+    return nullptr;
+  }
+
+  for (int row = 0; row < parent->rowCount(); ++row) {
+    QStandardItem* child = parent->child(row);
+    if (child && child->text() == label) {
+      return child;
+    }
+  }
+
+  auto* item = new QStandardItem(label);
+  item->setIcon(makeTrackIcon(summary.value(QStringLiteral("team")).toString(), label, true));
+  setTrackData(item, summary);
+  parent->appendRow(item);
+  return item;
 }
 
 void MainWindow::openAddEntityDialog() {
@@ -504,6 +691,23 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
       QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
           .arg(latitude, 0, 'f', 5)
           .arg(longitude, 0, 'f', 5));
+}
+
+void MainWindow::openSelectedEntityDetails() {
+  const QModelIndex currentIndex = this->_ui->objectsTreeView->currentIndex();
+  if (!currentIndex.isValid()) {
+    return;
+  }
+
+  const QVariantMap summary = currentIndex.data(kTrackSummaryRole).toMap();
+  if (summary.isEmpty()) {
+    return;
+  }
+
+  auto* dialog = new EntityDetailsDialog(summary, this);
+  dialog->show();
+  dialog->raise();
+  dialog->activateWindow();
 }
 
 void MainWindow::reportMapStatus(const QString& message) {
@@ -596,12 +800,16 @@ void MainWindow::syncTracksToMap() {
 
   syncBranch(this->_friendlyRootItem);
   syncBranch(this->_opposingRootItem);
+  syncBranch(this->_neutralRootItem);
 }
 
 void MainWindow::selectObjectByName(const QString& trackName, bool notifyMap) {
   QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, trackName);
   if (!item) {
     item = this->findTrackItemByName(this->_opposingRootItem, trackName);
+  }
+  if (!item) {
+    item = this->findTrackItemByName(this->_neutralRootItem, trackName);
   }
   if (!item) {
     return;

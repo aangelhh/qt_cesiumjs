@@ -34,6 +34,7 @@ private slots:
   void updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex& previous);
   void handleMapTrackSelection(const QString& trackName);
   void toggleTacticalOverlays(bool enabled);
+  void openSelectedEntityDetails();
 
 private:
   void initializeModels();

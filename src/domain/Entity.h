@@ -3,10 +3,40 @@
 #include <QString>
 
 struct Entity {
+  static QString buildEntityTypeCode(
+      int kind,
+      int domainCode,
+      int country,
+      int categoryCode,
+      int subcategory,
+      int specific,
+      int extra) {
+    return QStringLiteral("%1:%2:%3:%4:%5:%6:%7")
+        .arg(kind)
+        .arg(domainCode)
+        .arg(country)
+        .arg(categoryCode)
+        .arg(subcategory)
+        .arg(specific)
+        .arg(extra);
+  }
+
+  void refreshEntityTypeCode() {
+    entityTypeCode = buildEntityTypeCode(
+        entityKind,
+        entityDomain,
+        entityCountry,
+        entityCategory,
+        entitySubcategory,
+        entitySpecific,
+        entityExtra);
+  }
+
   QString name;
   QString type = QStringLiteral("Entity");
   QString domain = QStringLiteral("Air");
   QString category = QStringLiteral("Fighter");
+  QString entityTypeCode;
   QString callsign;
   int forceIdentifier = 1;
   double latitude = 0.0;
