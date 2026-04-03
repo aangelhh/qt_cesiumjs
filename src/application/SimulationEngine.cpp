@@ -1,12 +1,27 @@
 #include "SimulationEngine.h"
+#include "FlightDynamicsEngine.h"
 #include <chrono>
 #include <thread>
+#include <QVariantMap>
 
 namespace application {
 
 SimulationEngine::SimulationEngine(QObject* parent)
     : QThread(parent)
 {
+    // Initialize a test entity for the MVP
+    domain::Entity testEntity;
+    testEntity.id = 1;
+    testEntity.name = "TestAircraft";
+    testEntity.latitude = 40.0;
+    testEntity.longitude = -3.0;
+    testEntity.altitude = 5000.0;
+    testEntity.headingDegrees = 45.0;
+    testEntity.speedKnots = 250.0;
+    testEntity.flightDynamicsEnabled = true;
+    testEntity.flightDynamicsMode = "jsbsim"; // Trigger JSBSim fallback logic
+    
+    m_entities.append(testEntity);
 }
 
 SimulationEngine::~SimulationEngine()
@@ -64,10 +79,28 @@ void SimulationEngine::run()
 
         // Phase 2: AI / Sensor logic (TODO)
         
-        // Phase 3: Task & Physics Evaluation (TODO)
+        // Phase 3: Task & Physics Evaluation
+        // Run JSBSim step via FlightDynamicsEngine
+        FlightDynamicsEngine::advanceEntities(m_entities, actualDeltaTime.count());
 
         // Phase 4: Event emission
         emit tickComplete(actualDeltaTime.count());
+        
+        // MVP: Broadcast state of our test entity
+        if (!m_entities.isEmpty()) {
+            const auto& e = m_entities.first();
+            QVariantMap trackData;
+            trackData["id"] = e.id;
+            trackData["name"] = e.name;
+            trackData["latitude"] = e.latitude;
+            trackData["longitude"] = e.longitude;
+            trackData["altitude"] = e.altitude;
+            trackData["headingDegrees"] = e.headingDegrees;
+            trackData["speedKnots"] = e.speedKnots;
+            trackData["team"] = "blue"; // Friendly
+            
+            emit telemetryUpdated(trackData);
+        }
 
         // Sleep to maintain the target 60Hz tick rate
         auto workEndTime = steady_clock::now();

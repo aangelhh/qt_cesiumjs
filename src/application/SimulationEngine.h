@@ -25,6 +25,9 @@ signals:
     // Emitted at the end of each tick (60Hz)
     void tickComplete(double deltaTimeSecs);
 
+    // Emitted to the MapBridge for UI updates
+    void telemetryUpdated(const QVariantMap& trackData);
+
 protected:
     void run() override;
 
