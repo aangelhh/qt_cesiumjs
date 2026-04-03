@@ -56,7 +56,20 @@ void SimulationEngine::drainCommands()
         auto cmd = std::move(localQueue.front());
         localQueue.pop();
 
-        // TODO: Execute the command on the domain state
+        // MVP: Safely cast to CmdAssignMoveTask and apply to test entity
+        if (auto* moveCmd = dynamic_cast<CmdAssignMoveTask*>(cmd.get())) {
+            if (!m_entities.isEmpty() && m_entities.first().id == moveCmd->targetEntityId) {
+                // Initialize the legacy EntityTask struct to satisfy FlightDynamicsEngine backward compatibility
+                domain::Entity& e = m_entities.first();
+                e.currentTask.enabled = true;
+                e.currentTask.taskType = "MoveToLocation";
+                e.currentTask.targetLatitude = moveCmd->targetLat;
+                e.currentTask.targetLongitude = moveCmd->targetLon;
+                e.currentTask.targetAltitudeMeters = static_cast<int>(moveCmd->targetAlt);
+                e.currentTask.targetSpeedKnots = moveCmd->targetSpeed;
+                e.currentTask.status = "Running";
+            }
+        }
     }
 }
 

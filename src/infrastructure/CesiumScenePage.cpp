@@ -816,6 +816,32 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
 
           const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
           handler.setInputAction(function(click) {
+            // Handle RIGHT CLICK for moving to location
+            let cartesian;
+            if (viewer.scene.pickPositionSupported) {
+              cartesian = viewer.scene.pickPosition(click.position);
+            }
+            if (!Cesium.defined(cartesian)) {
+              cartesian = viewer.camera.pickEllipsoid(
+                click.position,
+                viewer.scene.globe.ellipsoid
+              );
+            }
+            
+            if (Cesium.defined(cartesian)) {
+                const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+                const longitude = Cesium.Math.toDegrees(cartographic.longitude);
+                const latitude = Cesium.Math.toDegrees(cartographic.latitude);
+                const height = cartographic.height || 0.0;
+                
+                if (qtBridge && qtBridge.reportPickedCoordinate) {
+                  qtBridge.reportPickedCoordinate(longitude, latitude, height);
+                  reportStatus('Orden de movimiento a: ' + latitude.toFixed(4) + ', ' + longitude.toFixed(4));
+                }
+            }
+          }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+
+          handler.setInputAction(function(click) {
             if (coordinatePickEnabled) {
               let cartesian;
               if (viewer.scene.pickPositionSupported) {
