@@ -26,4 +26,7 @@ signals:
   void pickedCoordinate(double longitude, double latitude, double height);
   void mapStatus(const QString& message);
   void selectedTrack(const QString& trackName);
+  
+  // Bridge C++ to JS via QWebChannel
+  void telemetryUpdated(const QVariantMap& track);
 };

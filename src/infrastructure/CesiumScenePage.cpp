@@ -785,6 +785,12 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         try {
           new QWebChannel(qt.webChannelTransport, function(channel) {
             qtBridge = channel.objects.qtBridge;
+            
+            if (qtBridge.telemetryUpdated) {
+              qtBridge.telemetryUpdated.connect(function(track) {
+                window.addOrUpdateQtTrack(track, false);
+              });
+            }
           });
 
           Cesium.Ion.defaultAccessToken = '%1';
