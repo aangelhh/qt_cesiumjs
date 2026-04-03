@@ -43,6 +43,9 @@ qt_add_executable(qttest
     src/infrastructure/ModelCatalog.h
     src/application/ScenarioState.cpp
     src/application/ScenarioState.h
+    src/application/Command.h
+    src/application/SimulationEngine.cpp
+    src/application/SimulationEngine.h
     src/application/FlightDynamicsEngine.cpp
     src/application/FlightDynamicsEngine.h
     src/application/SensorEngine.cpp
