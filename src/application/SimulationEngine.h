@@ -4,7 +4,9 @@
 #include <mutex>
 #include <queue>
 #include <memory>
+#include <QVariantMap>
 #include "Command.h"
+#include "ScenarioState.h"
 
 namespace application {
 
@@ -34,6 +36,9 @@ protected:
 private:
     std::mutex m_queueMutex;
     std::queue<std::unique_ptr<ICommand>> m_commandQueue;
+    
+    // The registry and state owner for all entities
+    ScenarioState m_scenario;
 
     // Process all pending commands
     void drainCommands();

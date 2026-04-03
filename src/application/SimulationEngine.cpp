@@ -9,19 +9,13 @@ namespace application {
 SimulationEngine::SimulationEngine(QObject* parent)
     : QThread(parent)
 {
-    // Initialize a test entity for the MVP
-    domain::Entity testEntity;
-    testEntity.id = 1;
-    testEntity.name = "TestAircraft";
-    testEntity.latitude = 40.0;
-    testEntity.longitude = -3.0;
-    testEntity.altitude = 5000.0;
-    testEntity.headingDegrees = 45.0;
-    testEntity.speedKnots = 250.0;
-    testEntity.flightDynamicsEnabled = true;
-    testEntity.flightDynamicsMode = "jsbsim"; // Trigger JSBSim fallback logic
+    // Clear out any stale JSON state to start fresh
+    m_scenario.stopMission();
     
-    m_entities.append(testEntity);
+    // For MVP demonstration, push an initial Create command instead of hardcoding
+    enqueueCommand(std::make_unique<CmdCreateEntity>(
+        1, "TestAircraft", 40.0, -3.0, 5000.0, 45.0, 250.0, "Fighter"
+    ));
 }
 
 SimulationEngine::~SimulationEngine()
@@ -55,19 +49,36 @@ void SimulationEngine::drainCommands()
     while (!localQueue.empty()) {
         auto cmd = std::move(localQueue.front());
         localQueue.pop();
-
-        // MVP: Safely cast to CmdAssignMoveTask and apply to test entity
-        if (auto* moveCmd = dynamic_cast<CmdAssignMoveTask*>(cmd.get())) {
-            if (!m_entities.isEmpty() && m_entities.first().id == moveCmd->targetEntityId) {
-                // Initialize the legacy EntityTask struct to satisfy FlightDynamicsEngine backward compatibility
-                domain::Entity& e = m_entities.first();
-                e.currentTask.enabled = true;
-                e.currentTask.taskType = "MoveToLocation";
-                e.currentTask.targetLatitude = moveCmd->targetLat;
-                e.currentTask.targetLongitude = moveCmd->targetLon;
-                e.currentTask.targetAltitudeMeters = static_cast<int>(moveCmd->targetAlt);
-                e.currentTask.targetSpeedKnots = moveCmd->targetSpeed;
-                e.currentTask.status = "Running";
+        
+        if (auto* createCmd = dynamic_cast<CmdCreateEntity*>(cmd.get())) {
+            domain::Entity newEntity;
+            newEntity.id = createCmd->id;
+            newEntity.name = createCmd->name;
+            newEntity.latitude = createCmd->lat;
+            newEntity.longitude = createCmd->lon;
+            newEntity.altitude = static_cast<int>(createCmd->alt);
+            newEntity.headingDegrees = createCmd->heading;
+            newEntity.speedKnots = createCmd->speed;
+            newEntity.type = createCmd->type;
+            newEntity.flightDynamicsEnabled = true;
+            newEntity.flightDynamicsMode = "jsbsim";
+            
+            m_scenario.addEntity(newEntity);
+        }
+        else if (auto* moveCmd = dynamic_cast<CmdAssignMoveTask*>(cmd.get())) {
+            EntityTask task;
+            task.enabled = true;
+            task.taskType = "MoveToLocation";
+            task.targetLatitude = moveCmd->targetLat;
+            task.targetLongitude = moveCmd->targetLon;
+            task.targetAltitudeMeters = static_cast<int>(moveCmd->targetAlt);
+            task.targetSpeedKnots = moveCmd->targetSpeed;
+            task.status = "Running";
+            
+            // For MVP, if targetEntityId is 1, just find TestAircraft
+            QString targetName = (moveCmd->targetEntityId == 1) ? "TestAircraft" : "";
+            if (!targetName.isEmpty()) {
+                m_scenario.assignTask(targetName, task);
             }
         }
     }
@@ -93,15 +104,14 @@ void SimulationEngine::run()
         // Phase 2: AI / Sensor logic (TODO)
         
         // Phase 3: Task & Physics Evaluation
-        // Run JSBSim step via FlightDynamicsEngine
-        FlightDynamicsEngine::advanceEntities(m_entities, actualDeltaTime.count());
+        // Run JSBSim step via ScenarioState wrapper
+        m_scenario.advanceSimulation(actualDeltaTime.count());
 
         // Phase 4: Event emission
         emit tickComplete(actualDeltaTime.count());
         
-        // MVP: Broadcast state of our test entity
-        if (!m_entities.isEmpty()) {
-            const auto& e = m_entities.first();
+        // MVP: Broadcast state of all entities
+        for (const auto& e : m_scenario.entities()) {
             QVariantMap trackData;
             trackData["id"] = e.id;
             trackData["name"] = e.name;
