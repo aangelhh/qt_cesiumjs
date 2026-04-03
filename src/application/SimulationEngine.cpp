@@ -1,5 +1,6 @@
 #include "SimulationEngine.h"
 #include "FlightDynamicsEngine.h"
+#include "EventBus.h"
 #include <chrono>
 #include <thread>
 #include <QVariantMap>
@@ -110,19 +111,11 @@ void SimulationEngine::run()
         // Phase 4: Event emission
         emit tickComplete(actualDeltaTime.count());
         
-        // MVP: Broadcast state of all entities
+        // MVP: Broadcast state of all entities via EventBus instead of direct Qt signals
         for (const auto& e : m_scenario.entities()) {
-            QVariantMap trackData;
-            trackData["id"] = e.id;
-            trackData["name"] = e.name;
-            trackData["latitude"] = e.latitude;
-            trackData["longitude"] = e.longitude;
-            trackData["altitude"] = e.altitude;
-            trackData["headingDegrees"] = e.headingDegrees;
-            trackData["speedKnots"] = e.speedKnots;
-            trackData["team"] = "blue"; // Friendly
-            
-            emit telemetryUpdated(trackData);
+            EventBus::instance().publish(EventKinematicsUpdated(
+                e.id, e.name, e.latitude, e.longitude, static_cast<double>(e.altitude), e.headingDegrees, e.speedKnots, e.team
+            ));
         }
 
         // Sleep to maintain the target 60Hz tick rate
