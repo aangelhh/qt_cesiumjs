@@ -52,6 +52,7 @@ qt_add_executable(qttest
     src/application/SensorEngine.h
     src/domain/Entity.h
     src/domain/Sensor.h
+    src/domain/Task.cpp
     src/domain/Task.h
     src/presentation/EntityTextFormatter.cpp
     src/presentation/EntityTextFormatter.h
