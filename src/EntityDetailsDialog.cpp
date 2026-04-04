@@ -248,6 +248,9 @@ void EntityDetailsDialog::populateStateData() {
                                                     .arg(this->value("taskTargetLatitude", QStringLiteral("0")))
                                                     .arg(this->value("taskTargetLongitude", QStringLiteral("0")))});
   rows.append({QStringLiteral("Task Target Entity"), this->value("taskTargetEntityName", QStringLiteral("-"))});
+  rows.append({QStringLiteral("Task Target Waypoint"), this->value("taskTargetWaypointName", QStringLiteral("-"))});
+  rows.append({QStringLiteral("Task Target Route"), this->value("taskTargetRouteName", QStringLiteral("-"))});
+  rows.append({QStringLiteral("Task Target Area"), this->value("taskTargetAreaName", QStringLiteral("-"))});
   rows.append({QStringLiteral("Sensors"), this->value("sensorCount", QStringLiteral("0"))});
   rows.append({QStringLiteral("Sensor Contacts"), this->value("contactCount", QStringLiteral("0"))});
   rows.append({QStringLiteral("Entity Type Code"), entityTypeCode});

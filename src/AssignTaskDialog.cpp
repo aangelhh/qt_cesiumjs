@@ -12,6 +12,9 @@
 AssignTaskDialog::AssignTaskDialog(
     const QString& entityName,
     const QStringList& availableTargets,
+    const QStringList& availableWaypoints,
+    const QStringList& availableRoutes,
+    const QStringList& availableAreas,
     const EntityTask& currentTask,
     const QString& initialTaskType,
     QWidget* parent)
@@ -22,7 +25,10 @@ AssignTaskDialog::AssignTaskDialog(
       _speedSpin(new QDoubleSpinBox(this)),
       _latitudeSpin(new QDoubleSpinBox(this)),
       _longitudeSpin(new QDoubleSpinBox(this)),
-      _followTargetCombo(new QComboBox(this)) {
+      _followTargetCombo(new QComboBox(this)),
+      _waypointCombo(new QComboBox(this)),
+      _routeCombo(new QComboBox(this)),
+      _areaCombo(new QComboBox(this)) {
   this->setWindowTitle(QStringLiteral("Assign Task"));
 
   auto* layout = new QVBoxLayout(this);
@@ -34,6 +40,10 @@ AssignTaskDialog::AssignTaskDialog(
 
   _taskTypeCombo->addItem(QStringLiteral("Fly Heading / Altitude / Speed"), QStringLiteral("FlyHeadingAltitudeSpeed"));
   _taskTypeCombo->addItem(QStringLiteral("Move To Location"), QStringLiteral("MoveToLocation"));
+  _taskTypeCombo->addItem(QStringLiteral("Move To Waypoint"), QStringLiteral("MoveToWaypoint"));
+  _taskTypeCombo->addItem(QStringLiteral("Move Along Route"), QStringLiteral("MoveAlongRoute"));
+  _taskTypeCombo->addItem(QStringLiteral("Patrol Area"), QStringLiteral("PatrolArea"));
+  _taskTypeCombo->addItem(QStringLiteral("Orbit Area"), QStringLiteral("OrbitArea"));
   _taskTypeCombo->addItem(QStringLiteral("Follow Entity"), QStringLiteral("FollowEntity"));
 
   _headingSpin->setRange(0.0, 359.0);
@@ -61,6 +71,9 @@ AssignTaskDialog::AssignTaskDialog(
   _longitudeSpin->setSuffix(QStringLiteral(" deg"));
 
   _followTargetCombo->addItems(availableTargets);
+  _waypointCombo->addItems(availableWaypoints);
+  _routeCombo->addItems(availableRoutes);
+  _areaCombo->addItems(availableAreas);
 
   auto* formLayout = new QFormLayout();
   formLayout->addRow(QStringLiteral("Task"), _taskTypeCombo);
@@ -69,6 +82,9 @@ AssignTaskDialog::AssignTaskDialog(
   formLayout->addRow(QStringLiteral("Latitude"), _latitudeSpin);
   formLayout->addRow(QStringLiteral("Longitude"), _longitudeSpin);
   formLayout->addRow(QStringLiteral("Altitude"), _altitudeSpin);
+  formLayout->addRow(QStringLiteral("Target Waypoint"), _waypointCombo);
+  formLayout->addRow(QStringLiteral("Target Route"), _routeCombo);
+  formLayout->addRow(QStringLiteral("Target Area"), _areaCombo);
   formLayout->addRow(QStringLiteral("Target Entity"), _followTargetCombo);
   layout->addLayout(formLayout);
 
@@ -86,6 +102,18 @@ AssignTaskDialog::AssignTaskDialog(
   const int followIndex = _followTargetCombo->findText(currentTask.targetEntityName);
   if (followIndex >= 0) {
     _followTargetCombo->setCurrentIndex(followIndex);
+  }
+  const int waypointIndex = _waypointCombo->findText(currentTask.targetWaypointName);
+  if (waypointIndex >= 0) {
+    _waypointCombo->setCurrentIndex(waypointIndex);
+  }
+  const int routeIndex = _routeCombo->findText(currentTask.targetRouteName);
+  if (routeIndex >= 0) {
+    _routeCombo->setCurrentIndex(routeIndex);
+  }
+  const int areaIndex = _areaCombo->findText(currentTask.targetAreaName);
+  if (areaIndex >= 0) {
+    _areaCombo->setCurrentIndex(areaIndex);
   }
 
   QObject::connect(
@@ -121,6 +149,9 @@ EntityTask AssignTaskDialog::task() const {
   task.targetLatitude = _latitudeSpin->value();
   task.targetLongitude = _longitudeSpin->value();
   task.targetEntityName = _followTargetCombo->currentText().trimmed();
+  task.targetWaypointName = _waypointCombo->currentText().trimmed();
+  task.targetRouteName = _routeCombo->currentText().trimmed();
+  task.targetAreaName = _areaCombo->currentText().trimmed();
   return task;
 }
 
@@ -128,12 +159,20 @@ void AssignTaskDialog::syncUiForTaskType() {
   const QString taskType = _taskTypeCombo->currentData().toString();
   const bool isFlyTask = taskType == QStringLiteral("FlyHeadingAltitudeSpeed");
   const bool isMoveTask = taskType == QStringLiteral("MoveToLocation");
+  const bool isWaypointTask = taskType == QStringLiteral("MoveToWaypoint");
+  const bool isRouteTask = taskType == QStringLiteral("MoveAlongRoute");
+  const bool isAreaTask =
+      taskType == QStringLiteral("PatrolArea") ||
+      taskType == QStringLiteral("OrbitArea");
   const bool isFollowTask = taskType == QStringLiteral("FollowEntity");
 
   _headingSpin->setEnabled(isFlyTask);
   _latitudeSpin->setEnabled(isMoveTask);
   _longitudeSpin->setEnabled(isMoveTask);
-  _altitudeSpin->setEnabled(isFlyTask || isMoveTask);
+  _altitudeSpin->setEnabled(isFlyTask || isMoveTask || isWaypointTask || isAreaTask);
+  _waypointCombo->setEnabled(isWaypointTask);
+  _routeCombo->setEnabled(isRouteTask);
+  _areaCombo->setEnabled(isAreaTask);
   _followTargetCombo->setEnabled(isFollowTask);
 }
 

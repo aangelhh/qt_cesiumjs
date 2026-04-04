@@ -22,9 +22,11 @@
 #include <QPixmap>
 #include <QPoint>
 #include <QItemSelectionModel>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QInputDialog>
 #include <QSizePolicy>
 #include <QStandardItem>
 #include <QStandardItemModel>
@@ -32,6 +34,8 @@
 #include <QVariantMap>
 #include <QVBoxLayout>
 #include <QTimer>
+
+#include <functional>
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
 #include <QWebChannel>
 #include <QWebEngineSettings>
@@ -40,6 +44,8 @@
 
 namespace {
 constexpr int kTrackSummaryRole = Qt::UserRole + 1;
+constexpr double kGraphicAltitudeOffsetMeters = 15.0;
+constexpr double kPolygonCloseDistanceMeters = 50.0;
 
 QVariantMap makeTrackSummary(
     const QString& name,
@@ -88,6 +94,8 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("taskTargetLatitude"), 0.0},
       {QStringLiteral("taskTargetLongitude"), 0.0},
       {QStringLiteral("taskTargetEntityName"), QString()},
+      {QStringLiteral("taskTargetWaypointName"), QString()},
+      {QStringLiteral("taskTargetRouteName"), QString()},
   };
 }
 
@@ -108,6 +116,24 @@ QString formatPosition(double latitude, double longitude) {
   return QStringLiteral("%1, %2")
       .arg(latitude, 0, 'f', 4)
       .arg(longitude, 0, 'f', 4);
+}
+
+double distanceMeters(
+    double latitude1,
+    double longitude1,
+    double latitude2,
+    double longitude2) {
+  constexpr double earthRadiusMeters = 6371000.0;
+  const double lat1 = qDegreesToRadians(latitude1);
+  const double lon1 = qDegreesToRadians(longitude1);
+  const double lat2 = qDegreesToRadians(latitude2);
+  const double lon2 = qDegreesToRadians(longitude2);
+  const double deltaLat = lat2 - lat1;
+  const double deltaLon = lon2 - lon1;
+  const double a = qPow(qSin(deltaLat / 2.0), 2.0) +
+                   qCos(lat1) * qCos(lat2) * qPow(qSin(deltaLon / 2.0), 2.0);
+  const double c = 2.0 * qAtan2(qSqrt(a), qSqrt(1.0 - a));
+  return earthRadiusMeters * c;
 }
 
 QVariantMap makeTrackSummary(const Entity& entity) {
@@ -149,6 +175,10 @@ QVariantMap makeTrackSummary(const Entity& entity) {
   summary.insert(QStringLiteral("taskTargetLatitude"), entity.currentTask.targetLatitude);
   summary.insert(QStringLiteral("taskTargetLongitude"), entity.currentTask.targetLongitude);
   summary.insert(QStringLiteral("taskTargetEntityName"), entity.currentTask.targetEntityName);
+  summary.insert(QStringLiteral("taskTargetWaypointName"), entity.currentTask.targetWaypointName);
+  summary.insert(QStringLiteral("taskTargetRouteName"), entity.currentTask.targetRouteName);
+  summary.insert(QStringLiteral("taskTargetAreaName"), entity.currentTask.targetAreaName);
+  summary.insert(QStringLiteral("taskTargetAreaRadiusMeters"), entity.currentTask.targetAreaRadiusMeters);
   summary.insert(QStringLiteral("sensorCount"), entity.sensors.size());
   summary.insert(QStringLiteral("contactCount"), entity.sensorContacts.size());
 
@@ -301,9 +331,19 @@ MainWindow::MainWindow(QWidget* parent)
       _tacticalGraphicsRootItem(nullptr),
       _entityDialog(nullptr),
       _taskDialog(nullptr),
+      _addWaypointAction(new QAction(QStringLiteral("Add Waypoint"), this)),
+      _addRouteAction(new QAction(QStringLiteral("Add Route"), this)),
+      _addAreaAction(new QAction(QStringLiteral("Add Area"), this)),
       _simulationTimer(new QTimer(this)),
       _applyingMapSelection(false),
-      _simulationRunning(false)
+      _simulationRunning(false),
+      _pendingGraphicMode(),
+      _pendingGraphicName(),
+      _pendingAreaType(QStringLiteral("Circle")),
+      _pendingAreaRadiusMeters(1000.0),
+      _pendingAreaSemiMajorMeters(1000.0),
+      _pendingAreaSemiMinorMeters(600.0),
+      _pendingAreaRotationDegrees(0.0)
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
       , _webView(nullptr)
 #endif
@@ -317,9 +357,9 @@ MainWindow::MainWindow(QWidget* parent)
   for (const Entity& entity : this->_scenarioState->entities()) {
     this->appendEntityToUi(entity);
   }
-  _simulationTimer->setInterval(1000);
+  _simulationTimer->setInterval(100);
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
-    this->_scenarioState->advanceSimulation(1.0);
+    this->_scenarioState->advanceSimulation(0.1);
     this->syncScenarioStateToUi();
   });
 
@@ -329,6 +369,12 @@ MainWindow::MainWindow(QWidget* parent)
       &QAction::triggered,
       this,
       &MainWindow::openAddEntityDialog);
+  QObject::connect(_addWaypointAction, &QAction::triggered, this, &MainWindow::openAddWaypointDialog);
+  QObject::connect(_addRouteAction, &QAction::triggered, this, &MainWindow::openAddRouteDialog);
+  QObject::connect(_addAreaAction, &QAction::triggered, this, &MainWindow::openAddAreaDialog);
+  this->_ui->menuInsert->addAction(_addWaypointAction);
+  this->_ui->menuInsert->addAction(_addRouteAction);
+  this->_ui->menuInsert->addAction(_addAreaAction);
   QObject::connect(
       this->_ui->actionToggleOverlays,
       &QAction::toggled,
@@ -356,6 +402,11 @@ MainWindow::MainWindow(QWidget* parent)
       &QAction::triggered,
       this,
       &MainWindow::stopSimulation);
+  QObject::connect(
+      this->_ui->actionDelete,
+      &QAction::triggered,
+      this,
+      &MainWindow::deleteSelectedEntity);
   QObject::connect(
       this->_mapBridge,
       &MapBridge::pickedCoordinate,
@@ -396,6 +447,14 @@ MainWindow::MainWindow(QWidget* parent)
           this->assignFlyHeadingAltitudeSpeedTask();
         } else if (taskType == QStringLiteral("MoveToLocation")) {
           this->assignMoveToLocationTask();
+        } else if (taskType == QStringLiteral("MoveToWaypoint")) {
+          this->assignMoveToWaypointTask();
+        } else if (taskType == QStringLiteral("MoveAlongRoute")) {
+          this->assignMoveAlongRouteTask();
+        } else if (taskType == QStringLiteral("PatrolArea")) {
+          this->assignPatrolAreaTask();
+        } else if (taskType == QStringLiteral("OrbitArea")) {
+          this->assignOrbitAreaTask();
         } else if (taskType == QStringLiteral("FollowEntity")) {
           this->assignFollowEntityTask();
         } else if (taskType == QStringLiteral("ClearTask")) {
@@ -475,9 +534,39 @@ MainWindow::MainWindow(QWidget* parent)
           if (ok) {
             this->syncTracksToMap();
             this->toggleTacticalOverlays(this->_ui->actionToggleOverlays->isChecked());
-            this->sendTrackToMap(
-                this->_friendlyRootItem->child(0)->data(kTrackSummaryRole).toMap(),
-                true);
+            const auto firstEntitySummary = [this]() -> QVariantMap {
+              const QList<QStandardItem*> roots = {
+                  this->_friendlyRootItem,
+                  this->_opposingRootItem,
+                  this->_neutralRootItem,
+              };
+              for (QStandardItem* root : roots) {
+                if (!root) {
+                  continue;
+                }
+                for (int row = 0; row < root->rowCount(); ++row) {
+                  QStandardItem* categoryItem = root->child(row);
+                  if (!categoryItem) {
+                    continue;
+                  }
+                  for (int childRow = 0; childRow < categoryItem->rowCount(); ++childRow) {
+                    QStandardItem* entityItem = categoryItem->child(childRow);
+                    if (!entityItem) {
+                      continue;
+                    }
+                    const QVariantMap summary =
+                        entityItem->data(kTrackSummaryRole).toMap();
+                    if (!summary.isEmpty()) {
+                      return summary;
+                    }
+                  }
+                }
+              }
+              return {};
+            }();
+            if (!firstEntitySummary.isEmpty()) {
+              this->sendTrackToMap(firstEntitySummary, true);
+            }
           }
         });
 
@@ -579,7 +668,7 @@ void MainWindow::initializeModels() {
           QStringLiteral("Friendly"),
           QStringLiteral("-"),
           QStringLiteral("Multiple tracks"),
-          QStringLiteral("2 tracks"),
+          QStringLiteral("0 tracks"),
           0.0,
           0.0));
   setTrackData(
@@ -590,7 +679,7 @@ void MainWindow::initializeModels() {
           QStringLiteral("Opposing"),
           QStringLiteral("-"),
           QStringLiteral("Multiple tracks"),
-          QStringLiteral("1 track"),
+          QStringLiteral("0 tracks"),
           0.0,
           0.0));
   setTrackData(
@@ -616,84 +705,6 @@ void MainWindow::initializeModels() {
           0.0,
           0.0));
 
-  const QVariantMap fighterSummary = makeTrackSummary(
-      QStringLiteral("F-18 Alpha"),
-      QStringLiteral("Fighter"),
-      QStringLiteral("Friendly"),
-      QStringLiteral("18000 m"),
-      QStringLiteral("55.1032, -3.2201"),
-      QStringLiteral("On station"),
-      55.1032,
-      -3.2201);
-  QStandardItem* friendlyFighterGroup = this->ensureGroupItem(
-      this->_friendlyRootItem,
-      QStringLiteral("Fighter"),
-      makeTrackSummary(
-          QStringLiteral("Fighter"),
-          QStringLiteral("Category"),
-          QStringLiteral("Friendly"),
-          QStringLiteral("-"),
-          QStringLiteral("Multiple tracks"),
-          QStringLiteral("Category"),
-          0.0,
-          0.0));
-  auto* trackAlpha = new QStandardItem(QStringLiteral("F-18 Alpha"));
-  trackAlpha->setIcon(makeTrackIcon(QStringLiteral("Friendly"), QStringLiteral("Fighter"), false));
-  setTrackData(trackAlpha, fighterSummary);
-  friendlyFighterGroup->appendRow(trackAlpha);
-
-  const QVariantMap aewSummary = makeTrackSummary(
-      QStringLiteral("AEW North"),
-      QStringLiteral("AEW"),
-      QStringLiteral("Friendly"),
-      QStringLiteral("9500 m"),
-      QStringLiteral("55.6200, -4.0810"),
-      QStringLiteral("Orbiting"),
-      55.6200,
-      -4.0810);
-  QStandardItem* friendlyOtherGroup = this->ensureGroupItem(
-      this->_friendlyRootItem,
-      QStringLiteral("Other"),
-      makeTrackSummary(
-          QStringLiteral("Other"),
-          QStringLiteral("Category"),
-          QStringLiteral("Friendly"),
-          QStringLiteral("-"),
-          QStringLiteral("Multiple tracks"),
-          QStringLiteral("Category"),
-          0.0,
-          0.0));
-  auto* aewNorth = new QStandardItem(QStringLiteral("AEW North"));
-  aewNorth->setIcon(makeTrackIcon(QStringLiteral("Friendly"), QStringLiteral("Other"), false));
-  setTrackData(aewNorth, aewSummary);
-  friendlyOtherGroup->appendRow(aewNorth);
-
-  const QVariantMap submarineSummary = makeTrackSummary(
-      QStringLiteral("SSN 1"),
-      QStringLiteral("Submarine"),
-      QStringLiteral("Opposing"),
-      QStringLiteral("-20 m"),
-      QStringLiteral("54.5000, -3.2000"),
-      QStringLiteral("Idle"),
-      54.5000,
-      -3.2000);
-  QStandardItem* opposingOtherGroup = this->ensureGroupItem(
-      this->_opposingRootItem,
-      QStringLiteral("Other"),
-      makeTrackSummary(
-          QStringLiteral("Other"),
-          QStringLiteral("Category"),
-          QStringLiteral("Opposing"),
-          QStringLiteral("-"),
-          QStringLiteral("Multiple tracks"),
-          QStringLiteral("Category"),
-          0.0,
-          0.0));
-  auto* ssnOne = new QStandardItem(QStringLiteral("SSN 1"));
-  ssnOne->setIcon(makeTrackIcon(QStringLiteral("Opposing"), QStringLiteral("Other"), false));
-  setTrackData(ssnOne, submarineSummary);
-  opposingOtherGroup->appendRow(ssnOne);
-
   this->_objectsModel->appendRow(this->_friendlyRootItem);
   this->_objectsModel->appendRow(this->_opposingRootItem);
   this->_objectsModel->appendRow(this->_neutralRootItem);
@@ -716,9 +727,8 @@ void MainWindow::initializeModels() {
   this->appendLogMessage(QStringLiteral("Cesium map connected."));
   this->appendLogMessage(QStringLiteral("Awaiting commands..."));
 
-  const QModelIndex initialIndex = trackAlpha->index();
-  this->_ui->objectsTreeView->setCurrentIndex(initialIndex);
-  this->setSelectedTrackDetails(initialIndex.data(kTrackSummaryRole).toMap());
+  this->_ui->objectsTreeView->clearSelection();
+  this->setSelectedTrackDetails(QVariantMap{});
   this->rebuildTacticalGraphicsTree();
 }
 
@@ -862,6 +872,198 @@ void MainWindow::beginEntityCoordinatePick() {
 }
 
 void MainWindow::reportPickedCoordinate(double longitude, double latitude, double height) {
+  const double graphicAltitude = qMax(0.0, height + kGraphicAltitudeOffsetMeters);
+  bool handledGraphic = false;
+
+  if (_pendingGraphicMode == QStringLiteral("Waypoint")) {
+    Waypoint waypoint;
+    waypoint.name = _pendingGraphicName;
+    waypoint.longitude = longitude;
+    waypoint.latitude = latitude;
+    waypoint.altitudeMeters = graphicAltitude;
+    this->_scenarioState->addWaypoint(waypoint);
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Waypoint %1 creado en lat %2, lon %3, alt %4 m.")
+            .arg(_pendingGraphicName)
+            .arg(latitude, 0, 'f', 5)
+            .arg(longitude, 0, 'f', 5)
+            .arg(graphicAltitude, 0, 'f', 0));
+    _pendingGraphicMode.clear();
+    _pendingGraphicName.clear();
+    handledGraphic = true;
+    this->syncScenarioStateToUi();
+  } else if (_pendingGraphicMode == QStringLiteral("Route")) {
+    _pendingRoutePoints.push_back(QVariantMap{
+        {QStringLiteral("longitude"), longitude},
+        {QStringLiteral("latitude"), latitude},
+        {QStringLiteral("altitudeMeters"), graphicAltitude},
+    });
+    if (_pendingRoutePoints.size() >= 2) {
+      RouteGraphic route;
+      route.name = _pendingGraphicName;
+      for (const QVariantMap& pointSummary : _pendingRoutePoints) {
+        RoutePoint point;
+        point.longitude = pointSummary.value(QStringLiteral("longitude")).toDouble();
+        point.latitude = pointSummary.value(QStringLiteral("latitude")).toDouble();
+        point.altitudeMeters = pointSummary.value(QStringLiteral("altitudeMeters")).toDouble();
+        route.points.push_back(point);
+      }
+      this->_scenarioState->addRoute(route);
+      this->_ui->statusLabel->setText(
+          QStringLiteral("Route %1 creada con %2 puntos. Ajustada a +%3 m sobre el terreno.")
+              .arg(_pendingGraphicName)
+              .arg(route.points.size())
+              .arg(kGraphicAltitudeOffsetMeters, 0, 'f', 0));
+      this->clearDraftGraphicFromMap(_pendingGraphicName + QStringLiteral(" (draft)"));
+      _pendingGraphicMode.clear();
+      _pendingGraphicName.clear();
+      _pendingRoutePoints.clear();
+      handledGraphic = true;
+      this->syncScenarioStateToUi();
+    } else {
+      QVariantMap draftSummary = makeTrackSummary(
+          _pendingGraphicName + QStringLiteral(" (draft)"),
+          QStringLiteral("Route"),
+          QStringLiteral("Graphic"),
+          QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
+          formatPosition(latitude, longitude),
+          QStringLiteral("Route draft"),
+          latitude,
+          longitude);
+      draftSummary.insert(QStringLiteral("type"), QStringLiteral("Route"));
+      QVariantList routePoints;
+      for (const QVariantMap& pointSummary : _pendingRoutePoints) {
+        routePoints.push_back(pointSummary);
+      }
+      draftSummary.insert(QStringLiteral("routePoints"), routePoints);
+      this->sendDraftGraphicToMap(draftSummary);
+      this->_ui->statusLabel->setText(
+          QStringLiteral("Primer punto de la ruta capturado. Selecciona ahora el segundo punto en el mapa."));
+      this->beginGraphicCoordinatePick();
+      return;
+    }
+  } else if (_pendingGraphicMode == QStringLiteral("Area")) {
+    AreaDefinition area;
+    area.id = _pendingGraphicName;
+    area.name = _pendingGraphicName;
+    area.areaType = _pendingAreaType;
+    area.centerLongitude = longitude;
+    area.centerLatitude = latitude;
+    area.centerAltitudeMeters = graphicAltitude;
+    area.radiusMeters = _pendingAreaRadiusMeters;
+    area.semiMajorAxisMeters = _pendingAreaSemiMajorMeters;
+    area.semiMinorAxisMeters = _pendingAreaSemiMinorMeters;
+    area.rotationDegrees = _pendingAreaRotationDegrees;
+    this->_scenarioState->addArea(area);
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Area %1 (%2) creada en lat %3, lon %4.")
+            .arg(_pendingGraphicName)
+            .arg(_pendingAreaType)
+            .arg(latitude, 0, 'f', 5)
+            .arg(longitude, 0, 'f', 5));
+    _pendingGraphicMode.clear();
+    _pendingGraphicName.clear();
+    handledGraphic = true;
+    this->syncScenarioStateToUi();
+  } else if (_pendingGraphicMode == QStringLiteral("AreaPolygon")) {
+    const QVariantMap capturedPoint = {
+        {QStringLiteral("longitude"), longitude},
+        {QStringLiteral("latitude"), latitude},
+        {QStringLiteral("altitudeMeters"), graphicAltitude},
+    };
+    if (_pendingAreaPoints.size() >= 3) {
+      const QVariantMap& firstPoint = _pendingAreaPoints.first();
+      const double closeDistanceMeters = distanceMeters(
+          latitude,
+          longitude,
+          firstPoint.value(QStringLiteral("latitude")).toDouble(),
+          firstPoint.value(QStringLiteral("longitude")).toDouble());
+      if (closeDistanceMeters <= kPolygonCloseDistanceMeters) {
+        AreaDefinition area;
+        area.id = _pendingGraphicName;
+        area.name = _pendingGraphicName;
+        area.areaType = QStringLiteral("Polygon");
+        area.centerLongitude = firstPoint.value(QStringLiteral("longitude")).toDouble();
+        area.centerLatitude = firstPoint.value(QStringLiteral("latitude")).toDouble();
+        area.centerAltitudeMeters = firstPoint.value(QStringLiteral("altitudeMeters")).toDouble();
+        for (const QVariantMap& pointSummary : _pendingAreaPoints) {
+          RoutePoint point;
+          point.longitude = pointSummary.value(QStringLiteral("longitude")).toDouble();
+          point.latitude = pointSummary.value(QStringLiteral("latitude")).toDouble();
+          point.altitudeMeters = pointSummary.value(QStringLiteral("altitudeMeters")).toDouble();
+          area.points.push_back(point);
+        }
+        this->_scenarioState->addArea(area);
+        this->clearDraftGraphicFromMap(_pendingGraphicName + QStringLiteral(" (draft)"));
+        this->_ui->statusLabel->setText(
+            QStringLiteral("Polygon area %1 creada con %2 puntos.")
+                .arg(_pendingGraphicName)
+                .arg(area.points.size()));
+        _pendingGraphicMode.clear();
+        _pendingGraphicName.clear();
+        _pendingAreaPoints.clear();
+        handledGraphic = true;
+        this->syncScenarioStateToUi();
+      } else {
+        _pendingAreaPoints.push_back(capturedPoint);
+        QVariantMap draftSummary = makeTrackSummary(
+            _pendingGraphicName + QStringLiteral(" (draft)"),
+            QStringLiteral("Area"),
+            QStringLiteral("Graphic"),
+            QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
+            formatPosition(latitude, longitude),
+            QStringLiteral("Polygon draft"),
+            latitude,
+            longitude);
+        draftSummary.insert(QStringLiteral("type"), QStringLiteral("Area"));
+        draftSummary.insert(QStringLiteral("areaType"), QStringLiteral("Polygon"));
+        draftSummary.insert(QStringLiteral("radiusMeters"), 0.0);
+        draftSummary.insert(QStringLiteral("semiMajorAxisMeters"), 0.0);
+        draftSummary.insert(QStringLiteral("semiMinorAxisMeters"), 0.0);
+        draftSummary.insert(QStringLiteral("rotationDegrees"), 0.0);
+        QVariantList areaPoints;
+        for (const QVariantMap& pointSummary : _pendingAreaPoints) {
+          areaPoints.push_back(pointSummary);
+        }
+        draftSummary.insert(QStringLiteral("areaPoints"), areaPoints);
+        this->sendDraftGraphicToMap(draftSummary);
+        this->_ui->statusLabel->setText(
+            QStringLiteral("Punto %1 del polygon capturado. Para cerrar, pincha cerca del primer punto.")
+                .arg(_pendingAreaPoints.size()));
+        this->beginGraphicCoordinatePick();
+        return;
+      }
+    } else {
+      _pendingAreaPoints.push_back(capturedPoint);
+      QVariantMap draftSummary = makeTrackSummary(
+          _pendingGraphicName + QStringLiteral(" (draft)"),
+          QStringLiteral("Area"),
+          QStringLiteral("Graphic"),
+          QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
+          formatPosition(latitude, longitude),
+          QStringLiteral("Polygon draft"),
+          latitude,
+          longitude);
+      draftSummary.insert(QStringLiteral("type"), QStringLiteral("Area"));
+      draftSummary.insert(QStringLiteral("areaType"), QStringLiteral("Polygon"));
+      draftSummary.insert(QStringLiteral("radiusMeters"), 0.0);
+      draftSummary.insert(QStringLiteral("semiMajorAxisMeters"), 0.0);
+      draftSummary.insert(QStringLiteral("semiMinorAxisMeters"), 0.0);
+      draftSummary.insert(QStringLiteral("rotationDegrees"), 0.0);
+      QVariantList areaPoints;
+      for (const QVariantMap& pointSummary : _pendingAreaPoints) {
+        areaPoints.push_back(pointSummary);
+      }
+      draftSummary.insert(QStringLiteral("areaPoints"), areaPoints);
+      this->sendDraftGraphicToMap(draftSummary);
+      this->_ui->statusLabel->setText(
+          QStringLiteral("Punto %1 del polygon capturado. Sigue anadiendo puntos; para cerrar, pincha cerca del primero.")
+              .arg(_pendingAreaPoints.size()));
+      this->beginGraphicCoordinatePick();
+      return;
+    }
+  }
+
   if (this->_entityDialog) {
     this->_entityDialog->setPickedCoordinate(longitude, latitude, height);
     this->_entityDialog->show();
@@ -875,10 +1077,12 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
     this->_taskDialog->activateWindow();
   }
 
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
-          .arg(latitude, 0, 'f', 5)
-          .arg(longitude, 0, 'f', 5));
+  if (!handledGraphic) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
+            .arg(latitude, 0, 'f', 5)
+            .arg(longitude, 0, 'f', 5));
+  }
 }
 
 void MainWindow::openSelectedEntityDetails() {
@@ -993,6 +1197,15 @@ void MainWindow::sendTrackToMap(const QVariantMap& summary, bool focus) {
 
   const QJsonObject object = mapToJsonObject(summary);
   const QString json = QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
+  const QString type = summary.value(QStringLiteral("type")).toString();
+  if (type == QStringLiteral("Waypoint") || type == QStringLiteral("Route") ||
+      type == QStringLiteral("Area")) {
+    const QString script = QStringLiteral(
+        "window.addOrUpdateQtGraphic && window.addOrUpdateQtGraphic(%1, %2);")
+                               .arg(json, focus ? QStringLiteral("true") : QStringLiteral("false"));
+    this->_webView->page()->runJavaScript(script);
+    return;
+  }
   const QString script = QStringLiteral(
       "window.addOrUpdateQtTrack && window.addOrUpdateQtTrack(%1, %2);")
                              .arg(json, focus ? QStringLiteral("true") : QStringLiteral("false"));
@@ -1000,6 +1213,58 @@ void MainWindow::sendTrackToMap(const QVariantMap& summary, bool focus) {
 #else
   Q_UNUSED(summary)
   Q_UNUSED(focus)
+#endif
+}
+
+void MainWindow::removeTrackFromMap(const QString& trackName) {
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+  if (!this->_webView || trackName.trimmed().isEmpty()) {
+    return;
+  }
+
+  const QString trackJson =
+      QString::fromUtf8(QJsonDocument(QJsonArray{trackName}).toJson(QJsonDocument::Compact));
+  const QString script = QStringLiteral(
+      "(window.removeQtTrack && window.removeQtTrack(%1));"
+      "(window.removeQtGraphic && window.removeQtGraphic(%1));")
+                             .arg(trackJson.mid(1).chopped(1));
+  this->_webView->page()->runJavaScript(script);
+#else
+  Q_UNUSED(trackName)
+#endif
+}
+
+void MainWindow::sendDraftGraphicToMap(const QVariantMap& summary) {
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+  if (!this->_webView || summary.isEmpty()) {
+    return;
+  }
+
+  const QJsonObject object = mapToJsonObject(summary);
+  const QString json = QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
+  const QString script = QStringLiteral(
+      "window.addOrUpdateQtDraftGraphic && window.addOrUpdateQtDraftGraphic(%1);")
+                             .arg(json);
+  this->_webView->page()->runJavaScript(script);
+#else
+  Q_UNUSED(summary)
+#endif
+}
+
+void MainWindow::clearDraftGraphicFromMap(const QString& name) {
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+  if (!this->_webView || name.trimmed().isEmpty()) {
+    return;
+  }
+
+  const QString json =
+      QString::fromUtf8(QJsonDocument(QJsonArray{name}).toJson(QJsonDocument::Compact));
+  const QString script = QStringLiteral(
+      "window.removeQtDraftGraphic && window.removeQtDraftGraphic(%1);")
+                             .arg(json.mid(1).chopped(1));
+  this->_webView->page()->runJavaScript(script);
+#else
+  Q_UNUSED(name)
 #endif
 }
 
@@ -1025,7 +1290,59 @@ void MainWindow::syncTracksToMap() {
   syncBranch(this->_neutralRootItem);
 }
 
+void MainWindow::syncTacticalGraphicsToMap() {
+  if (!this->_tacticalGraphicsRootItem) {
+    return;
+  }
+  for (int row = 0; row < this->_tacticalGraphicsRootItem->rowCount(); ++row) {
+    QStandardItem* item = this->_tacticalGraphicsRootItem->child(row);
+    if (!item) {
+      continue;
+    }
+    const QVariantMap summary = item->data(kTrackSummaryRole).toMap();
+    if (!summary.isEmpty()) {
+      this->sendTrackToMap(summary, false);
+    }
+  }
+}
+
 void MainWindow::syncScenarioStateToUi() {
+  std::function<void(QStandardItem*)> removeMissingFromBranch = [this, &removeMissingFromBranch](QStandardItem* branch) {
+    if (!branch) {
+      return;
+    }
+
+    for (int row = branch->rowCount() - 1; row >= 0; --row) {
+      QStandardItem* child = branch->child(row);
+      if (!child) {
+        continue;
+      }
+      if (child->rowCount() > 0) {
+        removeMissingFromBranch(child);
+        if (child->rowCount() == 0) {
+          branch->removeRow(row);
+        }
+        continue;
+      }
+
+      const QString name = child->data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+      bool exists = false;
+      for (const Entity& entity : this->_scenarioState->entities()) {
+        if (entity.name == name) {
+          exists = true;
+          break;
+        }
+      }
+      if (!exists) {
+        branch->removeRow(row);
+      }
+    }
+  };
+
+  removeMissingFromBranch(this->_friendlyRootItem);
+  removeMissingFromBranch(this->_opposingRootItem);
+  removeMissingFromBranch(this->_neutralRootItem);
+
   for (const Entity& entity : this->_scenarioState->entities()) {
     QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entity.name);
     if (!item) {
@@ -1049,6 +1366,7 @@ void MainWindow::syncScenarioStateToUi() {
   }
 
   this->rebuildTacticalGraphicsTree();
+  this->syncTacticalGraphicsToMap();
 }
 
 void MainWindow::openObjectsContextMenu(const QPoint& position) {
@@ -1058,20 +1376,29 @@ void MainWindow::openObjectsContextMenu(const QPoint& position) {
   }
 
   this->_ui->objectsTreeView->setCurrentIndex(index);
-  if (!this->currentSelectionIsEntity()) {
+  if (!this->currentSelectionIsEntity() && !this->currentSelectionIsTacticalGraphic()) {
     return;
   }
 
   QMenu menu(this);
-  QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
-  QMenu* movementMenu = taskMenu->addMenu(QStringLiteral("Movement"));
-  movementMenu->addAction(QStringLiteral("Fly Heading / Altitude / Speed..."), this, &MainWindow::assignFlyHeadingAltitudeSpeedTask);
-  movementMenu->addAction(QStringLiteral("Move To Location..."), this, &MainWindow::assignMoveToLocationTask);
-  movementMenu->addAction(QStringLiteral("Follow Entity..."), this, &MainWindow::assignFollowEntityTask);
-  taskMenu->addSeparator();
-  taskMenu->addAction(QStringLiteral("Clear Current Task"), this, &MainWindow::clearSelectedTask);
-  menu.addSeparator();
-  menu.addAction(QStringLiteral("Entity Details..."), this, &MainWindow::openSelectedEntityDetails);
+  if (this->currentSelectionIsEntity()) {
+    QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
+    QMenu* movementMenu = taskMenu->addMenu(QStringLiteral("Movement"));
+    movementMenu->addAction(QStringLiteral("Fly Heading / Altitude / Speed..."), this, &MainWindow::assignFlyHeadingAltitudeSpeedTask);
+    movementMenu->addAction(QStringLiteral("Move To Location..."), this, &MainWindow::assignMoveToLocationTask);
+    movementMenu->addAction(QStringLiteral("Move To Waypoint..."), this, &MainWindow::assignMoveToWaypointTask);
+    movementMenu->addAction(QStringLiteral("Move Along Route..."), this, &MainWindow::assignMoveAlongRouteTask);
+    movementMenu->addAction(QStringLiteral("Patrol Area..."), this, &MainWindow::assignPatrolAreaTask);
+    movementMenu->addAction(QStringLiteral("Orbit Area..."), this, &MainWindow::assignOrbitAreaTask);
+    movementMenu->addAction(QStringLiteral("Follow Entity..."), this, &MainWindow::assignFollowEntityTask);
+    taskMenu->addSeparator();
+    taskMenu->addAction(QStringLiteral("Clear Current Task"), this, &MainWindow::clearSelectedTask);
+    menu.addSeparator();
+    menu.addAction(QStringLiteral("Entity Details..."), this, &MainWindow::openSelectedEntityDetails);
+    menu.addAction(QStringLiteral("Delete Entity"), this, &MainWindow::deleteSelectedEntity);
+  } else {
+    menu.addAction(QStringLiteral("Delete Graphic"), this, &MainWindow::deleteSelectedEntity);
+  }
   menu.exec(this->_ui->objectsTreeView->viewport()->mapToGlobal(position));
 }
 
@@ -1081,6 +1408,22 @@ void MainWindow::assignFlyHeadingAltitudeSpeedTask() {
 
 void MainWindow::assignMoveToLocationTask() {
   this->openAssignTaskDialog(QStringLiteral("MoveToLocation"));
+}
+
+void MainWindow::assignMoveToWaypointTask() {
+  this->openAssignTaskDialog(QStringLiteral("MoveToWaypoint"));
+}
+
+void MainWindow::assignMoveAlongRouteTask() {
+  this->openAssignTaskDialog(QStringLiteral("MoveAlongRoute"));
+}
+
+void MainWindow::assignPatrolAreaTask() {
+  this->openAssignTaskDialog(QStringLiteral("PatrolArea"));
+}
+
+void MainWindow::assignOrbitAreaTask() {
+  this->openAssignTaskDialog(QStringLiteral("OrbitArea"));
 }
 
 void MainWindow::assignFollowEntityTask() {
@@ -1096,6 +1439,39 @@ void MainWindow::clearSelectedTask() {
   if (this->_scenarioState->clearTask(entityName)) {
     this->appendLogMessage(QStringLiteral("Task cleared for %1").arg(entityName));
     this->syncScenarioStateToUi();
+  }
+}
+
+void MainWindow::deleteSelectedEntity() {
+  const QString objectName = this->selectedObjectName();
+  if (objectName.isEmpty()) {
+    return;
+  }
+
+  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  const QString type = summary.value(QStringLiteral("type")).toString();
+
+  bool removed = false;
+  QString label = QStringLiteral("Object");
+  if (this->currentSelectionIsEntity()) {
+    removed = this->_scenarioState->removeEntity(objectName);
+    label = QStringLiteral("Entity");
+  } else if (type == QStringLiteral("Waypoint")) {
+    removed = this->_scenarioState->removeWaypoint(objectName);
+    label = QStringLiteral("Waypoint");
+  } else if (type == QStringLiteral("Route")) {
+    removed = this->_scenarioState->removeRoute(objectName);
+    label = QStringLiteral("Route");
+  } else if (type == QStringLiteral("Area")) {
+    removed = this->_scenarioState->removeArea(objectName);
+    label = QStringLiteral("Area");
+  }
+
+  if (removed) {
+    this->appendLogMessage(QStringLiteral("%1 deleted: %2").arg(label, objectName));
+    this->removeTrackFromMap(objectName);
+    this->syncScenarioStateToUi();
+    this->_ui->statusLabel->setText(QStringLiteral("%1 eliminado: %2").arg(label, objectName));
   }
 }
 
@@ -1150,6 +1526,14 @@ QString MainWindow::selectedEntityName() const {
   return this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
 }
 
+QString MainWindow::selectedObjectName() const {
+  const QModelIndex currentIndex = this->_ui->objectsTreeView->currentIndex();
+  if (!currentIndex.isValid()) {
+    return QString();
+  }
+  return currentIndex.data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+}
+
 bool MainWindow::currentSelectionIsEntity() const {
   const QModelIndex currentIndex = this->_ui->objectsTreeView->currentIndex();
   if (!currentIndex.isValid()) {
@@ -1163,12 +1547,23 @@ bool MainWindow::currentSelectionIsEntity() const {
   return !this->_tacticalGraphicsRootItem || currentIndex.parent() != this->_tacticalGraphicsRootItem->index();
 }
 
+bool MainWindow::currentSelectionIsTacticalGraphic() const {
+  const QModelIndex currentIndex = this->_ui->objectsTreeView->currentIndex();
+  if (!currentIndex.isValid() || !this->_tacticalGraphicsRootItem) {
+    return false;
+  }
+
+  QStandardItem* item = this->_objectsModel->itemFromIndex(currentIndex);
+  if (!item || item->rowCount() != 0 || !currentIndex.parent().isValid()) {
+    return false;
+  }
+  return currentIndex.parent() == this->_tacticalGraphicsRootItem->index();
+}
+
 void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
   if (this->_taskDialog) {
-    this->_taskDialog->show();
-    this->_taskDialog->raise();
-    this->_taskDialog->activateWindow();
-    return;
+    this->_taskDialog->close();
+    this->_taskDialog = nullptr;
   }
 
   const QString entityName = this->selectedEntityName();
@@ -1188,6 +1583,10 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
   currentTask.targetLatitude = currentSummary.value(QStringLiteral("taskTargetLatitude")).toDouble();
   currentTask.targetLongitude = currentSummary.value(QStringLiteral("taskTargetLongitude")).toDouble();
   currentTask.targetEntityName = currentSummary.value(QStringLiteral("taskTargetEntityName")).toString();
+  currentTask.targetWaypointName = currentSummary.value(QStringLiteral("taskTargetWaypointName")).toString();
+  currentTask.targetRouteName = currentSummary.value(QStringLiteral("taskTargetRouteName")).toString();
+  currentTask.targetAreaName = currentSummary.value(QStringLiteral("taskTargetAreaName")).toString();
+  currentTask.targetAreaRadiusMeters = currentSummary.value(QStringLiteral("taskTargetAreaRadiusMeters")).toDouble();
 
   QStringList availableTargets;
   for (const Entity& entity : this->_scenarioState->entities()) {
@@ -1196,7 +1595,30 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
     }
   }
 
-  auto* dialog = new AssignTaskDialog(entityName, availableTargets, currentTask, initialTaskType, this);
+  QStringList availableWaypoints;
+  for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
+    availableWaypoints.append(waypoint.name);
+  }
+
+  QStringList availableRoutes;
+  for (const RouteGraphic& route : this->_scenarioState->routes()) {
+    availableRoutes.append(route.name);
+  }
+
+  QStringList availableAreas;
+  for (const AreaDefinition& area : this->_scenarioState->areas()) {
+    availableAreas.append(area.name);
+  }
+
+  auto* dialog = new AssignTaskDialog(
+      entityName,
+      availableTargets,
+      availableWaypoints,
+      availableRoutes,
+      availableAreas,
+      currentTask,
+      initialTaskType,
+      this);
   dialog->setAttribute(Qt::WA_DeleteOnClose);
   this->_taskDialog = dialog;
 
@@ -1239,6 +1661,22 @@ void MainWindow::populateTaskCommands() {
   moveItem->setData(Qt::UserRole, QStringLiteral("MoveToLocation"));
   this->_ui->tasksListWidget->addItem(moveItem);
 
+  auto* waypointItem = new QListWidgetItem(QStringLiteral("Movement: Move To Waypoint..."));
+  waypointItem->setData(Qt::UserRole, QStringLiteral("MoveToWaypoint"));
+  this->_ui->tasksListWidget->addItem(waypointItem);
+
+  auto* routeItem = new QListWidgetItem(QStringLiteral("Movement: Move Along Route..."));
+  routeItem->setData(Qt::UserRole, QStringLiteral("MoveAlongRoute"));
+  this->_ui->tasksListWidget->addItem(routeItem);
+
+  auto* patrolAreaItem = new QListWidgetItem(QStringLiteral("Movement: Patrol Area..."));
+  patrolAreaItem->setData(Qt::UserRole, QStringLiteral("PatrolArea"));
+  this->_ui->tasksListWidget->addItem(patrolAreaItem);
+
+  auto* orbitAreaItem = new QListWidgetItem(QStringLiteral("Movement: Orbit Area..."));
+  orbitAreaItem->setData(Qt::UserRole, QStringLiteral("OrbitArea"));
+  this->_ui->tasksListWidget->addItem(orbitAreaItem);
+
   auto* followItem = new QListWidgetItem(QStringLiteral("Movement: Follow Entity..."));
   followItem->setData(Qt::UserRole, QStringLiteral("FollowEntity"));
   this->_ui->tasksListWidget->addItem(followItem);
@@ -1255,65 +1693,81 @@ void MainWindow::rebuildTacticalGraphicsTree() {
 
   this->_tacticalGraphicsRootItem->removeRows(0, this->_tacticalGraphicsRootItem->rowCount());
 
-  int routeCount = 0;
-  int waypointCount = 0;
-  bool engagementAreaAdded = false;
+  for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
+    QVariantMap waypointSummary = makeTrackSummary(
+        waypoint.name,
+        QStringLiteral("Waypoint"),
+        QStringLiteral("Graphic"),
+        QStringLiteral("%1 m").arg(waypoint.altitudeMeters, 0, 'f', 0),
+        formatPosition(waypoint.latitude, waypoint.longitude),
+        QStringLiteral("Ready"),
+        waypoint.latitude,
+        waypoint.longitude);
+    waypointSummary.insert(QStringLiteral("type"), QStringLiteral("Waypoint"));
+    auto* waypointItem = new QStandardItem(waypoint.name);
+    waypointItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Waypoint")));
+    setTrackData(waypointItem, waypointSummary);
+    this->_tacticalGraphicsRootItem->appendRow(waypointItem);
+  }
 
-  for (const Entity& entity : this->_scenarioState->entities()) {
-    const QVariantMap entitySummary = makeTrackSummary(entity);
-
-    const bool hasRouteGraphic =
-        entity.category.compare(QStringLiteral("Fighter"), Qt::CaseInsensitive) == 0 ||
-        entity.type.contains(QStringLiteral("AEW"), Qt::CaseInsensitive);
-    if (hasRouteGraphic) {
-      ++routeCount;
-      QVariantMap routeSummary = entitySummary;
-      routeSummary.insert(QStringLiteral("name"), QStringLiteral("Route %1").arg(routeCount));
-      routeSummary.insert(QStringLiteral("type"), QStringLiteral("Route"));
-      routeSummary.insert(QStringLiteral("status"), QStringLiteral("Assigned to %1").arg(entity.name));
-      auto* routeItem = new QStandardItem(routeSummary.value(QStringLiteral("name")).toString());
-      routeItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Route")));
-      setTrackData(routeItem, routeSummary);
-      this->_tacticalGraphicsRootItem->appendRow(routeItem);
+  for (const RouteGraphic& route : this->_scenarioState->routes()) {
+    QVariantList points;
+    for (const RoutePoint& point : route.points) {
+      points.push_back(QVariantMap{
+          {QStringLiteral("latitude"), point.latitude},
+          {QStringLiteral("longitude"), point.longitude},
+          {QStringLiteral("altitudeMeters"), point.altitudeMeters},
+      });
     }
+    const RoutePoint firstPoint = route.points.isEmpty() ? RoutePoint{} : route.points.first();
+    QVariantMap routeSummary = makeTrackSummary(
+        route.name,
+        QStringLiteral("Route"),
+        QStringLiteral("Graphic"),
+        QStringLiteral("-"),
+        route.points.isEmpty() ? QStringLiteral("-") : formatPosition(firstPoint.latitude, firstPoint.longitude),
+        QStringLiteral("%1 points").arg(route.points.size()),
+        firstPoint.latitude,
+        firstPoint.longitude);
+    routeSummary.insert(QStringLiteral("type"), QStringLiteral("Route"));
+    routeSummary.insert(QStringLiteral("routePoints"), points);
+    auto* routeItem = new QStandardItem(route.name);
+    routeItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Route")));
+    setTrackData(routeItem, routeSummary);
+    this->_tacticalGraphicsRootItem->appendRow(routeItem);
+  }
 
-    if (!engagementAreaAdded &&
-        entity.category.compare(QStringLiteral("Fighter"), Qt::CaseInsensitive) == 0) {
-      engagementAreaAdded = true;
-      QVariantMap areaSummary = entitySummary;
-      areaSummary.insert(QStringLiteral("name"), QStringLiteral("Engagement Area"));
-      areaSummary.insert(QStringLiteral("type"), QStringLiteral("Engagement Area"));
-      areaSummary.insert(QStringLiteral("status"), QStringLiteral("Overlay"));
-      auto* areaItem = new QStandardItem(areaSummary.value(QStringLiteral("name")).toString());
-      areaItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Engagement Area")));
-      setTrackData(areaItem, areaSummary);
-      this->_tacticalGraphicsRootItem->appendRow(areaItem);
+  for (const AreaDefinition& area : this->_scenarioState->areas()) {
+    QVariantMap areaSummary = makeTrackSummary(
+        area.name,
+        QStringLiteral("Area"),
+        QStringLiteral("Graphic"),
+        QStringLiteral("%1 m").arg(area.centerAltitudeMeters, 0, 'f', 0),
+        formatPosition(area.centerLatitude, area.centerLongitude),
+        QStringLiteral("%1").arg(area.areaType),
+        area.centerLatitude,
+        area.centerLongitude);
+    areaSummary.insert(QStringLiteral("type"), QStringLiteral("Area"));
+    areaSummary.insert(QStringLiteral("areaType"), area.areaType);
+    areaSummary.insert(QStringLiteral("radiusMeters"), area.radiusMeters);
+    areaSummary.insert(QStringLiteral("semiMajorAxisMeters"), area.semiMajorAxisMeters);
+    areaSummary.insert(QStringLiteral("semiMinorAxisMeters"), area.semiMinorAxisMeters);
+    areaSummary.insert(QStringLiteral("rotationDegrees"), area.rotationDegrees);
+    QVariantList areaPoints;
+    for (const RoutePoint& point : area.points) {
+      areaPoints.push_back(QVariantMap{
+          {QStringLiteral("latitude"), point.latitude},
+          {QStringLiteral("longitude"), point.longitude},
+          {QStringLiteral("altitudeMeters"), point.altitudeMeters},
+      });
     }
-
-    if (entity.currentTask.enabled &&
-        (entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
-         entity.currentTask.taskType == QStringLiteral("FollowEntity"))) {
-      ++waypointCount;
-      QVariantMap waypointSummary = entitySummary;
-      waypointSummary.insert(QStringLiteral("name"), QStringLiteral("Waypoint %1").arg(waypointCount));
-      waypointSummary.insert(QStringLiteral("type"), QStringLiteral("Waypoint"));
-      waypointSummary.insert(
-          QStringLiteral("position"),
-          QStringLiteral("%1, %2")
-              .arg(entity.currentTask.targetLatitude, 0, 'f', 4)
-              .arg(entity.currentTask.targetLongitude, 0, 'f', 4));
-      waypointSummary.insert(
-          QStringLiteral("status"),
-          entity.currentTask.taskType == QStringLiteral("FollowEntity")
-              ? QStringLiteral("Follow target: %1").arg(entity.currentTask.targetEntityName)
-              : QStringLiteral("Move target for %1").arg(entity.name));
-      waypointSummary.insert(QStringLiteral("latitude"), entity.currentTask.targetLatitude);
-      waypointSummary.insert(QStringLiteral("longitude"), entity.currentTask.targetLongitude);
-      auto* waypointItem = new QStandardItem(waypointSummary.value(QStringLiteral("name")).toString());
-      waypointItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Waypoint")));
-      setTrackData(waypointItem, waypointSummary);
-      this->_tacticalGraphicsRootItem->appendRow(waypointItem);
-    }
+    areaSummary.insert(QStringLiteral("areaPoints"), areaPoints);
+    areaSummary.insert(QStringLiteral("minAltitudeMeters"), area.minAltitudeMeters);
+    areaSummary.insert(QStringLiteral("maxAltitudeMeters"), area.maxAltitudeMeters);
+    auto* areaItem = new QStandardItem(area.name);
+    areaItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Engagement Area")));
+    setTrackData(areaItem, areaSummary);
+    this->_tacticalGraphicsRootItem->appendRow(areaItem);
   }
 
   if (this->_tacticalGraphicsRootItem->rowCount() > 0) {
@@ -1323,6 +1777,182 @@ void MainWindow::rebuildTacticalGraphicsTree() {
 
 void MainWindow::beginTaskCoordinatePick() {
   this->beginEntityCoordinatePick();
+}
+
+void MainWindow::beginGraphicCoordinatePick() {
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+  if (!this->_webView) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("El visor de CesiumJS no esta disponible ahora mismo."));
+    return;
+  }
+
+  if (this->_entityDialog) {
+    this->_entityDialog->hide();
+  }
+  if (this->_taskDialog) {
+    this->_taskDialog->hide();
+  }
+
+  this->_webView->page()->runJavaScript(
+      QStringLiteral("window.beginQtCoordinatePick && window.beginQtCoordinatePick();"));
+#else
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Qt WebEngine no esta disponible en este build."));
+#endif
+}
+
+void MainWindow::openAddWaypointDialog() {
+  bool ok = false;
+  const QString name = QInputDialog::getText(
+      this,
+      QStringLiteral("Add Waypoint"),
+      QStringLiteral("Waypoint name"),
+      QLineEdit::Normal,
+      QStringLiteral("Waypoint %1").arg(this->_scenarioState->waypoints().size() + 1),
+      &ok).trimmed();
+  if (!ok || name.isEmpty()) {
+    return;
+  }
+  _pendingGraphicMode = QStringLiteral("Waypoint");
+  _pendingGraphicName = name;
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Creando waypoint %1. Haz clic una vez en el mapa para fijar su posicion.")
+          .arg(name));
+  this->beginGraphicCoordinatePick();
+}
+
+void MainWindow::openAddRouteDialog() {
+  bool ok = false;
+  const QString name = QInputDialog::getText(
+      this,
+      QStringLiteral("Add Route"),
+      QStringLiteral("Route name"),
+      QLineEdit::Normal,
+      QStringLiteral("Route %1").arg(this->_scenarioState->routes().size() + 1),
+      &ok).trimmed();
+  if (!ok || name.isEmpty()) {
+    return;
+  }
+  _pendingGraphicMode = QStringLiteral("Route");
+  _pendingGraphicName = name;
+  _pendingRoutePoints.clear();
+  this->clearDraftGraphicFromMap(name + QStringLiteral(" (draft)"));
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Creando route %1. Haz clic en el primer punto de la ruta en el mapa.")
+          .arg(name));
+  this->beginGraphicCoordinatePick();
+}
+
+void MainWindow::openAddAreaDialog() {
+  bool ok = false;
+  const QString name = QInputDialog::getText(
+      this,
+      QStringLiteral("Add Area"),
+      QStringLiteral("Area name"),
+      QLineEdit::Normal,
+      QStringLiteral("Area %1").arg(this->_scenarioState->areas().size() + 1),
+      &ok).trimmed();
+  if (!ok || name.isEmpty()) {
+    return;
+  }
+
+  const QStringList areaTypes = {
+      QStringLiteral("Circle"),
+      QStringLiteral("Ellipse"),
+      QStringLiteral("Polygon"),
+  };
+  const QString areaType = QInputDialog::getItem(
+      this,
+      QStringLiteral("Area Type"),
+      QStringLiteral("Type"),
+      areaTypes,
+      0,
+      false,
+      &ok);
+  if (!ok) {
+    return;
+  }
+
+  _pendingAreaType = areaType;
+  _pendingGraphicName = name;
+  _pendingAreaPoints.clear();
+  this->clearDraftGraphicFromMap(name + QStringLiteral(" (draft)"));
+  if (areaType == QStringLiteral("Circle")) {
+    const double radiusMeters = QInputDialog::getDouble(
+        this,
+        QStringLiteral("Area Radius"),
+        QStringLiteral("Radius (m)"),
+        5000.0,
+        50.0,
+        500000.0,
+        0,
+        &ok);
+    if (!ok) {
+      return;
+    }
+    _pendingGraphicMode = QStringLiteral("Area");
+    _pendingAreaRadiusMeters = radiusMeters;
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Creando area circular %1. Haz clic en el mapa para fijar el centro.")
+            .arg(name));
+    this->beginGraphicCoordinatePick();
+    return;
+  }
+
+  if (areaType == QStringLiteral("Ellipse")) {
+    const double semiMajorMeters = QInputDialog::getDouble(
+        this,
+        QStringLiteral("Ellipse Semi-major Axis"),
+        QStringLiteral("Semi-major axis (m)"),
+        6000.0,
+        50.0,
+        500000.0,
+        0,
+        &ok);
+    if (!ok) {
+      return;
+    }
+    const double semiMinorMeters = QInputDialog::getDouble(
+        this,
+        QStringLiteral("Ellipse Semi-minor Axis"),
+        QStringLiteral("Semi-minor axis (m)"),
+        3000.0,
+        50.0,
+        500000.0,
+        0,
+        &ok);
+    if (!ok) {
+      return;
+    }
+    const double rotationDegrees = QInputDialog::getDouble(
+        this,
+        QStringLiteral("Ellipse Rotation"),
+        QStringLiteral("Rotation (deg)"),
+        0.0,
+        -360.0,
+        360.0,
+        1,
+        &ok);
+    if (!ok) {
+      return;
+    }
+    _pendingGraphicMode = QStringLiteral("Area");
+    _pendingAreaSemiMajorMeters = semiMajorMeters;
+    _pendingAreaSemiMinorMeters = semiMinorMeters;
+    _pendingAreaRotationDegrees = rotationDegrees;
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Creando area eliptica %1. Haz clic en el mapa para fijar el centro.")
+            .arg(name));
+    this->beginGraphicCoordinatePick();
+    return;
+  }
+
+  _pendingGraphicMode = QStringLiteral("AreaPolygon");
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Creando polygon %1. Anade puntos en el mapa; para cerrar, pincha cerca del primer punto.")
+          .arg(name));
+  this->beginGraphicCoordinatePick();
 }
 
 void MainWindow::updateSimulationControls() {

@@ -12,4 +12,8 @@ struct EntityTask {
   double targetLatitude = 0.0;
   double targetLongitude = 0.0;
   QString targetEntityName;
+  QString targetWaypointName;
+  QString targetRouteName;
+  QString targetAreaName;
+  double targetAreaRadiusMeters = 0.0;
 };

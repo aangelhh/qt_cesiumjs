@@ -80,6 +80,31 @@ double distanceMeters(
   return kEarthRadiusMeters * c;
 }
 
+QPair<double, double> destinationPoint(
+    double latitude,
+    double longitude,
+    double bearingDegreesValue,
+    double distanceMetersValue) {
+  const double angularDistance = distanceMetersValue / kEarthRadiusMeters;
+  const double bearing = qDegreesToRadians(bearingDegreesValue);
+  const double lat1 = qDegreesToRadians(latitude);
+  const double lon1 = qDegreesToRadians(longitude);
+
+  const double sinLat1 = qSin(lat1);
+  const double cosLat1 = qCos(lat1);
+  const double sinAngular = qSin(angularDistance);
+  const double cosAngular = qCos(angularDistance);
+
+  const double lat2 = qAsin(
+      sinLat1 * cosAngular +
+      cosLat1 * sinAngular * qCos(bearing));
+  const double lon2 = lon1 + qAtan2(
+      qSin(bearing) * sinAngular * cosLat1,
+      cosAngular - sinLat1 * qSin(lat2));
+
+  return {qRadiansToDegrees(lat2), qRadiansToDegrees(lon2)};
+}
+
 QString defaultJsbsimAircraftModel(const Entity& entity) {
   if (!entity.jsbsimAircraftModel.trimmed().isEmpty()) {
     return entity.jsbsimAircraftModel.trimmed();
@@ -194,7 +219,9 @@ void resolveTaskTargets(Entity& entity, const QVector<Entity>& snapshot, double 
     return;
   }
 
-  if (entity.currentTask.taskType == QStringLiteral("MoveToLocation")) {
+  if (entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
+      entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
+      entity.currentTask.taskType == QStringLiteral("MoveAlongRoute")) {
     entity.currentTask.targetHeadingDegrees = bearingDegrees(
         entity.latitude,
         entity.longitude,
@@ -227,6 +254,79 @@ void resolveTaskTargets(Entity& entity, const QVector<Entity>& snapshot, double 
       entity.speedKnots = 0.0;
       entity.verticalSpeedMetersPerSecond = 0.0;
     }
+    return;
+  }
+
+  if (entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
+      entity.currentTask.taskType == QStringLiteral("OrbitArea")) {
+    const double centerLatitude = entity.currentTask.targetLatitude;
+    const double centerLongitude = entity.currentTask.targetLongitude;
+    const double centerRangeMeters = distanceMeters(
+        entity.latitude,
+        entity.longitude,
+        centerLatitude,
+        centerLongitude);
+    const double areaRadiusMeters =
+        qMax(100.0, entity.currentTask.targetAreaRadiusMeters);
+    const double desiredOrbitRadiusMeters =
+        entity.currentTask.taskType == QStringLiteral("OrbitArea")
+            ? qMax(150.0, areaRadiusMeters * 0.75)
+            : qMax(200.0, areaRadiusMeters * 0.55);
+
+    double targetLatitude = centerLatitude;
+    double targetLongitude = centerLongitude;
+    QString status = centerRangeMeters > areaRadiusMeters * 1.1
+        ? QStringLiteral("En route to area")
+        : QStringLiteral("On area");
+
+    if (centerRangeMeters > areaRadiusMeters * 1.1) {
+      targetLatitude = centerLatitude;
+      targetLongitude = centerLongitude;
+    } else {
+      const double bearingFromCenter = bearingDegrees(
+          centerLatitude,
+          centerLongitude,
+          entity.latitude,
+          entity.longitude);
+      const double lookAheadDegrees =
+          entity.currentTask.taskType == QStringLiteral("OrbitArea") ? 55.0 : 115.0;
+      const auto orbitPoint = destinationPoint(
+          centerLatitude,
+          centerLongitude,
+          bearingFromCenter + lookAheadDegrees,
+          desiredOrbitRadiusMeters);
+      targetLatitude = orbitPoint.first;
+      targetLongitude = orbitPoint.second;
+      status =
+          entity.currentTask.taskType == QStringLiteral("OrbitArea")
+              ? QStringLiteral("Orbiting")
+              : QStringLiteral("Patrolling");
+    }
+
+    entity.currentTask.targetHeadingDegrees = bearingDegrees(
+        entity.latitude,
+        entity.longitude,
+        targetLatitude,
+        targetLongitude);
+    const double headingDelta = shortestSignedAngle(
+        entity.headingDegrees,
+        entity.currentTask.targetHeadingDegrees);
+    entity.headingDegrees = normalizeDegrees360(
+        entity.headingDegrees +
+        clampStep(0.0, headingDelta, kHeadingRateDegreesPerSecond * deltaSeconds));
+    entity.speedKnots = clampStep(
+        entity.speedKnots,
+        entity.currentTask.targetSpeedKnots,
+        kAccelerationKnotsPerSecond * deltaSeconds);
+    const double altitudeTarget =
+        entity.currentTask.targetAltitudeMeters > 0
+            ? static_cast<double>(entity.currentTask.targetAltitudeMeters)
+            : static_cast<double>(entity.altitude);
+    entity.verticalSpeedMetersPerSecond = clampStep(
+        0.0,
+        altitudeTarget - static_cast<double>(entity.altitude),
+        kClimbRateMetersPerSecond);
+    entity.currentTask.status = status;
     return;
   }
 

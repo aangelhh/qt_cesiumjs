@@ -16,6 +16,9 @@ public:
   explicit AssignTaskDialog(
       const QString& entityName,
       const QStringList& availableTargets,
+      const QStringList& availableWaypoints,
+      const QStringList& availableRoutes,
+      const QStringList& availableAreas,
       const EntityTask& currentTask,
       const QString& initialTaskType,
       QWidget* parent = nullptr);
@@ -36,4 +39,7 @@ private:
   QDoubleSpinBox* _latitudeSpin;
   QDoubleSpinBox* _longitudeSpin;
   QComboBox* _followTargetCombo;
+  QComboBox* _waypointCombo;
+  QComboBox* _routeCombo;
+  QComboBox* _areaCombo;
 };
