@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QString>
-#include <QList>
+#include <vector>
 #include <memory>
 
 namespace domain {
@@ -53,7 +53,7 @@ public:
     DesiredState evaluateTop(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt);
 
 private:
-    QList<std::unique_ptr<ITask>> m_stack;
+    std::vector<std::unique_ptr<ITask>> m_stack;
 };
 
 } // namespace domain

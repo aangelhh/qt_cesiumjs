@@ -261,12 +261,16 @@ bool ScenarioState::clearTask(const QString& entityName) {
   return this->assignTask(entityName, clearedTask);
 }
 
+domain::TaskStack* ScenarioState::getTaskStack(const QString& entityName) {
+  return &_taskStacks[entityName];
+}
+
 void ScenarioState::refreshSensors() {
   SensorEngine::updateEntityContacts(_entities);
 }
 
 void ScenarioState::advanceSimulation(double deltaSeconds) {
-  FlightDynamicsEngine::advanceEntities(_entities, deltaSeconds);
+  FlightDynamicsEngine::advanceEntities(_entities, _taskStacks, deltaSeconds);
   this->refreshSensors();
 }
 
@@ -278,6 +282,7 @@ void ScenarioState::stopMission() {
     entity.verticalSpeedMetersPerSecond = 0.0;
     entity.sensorContacts.clear();
   }
+  _taskStacks.clear();
   this->refreshSensors();
   this->save();
 }

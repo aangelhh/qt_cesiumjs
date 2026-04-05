@@ -65,34 +65,34 @@ DesiredState MoveToLocationTask::evaluate(double currentLat, double currentLon, 
 
 void TaskStack::push(std::unique_ptr<ITask> task)
 {
-    m_stack.append(std::move(task));
+    m_stack.push_back(std::move(task));
 }
 
 void TaskStack::pop()
 {
-    if (!m_stack.isEmpty()) {
-        m_stack.removeLast();
+    if (!m_stack.empty()) {
+        m_stack.pop_back();
     }
 }
 
 ITask* TaskStack::top() const
 {
-    if (m_stack.isEmpty()) return nullptr;
-    return m_stack.last().get();
+    if (m_stack.empty()) return nullptr;
+    return m_stack.back().get();
 }
 
 bool TaskStack::isEmpty() const
 {
-    return m_stack.isEmpty();
+    return m_stack.empty();
 }
 
 DesiredState TaskStack::evaluateTop(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt)
 {
-    if (m_stack.isEmpty()) {
+    if (m_stack.empty()) {
         return {currentHeading, currentAlt, 0.0}; // Hold current state if no tasks
     }
     
-    ITask* currentTask = m_stack.last().get();
+    ITask* currentTask = m_stack.back().get();
     DesiredState desired = currentTask->evaluate(currentLat, currentLon, currentAlt, currentHeading, dt);
     
     // Auto-pop completed tasks

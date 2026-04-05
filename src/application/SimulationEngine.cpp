@@ -52,8 +52,7 @@ void SimulationEngine::drainCommands()
         localQueue.pop();
         
         if (auto* createCmd = dynamic_cast<CmdCreateEntity*>(cmd.get())) {
-            domain::Entity newEntity;
-            newEntity.id = createCmd->id;
+            Entity newEntity;
             newEntity.name = createCmd->name;
             newEntity.latitude = createCmd->lat;
             newEntity.longitude = createCmd->lon;
@@ -63,6 +62,8 @@ void SimulationEngine::drainCommands()
             newEntity.type = createCmd->type;
             newEntity.flightDynamicsEnabled = true;
             newEntity.flightDynamicsMode = "jsbsim";
+            // newEntity.id doesn't exist on Entity, we rely on name as key
+
             
             m_scenario.addEntity(newEntity);
         }
@@ -80,6 +81,18 @@ void SimulationEngine::drainCommands()
             QString targetName = (moveCmd->targetEntityId == 1) ? "TestAircraft" : "";
             if (!targetName.isEmpty()) {
                 m_scenario.assignTask(targetName, task);
+                
+                // Also push the actual domain task to the stack
+                domain::TaskStack* stack = m_scenario.getTaskStack(targetName);
+                if (stack) {
+                    while (!stack->isEmpty()) {
+                        stack->pop();
+                    }
+                    stack->push(std::make_unique<domain::MoveToLocationTask>(
+                        task.targetLatitude, task.targetLongitude, 
+                        task.targetAltitudeMeters, task.targetSpeedKnots
+                    ));
+                }
             }
         }
     }
@@ -113,8 +126,17 @@ void SimulationEngine::run()
         
         // MVP: Broadcast state of all entities via EventBus instead of direct Qt signals
         for (const auto& e : m_scenario.entities()) {
+            QString teamLabel;
+            switch(e.forceIdentifier) {
+                case 1: teamLabel = "Friendly"; break;
+                case 2: teamLabel = "Opposing"; break;
+                case 3: teamLabel = "Neutral"; break;
+                default: teamLabel = "Unknown"; break;
+            }
+            
             EventBus::instance().publish(EventKinematicsUpdated(
-                e.id, e.name, e.latitude, e.longitude, static_cast<double>(e.altitude), e.headingDegrees, e.speedKnots, e.team
+                // Use a default ID or hash since Entity doesn't store an ID currently
+                1, e.name, e.latitude, e.longitude, static_cast<double>(e.altitude), e.headingDegrees, e.speedKnots, teamLabel
             ));
         }
 

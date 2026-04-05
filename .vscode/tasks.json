@@ -9,15 +9,16 @@
                 "-S",
                 ".",
                 "-B",
-                "build",
+                "build-macos-debug",
                 "-DCMAKE_BUILD_TYPE=Debug",
-                "-DCMAKE_PREFIX_PATH=/Users/angelconde/Qt/6.10.2/macos"
+                "-DCMAKE_PREFIX_PATH=/Users/angelconde/Qt/6.10.2/macos",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
             ],
             "group": "build",
             "problemMatcher": [
                 "$gcc"
             ],
-            "detail": "Configura el proyecto con CMake"
+            "detail": "Configura el proyecto con CMake en una carpeta de build separada para macOS"
         },
         {
             "label": "CMake Build",
@@ -29,7 +30,7 @@
             "command": "cmake",
             "args": [
                 "--build",
-                "build",
+                "build-macos-debug",
                 "--",
                 "-j4"
             ],
@@ -40,7 +41,7 @@
             "problemMatcher": [
                 "$gcc"
             ],
-            "detail": "Construye el proyecto desde la carpeta build principal en modo estable para macOS"
+            "detail": "Construye el proyecto desde la carpeta build de macOS en modo Debug"
         },
         {
             "label": "CMake Run Tests",
@@ -48,14 +49,14 @@
             "command": "ctest",
             "args": [
                 "--test-dir",
-                "build",
+                "build-macos-debug",
                 "--output-on-failure"
             ],
             "group": "test",
             "problemMatcher": [
                 "$gcc"
             ],
-            "detail": "Ejecuta tests desde la carpeta build"
+            "detail": "Ejecuta tests desde la carpeta build de macOS"
         }
     ]
 }

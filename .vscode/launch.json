@@ -8,7 +8,7 @@
             "name": "Launch qttest",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/qttest.app/Contents/MacOS/qttest",
+            "program": "${workspaceFolder}/build-macos-debug/qttest.app/Contents/MacOS/qttest",
             "args": [],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,
@@ -23,7 +23,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/a28ff8648ac2781d8eb182ab132ab968/tonka3000.qtvsctools/qt.natvis.xml"
+            "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/f47bb2143408e3406aebae287f31b343/tonka3000.qtvsctools/qt.natvis.xml"
         }
     ]
 }
