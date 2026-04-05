@@ -159,6 +159,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       let qtBridge = null;
       let viewer = null;
       let coordinatePickEnabled = false;
+      let draftCursorCartographic = null;
       let highlightedEntity = null;
       let overlaysVisible = true;
       let selectedQtTrackName = null;
@@ -304,6 +305,12 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         ]);
       }
 
+      function shouldShowTrackLine(track) {
+        const speedKnots = Number(track.speedKnots || 0.0);
+        const taskType = String(track.taskType || '').trim();
+        return speedKnots > 1.0 || taskType.length > 0;
+      }
+
       function buildAreaOptions(track, color, altitude) {
         const kind = String(track.type || '').toLowerCase();
         if (kind.includes('aew')) {
@@ -383,19 +390,13 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       }
 
       function qtLabelSpeed(track) {
-        return qtLabelStableNumber(
-          String(track.name || '') + ':' + String(track.type || ''),
-          180,
-          420
-        ) + ' kts';
+        return Number(track.speedKnots || 0.0).toFixed(0) + ' kts';
       }
 
       function qtLabelHeading(track) {
-        return qtLabelStableNumber(
-          String(track.name || '') + ':' + String(track.position || ''),
-          0,
-          360
-        ) + ' Deg';
+        const heading = Number(track.headingDegrees || 0.0);
+        const normalized = ((heading % 360.0) + 360.0) % 360.0;
+        return normalized.toFixed(0) + ' Deg';
       }
 
       function qtDecimalDegreesToDdm(value, positiveSuffix, negativeSuffix) {
@@ -481,6 +482,74 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         return positions;
       }
 
+      function buildAreaCircleHierarchy(graphic) {
+        const longitude = Number(graphic.longitude || 0.0);
+        const latitude = Number(graphic.latitude || 0.0);
+        const altitudeMatch = String(graphic.altitude || '').match(/-?\d+(?:\.\d+)?/);
+        const altitude = altitudeMatch ? Number(altitudeMatch[0]) : 15.0;
+        const radiusMeters = Math.max(1.0, Number(graphic.radiusMeters || 1000.0));
+        const positions = [];
+        const steps = 48;
+
+        for (let index = 0; index <= steps; ++index) {
+          const bearing = (index / steps) * 360.0;
+          const point = destinationPoint(latitude, longitude, bearing, radiusMeters);
+          positions.push(
+            Cesium.Cartesian3.fromDegrees(
+              point.longitude,
+              point.latitude,
+              altitude
+            )
+          );
+        }
+
+        return new Cesium.PolygonHierarchy(positions);
+      }
+
+      function buildAreaEllipseHierarchy(graphic) {
+        const longitude = Number(graphic.longitude || 0.0);
+        const latitude = Number(graphic.latitude || 0.0);
+        const altitudeMatch = String(graphic.altitude || '').match(/-?\d+(?:\.\d+)?/);
+        const altitude = altitudeMatch ? Number(altitudeMatch[0]) : 15.0;
+        const semiMajorAxisMeters = Math.max(1.0, Number(graphic.semiMajorAxisMeters || 1000.0));
+        const semiMinorAxisMeters = Math.max(1.0, Number(graphic.semiMinorAxisMeters || 600.0));
+        const rotationRadians = Cesium.Math.toRadians(Number(graphic.rotationDegrees || 0.0));
+        const positions = [];
+        const steps = 64;
+
+        for (let index = 0; index <= steps; ++index) {
+          const theta = (index / steps) * Cesium.Math.TWO_PI;
+          const x = semiMajorAxisMeters * Math.cos(theta);
+          const y = semiMinorAxisMeters * Math.sin(theta);
+          const rotatedX = (x * Math.cos(rotationRadians)) - (y * Math.sin(rotationRadians));
+          const rotatedY = (x * Math.sin(rotationRadians)) + (y * Math.cos(rotationRadians));
+          const distanceMeters = Math.sqrt((rotatedX * rotatedX) + (rotatedY * rotatedY));
+          const bearing = Cesium.Math.toDegrees(Math.atan2(rotatedX, rotatedY));
+          const point = destinationPoint(latitude, longitude, bearing, distanceMeters);
+          positions.push(
+            Cesium.Cartesian3.fromDegrees(
+              point.longitude,
+              point.latitude,
+              altitude
+            )
+          );
+        }
+
+        return new Cesium.PolygonHierarchy(positions);
+      }
+
+      function buildAreaPolygonHierarchy(graphic) {
+        const points = Array.isArray(graphic.areaPoints) ? graphic.areaPoints : [];
+        const positions = points.map(function(point) {
+          return Cesium.Cartesian3.fromDegrees(
+            Number(point.longitude || 0.0),
+            Number(point.latitude || 0.0),
+            Math.max(15.0, Number(point.altitudeMeters || 0.0))
+          );
+        });
+        return new Cesium.PolygonHierarchy(positions);
+      }
+
       function radarSensorsForTrack(track) {
         if (!Array.isArray(track.sensors)) {
           return [];
@@ -553,6 +622,608 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         return entity.name || null;
       }
 
+      function createInterpolatedMotionState(initialPosition) {
+        return {
+          previousPosition: Cesium.Cartesian3.clone(initialPosition),
+          targetPosition: Cesium.Cartesian3.clone(initialPosition),
+          startTimeMs: performance.now(),
+          durationMs: 150.0,
+        };
+      }
+
+      function motionStatePosition(motionState) {
+        const elapsed = performance.now() - motionState.startTimeMs;
+        const t = Cesium.Math.clamp(elapsed / motionState.durationMs, 0.0, 1.0);
+        return Cesium.Cartesian3.lerp(
+          motionState.previousPosition,
+          motionState.targetPosition,
+          t,
+          new Cesium.Cartesian3()
+        );
+      }
+
+      function installInterpolatedPosition(entity, initialPosition) {
+        const motionState = createInterpolatedMotionState(initialPosition);
+        entity._qtMotionState = motionState;
+        entity.position = new Cesium.CallbackProperty(function() {
+          return motionStatePosition(motionState);
+        }, false);
+      }
+
+      function predictTrackPosition(track, altitude, secondsAhead) {
+        if (!track || !secondsAhead || secondsAhead <= 0.0) {
+          return Cesium.Cartesian3.fromDegrees(
+            Number(track && track.longitude || 0.0),
+            Number(track && track.latitude || 0.0),
+            altitude
+          );
+        }
+
+        const longitude = Number(track.longitude || 0.0);
+        const latitude = Number(track.latitude || 0.0);
+        const headingRadians = Cesium.Math.toRadians(Number(track.headingDegrees || 0.0));
+        const speedMetersPerSecond = Number(track.speedKnots || 0.0) * 0.514444;
+        const surfaceDistance = speedMetersPerSecond * secondsAhead;
+        const earthRadiusMeters = 6371000.0;
+        const latitudeRadians = Cesium.Math.toRadians(latitude);
+        const longitudeRadians = Cesium.Math.toRadians(longitude);
+        const angularDistance = surfaceDistance / earthRadiusMeters;
+        const predictedLatitudeRadians = Math.asin(
+          Math.sin(latitudeRadians) * Math.cos(angularDistance) +
+          Math.cos(latitudeRadians) * Math.sin(angularDistance) * Math.cos(headingRadians)
+        );
+        const predictedLongitudeRadians = longitudeRadians + Math.atan2(
+          Math.sin(headingRadians) * Math.sin(angularDistance) * Math.cos(latitudeRadians),
+          Math.cos(angularDistance) - Math.sin(latitudeRadians) * Math.sin(predictedLatitudeRadians)
+        );
+
+        return Cesium.Cartesian3.fromRadians(
+          predictedLongitudeRadians,
+          predictedLatitudeRadians,
+          altitude
+        );
+      }
+
+      function predictedEntityPosition(track, nextPosition) {
+        if (!track) {
+          return nextPosition;
+        }
+
+        const altitudeMatch = String(track.altitude || '').match(/-?\d+(?:\.\d+)?/);
+        const altitude = altitudeMatch ? Number(altitudeMatch[0]) : 0.0;
+        const speedKnots = Number(track.speedKnots || 0.0);
+        if (speedKnots <= 1.0) {
+          return nextPosition;
+        }
+
+        return predictTrackPosition(track, altitude, 0.18);
+      }
+
+      function updateInterpolatedPosition(entity, nextPosition, track) {
+        if (!entity._qtMotionState) {
+          installInterpolatedPosition(entity, nextPosition);
+          return;
+        }
+
+        const motionState = entity._qtMotionState;
+        motionState.previousPosition = motionStatePosition(motionState);
+        motionState.targetPosition = Cesium.Cartesian3.clone(
+          predictedEntityPosition(track, nextPosition)
+        );
+        motionState.startTimeMs = performance.now();
+        motionState.durationMs = 150.0;
+      }
+
+      function currentEntityCartesian(entity) {
+        if (!entity || !entity.position) {
+          return null;
+        }
+        if (typeof entity.position.getValue === 'function') {
+          return entity.position.getValue(Cesium.JulianDate.now());
+        }
+        return entity.position;
+      }
+
+      function buildRoutePositionsForEntity(entity) {
+        const cartesian = currentEntityCartesian(entity);
+        const track = entity && entity._qtTrackData ? entity._qtTrackData : null;
+        if (!cartesian || !track) {
+          return null;
+        }
+
+        const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+        if (!cartographic) {
+          return null;
+        }
+
+        return buildRoutePositions(
+          {
+            longitude: Cesium.Math.toDegrees(cartographic.longitude),
+            latitude: Cesium.Math.toDegrees(cartographic.latitude),
+            type: track.type || '',
+          },
+          cartographic.height || 0.0
+        );
+      }
+
+      function buildRadarFanHierarchyForEntity(entity, sensor) {
+        const cartesian = currentEntityCartesian(entity);
+        const track = entity && entity._qtTrackData ? entity._qtTrackData : null;
+        if (!cartesian || !track || !sensor) {
+          return null;
+        }
+
+        const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+        if (!cartographic) {
+          return null;
+        }
+
+        const longitude = Cesium.Math.toDegrees(cartographic.longitude);
+        const latitude = Cesium.Math.toDegrees(cartographic.latitude);
+        const altitude = cartographic.height || 0.0;
+        const syntheticTrack = Object.assign({}, track, {
+          longitude: longitude,
+          latitude: latitude,
+          headingDegrees: Number(track.headingDegrees || 0.0),
+        });
+        return new Cesium.PolygonHierarchy(
+          buildRadarFanPositions(syntheticTrack, sensor, altitude)
+        );
+      }
+
+      function buildEntityOrientationProperty(entity) {
+        return new Cesium.CallbackProperty(function(time) {
+          const position = currentEntityCartesian(entity);
+          const track = entity && entity._qtTrackData ? entity._qtTrackData : null;
+          if (!position || !track) {
+            return Cesium.Quaternion.IDENTITY;
+          }
+
+          const headingRadians = Cesium.Math.toRadians(Number(track.headingDegrees || 0.0));
+          const headingPitchRoll = new Cesium.HeadingPitchRoll(headingRadians, 0.0, 0.0);
+          return Cesium.Transforms.headingPitchRollQuaternion(
+            position,
+            headingPitchRoll
+          );
+        }, false);
+      }
+
+      const qtGraphicsByName = new Map();
+      const qtDraftGraphicsByName = new Map();
+
+      function parseGraphicAltitude(graphic, fallbackAltitude) {
+        const altitudeMatch = String(graphic.altitude || '').match(/-?\d+(?:\.\d+)?/);
+        if (altitudeMatch) {
+          return Number(altitudeMatch[0]);
+        }
+        return Number(fallbackAltitude || 15.0);
+      }
+
+      function cartesianFromPointSummary(point, fallbackAltitude) {
+        return Cesium.Cartesian3.fromDegrees(
+          Number(point.longitude || 0.0),
+          Number(point.latitude || 0.0),
+          Math.max(15.0, Number(point.altitudeMeters || fallbackAltitude || 15.0))
+        );
+      }
+
+      function cartographicFromWindowPosition(windowPosition) {
+        if (!viewer || !windowPosition) {
+          return null;
+        }
+
+        let cartesian;
+        if (viewer.scene.pickPositionSupported) {
+          cartesian = viewer.scene.pickPosition(windowPosition);
+        }
+        if (!Cesium.defined(cartesian)) {
+          cartesian = viewer.camera.pickEllipsoid(
+            windowPosition,
+            viewer.scene.globe.ellipsoid
+          );
+        }
+        if (!Cesium.defined(cartesian)) {
+          return null;
+        }
+        return Cesium.Cartographic.fromCartesian(cartesian);
+      }
+
+      function draftCursorPointSummary(fallbackAltitude) {
+        if (!draftCursorCartographic) {
+          return null;
+        }
+        return {
+          longitude: Cesium.Math.toDegrees(draftCursorCartographic.longitude),
+          latitude: Cesium.Math.toDegrees(draftCursorCartographic.latitude),
+          altitudeMeters: Math.max(15.0, Number(draftCursorCartographic.height || fallbackAltitude || 15.0)),
+        };
+      }
+
+      function removeDraftGraphicBundle(bundle) {
+        if (!bundle || !viewer) {
+          return;
+        }
+        if (bundle.main) {
+          viewer.entities.remove(bundle.main);
+        }
+        if (bundle.points) {
+          bundle.points.forEach(function(pointEntity) {
+            viewer.entities.remove(pointEntity);
+          });
+        }
+      }
+
+      function syncDraftPointEntities(bundle, graphicName, pointSummaries, color) {
+        if (!bundle.points) {
+          bundle.points = [];
+        }
+
+        while (bundle.points.length > pointSummaries.length) {
+          const pointEntity = bundle.points.pop();
+          viewer.entities.remove(pointEntity);
+        }
+
+        pointSummaries.forEach(function(pointSummary, index) {
+          const position = cartesianFromPointSummary(pointSummary, 15.0);
+          const isFirstPoint = index === 0;
+          const pointColor = isFirstPoint
+            ? Cesium.Color.WHITE.withAlpha(0.95)
+            : color.withAlpha(0.92);
+          const outlineColor = isFirstPoint
+            ? color.withAlpha(0.98)
+            : Cesium.Color.BLACK.withAlpha(0.85);
+
+          let pointEntity = bundle.points[index];
+          if (!pointEntity) {
+            pointEntity = viewer.entities.add({
+              id: 'qt-draft-graphic:' + graphicName + ':point:' + index,
+              position: position,
+              point: {
+                pixelSize: isFirstPoint ? 16 : 11,
+                color: pointColor,
+                outlineColor: outlineColor,
+                outlineWidth: isFirstPoint ? 3 : 2,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+              label: isFirstPoint ? {
+                text: 'Start / Close',
+                font: '12px sans-serif',
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                fillColor: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2,
+                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                pixelOffset: new Cesium.Cartesian2(0, -16),
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              } : undefined,
+            });
+            bundle.points.push(pointEntity);
+          } else {
+            pointEntity.position = position;
+            pointEntity.point.pixelSize = isFirstPoint ? 16 : 11;
+            pointEntity.point.color = pointColor;
+            pointEntity.point.outlineColor = outlineColor;
+            pointEntity.point.outlineWidth = isFirstPoint ? 3 : 2;
+            pointEntity.label = isFirstPoint ? new Cesium.LabelGraphics({
+              text: 'Start / Close',
+              font: '12px sans-serif',
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              fillColor: Cesium.Color.WHITE,
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 2,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              pixelOffset: new Cesium.Cartesian2(0, -16),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            }) : undefined;
+          }
+        });
+      }
+
+      function refreshAllDraftGraphics() {
+        qtDraftGraphicsByName.forEach(function(bundle) {
+          if (bundle && bundle.graphic) {
+            window.addOrUpdateQtDraftGraphic(bundle.graphic);
+          }
+        });
+      }
+
+      function graphicColor(type) {
+        const normalized = String(type || '').toLowerCase();
+        if (normalized === 'area') {
+          return Cesium.Color.fromCssColorString('#ffd166');
+        }
+        if (normalized === 'route') {
+          return Cesium.Color.fromCssColorString('#ff6c52');
+        }
+        return Cesium.Color.fromCssColorString('#9ef06a');
+      }
+
+      window.addOrUpdateQtGraphic = function(graphic, focus) {
+        if (!viewer || !graphic || !graphic.name) {
+          return false;
+        }
+
+        const type = String(graphic.type || '');
+        const color = graphicColor(type);
+        let entity = qtGraphicsByName.get(graphic.name);
+
+        if (type === 'Waypoint') {
+          const longitude = Number(graphic.longitude || 0.0);
+          const latitude = Number(graphic.latitude || 0.0);
+          const altitudeMatch = String(graphic.altitude || '').match(/-?\d+(?:\.\d+)?/);
+          const altitude = altitudeMatch ? Number(altitudeMatch[0]) : 15.0;
+          const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude);
+          if (!entity) {
+            entity = viewer.entities.add({
+              id: 'qt-graphic:' + graphic.name,
+              name: graphic.name,
+              position: position,
+              point: {
+                pixelSize: 10,
+                color: color,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 1,
+                heightReference: Cesium.HeightReference.NONE,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+              label: {
+                text: graphic.name,
+                font: '12px sans-serif',
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                fillColor: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2,
+                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                pixelOffset: new Cesium.Cartesian2(0, -12),
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+            });
+          } else {
+            entity.position = position;
+            entity.label.text = graphic.name;
+            entity.point.color = color;
+          }
+        } else if (type === 'Route') {
+          const points = Array.isArray(graphic.routePoints) ? graphic.routePoints : [];
+          const positions = points.map(function(point) {
+            return Cesium.Cartesian3.fromDegrees(
+              Number(point.longitude || 0.0),
+              Number(point.latitude || 0.0),
+              Math.max(15.0, Number(point.altitudeMeters || 0.0))
+            );
+          });
+          if (!entity) {
+            entity = viewer.entities.add({
+              id: 'qt-graphic:' + graphic.name,
+              name: graphic.name,
+              polyline: {
+                positions: positions,
+                width: 3.0,
+                material: color,
+                arcType: Cesium.ArcType.GEODESIC,
+                clampToGround: false,
+              },
+              label: positions.length > 0 ? {
+                text: graphic.name,
+                font: '12px sans-serif',
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                fillColor: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2,
+                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                pixelOffset: new Cesium.Cartesian2(0, -12),
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              } : undefined,
+              position: positions.length > 0 ? positions[0] : undefined,
+            });
+          } else {
+            entity.polyline.positions = positions;
+            entity.position = positions.length > 0 ? positions[0] : undefined;
+            if (entity.label) {
+              entity.label.text = graphic.name;
+            }
+          }
+        } else if (type === 'Area') {
+          const longitude = Number(graphic.longitude || 0.0);
+          const latitude = Number(graphic.latitude || 0.0);
+          const altitudeMatch = String(graphic.altitude || '').match(/-?\d+(?:\.\d+)?/);
+          const altitude = altitudeMatch ? Number(altitudeMatch[0]) : 15.0;
+          const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude);
+          const areaType = String(graphic.areaType || 'Circle');
+          let hierarchy = buildAreaCircleHierarchy(graphic);
+          if (areaType === 'Ellipse') {
+            hierarchy = buildAreaEllipseHierarchy(graphic);
+          } else if (areaType === 'Polygon') {
+            hierarchy = buildAreaPolygonHierarchy(graphic);
+          }
+          if (!entity) {
+            entity = viewer.entities.add({
+              id: 'qt-graphic:' + graphic.name,
+              name: graphic.name,
+              position: position,
+              polygon: {
+                hierarchy: hierarchy,
+                material: color.withAlpha(0.18),
+                outline: true,
+                outlineColor: color.withAlpha(0.75),
+                perPositionHeight: true,
+              },
+              label: {
+                text: graphic.name,
+                font: '12px sans-serif',
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                fillColor: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2,
+                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                pixelOffset: new Cesium.Cartesian2(0, -12),
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+            });
+          } else {
+            entity.position = position;
+            entity.polygon.hierarchy = hierarchy;
+            entity.polygon.material = color.withAlpha(0.18);
+            entity.polygon.outlineColor = color.withAlpha(0.75);
+            if (entity.label) {
+              entity.label.text = graphic.name;
+            }
+          }
+        } else {
+          return false;
+        }
+
+        qtGraphicsByName.set(graphic.name, entity);
+
+        if (focus && entity) {
+          viewer.flyTo(entity, {
+            duration: 1.0,
+            offset: new Cesium.HeadingPitchRange(0.0, -0.7, 150000.0),
+          });
+        }
+        return true;
+      };
+
+      window.addOrUpdateQtDraftGraphic = function(graphic) {
+        if (!viewer || !graphic || !graphic.name) {
+          return false;
+        }
+
+        let bundle = qtDraftGraphicsByName.get(graphic.name);
+        if (!bundle) {
+          bundle = {
+            main: null,
+            points: [],
+            graphic: null,
+          };
+        }
+        bundle.graphic = Object.assign({}, graphic);
+
+        const color = Cesium.Color.fromCssColorString('#ffe082');
+        const longitude = Number(graphic.longitude || 0.0);
+        const latitude = Number(graphic.latitude || 0.0);
+        const altitude = parseGraphicAltitude(graphic, 15.0);
+        const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude);
+
+        const type = String(graphic.type || 'Area');
+        if (type === 'Route') {
+          const routePoints = Array.isArray(graphic.routePoints) ? graphic.routePoints.slice() : [];
+          const cursorPoint = routePoints.length === 1 ? draftCursorPointSummary(altitude) : null;
+          if (cursorPoint) {
+            routePoints.push(cursorPoint);
+          }
+          const positions = routePoints.map(function(point) {
+            return cartesianFromPointSummary(point, altitude);
+          });
+
+          if (!bundle.main) {
+            bundle.main = viewer.entities.add({
+              id: 'qt-draft-graphic:' + graphic.name,
+              name: graphic.name,
+              position: position,
+              polyline: {
+                positions: positions,
+                width: 3.0,
+                material: color,
+                arcType: Cesium.ArcType.GEODESIC,
+                clampToGround: false,
+              },
+              label: {
+                text: graphic.name,
+                font: '12px sans-serif',
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                fillColor: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2,
+                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                pixelOffset: new Cesium.Cartesian2(0, -12),
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+            });
+          } else {
+            bundle.main.position = position;
+            bundle.main.polyline.positions = positions;
+            if (bundle.main.label) {
+              bundle.main.label.text = graphic.name;
+            }
+          }
+
+          syncDraftPointEntities(
+            bundle,
+            graphic.name,
+            Array.isArray(graphic.routePoints) ? graphic.routePoints : [],
+            color);
+          qtDraftGraphicsByName.set(graphic.name, bundle);
+          return true;
+        }
+
+        const areaType = String(graphic.areaType || 'Polygon');
+        const areaPoints = Array.isArray(graphic.areaPoints) ? graphic.areaPoints.slice() : [];
+        const cursorPoint =
+          areaType === 'Polygon' && areaPoints.length >= 1 ? draftCursorPointSummary(altitude) : null;
+        const previewPoints = areaPoints.slice();
+        if (cursorPoint) {
+          previewPoints.push(cursorPoint);
+        }
+
+        let hierarchy = buildAreaCircleHierarchy(graphic);
+        if (areaType === 'Ellipse') {
+          hierarchy = buildAreaEllipseHierarchy(graphic);
+        } else if (areaType === 'Polygon') {
+          hierarchy = new Cesium.PolygonHierarchy(previewPoints.map(function(point) {
+            return cartesianFromPointSummary(point, altitude);
+          }));
+        }
+
+        const polygonEnabled = areaType !== 'Polygon' || previewPoints.length >= 3;
+        const polylinePositions =
+          areaType === 'Polygon'
+            ? previewPoints.map(function(point) {
+                return cartesianFromPointSummary(point, altitude);
+              })
+            : [];
+
+        if (!bundle.main) {
+          bundle.main = viewer.entities.add({
+            id: 'qt-draft-graphic:' + graphic.name,
+            name: graphic.name,
+            position: position,
+            polygon: polygonEnabled ? {
+              hierarchy: hierarchy,
+              material: color.withAlpha(0.12),
+              outline: true,
+              outlineColor: color.withAlpha(0.95),
+              perPositionHeight: true,
+            } : undefined,
+            polyline: areaType === 'Polygon' ? {
+              positions: polylinePositions,
+              width: 2.0,
+              material: color,
+              clampToGround: false,
+            } : undefined,
+          });
+        } else {
+          bundle.main.position = position;
+          bundle.main.polygon = polygonEnabled ? new Cesium.PolygonGraphics({
+            hierarchy: hierarchy,
+            material: color.withAlpha(0.12),
+            outline: true,
+            outlineColor: color.withAlpha(0.95),
+            perPositionHeight: true,
+          }) : undefined;
+          bundle.main.polyline = areaType === 'Polygon' ? new Cesium.PolylineGraphics({
+            positions: polylinePositions,
+            width: 2.0,
+            material: color,
+            clampToGround: false,
+          }) : undefined;
+        }
+
+        syncDraftPointEntities(bundle, graphic.name, areaPoints, color);
+        qtDraftGraphicsByName.set(graphic.name, bundle);
+        return true;
+      };
+
       window.addOrUpdateQtTrack = function(track, focus) {
         if (!viewer || !track || !track.name) {
           return false;
@@ -618,6 +1289,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               qtTrackModelName: track.modelName || '',
               qtTrackSidc: symbolSidc || '',
             },
+            orientation: undefined,
           };
           if (hasModel) {
             entityOptions.model = {
@@ -626,12 +1298,24 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               maximumScale: 20000,
               scale: 1.0,
             };
+            entityOptions.orientation = buildEntityOrientationProperty({
+              _qtTrackData: track,
+              position: {
+                getValue: function() { return position; }
+              }
+            });
           }
           entity = viewer.entities.add(entityOptions);
+          installInterpolatedPosition(entity, position);
+          entity._qtTrackData = Object.assign({}, track);
+          if (hasModel) {
+            entity.orientation = buildEntityOrientationProperty(entity);
+          }
           qtEntitiesByName.set(track.name, entity);
         } else {
-          entity.position = position;
+          updateInterpolatedPosition(entity, position, track);
           entity.name = track.name;
+          entity._qtTrackData = Object.assign({}, track);
           entity.point.show = !hasModel && !hasSymbol;
           entity.point.color = color;
           entity.label.text = track.name;
@@ -649,8 +1333,10 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               maximumScale: 20000,
               scale: 1.0,
             });
+            entity.orientation = buildEntityOrientationProperty(entity);
           } else {
             entity.model = undefined;
+            entity.orientation = undefined;
           }
           if (hasSymbol) {
             entity.billboard = new Cesium.BillboardGraphics({
@@ -665,20 +1351,28 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           }
         }
 
-        const routePositions = buildRoutePositions(track, altitude);
-        if (!overlayBundle.route) {
-          overlayBundle.route = viewer.entities.add({
-            id: entityId + ':route',
-            polyline: {
-              positions: routePositions,
-              width: 2.5,
-              material: color.withAlpha(0.75),
-              arcType: Cesium.ArcType.GEODESIC,
-            },
-            show: overlaysVisible,
-          });
-        } else {
-          overlayBundle.route.polyline.positions = routePositions;
+        if (!entity._qtMotionState) {
+          updateInterpolatedPosition(entity, position, track);
+        }
+
+        if (shouldShowTrackLine(track)) {
+          if (!overlayBundle.route) {
+            overlayBundle.route = viewer.entities.add({
+              id: entityId + ':route',
+              polyline: {
+                positions: new Cesium.CallbackProperty(function() {
+                  return buildRoutePositionsForEntity(entity);
+                }, false),
+                width: 2.5,
+                material: color.withAlpha(0.75),
+                arcType: Cesium.ArcType.GEODESIC,
+              },
+              show: overlaysVisible,
+            });
+          }
+        } else if (overlayBundle.route) {
+          viewer.entities.remove(overlayBundle.route);
+          overlayBundle.route = null;
         }
 
         const areaOptions = buildAreaOptions(track, color, altitude);
@@ -686,12 +1380,12 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           if (!overlayBundle.area) {
             overlayBundle.area = viewer.entities.add({
               id: entityId + ':area',
-              position,
+              position: entity.position,
               ellipse: areaOptions,
               show: overlaysVisible,
             });
           } else {
-            overlayBundle.area.position = position;
+            overlayBundle.area.position = entity.position;
             overlayBundle.area.ellipse.semiMajorAxis = areaOptions.semiMajorAxis;
             overlayBundle.area.ellipse.semiMinorAxis = areaOptions.semiMinorAxis;
             overlayBundle.area.ellipse.material = areaOptions.material;
@@ -708,7 +1402,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         if (!overlayBundle.label) {
           overlayBundle.label = viewer.entities.add({
             id: entityId + ':label',
-            position,
+            position: entity.position,
             label: {
               text: simulationLabelText,
               font: '15px monospace',
@@ -730,34 +1424,39 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             show: overlaysVisible && track.name === selectedQtTrackName,
           });
         } else {
-          overlayBundle.label.position = position;
+          overlayBundle.label.position = entity.position;
           overlayBundle.label.label.text = simulationLabelText;
         }
 
-        if (overlayBundle.radarFans && overlayBundle.radarFans.length > 0) {
-          for (const fan of overlayBundle.radarFans) {
-            viewer.entities.remove(fan);
-          }
-        }
-        overlayBundle.radarFans = [];
-
         const radarSensors = radarSensorsForTrack(track);
+        if (overlayBundle.radarFans && overlayBundle.radarFans.length > radarSensors.length) {
+          for (let index = radarSensors.length; index < overlayBundle.radarFans.length; ++index) {
+            viewer.entities.remove(overlayBundle.radarFans[index]);
+          }
+          overlayBundle.radarFans.length = radarSensors.length;
+        }
+
         radarSensors.forEach(function(sensor, index) {
-          const fanPositions = buildRadarFanPositions(track, sensor, altitude);
           const radarColor = color.withAlpha(0.12 + Math.min(index, 3) * 0.04);
           const outlineColor = color.withAlpha(0.65);
-          const fanEntity = viewer.entities.add({
-            id: entityId + ':radar:' + index,
-            polygon: {
-              hierarchy: fanPositions,
-              material: radarColor,
-              outline: true,
-              outlineColor,
-              perPositionHeight: true,
-            },
-            show: overlaysVisible,
-          });
-          overlayBundle.radarFans.push(fanEntity);
+          if (!overlayBundle.radarFans[index]) {
+            overlayBundle.radarFans[index] = viewer.entities.add({
+              id: entityId + ':radar:' + index,
+              polygon: {
+                hierarchy: new Cesium.CallbackProperty(function() {
+                  return buildRadarFanHierarchyForEntity(entity, sensor);
+                }, false),
+                material: radarColor,
+                outline: true,
+                outlineColor,
+                perPositionHeight: true,
+              },
+              show: overlaysVisible,
+            });
+          } else {
+            overlayBundle.radarFans[index].polygon.material = radarColor;
+            overlayBundle.radarFans[index].polygon.outlineColor = outlineColor;
+          }
         });
 
         setOverlayVisibility(overlayBundle, overlaysVisible);
@@ -775,8 +1474,70 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         return true;
       };
 
+      window.removeQtTrack = function(trackName) {
+        if (!viewer || !trackName) {
+          return false;
+        }
+
+        const entity = qtEntitiesByName.get(trackName);
+        if (entity) {
+          viewer.entities.remove(entity);
+          qtEntitiesByName.delete(trackName);
+        }
+
+        const overlayBundle = qtOverlayEntitiesByName.get(trackName);
+        if (overlayBundle) {
+          if (overlayBundle.route) {
+            viewer.entities.remove(overlayBundle.route);
+          }
+          if (overlayBundle.area) {
+            viewer.entities.remove(overlayBundle.area);
+          }
+          if (overlayBundle.label) {
+            viewer.entities.remove(overlayBundle.label);
+          }
+          if (overlayBundle.radarFans) {
+            for (const fan of overlayBundle.radarFans) {
+              viewer.entities.remove(fan);
+            }
+          }
+          qtOverlayEntitiesByName.delete(trackName);
+        }
+
+        if (selectedQtTrackName === trackName) {
+          selectedQtTrackName = null;
+          applyHighlight(null);
+        }
+        return true;
+      };
+
+      window.removeQtGraphic = function(graphicName) {
+        if (!viewer || !graphicName) {
+          return false;
+        }
+        const entity = qtGraphicsByName.get(graphicName);
+        if (entity) {
+          viewer.entities.remove(entity);
+          qtGraphicsByName.delete(graphicName);
+        }
+        return true;
+      };
+
+      window.removeQtDraftGraphic = function(graphicName) {
+        if (!viewer || !graphicName) {
+          return false;
+        }
+        const bundle = qtDraftGraphicsByName.get(graphicName);
+        if (bundle) {
+          removeDraftGraphicBundle(bundle);
+          qtDraftGraphicsByName.delete(graphicName);
+        }
+        return true;
+      };
+
       window.beginQtCoordinatePick = function() {
         coordinatePickEnabled = true;
+        draftCursorCartographic = null;
         updateLoading('Haz clic en el mapa para elegir coordenadas...');
         reportStatus('Haz clic en el mapa para elegir coordenadas.');
       };
@@ -812,9 +1573,19 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           viewer.scene.globe.depthTestAgainstTerrain = true;
           viewer.scene.skyAtmosphere.show = true;
           viewer.scene.globe.enableLighting = true;
+          viewer.clock.shouldAnimate = true;
           viewer.camera.flyHome(0);
 
           const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+          handler.setInputAction(function(movement) {
+            if (!coordinatePickEnabled || qtDraftGraphicsByName.size === 0) {
+              draftCursorCartographic = null;
+              return;
+            }
+            draftCursorCartographic = cartographicFromWindowPosition(movement.endPosition);
+            refreshAllDraftGraphics();
+          }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
           handler.setInputAction(function(click) {
             // Handle RIGHT CLICK for moving to location
             let cartesian;
@@ -843,28 +1614,36 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
 
           handler.setInputAction(function(click) {
             if (coordinatePickEnabled) {
-              let cartesian;
-              if (viewer.scene.pickPositionSupported) {
-                cartesian = viewer.scene.pickPosition(click.position);
+              let cartographic = null;
+              const pickedDraft = viewer.scene.pick(click.position);
+              if (Cesium.defined(pickedDraft) &&
+                  Cesium.defined(pickedDraft.id) &&
+                  typeof pickedDraft.id.id === 'string' &&
+                  pickedDraft.id.id.indexOf('qt-draft-graphic:') === 0 &&
+                  pickedDraft.id.id.indexOf(':point:0') !== -1) {
+                const pickedPosition = pickedDraft.id.position
+                  ? pickedDraft.id.position.getValue(Cesium.JulianDate.now())
+                  : null;
+                if (Cesium.defined(pickedPosition)) {
+                  cartographic = Cesium.Cartographic.fromCartesian(pickedPosition);
+                }
               }
-              if (!Cesium.defined(cartesian)) {
-                cartesian = viewer.camera.pickEllipsoid(
-                  click.position,
-                  viewer.scene.globe.ellipsoid
-                );
+
+              if (!cartographic) {
+                cartographic = cartographicFromWindowPosition(click.position);
               }
-              if (!Cesium.defined(cartesian)) {
+              if (!cartographic) {
                 reportStatus('No se pudo leer la coordenada de ese clic.');
                 updateLoading('No se pudo leer la coordenada. Vuelve a intentarlo.');
                 return;
               }
-
-              const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
               const longitude = Cesium.Math.toDegrees(cartographic.longitude);
               const latitude = Cesium.Math.toDegrees(cartographic.latitude);
               const height = cartographic.height || 0.0;
 
               coordinatePickEnabled = false;
+              draftCursorCartographic = null;
+              refreshAllDraftGraphics();
               updateLoading('Coordenadas capturadas.');
               if (qtBridge && qtBridge.reportPickedCoordinate) {
                 qtBridge.reportPickedCoordinate(longitude, latitude, height);

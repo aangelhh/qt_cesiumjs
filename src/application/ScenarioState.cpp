@@ -79,6 +79,10 @@ QJsonObject toJson(const EntityTask& task) {
       {QStringLiteral("targetLatitude"), task.targetLatitude},
       {QStringLiteral("targetLongitude"), task.targetLongitude},
       {QStringLiteral("targetEntityName"), task.targetEntityName},
+      {QStringLiteral("targetWaypointName"), task.targetWaypointName},
+      {QStringLiteral("targetRouteName"), task.targetRouteName},
+      {QStringLiteral("targetAreaName"), task.targetAreaName},
+      {QStringLiteral("targetAreaRadiusMeters"), task.targetAreaRadiusMeters},
   };
 }
 
@@ -93,7 +97,115 @@ EntityTask taskFromJson(const QJsonObject& object) {
   task.targetLatitude = object.value(QStringLiteral("targetLatitude")).toDouble(0.0);
   task.targetLongitude = object.value(QStringLiteral("targetLongitude")).toDouble(0.0);
   task.targetEntityName = object.value(QStringLiteral("targetEntityName")).toString();
+  task.targetWaypointName = object.value(QStringLiteral("targetWaypointName")).toString();
+  task.targetRouteName = object.value(QStringLiteral("targetRouteName")).toString();
+  task.targetAreaName = object.value(QStringLiteral("targetAreaName")).toString();
+  task.targetAreaRadiusMeters = object.value(QStringLiteral("targetAreaRadiusMeters")).toDouble(0.0);
   return task;
+}
+
+QJsonObject toJson(const Waypoint& waypoint) {
+  return {
+      {QStringLiteral("name"), waypoint.name},
+      {QStringLiteral("latitude"), waypoint.latitude},
+      {QStringLiteral("longitude"), waypoint.longitude},
+      {QStringLiteral("altitudeMeters"), waypoint.altitudeMeters},
+  };
+}
+
+Waypoint waypointFromJson(const QJsonObject& object) {
+  Waypoint waypoint;
+  waypoint.name = object.value(QStringLiteral("name")).toString();
+  waypoint.latitude = object.value(QStringLiteral("latitude")).toDouble(0.0);
+  waypoint.longitude = object.value(QStringLiteral("longitude")).toDouble(0.0);
+  waypoint.altitudeMeters = object.value(QStringLiteral("altitudeMeters")).toDouble(0.0);
+  return waypoint;
+}
+
+QJsonObject toJson(const RouteGraphic& route) {
+  QJsonArray points;
+  for (const RoutePoint& point : route.points) {
+    points.append(QJsonObject{
+        {QStringLiteral("latitude"), point.latitude},
+        {QStringLiteral("longitude"), point.longitude},
+        {QStringLiteral("altitudeMeters"), point.altitudeMeters},
+    });
+  }
+  return {
+      {QStringLiteral("name"), route.name},
+      {QStringLiteral("points"), points},
+  };
+}
+
+RouteGraphic routeFromJson(const QJsonObject& object) {
+  RouteGraphic route;
+  route.name = object.value(QStringLiteral("name")).toString();
+  const QJsonArray points = object.value(QStringLiteral("points")).toArray();
+  for (const QJsonValue& value : points) {
+    const QJsonObject pointObject = value.toObject();
+    RoutePoint point;
+    point.latitude = pointObject.value(QStringLiteral("latitude")).toDouble(0.0);
+    point.longitude = pointObject.value(QStringLiteral("longitude")).toDouble(0.0);
+    point.altitudeMeters = pointObject.value(QStringLiteral("altitudeMeters")).toDouble(0.0);
+    route.points.push_back(point);
+  }
+  return route;
+}
+
+QJsonObject toJson(const AreaDefinition& area) {
+  QJsonArray points;
+  for (const RoutePoint& point : area.points) {
+    points.append(QJsonObject{
+        {QStringLiteral("latitude"), point.latitude},
+        {QStringLiteral("longitude"), point.longitude},
+        {QStringLiteral("altitudeMeters"), point.altitudeMeters},
+    });
+  }
+  return {
+      {QStringLiteral("id"), area.id},
+      {QStringLiteral("name"), area.name},
+      {QStringLiteral("areaType"), area.areaType},
+      {QStringLiteral("forceIdentifier"), area.forceIdentifier},
+      {QStringLiteral("centerLatitude"), area.centerLatitude},
+      {QStringLiteral("centerLongitude"), area.centerLongitude},
+      {QStringLiteral("centerAltitudeMeters"), area.centerAltitudeMeters},
+      {QStringLiteral("radiusMeters"), area.radiusMeters},
+      {QStringLiteral("semiMajorAxisMeters"), area.semiMajorAxisMeters},
+      {QStringLiteral("semiMinorAxisMeters"), area.semiMinorAxisMeters},
+      {QStringLiteral("rotationDegrees"), area.rotationDegrees},
+      {QStringLiteral("points"), points},
+      {QStringLiteral("minAltitudeMeters"), area.minAltitudeMeters},
+      {QStringLiteral("maxAltitudeMeters"), area.maxAltitudeMeters},
+      {QStringLiteral("notes"), area.notes},
+  };
+}
+
+AreaDefinition areaFromJson(const QJsonObject& object) {
+  AreaDefinition area;
+  area.id = object.value(QStringLiteral("id")).toString();
+  area.name = object.value(QStringLiteral("name")).toString();
+  area.areaType = object.value(QStringLiteral("areaType")).toString(QStringLiteral("Circle"));
+  area.forceIdentifier = object.value(QStringLiteral("forceIdentifier")).toInt(0);
+  area.centerLatitude = object.value(QStringLiteral("centerLatitude")).toDouble(0.0);
+  area.centerLongitude = object.value(QStringLiteral("centerLongitude")).toDouble(0.0);
+  area.centerAltitudeMeters = object.value(QStringLiteral("centerAltitudeMeters")).toDouble(0.0);
+  area.radiusMeters = object.value(QStringLiteral("radiusMeters")).toDouble(1000.0);
+  area.semiMajorAxisMeters = object.value(QStringLiteral("semiMajorAxisMeters")).toDouble(1000.0);
+  area.semiMinorAxisMeters = object.value(QStringLiteral("semiMinorAxisMeters")).toDouble(600.0);
+  area.rotationDegrees = object.value(QStringLiteral("rotationDegrees")).toDouble(0.0);
+  const QJsonArray points = object.value(QStringLiteral("points")).toArray();
+  for (const QJsonValue& value : points) {
+    const QJsonObject pointObject = value.toObject();
+    RoutePoint point;
+    point.latitude = pointObject.value(QStringLiteral("latitude")).toDouble(0.0);
+    point.longitude = pointObject.value(QStringLiteral("longitude")).toDouble(0.0);
+    point.altitudeMeters = pointObject.value(QStringLiteral("altitudeMeters")).toDouble(0.0);
+    area.points.push_back(point);
+  }
+  area.minAltitudeMeters = object.value(QStringLiteral("minAltitudeMeters")).toDouble(0.0);
+  area.maxAltitudeMeters = object.value(QStringLiteral("maxAltitudeMeters")).toDouble(0.0);
+  area.notes = object.value(QStringLiteral("notes")).toString();
+  return area;
 }
 
 QJsonObject toJson(const SensorContact& contact) {
@@ -211,7 +323,7 @@ Entity entityFromJson(const QJsonObject& object) {
 } // namespace
 
 ScenarioState::ScenarioState() {
-  this->load();
+  this->reset();
 }
 
 void ScenarioState::addEntity(const Entity& entity) {
@@ -224,16 +336,173 @@ const QVector<Entity>& ScenarioState::entities() const {
   return _entities;
 }
 
+bool ScenarioState::removeEntity(const QString& entityName) {
+  for (qsizetype index = 0; index < _entities.size(); ++index) {
+    if (_entities.at(index).name == entityName) {
+      _entities.removeAt(index);
+      this->refreshSensors();
+      this->save();
+      return true;
+    }
+  }
+  return false;
+}
+
+void ScenarioState::addWaypoint(const Waypoint& waypoint) {
+  for (Waypoint& existing : _waypoints) {
+    if (existing.name == waypoint.name) {
+      existing = waypoint;
+      this->save();
+      return;
+    }
+  }
+  _waypoints.push_back(waypoint);
+  this->save();
+}
+
+const QVector<Waypoint>& ScenarioState::waypoints() const {
+  return _waypoints;
+}
+
+bool ScenarioState::removeWaypoint(const QString& waypointName) {
+  for (qsizetype index = 0; index < _waypoints.size(); ++index) {
+    if (_waypoints.at(index).name == waypointName) {
+      _waypoints.removeAt(index);
+      this->save();
+      return true;
+    }
+  }
+  return false;
+}
+
+void ScenarioState::addRoute(const RouteGraphic& route) {
+  for (RouteGraphic& existing : _routes) {
+    if (existing.name == route.name) {
+      existing = route;
+      this->save();
+      return;
+    }
+  }
+  _routes.push_back(route);
+  this->save();
+}
+
+const QVector<RouteGraphic>& ScenarioState::routes() const {
+  return _routes;
+}
+
+bool ScenarioState::removeRoute(const QString& routeName) {
+  for (qsizetype index = 0; index < _routes.size(); ++index) {
+    if (_routes.at(index).name == routeName) {
+      _routes.removeAt(index);
+      this->save();
+      return true;
+    }
+  }
+  return false;
+}
+
+void ScenarioState::addArea(const AreaDefinition& area) {
+  for (AreaDefinition& existing : _areas) {
+    if (existing.id == area.id || existing.name == area.name) {
+      existing = area;
+      this->save();
+      return;
+    }
+  }
+  _areas.push_back(area);
+  this->save();
+}
+
+const QVector<AreaDefinition>& ScenarioState::areas() const {
+  return _areas;
+}
+
+bool ScenarioState::removeArea(const QString& areaName) {
+  for (qsizetype index = 0; index < _areas.size(); ++index) {
+    if (_areas.at(index).name == areaName || _areas.at(index).id == areaName) {
+      _areas.removeAt(index);
+      for (Entity& entity : _entities) {
+        if ((entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
+             entity.currentTask.taskType == QStringLiteral("OrbitArea")) &&
+            entity.currentTask.targetAreaName == areaName) {
+          entity.currentTask = EntityTask{};
+          entity.currentTask.status = QStringLiteral("Idle");
+        }
+      }
+      this->save();
+      return true;
+    }
+  }
+  return false;
+}
+
 bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task) {
   for (Entity& entity : _entities) {
     if (entity.name == entityName) {
       entity.currentTask = task;
+      if (entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") &&
+          !entity.currentTask.targetWaypointName.trimmed().isEmpty()) {
+        for (const Waypoint& waypoint : _waypoints) {
+          if (waypoint.name == entity.currentTask.targetWaypointName) {
+            entity.currentTask.targetLatitude = waypoint.latitude;
+            entity.currentTask.targetLongitude = waypoint.longitude;
+            entity.currentTask.targetAltitudeMeters =
+                static_cast<int>(qRound(waypoint.altitudeMeters));
+            break;
+          }
+        }
+      }
+      if (entity.currentTask.taskType == QStringLiteral("MoveAlongRoute") &&
+          !entity.currentTask.targetRouteName.trimmed().isEmpty()) {
+        for (const RouteGraphic& route : _routes) {
+          if (route.name != entity.currentTask.targetRouteName || route.points.isEmpty()) {
+            continue;
+          }
+          const RoutePoint& point = route.points.last();
+          entity.currentTask.targetLatitude = point.latitude;
+          entity.currentTask.targetLongitude = point.longitude;
+          entity.currentTask.targetAltitudeMeters =
+              static_cast<int>(qRound(point.altitudeMeters));
+          break;
+        }
+      }
+      if ((entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
+           entity.currentTask.taskType == QStringLiteral("OrbitArea")) &&
+          !entity.currentTask.targetAreaName.trimmed().isEmpty()) {
+        for (const AreaDefinition& area : _areas) {
+          if (area.name != entity.currentTask.targetAreaName &&
+              area.id != entity.currentTask.targetAreaName) {
+            continue;
+          }
+          entity.currentTask.targetLatitude = area.centerLatitude;
+          entity.currentTask.targetLongitude = area.centerLongitude;
+          entity.currentTask.targetAltitudeMeters =
+              static_cast<int>(qRound(area.centerAltitudeMeters));
+          double radiusMeters = area.radiusMeters;
+          if (radiusMeters <= 0.0) {
+            if (area.areaType == QStringLiteral("Ellipse")) {
+              radiusMeters = qMax(area.semiMinorAxisMeters, 100.0);
+            } else if (!area.points.isEmpty()) {
+              radiusMeters = 250.0;
+            } else {
+              radiusMeters = 500.0;
+            }
+          }
+          entity.currentTask.targetAreaRadiusMeters = radiusMeters;
+          break;
+        }
+      }
       if (task.enabled) {
         entity.flightDynamicsEnabled = true;
         if (entity.flightDynamicsMode.trimmed().isEmpty()) {
           entity.flightDynamicsMode = QStringLiteral("kinematic");
         }
-        if (entity.currentTask.taskType == QStringLiteral("MoveToLocation") &&
+        if (((entity.currentTask.taskType == QStringLiteral("MoveToLocation")) ||
+             (entity.currentTask.taskType == QStringLiteral("MoveToWaypoint")) ||
+             (entity.currentTask.taskType == QStringLiteral("MoveAlongRoute")) ||
+             (entity.currentTask.taskType == QStringLiteral("PatrolArea")) ||
+             (entity.currentTask.taskType == QStringLiteral("OrbitArea"))) &&
             entity.currentTask.targetSpeedKnots <= 0.0) {
           entity.currentTask.targetSpeedKnots =
               entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0
@@ -293,6 +562,21 @@ bool ScenarioState::save() const {
     entities.append(toJson(entity));
   }
 
+  QJsonArray waypoints;
+  for (const Waypoint& waypoint : _waypoints) {
+    waypoints.append(toJson(waypoint));
+  }
+
+  QJsonArray routes;
+  for (const RouteGraphic& route : _routes) {
+    routes.append(toJson(route));
+  }
+
+  QJsonArray areas;
+  for (const AreaDefinition& area : _areas) {
+    areas.append(toJson(area));
+  }
+
   QFile file(this->storagePath());
   const QFileInfo info(file);
   QDir().mkpath(info.absolutePath());
@@ -302,6 +586,9 @@ bool ScenarioState::save() const {
 
   const QJsonDocument document(QJsonObject{
       {QStringLiteral("entities"), entities},
+      {QStringLiteral("waypoints"), waypoints},
+      {QStringLiteral("routes"), routes},
+      {QStringLiteral("areas"), areas},
   });
   file.write(document.toJson(QJsonDocument::Indented));
   return true;
@@ -309,6 +596,9 @@ bool ScenarioState::save() const {
 
 bool ScenarioState::load() {
   _entities.clear();
+  _waypoints.clear();
+  _routes.clear();
+  _areas.clear();
 
   QFile file(this->storagePath());
   if (!file.exists()) {
@@ -328,8 +618,31 @@ bool ScenarioState::load() {
     _entities.push_back(entityFromJson(value.toObject()));
   }
 
+  const QJsonArray waypoints = document.object().value(QStringLiteral("waypoints")).toArray();
+  for (const QJsonValue& value : waypoints) {
+    _waypoints.push_back(waypointFromJson(value.toObject()));
+  }
+
+  const QJsonArray routes = document.object().value(QStringLiteral("routes")).toArray();
+  for (const QJsonValue& value : routes) {
+    _routes.push_back(routeFromJson(value.toObject()));
+  }
+
+  const QJsonArray areas = document.object().value(QStringLiteral("areas")).toArray();
+  for (const QJsonValue& value : areas) {
+    _areas.push_back(areaFromJson(value.toObject()));
+  }
+
   this->refreshSensors();
   return true;
+}
+
+void ScenarioState::reset() {
+  _entities.clear();
+  _waypoints.clear();
+  _routes.clear();
+  _areas.clear();
+  this->save();
 }
 
 QString ScenarioState::storagePath() const {

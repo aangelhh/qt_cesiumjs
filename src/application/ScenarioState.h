@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/Entity.h"
+#include "domain/TacticalGraphic.h"
 #include "domain/Task.h"
 
 #include <QString>
@@ -14,6 +15,16 @@ public:
   void addEntity(const Entity& entity);
   const QVector<Entity>& entities() const;
   QVector<Entity>& entitiesMutable() { return _entities; }
+  bool removeEntity(const QString& entityName);
+  void addWaypoint(const Waypoint& waypoint);
+  const QVector<Waypoint>& waypoints() const;
+  bool removeWaypoint(const QString& waypointName);
+  void addRoute(const RouteGraphic& route);
+  const QVector<RouteGraphic>& routes() const;
+  bool removeRoute(const QString& routeName);
+  void addArea(const AreaDefinition& area);
+  const QVector<AreaDefinition>& areas() const;
+  bool removeArea(const QString& areaName);
   bool assignTask(const QString& entityName, const EntityTask& task);
   bool clearTask(const QString& entityName);
   domain::TaskStack* getTaskStack(const QString& entityName);
@@ -22,9 +33,13 @@ public:
   void stopMission();
   bool save() const;
   bool load();
+  void reset();
   QString storagePath() const;
 
 private:
   QVector<Entity> _entities;
-  std::unordered_map<QString, domain::TaskStack> _taskStacks;
+std::unordered_map<QString, domain::TaskStack> _taskStacks;
+  QVector<Waypoint> _waypoints;
+  QVector<RouteGraphic> _routes;
+  QVector<AreaDefinition> _areas;
 };

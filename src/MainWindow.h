@@ -5,6 +5,7 @@
 #include <QPointer>
 #include <QVariantMap>
 
+class QAction;
 class AddEntityDialog;
 class AssignTaskDialog;
 class MapBridge;
@@ -41,8 +42,16 @@ private slots:
   void openObjectsContextMenu(const QPoint& position);
   void assignFlyHeadingAltitudeSpeedTask();
   void assignMoveToLocationTask();
+  void assignMoveToWaypointTask();
+  void assignMoveAlongRouteTask();
+  void assignPatrolAreaTask();
+  void assignOrbitAreaTask();
   void assignFollowEntityTask();
   void clearSelectedTask();
+  void deleteSelectedEntity();
+  void openAddWaypointDialog();
+  void openAddRouteDialog();
+  void openAddAreaDialog();
   void startSimulation();
   void pauseSimulation();
   void stopSimulation();
@@ -56,15 +65,22 @@ private:
   void appendLogMessage(const QString& message);
   void setSelectedTrackDetails(const QVariantMap& summary);
   void sendTrackToMap(const QVariantMap& summary, bool focus = false);
+  void removeTrackFromMap(const QString& trackName);
+  void sendDraftGraphicToMap(const QVariantMap& summary);
+  void clearDraftGraphicFromMap(const QString& name);
+  void syncTacticalGraphicsToMap();
   void syncTracksToMap();
   void syncScenarioStateToUi();
   void selectObjectByName(const QString& trackName, bool notifyMap);
   QStandardItem* findTrackItemByName(QStandardItem* parent, const QString& trackName) const;
   QString selectedEntityName() const;
+  QString selectedObjectName() const;
   bool currentSelectionIsEntity() const;
+  bool currentSelectionIsTacticalGraphic() const;
   void openAssignTaskDialog(const QString& initialTaskType);
   void populateTaskCommands();
   void beginTaskCoordinatePick();
+  void beginGraphicCoordinatePick();
   void updateSimulationControls();
 
   Ui::MainWindow* _ui;
@@ -78,9 +94,21 @@ private:
   QStandardItem* _tacticalGraphicsRootItem;
   QPointer<AddEntityDialog> _entityDialog;
   QPointer<AssignTaskDialog> _taskDialog;
+  QAction* _addWaypointAction;
+  QAction* _addRouteAction;
+  QAction* _addAreaAction;
   QTimer* _simulationTimer;
   bool _applyingMapSelection;
   bool _simulationRunning;
+  QString _pendingGraphicMode;
+  QString _pendingGraphicName;
+  QVector<QVariantMap> _pendingRoutePoints;
+  QString _pendingAreaType;
+  double _pendingAreaRadiusMeters;
+  double _pendingAreaSemiMajorMeters;
+  double _pendingAreaSemiMinorMeters;
+  double _pendingAreaRotationDegrees;
+  QVector<QVariantMap> _pendingAreaPoints;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif

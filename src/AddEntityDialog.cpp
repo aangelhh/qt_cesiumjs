@@ -6,6 +6,7 @@
 #include <QDoubleSpinBox>
 #include <QDir>
 #include <QFormLayout>
+#include <QScrollArea>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
@@ -141,9 +142,24 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   this->setWindowTitle(QStringLiteral("Add Entity"));
   this->setModal(false);
   this->setWindowModality(Qt::NonModal);
+  this->resize(560, 720);
+  this->setMinimumSize(480, 560);
 
   auto* layout = new QVBoxLayout(this);
-  auto* formLayout = new QFormLayout();
+  layout->setContentsMargins(8, 8, 8, 8);
+  layout->setSpacing(6);
+
+  auto* scrollArea = new QScrollArea(this);
+  scrollArea->setWidgetResizable(true);
+  scrollArea->setFrameShape(QFrame::NoFrame);
+
+  auto* formContainer = new QWidget(scrollArea);
+  auto* formLayout = new QFormLayout(formContainer);
+  formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  formLayout->setContentsMargins(4, 4, 4, 4);
+  formLayout->setHorizontalSpacing(10);
+  formLayout->setVerticalSpacing(6);
+  scrollArea->setWidget(formContainer);
 
   _latitudeSpin->setRange(-90.0, 90.0);
   _latitudeSpin->setDecimals(6);
@@ -213,7 +229,8 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   _nameEdit->setPlaceholderText(QStringLiteral("Entity Alpha"));
   _callsignEdit->setPlaceholderText(QStringLiteral("Eagle 1"));
   _radarNameEdit->setPlaceholderText(QStringLiteral("Primary Radar"));
-  _addRadarCheck->setChecked(true);
+  _addRadarCheck->setChecked(false);
+  _enableDynamicsCheck->setChecked(true);
 
   _forceIdentifierCombo->addItem(QStringLiteral("Friendly"), 1);
   _forceIdentifierCombo->addItem(QStringLiteral("Opposing"), 2);
@@ -222,6 +239,12 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   _dynamicsModeCombo->addItem(QStringLiteral("Kinematic"), QStringLiteral("kinematic"));
 #if defined(QTTEST_HAS_JSBSIM)
   _dynamicsModeCombo->addItem(QStringLiteral("JSBSim"), QStringLiteral("jsbsim"));
+  {
+    const int jsbsimIndex = _dynamicsModeCombo->findData(QStringLiteral("jsbsim"));
+    if (jsbsimIndex >= 0) {
+      _dynamicsModeCombo->setCurrentIndex(jsbsimIndex);
+    }
+  }
 #endif
 
   this->populateDomainCombo();
@@ -343,7 +366,7 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
         QStringLiteral("DIS catalog unavailable: %1").arg(_disCatalog.errorString()),
         this);
     warningLabel->setWordWrap(true);
-    layout->addWidget(warningLabel);
+    formLayout->addRow(warningLabel);
   }
   _radarNameEdit->setEnabled(_addRadarCheck->isChecked());
   _radarRangeSpin->setEnabled(_addRadarCheck->isChecked());
@@ -353,7 +376,7 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   _taskHeadingSpin->setEnabled(_enableFlightTaskCheck->isChecked());
   _taskAltitudeSpin->setEnabled(_enableFlightTaskCheck->isChecked());
   _taskSpeedSpin->setEnabled(_enableFlightTaskCheck->isChecked());
-  layout->addLayout(formLayout);
+  layout->addWidget(scrollArea);
 
   auto* buttons = new QDialogButtonBox(
       QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
