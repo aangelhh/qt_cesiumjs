@@ -2,9 +2,62 @@
     "areas": [
     ],
     "entities": [
+        {
+            "altitude": 1200,
+            "callsign": "",
+            "category": "Fighter",
+            "currentTask": {
+                "enabled": true,
+                "status": "Queued",
+                "targetAltitudeMeters": 0,
+                "targetAreaName": "",
+                "targetAreaRadiusMeters": 0,
+                "targetEntityName": "",
+                "targetHeadingDegrees": 0,
+                "targetLatitude": 36.09281742796315,
+                "targetLongitude": -72.94825950822623,
+                "targetRouteName": "",
+                "targetSpeedKnots": 320,
+                "targetWaypointName": "Waypoint 1",
+                "taskType": "MoveToWaypoint"
+            },
+            "domain": "Air",
+            "entityCategory": 1,
+            "entityCountry": 225,
+            "entityDomain": 2,
+            "entityExtra": 0,
+            "entityKind": 1,
+            "entitySpecific": 1,
+            "entitySubcategory": 6,
+            "entityTypeCode": "1:2:225:1:6:1:0",
+            "flightDynamicsEnabled": true,
+            "flightDynamicsMode": "jsbsim",
+            "forceIdentifier": 1,
+            "groundHeight": -1000,
+            "headingDegrees": 0,
+            "jsbsimAircraftModel": "f22",
+            "latitude": 36.668663,
+            "longitude": -77.036313,
+            "modelName": "F-22A",
+            "modelUri": "file:///Users/angelconde/mi-proyecto/qttest/models/Air/Fighter/f-22_raptor.glb",
+            "name": "f22A",
+            "sensorContacts": [
+            ],
+            "sensors": [
+            ],
+            "speedKnots": 0,
+            "type": "F-22A",
+            "verticalSpeedMetersPerSecond": 0
+        }
     ],
     "routes": [
     ],
     "waypoints": [
+        {
+            "altitudeMeters": 0,
+            "latitude": 36.09281742796315,
+            "longitude": -72.94825950822623,
+            "name": "Waypoint 1"
+        }
     ]
 }

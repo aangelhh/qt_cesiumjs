@@ -42,6 +42,61 @@ private:
     State m_state = State::NotStarted;
 };
 
+// Primitive Task: Fly a specific heading, altitude, and speed vector
+class FlyHeadingAltitudeSpeedTask : public ITask {
+public:
+    FlyHeadingAltitudeSpeedTask(double targetHeading, double targetAlt, double targetSpeedKnots);
+    
+    State getState() const override;
+    DesiredState evaluate(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt) override;
+
+private:
+    double m_targetHeading;
+    double m_targetAlt;
+    double m_targetSpeed;
+    State m_state = State::NotStarted;
+};
+
+// Primitive Task: Dynamically follow another entity
+class FollowEntityTask : public ITask {
+public:
+    FollowEntityTask(double targetAlt, double targetSpeedKnots);
+    
+    // Explicitly feed target coordinates during the application tick
+    void updateTargetLocation(double targetLat, double targetLon, double targetAlt, double targetSpeedKnots);
+    
+    State getState() const override;
+    DesiredState evaluate(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt) override;
+
+private:
+    double m_targetLat = 0.0;
+    double m_targetLon = 0.0;
+    double m_targetAlt = 0.0;
+    double m_targetSpeed = 0.0;
+    double m_fallbackAlt;
+    double m_fallbackSpeed;
+    bool m_hasTargetData = false;
+    State m_state = State::NotStarted;
+};
+
+// Primitive Task: Orbit or patrol around a central point
+class OrbitAreaTask : public ITask {
+public:
+    OrbitAreaTask(double centerLat, double centerLon, double radiusMeters, double targetAlt, double targetSpeedKnots, bool isPatrol = false);
+    
+    State getState() const override;
+    DesiredState evaluate(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt) override;
+
+private:
+    double m_centerLat;
+    double m_centerLon;
+    double m_radiusMeters;
+    double m_targetAlt;
+    double m_targetSpeed;
+    bool m_isPatrol;
+    State m_state = State::NotStarted;
+};
+
 // Task Stack manages execution of multiple tasks
 class TaskStack {
 public:

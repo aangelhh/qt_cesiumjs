@@ -4,6 +4,8 @@
 #include "AssignTaskDialog.h"
 #include "EntityDetailsDialog.h"
 #include "application/ScenarioState.h"
+#include "application/SimulationEngine.h"
+#include "application/Command.h"
 #include "domain/Entity.h"
 #include "infrastructure/CesiumScenePage.h"
 #include "infrastructure/MapBridge.h"
@@ -26,6 +28,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QStandardItemModel>
+#include <QTimer>
 #include <QInputDialog>
 #include <QSizePolicy>
 #include <QStandardItem>
@@ -343,7 +347,8 @@ MainWindow::MainWindow(QWidget* parent)
       _pendingAreaRadiusMeters(1000.0),
       _pendingAreaSemiMajorMeters(1000.0),
       _pendingAreaSemiMinorMeters(600.0),
-      _pendingAreaRotationDegrees(0.0)
+      _pendingAreaRotationDegrees(0.0),
+      m_simulationEngine(new application::SimulationEngine(_scenarioState, this))
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
       , _webView(nullptr)
 #endif
@@ -1641,6 +1646,72 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
         if (this->_scenarioState->assignTask(entityName, task)) {
           this->appendLogMessage(
               QStringLiteral("Task %1 assigned to %2").arg(task.taskType, entityName));
+
+          Entity resolvedEntity;
+          for (const Entity& e : this->_scenarioState->entities()) {
+            if (e.name == entityName) {
+              resolvedEntity = e;
+              break;
+            }
+          }
+
+          // Push task to TaskStack immediately so movement works even if SimulationEngine isn't running.
+          if (domain::TaskStack* stack = this->_scenarioState->getTaskStack(entityName)) {
+            while (!stack->isEmpty()) {
+              stack->pop();
+            }
+            if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint" || task.taskType == "MoveAlongRoute") {
+              stack->push(std::make_unique<domain::MoveToLocationTask>(
+                  resolvedEntity.currentTask.targetLatitude,
+                  resolvedEntity.currentTask.targetLongitude,
+                  resolvedEntity.currentTask.targetAltitudeMeters,
+                  resolvedEntity.currentTask.targetSpeedKnots
+              ));
+            } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
+              stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
+                  task.targetHeadingDegrees,
+                  static_cast<double>(task.targetAltitudeMeters),
+                  task.targetSpeedKnots
+              ));
+            } else if (task.taskType == "FollowEntity") {
+              stack->push(std::make_unique<domain::FollowEntityTask>(
+                  static_cast<double>(task.targetAltitudeMeters),
+                  task.targetSpeedKnots
+              ));
+            } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
+              stack->push(std::make_unique<domain::OrbitAreaTask>(
+                  task.targetLatitude,
+                  task.targetLongitude,
+                  task.targetAreaRadiusMeters,
+                  static_cast<double>(task.targetAltitudeMeters),
+                  task.targetSpeedKnots,
+                  (task.taskType == "PatrolArea")
+              ));
+            }
+          }
+
+          if (!m_simulationEngine) return;
+
+          if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint" || task.taskType == "MoveAlongRoute") {
+              // Map to existing CmdAssignMoveTask using resolved coordinates
+              m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignMoveTask>(
+                  0, entityName, resolvedEntity.currentTask.targetLatitude, resolvedEntity.currentTask.targetLongitude, resolvedEntity.currentTask.targetAltitudeMeters, resolvedEntity.currentTask.targetSpeedKnots
+              ));
+          } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
+              m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignFlyHeadingTask>(
+                  entityName, task.targetHeadingDegrees, task.targetAltitudeMeters, task.targetSpeedKnots
+              ));
+          } else if (task.taskType == "FollowEntity") {
+              m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignFollowTask>(
+                  entityName, task.targetEntityName, task.targetAltitudeMeters, task.targetSpeedKnots
+              ));
+          } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
+              m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignOrbitTask>(
+                  entityName, task.targetLatitude, task.targetLongitude, task.targetAreaRadiusMeters,
+                  task.targetAltitudeMeters, task.targetSpeedKnots, (task.taskType == "PatrolArea")
+              ));
+          }
+
           this->syncScenarioStateToUi();
         }
       });

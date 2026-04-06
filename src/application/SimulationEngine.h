@@ -14,7 +14,7 @@ class SimulationEngine : public QThread {
     Q_OBJECT
 
 public:
-    explicit SimulationEngine(QObject* parent = nullptr);
+    explicit SimulationEngine(ScenarioState* scenarioState, QObject* parent = nullptr);
     ~SimulationEngine() override;
 
     // Enqueue a command from any thread
@@ -37,8 +37,8 @@ private:
     std::mutex m_queueMutex;
     std::queue<std::unique_ptr<ICommand>> m_commandQueue;
     
-    // The registry and state owner for all entities
-    ScenarioState m_scenario;
+    // The registry and state owner for all entities (borrowed from MainWindow)
+    ScenarioState* m_scenario;
 
     // Process all pending commands
     void drainCommands();

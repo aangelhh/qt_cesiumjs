@@ -5,6 +5,8 @@
 #include <QPointer>
 #include <QVariantMap>
 
+#include "application/SimulationEngine.h"
+
 class QAction;
 class AddEntityDialog;
 class AssignTaskDialog;
@@ -109,6 +111,7 @@ private:
   double _pendingAreaSemiMinorMeters;
   double _pendingAreaRotationDegrees;
   QVector<QVariantMap> _pendingAreaPoints;
+  application::SimulationEngine* m_simulationEngine;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif

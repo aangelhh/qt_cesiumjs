@@ -4,6 +4,7 @@
 #include <FGFDMExec.h>
 #endif
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QHash>
 #include <QtMath>
@@ -166,6 +167,37 @@ QString defaultJsbsimAircraftModel(const Entity& entity) {
   return QStringLiteral("c172r");
 }
 
+QString findJsbsimRoot() {
+#ifdef QTTEST_SOURCE_DIR
+    const QString sourceRoot =
+        QDir(QString::fromUtf8(QTTEST_SOURCE_DIR)).absoluteFilePath(QStringLiteral("Dependencies/jsbsim"));
+    QDir sourceDir(sourceRoot);
+    if (sourceDir.exists(QStringLiteral("aircraft")) &&
+        sourceDir.exists(QStringLiteral("engine")) &&
+        sourceDir.exists(QStringLiteral("systems"))) {
+      return sourceDir.absolutePath();
+    }
+#else
+    Q_UNUSED(0);
+#endif
+
+    QDir appDir(QCoreApplication::applicationDirPath());
+    QDir cursor = appDir;
+    for (int depth = 0; depth < 8; ++depth) {
+      const QString candidate = cursor.absoluteFilePath(QStringLiteral("Dependencies/jsbsim"));
+      QDir candidateDir(candidate);
+      if (candidateDir.exists(QStringLiteral("aircraft")) &&
+          candidateDir.exists(QStringLiteral("engine")) &&
+          candidateDir.exists(QStringLiteral("systems"))) {
+        return candidateDir.absolutePath();
+      }
+      if (!cursor.cdUp()) {
+        break;
+      }
+    }
+    return QString();
+}
+
 void applyKinematicStep(Entity& entity, double deltaSeconds) {
   const double speedMetersPerSecond = entity.speedKnots * kKnotsToMetersPerSecond;
   const double distance = speedMetersPerSecond * deltaSeconds;
@@ -200,6 +232,17 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
   
   auto it = taskStacks.find(entity.name);
   if (it != taskStacks.end() && !it->second.isEmpty()) {
+      // Feed external world data into specific task types before evaluation
+      domain::ITask* topTask = it->second.top();
+      if (auto* followTask = dynamic_cast<domain::FollowEntityTask*>(topTask)) {
+          for (const Entity& target : snapshot) {
+              if (target.name == entity.currentTask.targetEntityName) {
+                  followTask->updateTargetLocation(target.latitude, target.longitude, static_cast<double>(target.altitude), target.speedKnots);
+                  break;
+              }
+          }
+      }
+  
       domain::DesiredState desired = it->second.evaluateTop(
           entity.latitude, entity.longitude, static_cast<double>(entity.altitude), 
           entity.headingDegrees, deltaSeconds);
@@ -210,6 +253,8 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
       
       if (it->second.top()->getState() == domain::ITask::State::Completed) {
           entity.currentTask.status = QStringLiteral("On target");
+      } else if (it->second.top()->getState() == domain::ITask::State::Failed) {
+          entity.currentTask.status = QStringLiteral("Target unavailable");
       } else {
           entity.currentTask.status = QStringLiteral("Running");
       }
@@ -234,201 +279,6 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
           entity.verticalSpeedMetersPerSecond = 0.0;
       }
       return;
-  }
-
-  // Fallback for legacy UI tasks without TaskStack
-  if (entity.currentTask.taskType == QStringLiteral("FlyHeadingAltitudeSpeed")) {
-    const double headingDelta = shortestSignedAngle(
-        entity.headingDegrees,
-        entity.currentTask.targetHeadingDegrees);
-    entity.headingDegrees = normalizeDegrees360(
-        entity.headingDegrees +
-        clampStep(0.0, headingDelta, kHeadingRateDegreesPerSecond * deltaSeconds));
-    entity.speedKnots = clampStep(
-        entity.speedKnots,
-        entity.currentTask.targetSpeedKnots,
-        kAccelerationKnotsPerSecond * deltaSeconds);
-    const double targetAltitude = static_cast<double>(entity.currentTask.targetAltitudeMeters);
-    const double altitudeDelta = targetAltitude - static_cast<double>(entity.altitude);
-    entity.verticalSpeedMetersPerSecond = clampStep(
-        0.0,
-        altitudeDelta,
-        kClimbRateMetersPerSecond);
-    entity.currentTask.status = QStringLiteral("Running");
-    return;
-  }
-
-  if (entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
-      entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
-      entity.currentTask.taskType == QStringLiteral("MoveAlongRoute")) {
-    entity.currentTask.targetHeadingDegrees = bearingDegrees(
-        entity.latitude,
-        entity.longitude,
-        entity.currentTask.targetLatitude,
-        entity.currentTask.targetLongitude);
-    const double rangeMeters = distanceMeters(
-        entity.latitude,
-        entity.longitude,
-        entity.currentTask.targetLatitude,
-        entity.currentTask.targetLongitude);
-    const double headingDelta = shortestSignedAngle(
-        entity.headingDegrees,
-        entity.currentTask.targetHeadingDegrees);
-    entity.headingDegrees = normalizeDegrees360(
-        entity.headingDegrees +
-        clampStep(0.0, headingDelta, kHeadingRateDegreesPerSecond * deltaSeconds));
-    entity.speedKnots = clampStep(
-        entity.speedKnots,
-        entity.currentTask.targetSpeedKnots,
-        kAccelerationKnotsPerSecond * deltaSeconds);
-    const double altitudeDelta =
-        static_cast<double>(entity.currentTask.targetAltitudeMeters - entity.altitude);
-    entity.verticalSpeedMetersPerSecond = clampStep(
-        0.0,
-        altitudeDelta,
-        kClimbRateMetersPerSecond);
-    entity.currentTask.status =
-        rangeMeters < 200.0 ? QStringLiteral("On target") : QStringLiteral("Running");
-    if (rangeMeters < 200.0) {
-      entity.speedKnots = 0.0;
-      entity.verticalSpeedMetersPerSecond = 0.0;
-    }
-    return;
-  }
-
-  if (entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
-      entity.currentTask.taskType == QStringLiteral("OrbitArea")) {
-    const double centerLatitude = entity.currentTask.targetLatitude;
-    const double centerLongitude = entity.currentTask.targetLongitude;
-    const double centerRangeMeters = distanceMeters(
-        entity.latitude,
-        entity.longitude,
-        centerLatitude,
-        centerLongitude);
-    const double areaRadiusMeters =
-        qMax(100.0, entity.currentTask.targetAreaRadiusMeters);
-    const double desiredOrbitRadiusMeters =
-        entity.currentTask.taskType == QStringLiteral("OrbitArea")
-            ? qMax(150.0, areaRadiusMeters * 0.75)
-            : qMax(200.0, areaRadiusMeters * 0.55);
-
-    double targetLatitude = centerLatitude;
-    double targetLongitude = centerLongitude;
-    QString status = centerRangeMeters > areaRadiusMeters * 1.1
-        ? QStringLiteral("En route to area")
-        : QStringLiteral("On area");
-
-    if (centerRangeMeters > areaRadiusMeters * 1.1) {
-      targetLatitude = centerLatitude;
-      targetLongitude = centerLongitude;
-    } else {
-      const double bearingFromCenter = bearingDegrees(
-          centerLatitude,
-          centerLongitude,
-          entity.latitude,
-          entity.longitude);
-      const double lookAheadDegrees =
-          entity.currentTask.taskType == QStringLiteral("OrbitArea") ? 55.0 : 115.0;
-      const auto orbitPoint = destinationPoint(
-          centerLatitude,
-          centerLongitude,
-          bearingFromCenter + lookAheadDegrees,
-          desiredOrbitRadiusMeters);
-      targetLatitude = orbitPoint.first;
-      targetLongitude = orbitPoint.second;
-      status =
-          entity.currentTask.taskType == QStringLiteral("OrbitArea")
-              ? QStringLiteral("Orbiting")
-              : QStringLiteral("Patrolling");
-    }
-
-    entity.currentTask.targetHeadingDegrees = bearingDegrees(
-        entity.latitude,
-        entity.longitude,
-        targetLatitude,
-        targetLongitude);
-    const double headingDelta = shortestSignedAngle(
-        entity.headingDegrees,
-        entity.currentTask.targetHeadingDegrees);
-    entity.headingDegrees = normalizeDegrees360(
-        entity.headingDegrees +
-        clampStep(0.0, headingDelta, kHeadingRateDegreesPerSecond * deltaSeconds));
-    entity.speedKnots = clampStep(
-        entity.speedKnots,
-        entity.currentTask.targetSpeedKnots,
-        kAccelerationKnotsPerSecond * deltaSeconds);
-    const double altitudeTarget =
-        entity.currentTask.targetAltitudeMeters > 0
-            ? static_cast<double>(entity.currentTask.targetAltitudeMeters)
-            : static_cast<double>(entity.altitude);
-    entity.verticalSpeedMetersPerSecond = clampStep(
-        0.0,
-        altitudeTarget - static_cast<double>(entity.altitude),
-        kClimbRateMetersPerSecond);
-    entity.currentTask.status = status;
-    return;
-  }
-
-  if (entity.currentTask.taskType == QStringLiteral("FollowEntity")) {
-    for (const Entity& target : snapshot) {
-      if (target.name != entity.currentTask.targetEntityName) {
-        continue;
-      }
-
-      entity.currentTask.targetLatitude = target.latitude;
-      entity.currentTask.targetLongitude = target.longitude;
-      entity.currentTask.targetHeadingDegrees = bearingDegrees(
-          entity.latitude,
-          entity.longitude,
-          target.latitude,
-          target.longitude);
-      const double rangeMeters = distanceMeters(
-          entity.latitude,
-          entity.longitude,
-          target.latitude,
-          target.longitude);
-      const double headingDelta = shortestSignedAngle(
-          entity.headingDegrees,
-          entity.currentTask.targetHeadingDegrees);
-      entity.headingDegrees = normalizeDegrees360(
-          entity.headingDegrees +
-          clampStep(0.0, headingDelta, kHeadingRateDegreesPerSecond * deltaSeconds));
-      const double targetSpeed = qMax(target.speedKnots, entity.currentTask.targetSpeedKnots);
-      entity.speedKnots = clampStep(
-          entity.speedKnots,
-          rangeMeters > 1500.0 ? targetSpeed + 40.0 : targetSpeed,
-          kAccelerationKnotsPerSecond * deltaSeconds);
-      const double altitudeTarget = entity.currentTask.targetAltitudeMeters > 0
-          ? entity.currentTask.targetAltitudeMeters
-          : target.altitude;
-      entity.verticalSpeedMetersPerSecond = clampStep(
-          0.0,
-          altitudeTarget - entity.altitude,
-          kClimbRateMetersPerSecond);
-      entity.currentTask.status = QStringLiteral("Following");
-      return;
-    }
-
-    entity.currentTask.status = QStringLiteral("Target unavailable");
-  }
-}
-
-void updateTaskCompletion(Entity& entity) {
-  if (!entity.currentTask.enabled) {
-    return;
-  }
-
-  if (entity.currentTask.taskType == QStringLiteral("FlyHeadingAltitudeSpeed")) {
-    const bool headingReached =
-        qAbs(shortestSignedAngle(entity.headingDegrees, entity.currentTask.targetHeadingDegrees)) < 1.0;
-    const bool speedReached =
-        qAbs(entity.speedKnots - entity.currentTask.targetSpeedKnots) < 2.0;
-    const bool altitudeReached =
-        qAbs(entity.altitude - entity.currentTask.targetAltitudeMeters) < 25.0;
-    if (headingReached && speedReached && altitudeReached) {
-      entity.currentTask.status = QStringLiteral("On target");
-      entity.verticalSpeedMetersPerSecond = 0.0;
-    }
   }
 }
 
@@ -457,12 +307,10 @@ bool ensureJsbsimSession(Entity& entity, double deltaSeconds) {
     return true;
   }
 
-#ifdef QTTEST_SOURCE_DIR
-  const QString rootPath = QDir(QString::fromUtf8(QTTEST_SOURCE_DIR))
-                               .absoluteFilePath(QStringLiteral("Dependencies/jsbsim"));
-#else
-  const QString rootPath = QDir(QDir::currentPath()).absoluteFilePath(QStringLiteral("Dependencies/jsbsim"));
-#endif
+  const QString rootPath = findJsbsimRoot();
+  if (rootPath.isEmpty()) {
+    return false;
+  }
 
   auto exec = std::make_unique<JSBSim::FGFDMExec>();
   exec->SetRootDir(SGPath(rootPath.toStdString()));
@@ -548,7 +396,12 @@ void FlightDynamicsEngine::advanceEntity(
     std::unordered_map<QString, domain::TaskStack>& taskStacks,
     const QVector<Entity>& snapshot,
     double deltaSeconds) {
-  if (!entity.flightDynamicsEnabled && !entity.currentTask.enabled) {
+  // An entity must only move when it has an active task.
+  // flightDynamicsEnabled / flightDynamicsMode only control how movement is simulated,
+  // not whether the entity should move at all.
+  if (!entity.currentTask.enabled) {
+    entity.speedKnots = 0.0;
+    entity.verticalSpeedMetersPerSecond = 0.0;
     return;
   }
 
@@ -557,11 +410,9 @@ void FlightDynamicsEngine::advanceEntity(
 #if defined(QTTEST_HAS_JSBSIM)
   if (entity.flightDynamicsMode == QStringLiteral("jsbsim") &&
       applyJsbsimStep(entity, deltaSeconds)) {
-    updateTaskCompletion(entity);
     return;
   }
 #endif
 
   applyKinematicStep(entity, deltaSeconds);
-  updateTaskCompletion(entity);
 }

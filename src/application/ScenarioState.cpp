@@ -327,7 +327,10 @@ ScenarioState::ScenarioState() {
 }
 
 void ScenarioState::addEntity(const Entity& entity) {
-  _entities.push_back(entity);
+  Entity newEntity = entity; // Create a mutable copy
+  newEntity.currentTask = EntityTask{}; // CRITICAL: Ensure new entity starts with clean task state
+  _entities.push_back(newEntity);
+  _taskStacks[newEntity.name] = domain::TaskStack(); // CRITICAL: Initialize empty stack for new entity
   this->refreshSensors();
   this->save();
 }
@@ -340,6 +343,7 @@ bool ScenarioState::removeEntity(const QString& entityName) {
   for (qsizetype index = 0; index < _entities.size(); ++index) {
     if (_entities.at(index).name == entityName) {
       _entities.removeAt(index);
+      _taskStacks.erase(entityName); // Clean up stack for removed entity
       this->refreshSensors();
       this->save();
       return true;
@@ -599,6 +603,7 @@ bool ScenarioState::load() {
   _waypoints.clear();
   _routes.clear();
   _areas.clear();
+  _taskStacks.clear(); // Clear all stacks before loading new scenario
 
   QFile file(this->storagePath());
   if (!file.exists()) {
@@ -615,7 +620,13 @@ bool ScenarioState::load() {
 
   const QJsonArray entities = document.object().value(QStringLiteral("entities")).toArray();
   for (const QJsonValue& value : entities) {
-    _entities.push_back(entityFromJson(value.toObject()));
+    Entity entity = entityFromJson(value.toObject()); // Deserialize first
+    entity.currentTask = EntityTask{}; // CRITICAL: Reset currentTask to clean slate for loaded entity
+    entity.flightDynamicsEnabled = false;
+    entity.speedKnots = 0.0;
+    entity.verticalSpeedMetersPerSecond = 0.0;
+    _taskStacks[entity.name] = domain::TaskStack(); // CRITICAL: Initialize empty stack for loaded entity
+    _entities.push_back(entity); // Then push the cleaned entity
   }
 
   const QJsonArray waypoints = document.object().value(QStringLiteral("waypoints")).toArray();
@@ -642,6 +653,7 @@ void ScenarioState::reset() {
   _waypoints.clear();
   _routes.clear();
   _areas.clear();
+  _taskStacks.clear(); // Clear all stacks before reset
   this->save();
 }
 
