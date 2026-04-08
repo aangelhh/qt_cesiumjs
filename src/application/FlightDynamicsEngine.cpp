@@ -9,6 +9,7 @@
 #include <QHash>
 #include <QtMath>
 
+#include <cmath>
 #include <memory>
 
 namespace {
@@ -273,14 +274,132 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
 }
 
 #if defined(QTTEST_HAS_JSBSIM)
+enum class JsbsimControlMode {
+  NativeAp,
+  DirectFcs,
+};
+
+struct AircraftState {
+  double latitudeDeg = 0.0;
+  double longitudeDeg = 0.0;
+  double altitudeMeters = 0.0;
+  double headingDeg = 0.0;
+  double bankRad = 0.0;
+  double trueAirspeedKnots = 0.0;
+  double verticalSpeedMetersPerSecond = 0.0;
+};
+
+struct ControlCommands {
+  double aileronNorm = 0.0;
+  double elevatorNorm = 0.0;
+  double rudderNorm = 0.0;
+  double throttleNorm = 0.5;
+};
+
 struct JsbsimSession {
   std::unique_ptr<JSBSim::FGFDMExec> exec;
   QString modelName;
+  JsbsimControlMode controlMode = JsbsimControlMode::DirectFcs;
 };
 
 QHash<QString, JsbsimSession*>& jsbsimSessions() {
   static QHash<QString, JsbsimSession*> sessions;
   return sessions;
+}
+
+bool jsbsimHasProperty(JSBSim::FGFDMExec& exec, const std::string& propertyName) {
+  for (const std::string& catalogEntry : exec.GetPropertyCatalog()) {
+    if (catalogEntry.rfind(propertyName, 0) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+JsbsimControlMode detectJsbsimControlMode(JSBSim::FGFDMExec& exec) {
+  const bool hasHeadingHold = jsbsimHasProperty(exec, "ap/heading_hold");
+  const bool hasHeadingSetpoint = jsbsimHasProperty(exec, "ap/heading_setpoint");
+  const bool hasAltitudeHold = jsbsimHasProperty(exec, "ap/altitude_hold");
+  const bool hasAltitudeSetpoint = jsbsimHasProperty(exec, "ap/altitude_setpoint");
+  if (hasHeadingHold && hasHeadingSetpoint && hasAltitudeHold && hasAltitudeSetpoint) {
+    return JsbsimControlMode::NativeAp;
+  }
+  return JsbsimControlMode::DirectFcs;
+}
+
+double clampNormalizedCommand(double value) {
+  return qBound(-1.0, value, 1.0);
+}
+
+double clampNormalizedThrottle(double value) {
+  return qBound(0.0, value, 1.0);
+}
+
+bool readJsbsimAircraftState(JSBSim::FGFDMExec& exec, AircraftState& state) {
+  const double latitudeDeg = exec.GetPropertyValue("position/lat-geod-deg");
+  const double longitudeDeg = exec.GetPropertyValue("position/long-gc-deg");
+  const double altitudeFeet = exec.GetPropertyValue("position/h-sl-ft");
+  const double headingDeg = exec.GetPropertyValue("attitude/psi-deg");
+  const double bankRad = exec.GetPropertyValue("attitude/phi-rad");
+  const double trueAirspeedKnots = exec.GetPropertyValue("velocities/vtrue-kts");
+  const double verticalSpeedFeetPerSecond = exec.GetPropertyValue("velocities/h-dot-fps");
+
+  if (!std::isfinite(latitudeDeg) ||
+      !std::isfinite(longitudeDeg) ||
+      !std::isfinite(altitudeFeet) ||
+      !std::isfinite(headingDeg) ||
+      !std::isfinite(bankRad) ||
+      !std::isfinite(trueAirspeedKnots) ||
+      !std::isfinite(verticalSpeedFeetPerSecond)) {
+    return false;
+  }
+
+  state.latitudeDeg = latitudeDeg;
+  state.longitudeDeg = longitudeDeg;
+  state.altitudeMeters = altitudeFeet * kFeetToMeters;
+  state.headingDeg = normalizeDegrees360(headingDeg);
+  state.bankRad = bankRad;
+  state.trueAirspeedKnots = trueAirspeedKnots;
+  state.verticalSpeedMetersPerSecond = verticalSpeedFeetPerSecond * kFeetToMeters;
+  return true;
+}
+
+ControlCommands computeControlCommands(
+    const AircraftState& aircraftState,
+    const EntityTask& task) {
+  ControlCommands commands;
+
+  const double headingErrorDeg = shortestSignedAngle(
+      aircraftState.headingDeg,
+      task.targetHeadingDegrees);
+  const double bankTargetDeg = qBound(-25.0, headingErrorDeg * 0.35, 25.0);
+  const double currentBankDeg = qRadiansToDegrees(aircraftState.bankRad);
+  const double bankErrorDeg = bankTargetDeg - currentBankDeg;
+  const double altitudeErrorMeters =
+      static_cast<double>(task.targetAltitudeMeters) - aircraftState.altitudeMeters;
+  const double speedErrorKnots =
+      task.targetSpeedKnots - aircraftState.trueAirspeedKnots;
+
+  // Conservative initial gains. Elevator sign may need model-specific tuning.
+  constexpr double kBankToAileron = 0.04;
+  constexpr double kHeadingToRudder = 0.0015;
+  constexpr double kAltitudeToElevator = -0.0008;
+  constexpr double kSpeedToThrottle = 0.004;
+
+  commands.aileronNorm = clampNormalizedCommand(bankErrorDeg * kBankToAileron);
+  commands.rudderNorm = clampNormalizedCommand(headingErrorDeg * kHeadingToRudder);
+  commands.elevatorNorm =
+      clampNormalizedCommand(altitudeErrorMeters * kAltitudeToElevator);
+  commands.throttleNorm =
+      clampNormalizedThrottle(0.5 + speedErrorKnots * kSpeedToThrottle);
+  return commands;
+}
+
+void applyControlCommands(JSBSim::FGFDMExec& exec, const ControlCommands& commands) {
+  exec.SetPropertyValue("fcs/aileron-cmd-norm", commands.aileronNorm);
+  exec.SetPropertyValue("fcs/rudder-cmd-norm", commands.rudderNorm);
+  exec.SetPropertyValue("fcs/elevator-cmd-norm", commands.elevatorNorm);
+  exec.SetPropertyValue("fcs/throttle-cmd-norm", commands.throttleNorm);
 }
 
 bool ensureJsbsimSession(Entity& entity, double deltaSeconds) {
@@ -326,6 +445,9 @@ bool ensureJsbsimSession(Entity& entity, double deltaSeconds) {
   }
 
   session->modelName = modelName;
+  session->controlMode = detectJsbsimControlMode(*exec);
+  qDebug() << "JSBSim control mode:"
+           << (session->controlMode == JsbsimControlMode::NativeAp ? "NativeAp" : "DirectFcs");
   session->exec = std::move(exec);
   return true;
 }
@@ -343,33 +465,52 @@ bool applyJsbsimStep(Entity& entity, double deltaSeconds) {
   JsbsimSession* session = sessionIt.value();
 
   session->exec->Setdt(deltaSeconds);
-  
-  if (entity.currentTask.enabled && entity.currentTask.status == QStringLiteral("Running")) {
-      // Connect to Autopilot
+
+  const bool preferDirectFcs =
+      entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
+      entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
+      entity.currentTask.taskType == QStringLiteral("FlyHeadingAltitudeSpeed");
+  const JsbsimControlMode activeControlMode =
+      preferDirectFcs ? JsbsimControlMode::DirectFcs : session->controlMode;
+
+  if (activeControlMode == JsbsimControlMode::NativeAp) {
+    if (entity.currentTask.enabled && entity.currentTask.status == QStringLiteral("Running")) {
       session->exec->SetPropertyValue("ap/heading_setpoint", entity.currentTask.targetHeadingDegrees);
       session->exec->SetPropertyValue("ap/heading_hold", 1.0);
       session->exec->SetPropertyValue("ap/altitude_setpoint", entity.currentTask.targetAltitudeMeters * kMetersToFeet);
       session->exec->SetPropertyValue("ap/altitude_hold", 1.0);
-  } else {
+    } else {
       session->exec->SetPropertyValue("ap/heading_hold", 0.0);
       session->exec->SetPropertyValue("ap/altitude_hold", 0.0);
+    }
+  } else {
+    AircraftState aircraftState;
+    if (!readJsbsimAircraftState(*session->exec, aircraftState)) {
+      return false;
+    }
+    const ControlCommands commands =
+        computeControlCommands(aircraftState, entity.currentTask);
+    applyControlCommands(*session->exec, commands);
   }
 
   if (!session->exec->Run()) {
     return false;
   }
 
-  entity.latitude = session->exec->GetPropertyValue("position/lat-geod-deg");
-  entity.longitude = session->exec->GetPropertyValue("position/long-gc-deg");
+  AircraftState aircraftState;
+  if (!readJsbsimAircraftState(*session->exec, aircraftState)) {
+    return false;
+  }
+
+  entity.latitude = aircraftState.latitudeDeg;
+  entity.longitude = aircraftState.longitudeDeg;
   entity.altitude = qMax(
       0,
-      static_cast<int>(qRound(session->exec->GetPropertyValue("position/h-sl-ft") * kFeetToMeters)));
-  entity.headingDegrees = normalizeDegrees360(session->exec->GetPropertyValue("attitude/psi-deg"));
-  entity.speedKnots = qMax(
-      0.0,
-      session->exec->GetPropertyValue("velocities/vtrue-kts"));
+      static_cast<int>(qRound(aircraftState.altitudeMeters)));
+  entity.headingDegrees = aircraftState.headingDeg;
+  entity.speedKnots = qMax(0.0, aircraftState.trueAirspeedKnots);
   entity.verticalSpeedMetersPerSecond =
-      session->exec->GetPropertyValue("velocities/h-dot-fps") * kFeetToMeters;
+      aircraftState.verticalSpeedMetersPerSecond;
   return true;
 }
 #endif
@@ -404,7 +545,15 @@ void FlightDynamicsEngine::advanceEntity(
   resolveTaskTargets(entity, taskStacks, snapshot, deltaSeconds);
 
 #if defined(QTTEST_HAS_JSBSIM)
-  if (entity.flightDynamicsMode == QStringLiteral("jsbsim") &&
+  const bool preferKinematicGuidance =
+      entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
+      entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
+      entity.currentTask.taskType == QStringLiteral("MoveAlongRoute") ||
+      entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
+      entity.currentTask.taskType == QStringLiteral("OrbitArea") ||
+      entity.currentTask.taskType == QStringLiteral("FollowEntity");
+  if (!preferKinematicGuidance &&
+      entity.flightDynamicsMode == QStringLiteral("jsbsim") &&
       applyJsbsimStep(entity, deltaSeconds)) {
     return;
   }

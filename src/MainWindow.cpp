@@ -362,9 +362,9 @@ MainWindow::MainWindow(QWidget* parent)
   for (const Entity& entity : this->_scenarioState->entities()) {
     this->appendEntityToUi(entity);
   }
-  _simulationTimer->setInterval(100);
+  _simulationTimer->setInterval(33);
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
-    this->_scenarioState->advanceSimulation(0.1);
+    this->_scenarioState->advanceSimulation(0.033);
     this->syncScenarioStateToUi();
   });
 

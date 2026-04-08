@@ -627,7 +627,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           previousPosition: Cesium.Cartesian3.clone(initialPosition),
           targetPosition: Cesium.Cartesian3.clone(initialPosition),
           startTimeMs: performance.now(),
-          durationMs: 150.0,
+          durationMs: 90.0,
         };
       }
 
@@ -696,7 +696,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           return nextPosition;
         }
 
-        return predictTrackPosition(track, altitude, 0.18);
+        return predictTrackPosition(track, altitude, 0.10);
       }
 
       function updateInterpolatedPosition(entity, nextPosition, track) {
@@ -711,7 +711,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           predictedEntityPosition(track, nextPosition)
         );
         motionState.startTimeMs = performance.now();
-        motionState.durationMs = 150.0;
+        motionState.durationMs = 90.0;
       }
 
       function currentEntityCartesian(entity) {
@@ -1464,6 +1464,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
 
         if (focus) {
           viewer.selectedEntity = entity;
+          viewer.trackedEntity = entity;
           applyHighlight(entity);
           viewer.flyTo(entity, {
             duration: 1.1,
@@ -1507,6 +1508,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         if (selectedQtTrackName === trackName) {
           selectedQtTrackName = null;
           applyHighlight(null);
+        }
+        if (viewer.trackedEntity === entity) {
+          viewer.trackedEntity = undefined;
         }
         return true;
       };
@@ -1655,6 +1659,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             const trackName = entityNameFromPick(picked);
             if (!trackName) {
               viewer.selectedEntity = undefined;
+              viewer.trackedEntity = undefined;
               applyHighlight(null);
               reportStatus('Seleccion borrada en mapa.');
               return;
@@ -1663,6 +1668,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             const entity = qtEntitiesByName.get(trackName);
             if (entity) {
               viewer.selectedEntity = entity;
+              viewer.trackedEntity = entity;
               applyHighlight(entity);
             }
             reportStatus('Track seleccionado en mapa: ' + trackName);
