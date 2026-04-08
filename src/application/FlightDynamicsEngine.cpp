@@ -110,61 +110,7 @@ QString defaultJsbsimAircraftModel(const Entity& entity) {
   if (!entity.jsbsimAircraftModel.trimmed().isEmpty()) {
     return entity.jsbsimAircraftModel.trimmed();
   }
-
-  const QString modelName = entity.modelName.trimmed().toLower();
-  const QString type = entity.type.trimmed().toLower();
-  const QString normalizedDomain = entity.domain.trimmed().toLower();
-  const QString normalizedCategory = entity.category.trimmed().toLower();
-
-  if (modelName.contains(QStringLiteral("f-16")) || type.contains(QStringLiteral("f-16"))) {
-    return QStringLiteral("f16");
-  }
-  if (modelName.contains(QStringLiteral("f-22")) || type.contains(QStringLiteral("f-22"))) {
-    return QStringLiteral("f22");
-  }
-  if (modelName.contains(QStringLiteral("a-4")) || type.contains(QStringLiteral("a-4"))) {
-    return QStringLiteral("A4");
-  }
-  if (modelName.contains(QStringLiteral("t-38")) || type.contains(QStringLiteral("t-38"))) {
-    return QStringLiteral("T38");
-  }
-  if (modelName.contains(QStringLiteral("b747")) || type.contains(QStringLiteral("b747"))) {
-    return QStringLiteral("B747");
-  }
-  if (modelName.contains(QStringLiteral("a320")) || type.contains(QStringLiteral("a320"))) {
-    return QStringLiteral("A320");
-  }
-  if (modelName.contains(QStringLiteral("c172")) || type.contains(QStringLiteral("c172"))) {
-    return QStringLiteral("c172r");
-  }
-  if (modelName.contains(QStringLiteral("c182")) || type.contains(QStringLiteral("c182"))) {
-    return QStringLiteral("c182");
-  }
-  if (modelName.contains(QStringLiteral("dhc")) || type.contains(QStringLiteral("dhc"))) {
-    return QStringLiteral("DHC6");
-  }
-  if (modelName.contains(QStringLiteral("ov-10")) || type.contains(QStringLiteral("ov-10"))) {
-    return QStringLiteral("OV10");
-  }
-  if (modelName.contains(QStringLiteral("texan")) || type.contains(QStringLiteral("texan"))) {
-    return QStringLiteral("t6texan2");
-  }
-
-  if (normalizedDomain == QStringLiteral("air")) {
-    if (normalizedCategory == QStringLiteral("fighter")) {
-      return QStringLiteral("f16");
-    }
-    if (normalizedCategory == QStringLiteral("bomber")) {
-      return QStringLiteral("B17");
-    }
-    if (normalizedCategory == QStringLiteral("transport")) {
-      return QStringLiteral("DHC6");
-    }
-    if (normalizedCategory == QStringLiteral("helicopter")) {
-      return QStringLiteral("F450");
-    }
-  }
-  return QStringLiteral("c172r");
+  return QStringLiteral("c172x");
 }
 
 QString findJsbsimRoot() {
@@ -280,6 +226,50 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
       }
       return;
   }
+
+  if (entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
+      entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
+      entity.currentTask.taskType == QStringLiteral("MoveAlongRoute")) {
+    entity.currentTask.targetHeadingDegrees = bearingDegrees(
+        entity.latitude,
+        entity.longitude,
+        entity.currentTask.targetLatitude,
+        entity.currentTask.targetLongitude);
+
+    const double distance = distanceMeters(
+        entity.latitude,
+        entity.longitude,
+        entity.currentTask.targetLatitude,
+        entity.currentTask.targetLongitude);
+
+    const double headingDelta = shortestSignedAngle(
+        entity.headingDegrees,
+        entity.currentTask.targetHeadingDegrees);
+    entity.headingDegrees = normalizeDegrees360(
+        entity.headingDegrees +
+        clampStep(0.0, headingDelta, kHeadingRateDegreesPerSecond * deltaSeconds));
+
+    entity.speedKnots = clampStep(
+        entity.speedKnots,
+        entity.currentTask.targetSpeedKnots,
+        kAccelerationKnotsPerSecond * deltaSeconds);
+
+    const double altitudeDelta =
+        static_cast<double>(entity.currentTask.targetAltitudeMeters) -
+        static_cast<double>(entity.altitude);
+    entity.verticalSpeedMetersPerSecond = clampStep(
+        0.0,
+        altitudeDelta,
+        kClimbRateMetersPerSecond);
+
+    entity.currentTask.status = QStringLiteral("Running");
+    if (distance < 200.0) {
+      entity.currentTask.status = QStringLiteral("On target");
+      entity.speedKnots = 0.0;
+      entity.verticalSpeedMetersPerSecond = 0.0;
+    }
+    return;
+  }
 }
 
 #if defined(QTTEST_HAS_JSBSIM)
@@ -308,15 +298,21 @@ bool ensureJsbsimSession(Entity& entity, double deltaSeconds) {
   }
 
   const QString rootPath = findJsbsimRoot();
-  if (rootPath.isEmpty()) {
-    return false;
-  }
+  const QString aircraftPath = QDir(rootPath).absoluteFilePath(QStringLiteral("aircraft"));
+  const QString enginePath = QDir(rootPath).absoluteFilePath(QStringLiteral("engine"));
+  const QString systemsPath = QDir(rootPath).absoluteFilePath(QStringLiteral("systems"));
+  qDebug() << "JSBSim root:" << rootPath << "model:" << modelName;
 
   auto exec = std::make_unique<JSBSim::FGFDMExec>();
   exec->SetRootDir(SGPath(rootPath.toStdString()));
   exec->Setdt(deltaSeconds);
-  if (!exec->LoadModel(modelName.toStdString(), true)) {
-    return false;
+  if (!exec->LoadModel(
+          SGPath(aircraftPath.toStdString()),
+          SGPath(enginePath.toStdString()),
+          SGPath(systemsPath.toStdString()),
+          modelName.toStdString(),
+          true)) {
+      return false;
   }
 
   exec->SetPropertyValue("ic/lat-geod-deg", entity.latitude);

@@ -1661,11 +1661,25 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
               stack->pop();
             }
             if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint" || task.taskType == "MoveAlongRoute") {
+              double targetLat = resolvedEntity.currentTask.targetLatitude;
+              double targetLon = resolvedEntity.currentTask.targetLongitude;
+              double targetAlt = resolvedEntity.currentTask.targetAltitudeMeters;
+              double targetSpeed = resolvedEntity.currentTask.targetSpeedKnots;
+              if (task.taskType == "MoveToWaypoint" && !task.targetWaypointName.trimmed().isEmpty()) {
+                for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
+                  if (waypoint.name == task.targetWaypointName) {
+                    targetLat = waypoint.latitude;
+                    targetLon = waypoint.longitude;
+                    targetAlt = waypoint.altitudeMeters;
+                    break;
+                  }
+                }
+              }
               stack->push(std::make_unique<domain::MoveToLocationTask>(
-                  resolvedEntity.currentTask.targetLatitude,
-                  resolvedEntity.currentTask.targetLongitude,
-                  resolvedEntity.currentTask.targetAltitudeMeters,
-                  resolvedEntity.currentTask.targetSpeedKnots
+                  targetLat,
+                  targetLon,
+                  targetAlt,
+                  targetSpeed
               ));
             } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
               stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
