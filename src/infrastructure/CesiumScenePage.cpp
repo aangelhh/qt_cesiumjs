@@ -1241,6 +1241,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const symbolSidc = buildQtSidc(track);
         const entityId = 'qt-track:' + track.name;
         let entity = qtEntitiesByName.get(track.name);
+        const wasTrackedEntity = viewer.trackedEntity && viewer.trackedEntity === entity;
         let overlayBundle = qtOverlayEntitiesByName.get(track.name) || {
           route: null,
           area: null,
@@ -1463,15 +1464,38 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         qtOverlayEntitiesByName.set(track.name, overlayBundle);
 
         if (focus) {
+          if (viewer.trackedEntity && viewer.trackedEntity !== entity) {
+            viewer.trackedEntity = undefined;
+          }
           viewer.selectedEntity = entity;
-          viewer.trackedEntity = entity;
           applyHighlight(entity);
           viewer.flyTo(entity, {
             duration: 1.1,
             offset: new Cesium.HeadingPitchRange(0.0, -0.7, 250000.0),
           });
+          window.setTimeout(function() {
+            if (viewer) {
+              viewer.trackedEntity = entity;
+            }
+          }, 0);
+        } else if (wasTrackedEntity) {
+          viewer.trackedEntity = entity;
         }
 
+        return true;
+      };
+
+      window.refreshQtTrackedEntity = function() {
+        if (!viewer || !viewer.trackedEntity) {
+          return false;
+        }
+        const tracked = viewer.trackedEntity;
+        viewer.trackedEntity = undefined;
+        window.setTimeout(function() {
+          if (viewer) {
+            viewer.trackedEntity = tracked;
+          }
+        }, 0);
         return true;
       };
 
@@ -1667,9 +1691,16 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
 
             const entity = qtEntitiesByName.get(trackName);
             if (entity) {
+              if (viewer.trackedEntity && viewer.trackedEntity !== entity) {
+                viewer.trackedEntity = undefined;
+              }
               viewer.selectedEntity = entity;
-              viewer.trackedEntity = entity;
               applyHighlight(entity);
+              window.setTimeout(function() {
+                if (viewer) {
+                  viewer.trackedEntity = entity;
+                }
+              }, 0);
             }
             reportStatus('Track seleccionado en mapa: ' + trackName);
             if (qtBridge && qtBridge.reportSelectedTrack) {

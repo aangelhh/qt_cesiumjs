@@ -345,6 +345,7 @@ MainWindow::MainWindow(QWidget* parent)
       _pendingGraphicName(),
       _pendingAreaType(QStringLiteral("Circle")),
       _pendingAreaRadiusMeters(1000.0),
+      _pendingAreaAltitudeMeters(0.0),
       _pendingAreaSemiMajorMeters(1000.0),
       _pendingAreaSemiMinorMeters(600.0),
       _pendingAreaRotationDegrees(0.0),
@@ -954,7 +955,7 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
     area.areaType = _pendingAreaType;
     area.centerLongitude = longitude;
     area.centerLatitude = latitude;
-    area.centerAltitudeMeters = graphicAltitude;
+    area.centerAltitudeMeters = _pendingAreaAltitudeMeters;
     area.radiusMeters = _pendingAreaRadiusMeters;
     area.semiMajorAxisMeters = _pendingAreaSemiMajorMeters;
     area.semiMinorAxisMeters = _pendingAreaSemiMinorMeters;
@@ -1120,6 +1121,12 @@ void MainWindow::startSimulation() {
 
   this->_simulationRunning = true;
   this->_simulationTimer->start();
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+  if (this->_webView) {
+    this->_webView->page()->runJavaScript(
+        QStringLiteral("window.refreshQtTrackedEntity && window.refreshQtTrackedEntity();"));
+  }
+#endif
   this->_ui->statusLabel->setText(QStringLiteral("Simulacion en marcha."));
   this->appendLogMessage(QStringLiteral("Simulation started."));
   this->updateSimulationControls();
@@ -1132,6 +1139,7 @@ void MainWindow::pauseSimulation() {
 
   this->_simulationRunning = false;
   this->_simulationTimer->stop();
+  this->syncScenarioStateToUi();
   this->_ui->statusLabel->setText(QStringLiteral("Simulacion en pausa."));
   this->appendLogMessage(QStringLiteral("Simulation paused."));
   this->updateSimulationControls();
@@ -1370,8 +1378,10 @@ void MainWindow::syncScenarioStateToUi() {
     }
   }
 
-  this->rebuildTacticalGraphicsTree();
-  this->syncTacticalGraphicsToMap();
+  if (!this->_simulationRunning) {
+    this->rebuildTacticalGraphicsTree();
+    this->syncTacticalGraphicsToMap();
+  }
 }
 
 void MainWindow::openObjectsContextMenu(const QPoint& position) {
@@ -1660,7 +1670,7 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
             while (!stack->isEmpty()) {
               stack->pop();
             }
-            if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint" || task.taskType == "MoveAlongRoute") {
+            if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
               double targetLat = resolvedEntity.currentTask.targetLatitude;
               double targetLon = resolvedEntity.currentTask.targetLongitude;
               double targetAlt = resolvedEntity.currentTask.targetAltitudeMeters;
@@ -1681,6 +1691,26 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
                   targetAlt,
                   targetSpeed
               ));
+            } else if (task.taskType == "MoveAlongRoute") {
+              bool createdRouteTask = false;
+              for (const RouteGraphic& route : this->_scenarioState->routes()) {
+                if (route.name != resolvedEntity.currentTask.targetRouteName ||
+                    route.points.isEmpty()) {
+                  continue;
+                }
+                stack->push(std::make_unique<domain::RouteTask>(
+                    route.points,
+                    resolvedEntity.currentTask.targetSpeedKnots));
+                createdRouteTask = true;
+                break;
+              }
+              if (!createdRouteTask) {
+                stack->push(std::make_unique<domain::MoveToLocationTask>(
+                    resolvedEntity.currentTask.targetLatitude,
+                    resolvedEntity.currentTask.targetLongitude,
+                    resolvedEntity.currentTask.targetAltitudeMeters,
+                    resolvedEntity.currentTask.targetSpeedKnots));
+              }
             } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
               stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
                   task.targetHeadingDegrees,
@@ -1692,21 +1722,44 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
                   static_cast<double>(task.targetAltitudeMeters),
                   task.targetSpeedKnots
               ));
-            } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
+            } else if (task.taskType == "PatrolArea") {
+              for (const AreaDefinition& area : this->_scenarioState->areas()) {
+                if (area.name != resolvedEntity.currentTask.targetAreaName &&
+                    area.id != resolvedEntity.currentTask.targetAreaName) {
+                  continue;
+                }
+                stack->push(std::make_unique<domain::PatrolAreaTask>(
+                    domain::buildPatrolRouteFromArea(area),
+                    static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
+                    resolvedEntity.currentTask.targetSpeedKnots
+                ));
+                break;
+              }
+              if (stack->isEmpty()) {
+                stack->push(std::make_unique<domain::OrbitAreaTask>(
+                    resolvedEntity.currentTask.targetLatitude,
+                    resolvedEntity.currentTask.targetLongitude,
+                    resolvedEntity.currentTask.targetAreaRadiusMeters,
+                    static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
+                    resolvedEntity.currentTask.targetSpeedKnots,
+                    true
+                ));
+              }
+            } else if (task.taskType == "OrbitArea") {
               stack->push(std::make_unique<domain::OrbitAreaTask>(
-                  task.targetLatitude,
-                  task.targetLongitude,
-                  task.targetAreaRadiusMeters,
-                  static_cast<double>(task.targetAltitudeMeters),
-                  task.targetSpeedKnots,
-                  (task.taskType == "PatrolArea")
+                  resolvedEntity.currentTask.targetLatitude,
+                  resolvedEntity.currentTask.targetLongitude,
+                  resolvedEntity.currentTask.targetAreaRadiusMeters,
+                  static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
+                  resolvedEntity.currentTask.targetSpeedKnots,
+                  false
               ));
             }
           }
 
           if (!m_simulationEngine) return;
 
-          if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint" || task.taskType == "MoveAlongRoute") {
+          if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
               // Map to existing CmdAssignMoveTask using resolved coordinates
               m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignMoveTask>(
                   0, entityName, resolvedEntity.currentTask.targetLatitude, resolvedEntity.currentTask.targetLongitude, resolvedEntity.currentTask.targetAltitudeMeters, resolvedEntity.currentTask.targetSpeedKnots
@@ -1721,8 +1774,14 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
               ));
           } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
               m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignOrbitTask>(
-                  entityName, task.targetLatitude, task.targetLongitude, task.targetAreaRadiusMeters,
-                  task.targetAltitudeMeters, task.targetSpeedKnots, (task.taskType == "PatrolArea")
+                  entityName,
+                  resolvedEntity.currentTask.targetAreaName,
+                  resolvedEntity.currentTask.targetLatitude,
+                  resolvedEntity.currentTask.targetLongitude,
+                  resolvedEntity.currentTask.targetAreaRadiusMeters,
+                  resolvedEntity.currentTask.targetAltitudeMeters,
+                  resolvedEntity.currentTask.targetSpeedKnots,
+                  (task.taskType == "PatrolArea")
               ));
           }
 
@@ -1963,6 +2022,19 @@ void MainWindow::openAddAreaDialog() {
   _pendingGraphicName = name;
   _pendingAreaPoints.clear();
   this->clearDraftGraphicFromMap(name + QStringLiteral(" (draft)"));
+  const double areaAltitudeMeters = QInputDialog::getDouble(
+      this,
+      QStringLiteral("Area Altitude"),
+      QStringLiteral("Center altitude (m)"),
+      0.0,
+      -1000.0,
+      80000.0,
+      1,
+      &ok);
+  if (!ok) {
+    return;
+  }
+  _pendingAreaAltitudeMeters = areaAltitudeMeters;
   if (areaType == QStringLiteral("Circle")) {
     const double radiusMeters = QInputDialog::getDouble(
         this,

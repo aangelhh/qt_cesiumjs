@@ -155,6 +155,7 @@ void SimulationEngine::drainCommands()
                 EntityTask task;
                 task.enabled = true;
                 task.taskType = orbitCmd->isPatrol ? "PatrolArea" : "OrbitArea";
+                task.targetAreaName = orbitCmd->targetAreaName;
                 task.targetLatitude = orbitCmd->targetLatitude;
                 task.targetLongitude = orbitCmd->targetLongitude;
                 task.targetAreaRadiusMeters = orbitCmd->targetAreaRadiusMeters;
@@ -168,14 +169,41 @@ void SimulationEngine::drainCommands()
                     while (!stack->isEmpty()) {
                         stack->pop();
                     }
-                    stack->push(std::make_unique<domain::OrbitAreaTask>(
-                        task.targetLatitude,
-                        task.targetLongitude,
-                        task.targetAreaRadiusMeters,
-                        static_cast<double>(task.targetAltitudeMeters),
-                        task.targetSpeedKnots,
-                        orbitCmd->isPatrol
-                    ));
+                    if (orbitCmd->isPatrol) {
+                        bool createdPatrolTask = false;
+                        for (const AreaDefinition& area : m_scenario->areas()) {
+                            if (area.name != task.targetAreaName &&
+                                area.id != task.targetAreaName) {
+                                continue;
+                            }
+                            stack->push(std::make_unique<domain::PatrolAreaTask>(
+                                domain::buildPatrolRouteFromArea(area),
+                                static_cast<double>(task.targetAltitudeMeters),
+                                task.targetSpeedKnots
+                            ));
+                            createdPatrolTask = true;
+                            break;
+                        }
+                        if (!createdPatrolTask) {
+                            stack->push(std::make_unique<domain::OrbitAreaTask>(
+                                task.targetLatitude,
+                                task.targetLongitude,
+                                task.targetAreaRadiusMeters,
+                                static_cast<double>(task.targetAltitudeMeters),
+                                task.targetSpeedKnots,
+                                true
+                            ));
+                        }
+                    } else {
+                        stack->push(std::make_unique<domain::OrbitAreaTask>(
+                            task.targetLatitude,
+                            task.targetLongitude,
+                            task.targetAreaRadiusMeters,
+                            static_cast<double>(task.targetAltitudeMeters),
+                            task.targetSpeedKnots,
+                            false
+                        ));
+                    }
                 }
             }
         }

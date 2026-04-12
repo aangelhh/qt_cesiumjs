@@ -1,8 +1,11 @@
 #pragma once
 
 #include <QString>
+#include <QVector>
 #include <vector>
 #include <memory>
+
+#include "TacticalGraphic.h"
 
 namespace domain {
 
@@ -39,6 +42,20 @@ private:
     double m_targetLon;
     double m_targetAlt;
     double m_targetSpeed;
+    State m_state = State::NotStarted;
+};
+
+class RouteTask : public ITask {
+public:
+    RouteTask(const QVector<RoutePoint>& points, double targetSpeedKnots);
+
+    State getState() const override;
+    DesiredState evaluate(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt) override;
+
+private:
+    QVector<RoutePoint> m_points;
+    double m_targetSpeed;
+    int m_currentPointIndex = 0;
     State m_state = State::NotStarted;
 };
 
@@ -96,6 +113,24 @@ private:
     bool m_isPatrol;
     State m_state = State::NotStarted;
 };
+
+class PatrolAreaTask : public ITask {
+public:
+    PatrolAreaTask(const QVector<RoutePoint>& patrolPoints, double targetAlt, double targetSpeedKnots);
+
+    State getState() const override;
+    DesiredState evaluate(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt) override;
+
+private:
+    QVector<RoutePoint> m_patrolPoints;
+    double m_targetAlt;
+    double m_targetSpeed;
+    int m_currentPointIndex = -1;
+    bool m_patternActive = false;
+    State m_state = State::NotStarted;
+};
+
+QVector<RoutePoint> buildPatrolRouteFromArea(const AreaDefinition& area);
 
 // Task Stack manages execution of multiple tasks
 class TaskStack {

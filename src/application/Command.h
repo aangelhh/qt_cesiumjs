@@ -60,6 +60,7 @@ struct CmdAssignFollowTask : public ICommand {
 
 struct CmdAssignOrbitTask : public ICommand {
     QString targetEntityName;
+    QString targetAreaName;
     double targetLatitude;
     double targetLongitude;
     double targetAreaRadiusMeters;
@@ -67,8 +68,8 @@ struct CmdAssignOrbitTask : public ICommand {
     double targetSpeedKnots;
     bool isPatrol;
 
-    CmdAssignOrbitTask(const QString& name, double lat, double lon, double radius, double alt, double speed, bool patrol)
-        : targetEntityName(name), targetLatitude(lat), targetLongitude(lon), targetAreaRadiusMeters(radius), targetAltitudeMeters(alt), targetSpeedKnots(speed), isPatrol(patrol) {}
+    CmdAssignOrbitTask(const QString& name, const QString& areaName, double lat, double lon, double radius, double alt, double speed, bool patrol)
+        : targetEntityName(name), targetAreaName(areaName), targetLatitude(lat), targetLongitude(lon), targetAreaRadiusMeters(radius), targetAltitudeMeters(alt), targetSpeedKnots(speed), isPatrol(patrol) {}
 };
 
 } // namespace application

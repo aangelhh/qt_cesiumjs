@@ -107,6 +107,7 @@ private:
   QVector<QVariantMap> _pendingRoutePoints;
   QString _pendingAreaType;
   double _pendingAreaRadiusMeters;
+  double _pendingAreaAltitudeMeters;
   double _pendingAreaSemiMajorMeters;
   double _pendingAreaSemiMinorMeters;
   double _pendingAreaRotationDegrees;
