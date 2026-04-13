@@ -140,7 +140,13 @@ public:
     ITask* top() const;
     bool isEmpty() const;
     
-    DesiredState evaluateTop(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt);
+    DesiredState evaluateTop(
+        double currentLat,
+        double currentLon,
+        double currentAlt,
+        double currentHeading,
+        double dt,
+        ITask::State* evaluatedState = nullptr);
 
 private:
     std::vector<std::unique_ptr<ITask>> m_stack;

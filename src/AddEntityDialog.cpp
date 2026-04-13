@@ -132,6 +132,8 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
       _taskSpeedSpin(new QDoubleSpinBox(this)),
       _radarRangeSpin(new QDoubleSpinBox(this)),
       _radarAzimuthSpin(new QDoubleSpinBox(this)),
+      _radarElevationCenterSpin(new QDoubleSpinBox(this)),
+      _radarElevationWidthSpin(new QDoubleSpinBox(this)),
       _radarMaxTracksSpin(new QSpinBox(this)),
       _latitudeSpin(new QDoubleSpinBox(this)),
       _longitudeSpin(new QDoubleSpinBox(this)),
@@ -196,6 +198,18 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   _radarAzimuthSpin->setSingleStep(5.0);
   _radarAzimuthSpin->setSuffix(QStringLiteral(" deg"));
   _radarAzimuthSpin->setValue(120.0);
+
+  _radarElevationCenterSpin->setRange(-90.0, 90.0);
+  _radarElevationCenterSpin->setDecimals(1);
+  _radarElevationCenterSpin->setSingleStep(5.0);
+  _radarElevationCenterSpin->setSuffix(QStringLiteral(" deg"));
+  _radarElevationCenterSpin->setValue(0.0);
+
+  _radarElevationWidthSpin->setRange(1.0, 180.0);
+  _radarElevationWidthSpin->setDecimals(1);
+  _radarElevationWidthSpin->setSingleStep(5.0);
+  _radarElevationWidthSpin->setSuffix(QStringLiteral(" deg"));
+  _radarElevationWidthSpin->setValue(60.0);
 
   _radarMaxTracksSpin->setRange(1, 256);
   _radarMaxTracksSpin->setValue(16);
@@ -314,6 +328,8 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
     _radarNameEdit->setEnabled(enabled);
     _radarRangeSpin->setEnabled(enabled);
     _radarAzimuthSpin->setEnabled(enabled);
+    _radarElevationCenterSpin->setEnabled(enabled);
+    _radarElevationWidthSpin->setEnabled(enabled);
     _radarMaxTracksSpin->setEnabled(enabled);
   });
   QObject::connect(_enableDynamicsCheck, &QCheckBox::toggled, this, [this](bool enabled) {
@@ -356,6 +372,8 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   formLayout->addRow(QStringLiteral("Radar Name"), _radarNameEdit);
   formLayout->addRow(QStringLiteral("Radar Range"), _radarRangeSpin);
   formLayout->addRow(QStringLiteral("Radar Azimuth"), _radarAzimuthSpin);
+  formLayout->addRow(QStringLiteral("Elevation Center"), _radarElevationCenterSpin);
+  formLayout->addRow(QStringLiteral("Elevation Width"), _radarElevationWidthSpin);
   formLayout->addRow(QStringLiteral("Radar Max Tracks"), _radarMaxTracksSpin);
   formLayout->addRow(QStringLiteral("Latitude"), _latitudeSpin);
   formLayout->addRow(QStringLiteral("Longitude"), _longitudeSpin);
@@ -371,6 +389,8 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   _radarNameEdit->setEnabled(_addRadarCheck->isChecked());
   _radarRangeSpin->setEnabled(_addRadarCheck->isChecked());
   _radarAzimuthSpin->setEnabled(_addRadarCheck->isChecked());
+  _radarElevationCenterSpin->setEnabled(_addRadarCheck->isChecked());
+  _radarElevationWidthSpin->setEnabled(_addRadarCheck->isChecked());
   _radarMaxTracksSpin->setEnabled(_addRadarCheck->isChecked());
   this->syncDynamicsControls();
   _taskHeadingSpin->setEnabled(_enableFlightTaskCheck->isChecked());
@@ -841,6 +861,8 @@ Entity AddEntityDialog::entity() const {
     radar.sensorType = QStringLiteral("radar");
     radar.maxRangeMeters = _radarRangeSpin->value() * 1000.0;
     radar.azimuthWidthDegrees = _radarAzimuthSpin->value();
+    radar.elevationCenterDegrees = _radarElevationCenterSpin->value();
+    radar.elevationWidthDegrees = _radarElevationWidthSpin->value();
     radar.maxTracks = _radarMaxTracksSpin->value();
     radar.canDetectAir = true;
     radar.canDetectGround = true;

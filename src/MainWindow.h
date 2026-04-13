@@ -38,6 +38,7 @@ private slots:
   void reportPickedCoordinate(double longitude, double latitude, double height);
   void reportMapStatus(const QString& message);
   void updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex& previous);
+  void handleDetectedContactSelection(const QModelIndex& current, const QModelIndex& previous);
   void handleMapTrackSelection(const QString& trackName);
   void toggleTacticalOverlays(bool enabled);
   void openSelectedEntityDetails();
@@ -72,6 +73,7 @@ private:
   void clearDraftGraphicFromMap(const QString& name);
   void syncTacticalGraphicsToMap();
   void syncTracksToMap();
+  void syncDetectedContactsToUi();
   void syncScenarioStateToUi();
   void selectObjectByName(const QString& trackName, bool notifyMap);
   QStandardItem* findTrackItemByName(QStandardItem* parent, const QString& trackName) const;
@@ -90,6 +92,7 @@ private:
   MapBridge* _mapBridge;
   ScenarioState* _scenarioState;
   QStandardItemModel* _objectsModel;
+  QStandardItemModel* _detectedContactsModel;
   QStandardItem* _friendlyRootItem;
   QStandardItem* _opposingRootItem;
   QStandardItem* _neutralRootItem;

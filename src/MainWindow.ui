@@ -271,6 +271,40 @@
     </layout>
    </widget>
   </widget>
+  <widget class="QDockWidget" name="contactsDockWidget">
+   <property name="windowTitle">
+    <string>Detected Contacts</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>8</number>
+   </attribute>
+   <widget class="QWidget" name="contactsDockContents">
+    <layout class="QVBoxLayout" name="contactsDockLayout">
+     <property name="spacing">
+      <number>8</number>
+     </property>
+     <property name="leftMargin">
+      <number>8</number>
+     </property>
+     <property name="topMargin">
+      <number>8</number>
+     </property>
+     <property name="rightMargin">
+      <number>8</number>
+     </property>
+     <property name="bottomMargin">
+      <number>8</number>
+     </property>
+     <item>
+      <widget class="QTableView" name="contactsTableView">
+       <property name="alternatingRowColors">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+  </widget>
   <widget class="QDockWidget" name="controlDockWidget">
    <property name="windowTitle">
     <string>Command Panel</string>
@@ -523,6 +557,7 @@ Awaiting commands...</string>
     <addaction name="actionResetCamera"/>
     <addaction name="actionToggleOverlays"/>
     <addaction name="actionToggleEntitiesPanel"/>
+    <addaction name="actionToggleContactsPanel"/>
     <addaction name="actionReloadScene"/>
    </widget>
    <widget class="QMenu" name="menuAddEntity">
@@ -627,6 +662,11 @@ Awaiting commands...</string>
   <action name="actionToggleEntitiesPanel">
    <property name="text">
     <string>Toggle Objects Panel</string>
+   </property>
+  </action>
+  <action name="actionToggleContactsPanel">
+   <property name="text">
+    <string>Toggle Contacts Panel</string>
    </property>
   </action>
   <action name="actionReloadScene">

@@ -71,6 +71,8 @@ private:
   QDoubleSpinBox* _taskSpeedSpin;
   QDoubleSpinBox* _radarRangeSpin;
   QDoubleSpinBox* _radarAzimuthSpin;
+  QDoubleSpinBox* _radarElevationCenterSpin;
+  QDoubleSpinBox* _radarElevationWidthSpin;
   QSpinBox* _radarMaxTracksSpin;
   QDoubleSpinBox* _latitudeSpin;
   QDoubleSpinBox* _longitudeSpin;

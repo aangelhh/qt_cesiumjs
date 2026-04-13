@@ -381,17 +381,30 @@ bool TaskStack::isEmpty() const
     return m_stack.empty();
 }
 
-DesiredState TaskStack::evaluateTop(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt)
+DesiredState TaskStack::evaluateTop(
+    double currentLat,
+    double currentLon,
+    double currentAlt,
+    double currentHeading,
+    double dt,
+    ITask::State* evaluatedState)
 {
     if (m_stack.empty()) {
+        if (evaluatedState) {
+            *evaluatedState = ITask::State::NotStarted;
+        }
         return {currentHeading, currentAlt, 0.0}; // Hold current state if no tasks
     }
     
     ITask* currentTask = m_stack.back().get();
     DesiredState desired = currentTask->evaluate(currentLat, currentLon, currentAlt, currentHeading, dt);
+    const ITask::State state = currentTask->getState();
+    if (evaluatedState) {
+        *evaluatedState = state;
+    }
     
     // Auto-pop completed tasks
-    if (currentTask->getState() == ITask::State::Completed || currentTask->getState() == ITask::State::Failed) {
+    if (state == ITask::State::Completed || state == ITask::State::Failed) {
         pop();
     }
     

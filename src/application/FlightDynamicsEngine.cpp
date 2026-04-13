@@ -190,17 +190,22 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
           }
       }
   
+      domain::ITask::State evaluatedState = domain::ITask::State::Running;
       domain::DesiredState desired = it->second.evaluateTop(
-          entity.latitude, entity.longitude, static_cast<double>(entity.altitude), 
-          entity.headingDegrees, deltaSeconds);
+          entity.latitude,
+          entity.longitude,
+          static_cast<double>(entity.altitude),
+          entity.headingDegrees,
+          deltaSeconds,
+          &evaluatedState);
       
       entity.currentTask.targetHeadingDegrees = desired.targetHeadingDegrees;
       entity.currentTask.targetAltitudeMeters = static_cast<int>(desired.targetAltitudeMeters);
       entity.currentTask.targetSpeedKnots = desired.targetSpeedKnots;
       
-      if (it->second.top()->getState() == domain::ITask::State::Completed) {
+      if (evaluatedState == domain::ITask::State::Completed) {
           entity.currentTask.status = QStringLiteral("On target");
-      } else if (it->second.top()->getState() == domain::ITask::State::Failed) {
+      } else if (evaluatedState == domain::ITask::State::Failed) {
           entity.currentTask.status = QStringLiteral("Target unavailable");
       } else {
           entity.currentTask.status = QStringLiteral("Running");

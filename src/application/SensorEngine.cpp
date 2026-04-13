@@ -6,7 +6,7 @@ namespace {
 
 constexpr double kEarthRadiusMeters = 6371000.0;
 
-double normalizeDegrees(double degrees) {
+double normalizeDegrees180(double degrees) {
   while (degrees < -180.0) {
     degrees += 360.0;
   }
@@ -32,6 +32,20 @@ double distanceMeters(const Entity& source, const Entity& target) {
   return qSqrt(surfaceDistance * surfaceDistance + altitudeDelta * altitudeDelta);
 }
 
+double horizontalDistanceMeters(const Entity& source, const Entity& target) {
+  const double lat1 = qDegreesToRadians(source.latitude);
+  const double lon1 = qDegreesToRadians(source.longitude);
+  const double lat2 = qDegreesToRadians(target.latitude);
+  const double lon2 = qDegreesToRadians(target.longitude);
+
+  const double deltaLat = lat2 - lat1;
+  const double deltaLon = lon2 - lon1;
+  const double a = qPow(qSin(deltaLat / 2.0), 2.0) +
+      qCos(lat1) * qCos(lat2) * qPow(qSin(deltaLon / 2.0), 2.0);
+  const double c = 2.0 * qAtan2(qSqrt(a), qSqrt(1.0 - a));
+  return kEarthRadiusMeters * c;
+}
+
 double bearingDegrees(const Entity& source, const Entity& target) {
   const double lat1 = qDegreesToRadians(source.latitude);
   const double lon1 = qDegreesToRadians(source.longitude);
@@ -48,29 +62,58 @@ double bearingDegrees(const Entity& source, const Entity& target) {
   return bearing;
 }
 
-bool domainDetectedBySensor(const SensorDefinition& sensor, const Entity& target) {
-  const QString domain = target.domain.trimmed().toLower();
-  if (domain == QStringLiteral("air")) {
-    return sensor.canDetectAir;
-  }
-  if (domain == QStringLiteral("surface")) {
-    return sensor.canDetectSurface;
-  }
-  if (domain == QStringLiteral("land") || domain == QStringLiteral("ground")) {
-    return sensor.canDetectGround;
-  }
-  return sensor.canDetectAir || sensor.canDetectGround || sensor.canDetectSurface;
+bool isCombatObserver(const Entity& entity) {
+  return entity.forceIdentifier == 1 || entity.forceIdentifier == 2;
 }
 
-bool targetInsideAzimuth(const Entity& source, const SensorDefinition& sensor, const Entity& target) {
+bool isEnemyTarget(const Entity& source, const Entity& target) {
+  if (source.forceIdentifier == 1) {
+    return target.forceIdentifier == 2;
+  }
+  if (source.forceIdentifier == 2) {
+    return target.forceIdentifier == 1;
+  }
+  return false;
+}
+
+bool targetInsideHorizontalBeam(
+    const Entity& source,
+    const SensorDefinition& sensor,
+    const Entity& target) {
   if (sensor.azimuthWidthDegrees >= 360.0) {
     return true;
   }
 
-  const double bearing = bearingDegrees(source, target);
-  const double sensorCenter = source.headingDegrees + sensor.azimuthCenterDegrees;
-  const double delta = qAbs(normalizeDegrees(bearing - sensorCenter));
-  return delta <= sensor.azimuthWidthDegrees / 2.0;
+  const double targetBearing = bearingDegrees(source, target);
+  const double beamCenter = source.headingDegrees + sensor.azimuthCenterDegrees;
+  const double deltaDegrees =
+      qAbs(normalizeDegrees180(targetBearing - beamCenter));
+  return deltaDegrees <= sensor.azimuthWidthDegrees / 2.0;
+}
+
+bool targetInsideVerticalBeam(
+    const Entity& source,
+    const SensorDefinition& sensor,
+    const Entity& target) {
+  if (sensor.elevationWidthDegrees <= 0.0) {
+    // Zero or negative width means the vertical beam is effectively closed.
+    return false;
+  }
+  if (sensor.elevationWidthDegrees >= 180.0) {
+    // The elevation angle is relative to the local horizon, so 180 deg covers all.
+    return true;
+  }
+
+  const double horizontalRange = horizontalDistanceMeters(source, target);
+  const double altitudeDelta =
+      static_cast<double>(target.altitude - source.altitude);
+  // Entity has no pitch/roll, so elevation is interpreted against the local horizon.
+  const double targetElevationDegrees =
+      qRadiansToDegrees(qAtan2(altitudeDelta, horizontalRange));
+  const double deltaDegrees =
+      qAbs(normalizeDegrees180(
+          targetElevationDegrees - sensor.elevationCenterDegrees));
+  return deltaDegrees <= sensor.elevationWidthDegrees / 2.0;
 }
 
 } // namespace
@@ -82,9 +125,12 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
 
   for (int sourceIndex = 0; sourceIndex < entities.size(); ++sourceIndex) {
     Entity& source = entities[sourceIndex];
+    if (!isCombatObserver(source)) {
+      continue;
+    }
 
     for (const SensorDefinition& sensor : source.sensors) {
-      if (!sensor.enabled || !sensor.emitting) {
+      if (!sensor.enabled || !sensor.emitting || sensor.maxRangeMeters <= 0.0) {
         continue;
       }
 
@@ -95,7 +141,7 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
         }
 
         const Entity& target = entities[targetIndex];
-        if (!domainDetectedBySensor(sensor, target)) {
+        if (!isEnemyTarget(source, target)) {
           continue;
         }
 
@@ -104,7 +150,11 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
           continue;
         }
 
-        if (!targetInsideAzimuth(source, sensor, target)) {
+        if (!targetInsideHorizontalBeam(source, sensor, target)) {
+          continue;
+        }
+
+        if (!targetInsideVerticalBeam(source, sensor, target)) {
           continue;
         }
 
@@ -113,8 +163,8 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
         contact.targetEntityName = target.name;
         contact.rangeMeters = range;
         contact.bearingDegrees = bearingDegrees(source, target);
-        contact.lineOfSight = !sensor.terrainMaskingEnabled;
-        contact.detected = sensor.probabilityOfDetection > 0.0;
+        contact.lineOfSight = true;
+        contact.detected = true;
         source.sensorContacts.push_back(contact);
 
         ++tracksAdded;

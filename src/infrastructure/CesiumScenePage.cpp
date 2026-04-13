@@ -338,6 +338,26 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         return null;
       }
 
+      function radarFanBundleEntities(bundle) {
+        if (!bundle) {
+          return [];
+        }
+        return [
+          bundle.flatFace,
+          bundle.topFace,
+          bundle.bottomFace,
+          bundle.outerWall,
+          bundle.leftWall,
+          bundle.rightWall,
+        ].filter(Boolean);
+      }
+
+      function setRadarFanBundleVisibility(bundle, visible) {
+        for (const entity of radarFanBundleEntities(bundle)) {
+          entity.show = visible;
+        }
+      }
+
       function setOverlayVisibility(bundle, visible) {
         if (!bundle) {
           return;
@@ -353,7 +373,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         }
         if (bundle.radarFans) {
           for (const fan of bundle.radarFans) {
-            fan.show = visible;
+            setRadarFanBundleVisibility(fan, visible);
           }
         }
       }
@@ -447,20 +467,36 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         };
       }
 
-      function buildRadarFanPositions(track, sensor, altitude) {
+      function isScene3DMode() {
+        return !!viewer &&
+          !!viewer.scene &&
+          viewer.scene.mode === Cesium.SceneMode.SCENE3D;
+      }
+
+      function buildTrackModelShowProperty() {
+        return new Cesium.CallbackProperty(function() {
+          return isScene3DMode();
+        }, false);
+      }
+
+      function buildTrackPointShowProperty(hasModel, hasSymbol) {
+        return new Cesium.CallbackProperty(function() {
+          return !hasSymbol && (!hasModel || !isScene3DMode());
+        }, false);
+      }
+
+      function clampRadarElevationDegrees(value) {
+        return Cesium.Math.clamp(Number(value || 0.0), -89.0, 89.0);
+      }
+
+      function buildRadarFanFootprint(track, sensor) {
         const centerBearing = Number(track.headingDegrees || 0.0) +
           Number(sensor.azimuthCenterDegrees || 0.0);
         const azimuthWidth = Math.max(1.0, Number(sensor.azimuthWidthDegrees || 360.0));
         const rangeMeters = Math.max(1.0, Number(sensor.maxRangeMeters || 0.0));
         const steps = Math.max(12, Math.ceil(azimuthWidth / 8.0));
         const startBearing = centerBearing - azimuthWidth / 2.0;
-        const positions = [
-          Cesium.Cartesian3.fromDegrees(
-            Number(track.longitude || 0.0),
-            Number(track.latitude || 0.0),
-            altitude
-          )
-        ];
+        const arcPoints = [];
 
         for (let step = 0; step <= steps; ++step) {
           const bearing = startBearing + (azimuthWidth * step / steps);
@@ -470,16 +506,67 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             bearing,
             rangeMeters
           );
+          arcPoints.push({
+            latitude: destination.latitude,
+            longitude: destination.longitude,
+          });
+        }
+
+        return {
+          latitude: Number(track.latitude || 0.0),
+          longitude: Number(track.longitude || 0.0),
+          rangeMeters,
+          arcPoints,
+        };
+      }
+
+      function buildRadarFanPositions(track, sensor, altitude) {
+        const footprint = buildRadarFanFootprint(track, sensor);
+        const positions = [
+          Cesium.Cartesian3.fromDegrees(
+            footprint.longitude,
+            footprint.latitude,
+            altitude
+          )
+        ];
+
+        for (const point of footprint.arcPoints) {
           positions.push(
             Cesium.Cartesian3.fromDegrees(
-              destination.longitude,
-              destination.latitude,
+              point.longitude,
+              point.latitude,
               altitude
             )
           );
         }
 
         return positions;
+      }
+
+      function radarElevationBounds(sensor) {
+        const widthDegrees = Number(sensor.elevationWidthDegrees || 0.0);
+        if (widthDegrees <= 0.0) {
+          return null;
+        }
+        if (widthDegrees >= 180.0) {
+          return {
+            lower: -89.0,
+            upper: 89.0,
+          };
+        }
+
+        const centerDegrees = Number(sensor.elevationCenterDegrees || 0.0);
+        const halfWidthDegrees = widthDegrees / 2.0;
+        return {
+          lower: clampRadarElevationDegrees(centerDegrees - halfWidthDegrees),
+          upper: clampRadarElevationDegrees(centerDegrees + halfWidthDegrees),
+        };
+      }
+
+      function radarAltitudeAtRange(baseAltitude, rangeMeters, elevationDegrees) {
+        return baseAltitude + Math.tan(
+          Cesium.Math.toRadians(clampRadarElevationDegrees(elevationDegrees))
+        ) * rangeMeters;
       }
 
       function buildAreaCircleHierarchy(graphic) {
@@ -746,10 +833,14 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         );
       }
 
-      function buildRadarFanHierarchyForEntity(entity, sensor) {
+      function emptyRadarPolygonHierarchy() {
+        return new Cesium.PolygonHierarchy([]);
+      }
+
+      function radarTrackSnapshotForEntity(entity) {
         const cartesian = currentEntityCartesian(entity);
         const track = entity && entity._qtTrackData ? entity._qtTrackData : null;
-        if (!cartesian || !track || !sensor) {
+        if (!cartesian || !track) {
           return null;
         }
 
@@ -758,17 +849,319 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           return null;
         }
 
-        const longitude = Cesium.Math.toDegrees(cartographic.longitude);
-        const latitude = Cesium.Math.toDegrees(cartographic.latitude);
-        const altitude = cartographic.height || 0.0;
-        const syntheticTrack = Object.assign({}, track, {
-          longitude: longitude,
-          latitude: latitude,
+        return Object.assign({}, track, {
+          longitude: Cesium.Math.toDegrees(cartographic.longitude),
+          latitude: Cesium.Math.toDegrees(cartographic.latitude),
+          altitudeMeters: cartographic.height || 0.0,
           headingDegrees: Number(track.headingDegrees || 0.0),
         });
+      }
+
+      function buildRadarFanHierarchyForEntity(entity, sensor) {
+        if (isScene3DMode()) {
+          return emptyRadarPolygonHierarchy();
+        }
+
+        const track = radarTrackSnapshotForEntity(entity);
+        if (!track || !sensor) {
+          return emptyRadarPolygonHierarchy();
+        }
+
         return new Cesium.PolygonHierarchy(
-          buildRadarFanPositions(syntheticTrack, sensor, altitude)
+          buildRadarFanPositions(track, sensor, track.altitudeMeters)
         );
+      }
+
+      function buildRadarBeamFaceHierarchyForEntity(entity, sensor, useUpperFace) {
+        if (!isScene3DMode()) {
+          return emptyRadarPolygonHierarchy();
+        }
+
+        const track = radarTrackSnapshotForEntity(entity);
+        const elevationBounds = radarElevationBounds(sensor);
+        if (!track || !sensor || !elevationBounds) {
+          return emptyRadarPolygonHierarchy();
+        }
+
+        const footprint = buildRadarFanFootprint(track, sensor);
+        const faceElevationDegrees = useUpperFace
+          ? elevationBounds.upper
+          : elevationBounds.lower;
+        const faceAltitude = radarAltitudeAtRange(
+          track.altitudeMeters,
+          footprint.rangeMeters,
+          faceElevationDegrees
+        );
+        const positions = [
+          Cesium.Cartesian3.fromDegrees(
+            track.longitude,
+            track.latitude,
+            track.altitudeMeters
+          )
+        ];
+
+        for (const point of footprint.arcPoints) {
+          positions.push(
+            Cesium.Cartesian3.fromDegrees(
+              point.longitude,
+              point.latitude,
+              faceAltitude
+            )
+          );
+        }
+
+        return new Cesium.PolygonHierarchy(positions);
+      }
+
+      function buildRadarBeamWallPositionsForEntity(entity, sensor) {
+        if (!isScene3DMode()) {
+          return [];
+        }
+
+        const track = radarTrackSnapshotForEntity(entity);
+        const elevationBounds = radarElevationBounds(sensor);
+        if (!track || !sensor || !elevationBounds) {
+          return [];
+        }
+
+        const footprint = buildRadarFanFootprint(track, sensor);
+        return footprint.arcPoints.map(function(point) {
+          return Cesium.Cartesian3.fromDegrees(
+            point.longitude,
+            point.latitude,
+            0.0
+          );
+        });
+      }
+
+      function buildRadarBeamWallHeightsForEntity(entity, sensor, useUpperHeights) {
+        if (!isScene3DMode()) {
+          return [];
+        }
+
+        const track = radarTrackSnapshotForEntity(entity);
+        const elevationBounds = radarElevationBounds(sensor);
+        if (!track || !sensor || !elevationBounds) {
+          return [];
+        }
+
+        const footprint = buildRadarFanFootprint(track, sensor);
+        const elevationDegrees = useUpperHeights
+          ? elevationBounds.upper
+          : elevationBounds.lower;
+        const height = radarAltitudeAtRange(
+          track.altitudeMeters,
+          footprint.rangeMeters,
+          elevationDegrees
+        );
+        return footprint.arcPoints.map(function() {
+          return height;
+        });
+      }
+
+      function buildRadarBeamSidePositionsForEntity(entity, sensor, useRightBoundary) {
+        if (!isScene3DMode()) {
+          return [];
+        }
+
+        const track = radarTrackSnapshotForEntity(entity);
+        const elevationBounds = radarElevationBounds(sensor);
+        if (!track || !sensor || !elevationBounds) {
+          return [];
+        }
+
+        const footprint = buildRadarFanFootprint(track, sensor);
+        if (footprint.arcPoints.length <= 0) {
+          return [];
+        }
+
+        const boundaryPoint = useRightBoundary
+          ? footprint.arcPoints[footprint.arcPoints.length - 1]
+          : footprint.arcPoints[0];
+        return [
+          Cesium.Cartesian3.fromDegrees(track.longitude, track.latitude, 0.0),
+          Cesium.Cartesian3.fromDegrees(
+            boundaryPoint.longitude,
+            boundaryPoint.latitude,
+            0.0
+          ),
+        ];
+      }
+
+      function buildRadarBeamSideHeightsForEntity(entity, sensor, useUpperHeights) {
+        if (!isScene3DMode()) {
+          return [];
+        }
+
+        const track = radarTrackSnapshotForEntity(entity);
+        const elevationBounds = radarElevationBounds(sensor);
+        if (!track || !sensor || !elevationBounds) {
+          return [];
+        }
+
+        const footprint = buildRadarFanFootprint(track, sensor);
+        const elevationDegrees = useUpperHeights
+          ? elevationBounds.upper
+          : elevationBounds.lower;
+        const boundaryHeight = radarAltitudeAtRange(
+          track.altitudeMeters,
+          footprint.rangeMeters,
+          elevationDegrees
+        );
+        return [
+          track.altitudeMeters,
+          boundaryHeight,
+        ];
+      }
+
+      function createRadarFanBundle(entityId, entity, sensor, index, visible) {
+        const fanBundle = {
+          sensor: Object.assign({}, sensor),
+          flatFace: null,
+          topFace: null,
+          bottomFace: null,
+          outerWall: null,
+          leftWall: null,
+          rightWall: null,
+        };
+        const radarId = entityId + ':radar:' + index;
+
+        fanBundle.flatFace = viewer.entities.add({
+          id: radarId + ':flat',
+          polygon: {
+            hierarchy: new Cesium.CallbackProperty(function() {
+              return buildRadarFanHierarchyForEntity(entity, fanBundle.sensor);
+            }, false),
+            material: Cesium.Color.WHITE.withAlpha(0.12),
+            outline: true,
+            outlineColor: Cesium.Color.WHITE.withAlpha(0.65),
+            perPositionHeight: true,
+          },
+          show: visible,
+        });
+        fanBundle.topFace = viewer.entities.add({
+          id: radarId + ':top',
+          polygon: {
+            hierarchy: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamFaceHierarchyForEntity(entity, fanBundle.sensor, true);
+            }, false),
+            material: Cesium.Color.WHITE.withAlpha(0.10),
+            outline: true,
+            outlineColor: Cesium.Color.WHITE.withAlpha(0.65),
+            perPositionHeight: true,
+          },
+          show: visible,
+        });
+        fanBundle.bottomFace = viewer.entities.add({
+          id: radarId + ':bottom',
+          polygon: {
+            hierarchy: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamFaceHierarchyForEntity(entity, fanBundle.sensor, false);
+            }, false),
+            material: Cesium.Color.WHITE.withAlpha(0.08),
+            outline: true,
+            outlineColor: Cesium.Color.WHITE.withAlpha(0.55),
+            perPositionHeight: true,
+          },
+          show: visible,
+        });
+        fanBundle.outerWall = viewer.entities.add({
+          id: radarId + ':outer-wall',
+          wall: {
+            positions: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamWallPositionsForEntity(entity, fanBundle.sensor);
+            }, false),
+            minimumHeights: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamWallHeightsForEntity(entity, fanBundle.sensor, false);
+            }, false),
+            maximumHeights: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamWallHeightsForEntity(entity, fanBundle.sensor, true);
+            }, false),
+            material: Cesium.Color.WHITE.withAlpha(0.12),
+            outline: true,
+            outlineColor: Cesium.Color.WHITE.withAlpha(0.55),
+          },
+          show: visible,
+        });
+        fanBundle.leftWall = viewer.entities.add({
+          id: radarId + ':left-wall',
+          wall: {
+            positions: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamSidePositionsForEntity(entity, fanBundle.sensor, false);
+            }, false),
+            minimumHeights: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamSideHeightsForEntity(entity, fanBundle.sensor, false);
+            }, false),
+            maximumHeights: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamSideHeightsForEntity(entity, fanBundle.sensor, true);
+            }, false),
+            material: Cesium.Color.WHITE.withAlpha(0.10),
+            outline: true,
+            outlineColor: Cesium.Color.WHITE.withAlpha(0.55),
+          },
+          show: visible,
+        });
+        fanBundle.rightWall = viewer.entities.add({
+          id: radarId + ':right-wall',
+          wall: {
+            positions: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamSidePositionsForEntity(entity, fanBundle.sensor, true);
+            }, false),
+            minimumHeights: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamSideHeightsForEntity(entity, fanBundle.sensor, false);
+            }, false),
+            maximumHeights: new Cesium.CallbackProperty(function() {
+              return buildRadarBeamSideHeightsForEntity(entity, fanBundle.sensor, true);
+            }, false),
+            material: Cesium.Color.WHITE.withAlpha(0.10),
+            outline: true,
+            outlineColor: Cesium.Color.WHITE.withAlpha(0.55),
+          },
+          show: visible,
+        });
+        return fanBundle;
+      }
+
+      function updateRadarFanBundleAppearance(bundle, flatColor, outlineColor) {
+        if (!bundle) {
+          return;
+        }
+
+        const volumeColor = flatColor.withAlpha(Math.min(flatColor.alpha + 0.04, 0.18));
+        const secondaryVolumeColor = flatColor.withAlpha(Math.max(flatColor.alpha - 0.02, 0.06));
+        if (bundle.flatFace && bundle.flatFace.polygon) {
+          bundle.flatFace.polygon.material = flatColor;
+          bundle.flatFace.polygon.outlineColor = outlineColor;
+        }
+        if (bundle.topFace && bundle.topFace.polygon) {
+          bundle.topFace.polygon.material = volumeColor;
+          bundle.topFace.polygon.outlineColor = outlineColor;
+        }
+        if (bundle.bottomFace && bundle.bottomFace.polygon) {
+          bundle.bottomFace.polygon.material = secondaryVolumeColor;
+          bundle.bottomFace.polygon.outlineColor = outlineColor;
+        }
+        if (bundle.outerWall && bundle.outerWall.wall) {
+          bundle.outerWall.wall.material = volumeColor;
+          bundle.outerWall.wall.outlineColor = outlineColor;
+        }
+        if (bundle.leftWall && bundle.leftWall.wall) {
+          bundle.leftWall.wall.material = secondaryVolumeColor;
+          bundle.leftWall.wall.outlineColor = outlineColor;
+        }
+        if (bundle.rightWall && bundle.rightWall.wall) {
+          bundle.rightWall.wall.material = secondaryVolumeColor;
+          bundle.rightWall.wall.outlineColor = outlineColor;
+        }
+      }
+
+      function removeRadarFanBundle(bundle) {
+        if (!bundle || !viewer) {
+          return;
+        }
+        for (const entity of radarFanBundleEntities(bundle)) {
+          viewer.entities.remove(entity);
+        }
       }
 
       function buildEntityOrientationProperty(entity) {
@@ -1258,7 +1651,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             name: track.name,
             position,
             point: {
-              show: !hasModel && !hasSymbol,
+              show: buildTrackPointShowProperty(hasModel, hasSymbol),
               pixelSize: 11,
               color,
               outlineColor: Cesium.Color.BLACK,
@@ -1298,6 +1691,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               minimumPixelSize: 48,
               maximumScale: 20000,
               scale: 1.0,
+              show: buildTrackModelShowProperty(),
             };
             entityOptions.orientation = buildEntityOrientationProperty({
               _qtTrackData: track,
@@ -1317,7 +1711,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           updateInterpolatedPosition(entity, position, track);
           entity.name = track.name;
           entity._qtTrackData = Object.assign({}, track);
-          entity.point.show = !hasModel && !hasSymbol;
+          entity.point.show = buildTrackPointShowProperty(hasModel, hasSymbol);
           entity.point.color = color;
           entity.label.text = track.name;
           entity.properties = new Cesium.PropertyBag({
@@ -1333,6 +1727,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               minimumPixelSize: 48,
               maximumScale: 20000,
               scale: 1.0,
+              show: buildTrackModelShowProperty(),
             });
             entity.orientation = buildEntityOrientationProperty(entity);
           } else {
@@ -1432,7 +1827,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const radarSensors = radarSensorsForTrack(track);
         if (overlayBundle.radarFans && overlayBundle.radarFans.length > radarSensors.length) {
           for (let index = radarSensors.length; index < overlayBundle.radarFans.length; ++index) {
-            viewer.entities.remove(overlayBundle.radarFans[index]);
+            removeRadarFanBundle(overlayBundle.radarFans[index]);
           }
           overlayBundle.radarFans.length = radarSensors.length;
         }
@@ -1441,23 +1836,20 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           const radarColor = color.withAlpha(0.12 + Math.min(index, 3) * 0.04);
           const outlineColor = color.withAlpha(0.65);
           if (!overlayBundle.radarFans[index]) {
-            overlayBundle.radarFans[index] = viewer.entities.add({
-              id: entityId + ':radar:' + index,
-              polygon: {
-                hierarchy: new Cesium.CallbackProperty(function() {
-                  return buildRadarFanHierarchyForEntity(entity, sensor);
-                }, false),
-                material: radarColor,
-                outline: true,
-                outlineColor,
-                perPositionHeight: true,
-              },
-              show: overlaysVisible,
-            });
-          } else {
-            overlayBundle.radarFans[index].polygon.material = radarColor;
-            overlayBundle.radarFans[index].polygon.outlineColor = outlineColor;
+            overlayBundle.radarFans[index] = createRadarFanBundle(
+              entityId,
+              entity,
+              sensor,
+              index,
+              overlaysVisible
+            );
           }
+          overlayBundle.radarFans[index].sensor = Object.assign({}, sensor);
+          updateRadarFanBundleAppearance(
+            overlayBundle.radarFans[index],
+            radarColor,
+            outlineColor
+          );
         });
 
         setOverlayVisibility(overlayBundle, overlaysVisible);
@@ -1523,7 +1915,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           }
           if (overlayBundle.radarFans) {
             for (const fan of overlayBundle.radarFans) {
-              viewer.entities.remove(fan);
+              removeRadarFanBundle(fan);
             }
           }
           qtOverlayEntitiesByName.delete(trackName);

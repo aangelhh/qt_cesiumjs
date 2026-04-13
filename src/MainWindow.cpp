@@ -13,7 +13,9 @@
 #include "presentation/EntityTextFormatter.h"
 #include "ui_MainWindow.h"
 
+#include <QAbstractItemView>
 #include <QAction>
+#include <QDateTime>
 #include <QFileInfo>
 #include <QColor>
 #include <QHeaderView>
@@ -34,6 +36,7 @@
 #include <QSizePolicy>
 #include <QStandardItem>
 #include <QStandardItemModel>
+#include <QSet>
 #include <QVariantList>
 #include <QVariantMap>
 #include <QVBoxLayout>
@@ -48,6 +51,8 @@
 
 namespace {
 constexpr int kTrackSummaryRole = Qt::UserRole + 1;
+constexpr int kDetectedContactObserverRole = Qt::UserRole + 2;
+constexpr int kDetectedContactTargetRole = Qt::UserRole + 3;
 constexpr double kGraphicAltitudeOffsetMeters = 15.0;
 constexpr double kPolygonCloseDistanceMeters = 50.0;
 
@@ -195,7 +200,10 @@ QVariantMap makeTrackSummary(const Entity& entity) {
         {QStringLiteral("enabled"), sensor.enabled},
         {QStringLiteral("emitting"), sensor.emitting},
         {QStringLiteral("maxRangeMeters"), sensor.maxRangeMeters},
+        {QStringLiteral("azimuthCenterDegrees"), sensor.azimuthCenterDegrees},
         {QStringLiteral("azimuthWidthDegrees"), sensor.azimuthWidthDegrees},
+        {QStringLiteral("elevationCenterDegrees"), sensor.elevationCenterDegrees},
+        {QStringLiteral("elevationWidthDegrees"), sensor.elevationWidthDegrees},
         {QStringLiteral("maxTracks"), sensor.maxTracks},
     });
   }
@@ -329,6 +337,7 @@ MainWindow::MainWindow(QWidget* parent)
       _mapBridge(new MapBridge(this)),
       _scenarioState(new ScenarioState()),
       _objectsModel(new QStandardItemModel(this)),
+      _detectedContactsModel(new QStandardItemModel(this)),
       _friendlyRootItem(nullptr),
       _opposingRootItem(nullptr),
       _neutralRootItem(nullptr),
@@ -363,6 +372,7 @@ MainWindow::MainWindow(QWidget* parent)
   for (const Entity& entity : this->_scenarioState->entities()) {
     this->appendEntityToUi(entity);
   }
+  this->syncDetectedContactsToUi();
   _simulationTimer->setInterval(33);
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
     this->_scenarioState->advanceSimulation(0.033);
@@ -392,6 +402,13 @@ MainWindow::MainWindow(QWidget* parent)
       this,
       [this]() {
         this->_ui->objectsDockWidget->setVisible(!this->_ui->objectsDockWidget->isVisible());
+      });
+  QObject::connect(
+      this->_ui->actionToggleContactsPanel,
+      &QAction::triggered,
+      this,
+      [this]() {
+        this->_ui->contactsDockWidget->setVisible(!this->_ui->contactsDockWidget->isVisible());
       });
   QObject::connect(
       this->_ui->actionStartSimulation,
@@ -728,6 +745,30 @@ void MainWindow::initializeModels() {
       this,
       &MainWindow::updateSelectedTrackPanel);
 
+  this->_detectedContactsModel->setHorizontalHeaderLabels({
+      QStringLiteral("Observer"),
+      QStringLiteral("Contact"),
+      QStringLiteral("Side"),
+      QStringLiteral("Type"),
+      QStringLiteral("Range"),
+      QStringLiteral("Bearing"),
+      QStringLiteral("Altitude"),
+      QStringLiteral("Last Seen"),
+  });
+  this->_ui->contactsTableView->setModel(this->_detectedContactsModel);
+  this->_ui->contactsTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
+  this->_ui->contactsTableView->setSelectionMode(QAbstractItemView::SingleSelection);
+  this->_ui->contactsTableView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  this->_ui->contactsTableView->setSortingEnabled(false);
+  this->_ui->contactsTableView->horizontalHeader()->setStretchLastSection(true);
+  this->_ui->contactsTableView->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+  this->_ui->contactsTableView->verticalHeader()->setVisible(false);
+  QObject::connect(
+      this->_ui->contactsTableView->selectionModel(),
+      &QItemSelectionModel::currentChanged,
+      this,
+      &MainWindow::handleDetectedContactSelection);
+
   this->_ui->eventLogPlainTextEdit->clear();
   this->appendLogMessage(QStringLiteral("Operational log ready."));
   this->appendLogMessage(QStringLiteral("Cesium map connected."));
@@ -776,6 +817,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
 
   this->appendLogMessage(EntityTextFormatter::listLabel(entity));
   this->sendTrackToMap(summary, true);
+  this->syncDetectedContactsToUi();
 }
 
 QStandardItem* MainWindow::rootItemForForceIdentifier(int forceIdentifier) const {
@@ -1174,6 +1216,23 @@ void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QMod
   }
 }
 
+void MainWindow::handleDetectedContactSelection(const QModelIndex& current, const QModelIndex&) {
+  if (!current.isValid()) {
+    return;
+  }
+
+  const QModelIndex rowIndex = current.sibling(current.row(), 0);
+  const QString observerName = rowIndex.data(kDetectedContactObserverRole).toString();
+  const QString contactName = rowIndex.data(kDetectedContactTargetRole).toString();
+  if (observerName.isEmpty() || contactName.isEmpty()) {
+    return;
+  }
+
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Contacto seleccionado: %1 detecta a %2.")
+          .arg(observerName, contactName));
+}
+
 void MainWindow::handleMapTrackSelection(const QString& trackName) {
   if (trackName.trimmed().isEmpty()) {
     return;
@@ -1319,6 +1378,102 @@ void MainWindow::syncTacticalGraphicsToMap() {
   }
 }
 
+void MainWindow::syncDetectedContactsToUi() {
+  if (!this->_detectedContactsModel) {
+    return;
+  }
+
+  QString selectedObserverName;
+  QString selectedContactName;
+  const QModelIndex currentIndex = this->_ui->contactsTableView->currentIndex();
+  if (currentIndex.isValid()) {
+    const QModelIndex rowIndex = currentIndex.sibling(currentIndex.row(), 0);
+    selectedObserverName = rowIndex.data(kDetectedContactObserverRole).toString();
+    selectedContactName = rowIndex.data(kDetectedContactTargetRole).toString();
+  }
+
+  this->_detectedContactsModel->removeRows(0, this->_detectedContactsModel->rowCount());
+
+  const QVector<Entity>& entities = this->_scenarioState->entities();
+  const auto findEntityByName = [&entities](const QString& name) -> const Entity* {
+    for (const Entity& entity : entities) {
+      if (entity.name == name) {
+        return &entity;
+      }
+    }
+    return nullptr;
+  };
+
+  const QString lastSeenText =
+      QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+  QSet<QString> insertedPairs;
+  int restoredRow = -1;
+
+  for (const Entity& observer : entities) {
+    for (const SensorContact& contact : observer.sensorContacts) {
+      if (!contact.detected) {
+        continue;
+      }
+
+      const QString pairKey =
+          observer.name + QStringLiteral("::") + contact.targetEntityName;
+      if (insertedPairs.contains(pairKey)) {
+        continue;
+      }
+
+      const Entity* target = findEntityByName(contact.targetEntityName);
+      if (!target) {
+        continue;
+      }
+
+      insertedPairs.insert(pairKey);
+
+      auto* observerItem = new QStandardItem(observer.name);
+      observerItem->setData(observer.name, kDetectedContactObserverRole);
+      observerItem->setData(contact.targetEntityName, kDetectedContactTargetRole);
+
+      QList<QStandardItem*> rowItems{
+          observerItem,
+          new QStandardItem(target->name),
+          new QStandardItem(forceIdentifierLabel(target->forceIdentifier)),
+          new QStandardItem(target->type.trimmed().isEmpty() ? target->category : target->type),
+          new QStandardItem(
+              QStringLiteral("%1 km").arg(contact.rangeMeters / 1000.0, 0, 'f', 1)),
+          new QStandardItem(
+              QStringLiteral("%1 deg").arg(contact.bearingDegrees, 0, 'f', 1)),
+          new QStandardItem(QStringLiteral("%1 m").arg(target->altitude)),
+          new QStandardItem(lastSeenText),
+      };
+
+      for (QStandardItem* item : rowItems) {
+        if (item) {
+          item->setEditable(false);
+        }
+      }
+
+      this->_detectedContactsModel->appendRow(rowItems);
+
+      if (observer.name == selectedObserverName &&
+          contact.targetEntityName == selectedContactName) {
+        restoredRow = this->_detectedContactsModel->rowCount() - 1;
+      }
+    }
+  }
+
+  this->_ui->contactsDockWidget->setWindowTitle(
+      QStringLiteral("Detected Contacts (%1)")
+          .arg(this->_detectedContactsModel->rowCount()));
+
+  if (restoredRow >= 0) {
+    const QModelIndex restoredIndex =
+        this->_detectedContactsModel->index(restoredRow, 0);
+    this->_ui->contactsTableView->setCurrentIndex(restoredIndex);
+    this->_ui->contactsTableView->scrollTo(restoredIndex);
+  } else {
+    this->_ui->contactsTableView->clearSelection();
+  }
+}
+
 void MainWindow::syncScenarioStateToUi() {
   std::function<void(QStandardItem*)> removeMissingFromBranch = [this, &removeMissingFromBranch](QStandardItem* branch) {
     if (!branch) {
@@ -1377,6 +1532,8 @@ void MainWindow::syncScenarioStateToUi() {
       this->setSelectedTrackDetails(summary);
     }
   }
+
+  this->syncDetectedContactsToUi();
 
   if (!this->_simulationRunning) {
     this->rebuildTacticalGraphicsTree();
