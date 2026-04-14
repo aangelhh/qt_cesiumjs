@@ -16,9 +16,13 @@
 #include <QAbstractItemView>
 #include <QAction>
 #include <QDateTime>
+#include <QDir>
+#include <QEvent>
 #include <QFileInfo>
 #include <QColor>
+#include <QFrame>
 #include <QHeaderView>
+#include <QHBoxLayout>
 #include <QIcon>
 #include <QListWidget>
 #include <QMenu>
@@ -37,11 +41,13 @@
 #include <QStandardItem>
 #include <QStandardItemModel>
 #include <QSet>
+#include <QToolButton>
 #include <QVariantList>
 #include <QVariantMap>
 #include <QVBoxLayout>
 #include <QTimer>
 
+#include <cmath>
 #include <functional>
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
 #include <QWebChannel>
@@ -55,6 +61,66 @@ constexpr int kDetectedContactObserverRole = Qt::UserRole + 2;
 constexpr int kDetectedContactTargetRole = Qt::UserRole + 3;
 constexpr double kGraphicAltitudeOffsetMeters = 15.0;
 constexpr double kPolygonCloseDistanceMeters = 50.0;
+constexpr int kTaskQuickBarMarginPixels = 14;
+constexpr int kTaskQuickBarButtonPixels = 30;
+constexpr int kTaskQuickBarIconPixels = 18;
+
+QString projectRootPath() {
+#ifdef QTTEST_SOURCE_DIR
+  return QString::fromUtf8(QTTEST_SOURCE_DIR);
+#else
+  return QDir::currentPath();
+#endif
+}
+
+QString taskQuickBarIconPath(const QString& fileName) {
+  return QDir(projectRootPath())
+      .absoluteFilePath(QStringLiteral("Data/icons/task-quickbar/%1").arg(fileName));
+}
+
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+void clearQtTrackSelectionInMap(QWebEngineView* webView) {
+  if (!webView) {
+    return;
+  }
+
+  webView->page()->runJavaScript(
+      QStringLiteral("window.clearQtTrackSelection && window.clearQtTrackSelection();"));
+}
+#endif
+
+QIcon makeTaskQuickFallbackIcon(const QString& glyph, const QColor& accent) {
+  QPixmap pixmap(kTaskQuickBarIconPixels, kTaskQuickBarIconPixels);
+  pixmap.fill(Qt::transparent);
+
+  QPainter painter(&pixmap);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  painter.setPen(Qt::NoPen);
+  painter.setBrush(QColor(22, 30, 40, 220));
+  painter.drawRoundedRect(pixmap.rect().adjusted(1, 1, -1, -1), 4, 4);
+
+  QFont font = painter.font();
+  font.setBold(true);
+  font.setPixelSize(10);
+  painter.setFont(font);
+  painter.setPen(accent);
+  painter.drawText(pixmap.rect(), Qt::AlignCenter, glyph.left(2).toUpper());
+  return QIcon(pixmap);
+}
+
+QIcon loadTaskQuickBarIcon(
+    const QString& fileName,
+    const QString& fallbackGlyph,
+    const QColor& accent) {
+  const QString path = taskQuickBarIconPath(fileName);
+  if (QFileInfo::exists(path)) {
+    const QIcon icon(path);
+    if (!icon.isNull()) {
+      return icon;
+    }
+  }
+  return makeTaskQuickFallbackIcon(fallbackGlyph, accent);
+}
 
 QVariantMap makeTrackSummary(
     const QString& name,
@@ -105,6 +171,7 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("taskTargetEntityName"), QString()},
       {QStringLiteral("taskTargetWaypointName"), QString()},
       {QStringLiteral("taskTargetRouteName"), QString()},
+      {QStringLiteral("destroyed"), false},
   };
 }
 
@@ -152,7 +219,7 @@ QVariantMap makeTrackSummary(const Entity& entity) {
       forceIdentifierLabel(entity.forceIdentifier),
       QStringLiteral("%1 m").arg(entity.altitude),
       formatPosition(entity.latitude, entity.longitude),
-      QStringLiteral("Ready"),
+      entity.destroyed ? QStringLiteral("Destroyed") : QStringLiteral("Ready"),
       entity.latitude,
       entity.longitude);
   summary.insert(QStringLiteral("domain"), entity.domain);
@@ -175,6 +242,7 @@ QVariantMap makeTrackSummary(const Entity& entity) {
   summary.insert(QStringLiteral("jsbsimAircraftModel"), entity.jsbsimAircraftModel);
   summary.insert(QStringLiteral("speedKnots"), entity.speedKnots);
   summary.insert(QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond);
+  summary.insert(QStringLiteral("destroyed"), entity.destroyed);
   summary.insert(QStringLiteral("taskType"), entity.currentTask.taskType);
   summary.insert(QStringLiteral("taskEnabled"), entity.currentTask.enabled);
   summary.insert(QStringLiteral("taskStatus"), entity.currentTask.status);
@@ -334,6 +402,7 @@ MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
       _ui(new Ui::MainWindow),
       _contentWidget(nullptr),
+      _taskQuickBar(nullptr),
       _mapBridge(new MapBridge(this)),
       _scenarioState(new ScenarioState()),
       _objectsModel(new QStandardItemModel(this)),
@@ -445,6 +514,11 @@ MainWindow::MainWindow(QWidget* parent)
       &MapBridge::selectedTrack,
       this,
       &MainWindow::handleMapTrackSelection);
+  QObject::connect(
+      this->_mapBridge,
+      &MapBridge::entityContextMenuRequested,
+      this,
+      &MainWindow::openMapEntityContextMenu);
 
   QObject::connect(
       this->_ui->objectsTreeView,
@@ -626,12 +700,24 @@ MainWindow::MainWindow(QWidget* parent)
   auto* hostLayout = new QVBoxLayout(this->_ui->viewerHost);
   hostLayout->setContentsMargins(0, 0, 0, 0);
   hostLayout->addWidget(this->_contentWidget);
+  this->_ui->viewerHost->installEventFilter(this);
+  this->createTaskQuickBar();
+  this->updateTaskQuickBarState();
+  this->positionTaskQuickBar();
   this->updateSimulationControls();
 }
 
 MainWindow::~MainWindow() {
   delete this->_scenarioState;
   delete this->_ui;
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+  if (watched == this->_ui->viewerHost &&
+      (event->type() == QEvent::Resize || event->type() == QEvent::Show)) {
+    this->positionTaskQuickBar();
+  }
+  return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::appendLogMessage(const QString& message) {
@@ -1200,6 +1286,13 @@ void MainWindow::stopSimulation() {
 void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex&) {
   const QVariantMap summary = current.data(kTrackSummaryRole).toMap();
   if (summary.isEmpty()) {
+    this->setSelectedTrackDetails(QVariantMap{});
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+    if (!this->_applyingMapSelection) {
+      clearQtTrackSelectionInMap(this->_webView);
+    }
+#endif
+    this->updateTaskQuickBarState();
     return;
   }
 
@@ -1211,9 +1304,20 @@ void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QMod
         QStringLiteral("Track seleccionado: %1").arg(selectedName));
   }
 
+  if (!this->currentSelectionIsEntity()) {
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+    if (!this->_applyingMapSelection) {
+      clearQtTrackSelectionInMap(this->_webView);
+    }
+#endif
+    this->updateTaskQuickBarState();
+    return;
+  }
+
   if (!this->_applyingMapSelection) {
     this->sendTrackToMap(summary, true);
   }
+  this->updateTaskQuickBarState();
 }
 
 void MainWindow::handleDetectedContactSelection(const QModelIndex& current, const QModelIndex&) {
@@ -1234,13 +1338,67 @@ void MainWindow::handleDetectedContactSelection(const QModelIndex& current, cons
 }
 
 void MainWindow::handleMapTrackSelection(const QString& trackName) {
+  const auto clearQtObjectSelection = [this]() {
+    if (QItemSelectionModel* selectionModel = this->_ui->objectsTreeView->selectionModel()) {
+      selectionModel->clearSelection();
+      selectionModel->clearCurrentIndex();
+    }
+  };
+
   if (trackName.trimmed().isEmpty()) {
+    this->_applyingMapSelection = true;
+    clearQtObjectSelection();
+    this->_applyingMapSelection = false;
+    this->setSelectedTrackDetails(QVariantMap{});
+    this->updateTaskQuickBarState();
+    this->_ui->statusLabel->setText(QStringLiteral("No hay entidad seleccionada."));
     return;
   }
 
   this->_applyingMapSelection = true;
   this->selectObjectByName(trackName, false);
   this->_applyingMapSelection = false;
+
+  if (this->selectedObjectName() != trackName) {
+    this->_applyingMapSelection = true;
+    clearQtObjectSelection();
+    this->_applyingMapSelection = false;
+    this->setSelectedTrackDetails(QVariantMap{});
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+    clearQtTrackSelectionInMap(this->_webView);
+#endif
+    this->updateTaskQuickBarState();
+    this->_ui->statusLabel->setText(QStringLiteral("No hay entidad seleccionada."));
+    return;
+  }
+
+  this->updateTaskQuickBarState();
+}
+
+void MainWindow::openMapEntityContextMenu(const QString& trackName, int viewX, int viewY) {
+  if (trackName.trimmed().isEmpty()) {
+    this->handleMapTrackSelection(QString());
+    return;
+  }
+
+  this->handleMapTrackSelection(trackName);
+  if (this->selectedEntityName() != trackName) {
+    return;
+  }
+
+  QWidget* anchor = this->_ui->viewerHost;
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+  if (this->_webView) {
+    anchor = this->_webView;
+  }
+#endif
+  if (!anchor) {
+    return;
+  }
+
+  QMenu menu(this);
+  this->populateEntityContextMenu(menu);
+  menu.exec(anchor->mapToGlobal(QPoint(viewX, viewY)));
 }
 
 void MainWindow::toggleTacticalOverlays(bool enabled) {
@@ -1475,7 +1633,19 @@ void MainWindow::syncDetectedContactsToUi() {
 }
 
 void MainWindow::syncScenarioStateToUi() {
-  std::function<void(QStandardItem*)> removeMissingFromBranch = [this, &removeMissingFromBranch](QStandardItem* branch) {
+  const QString selectedEntityNameBeforeSync = this->selectedEntityName();
+  bool selectedEntityRemoved = false;
+
+  const auto clearQtObjectSelection = [this]() {
+    if (QItemSelectionModel* selectionModel = this->_ui->objectsTreeView->selectionModel()) {
+      selectionModel->clearSelection();
+      selectionModel->clearCurrentIndex();
+    }
+  };
+
+  std::function<void(QStandardItem*)> removeMissingFromBranch =
+      [this, &removeMissingFromBranch, &selectedEntityRemoved, &selectedEntityNameBeforeSync](
+          QStandardItem* branch) {
     if (!branch) {
       return;
     }
@@ -1502,6 +1672,12 @@ void MainWindow::syncScenarioStateToUi() {
         }
       }
       if (!exists) {
+        if (!name.isEmpty()) {
+          this->removeTrackFromMap(name);
+          if (name == selectedEntityNameBeforeSync) {
+            selectedEntityRemoved = true;
+          }
+        }
         branch->removeRow(row);
       }
     }
@@ -1510,6 +1686,17 @@ void MainWindow::syncScenarioStateToUi() {
   removeMissingFromBranch(this->_friendlyRootItem);
   removeMissingFromBranch(this->_opposingRootItem);
   removeMissingFromBranch(this->_neutralRootItem);
+
+  if (selectedEntityRemoved) {
+    this->_applyingMapSelection = true;
+    clearQtObjectSelection();
+    this->_applyingMapSelection = false;
+    this->setSelectedTrackDetails(QVariantMap{});
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+    clearQtTrackSelectionInMap(this->_webView);
+#endif
+    this->_ui->statusLabel->setText(QStringLiteral("No hay entidad seleccionada."));
+  }
 
   for (const Entity& entity : this->_scenarioState->entities()) {
     QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entity.name);
@@ -1539,6 +1726,481 @@ void MainWindow::syncScenarioStateToUi() {
     this->rebuildTacticalGraphicsTree();
     this->syncTacticalGraphicsToMap();
   }
+
+  this->updateTaskQuickBarState();
+}
+
+void MainWindow::createTaskQuickBar() {
+  if (this->_taskQuickBar) {
+    return;
+  }
+
+  auto* panel = new QFrame(this->_ui->viewerHost);
+  panel->setObjectName(QStringLiteral("taskQuickBar"));
+  panel->setFrameShape(QFrame::StyledPanel);
+  panel->setStyleSheet(QStringLiteral(
+      "QFrame#taskQuickBar {"
+      "  background-color: rgba(34, 34, 34, 225);"
+      "  border: 1px solid rgba(105, 115, 128, 180);"
+      "  border-radius: 8px;"
+      "}"
+      "QToolButton#taskQuickBarButton {"
+      "  background-color: transparent;"
+      "  border: 1px solid transparent;"
+      "  border-radius: 4px;"
+      "  padding: 2px;"
+      "}"
+      "QToolButton#taskQuickBarButton:hover:enabled {"
+      "  background-color: rgba(68, 87, 108, 200);"
+      "  border-color: rgba(120, 146, 173, 200);"
+      "}"
+      "QToolButton#taskQuickBarButton:pressed:enabled {"
+      "  background-color: rgba(52, 69, 88, 220);"
+      "}"
+      "QToolButton#taskQuickBarButton:disabled {"
+      "  background-color: transparent;"
+      "  border-color: transparent;"
+      "}"
+  ));
+
+  auto* layout = new QHBoxLayout(panel);
+  layout->setContentsMargins(6, 6, 6, 6);
+  layout->setSpacing(3);
+
+  auto addButton = [this, panel, layout](
+                       const QString& iconFileName,
+                       const QString& fallbackGlyph,
+                       const QColor& accent,
+                       const QString& tooltip,
+                       const std::function<void()>& handler) {
+    auto* button = new QToolButton(panel);
+    button->setObjectName(QStringLiteral("taskQuickBarButton"));
+    button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    button->setAutoRaise(false);
+    button->setFixedSize(kTaskQuickBarButtonPixels, kTaskQuickBarButtonPixels);
+    button->setIconSize(QSize(kTaskQuickBarIconPixels, kTaskQuickBarIconPixels));
+    button->setIcon(loadTaskQuickBarIcon(iconFileName, fallbackGlyph, accent));
+    button->setToolTip(tooltip);
+    layout->addWidget(button);
+    this->_taskQuickButtons.append(button);
+    QObject::connect(button, &QToolButton::clicked, this, [this, handler]() {
+      if (!this->currentSelectionIsEntity()) {
+        return;
+      }
+      handler();
+    });
+  };
+
+  addButton(
+      QStringLiteral("move_to_location.xpm"),
+      QStringLiteral("ML"),
+      QColor(QStringLiteral("#55d3ff")),
+      QStringLiteral("Move to Location"),
+      [this]() { this->assignMoveToLocationTask(); });
+  addButton(
+      QStringLiteral("move_along_route.xpm"),
+      QStringLiteral("MR"),
+      QColor(QStringLiteral("#ff8c52")),
+      QStringLiteral("Move Along Route"),
+      [this]() { this->assignMoveAlongRouteTask(); });
+  addButton(
+      QStringLiteral("fly_heading.xpm"),
+      QStringLiteral("FH"),
+      QColor(QStringLiteral("#a2f06a")),
+      QStringLiteral("Fly Heading"),
+      [this]() { this->assignFlyHeadingAltitudeSpeedTask(); });
+  addButton(
+      QStringLiteral("fly_altitude.xpm"),
+      QStringLiteral("FA"),
+      QColor(QStringLiteral("#a2f06a")),
+      QStringLiteral("Fly Altitude"),
+      [this]() { this->assignFlyHeadingAltitudeSpeedTask(); });
+  addButton(
+      QStringLiteral("patrol_route.xpm"),
+      QStringLiteral("PR"),
+      QColor(QStringLiteral("#ffd166")),
+      QStringLiteral("Patrol Route\nPlaceholder"),
+      [this]() { this->showTaskQuickPlaceholder(QStringLiteral("Patrol Route")); });
+  addButton(
+      QStringLiteral("pattern_hold_location.xpm"),
+      QStringLiteral("PH"),
+      QColor(QStringLiteral("#ffd166")),
+      QStringLiteral("Pattern Hold (Location)\nPlaceholder"),
+      [this]() { this->showTaskQuickPlaceholder(QStringLiteral("Pattern Hold (Location)")); });
+  addButton(
+      QStringLiteral("orbit_object.xpm"),
+      QStringLiteral("OO"),
+      QColor(QStringLiteral("#ffd166")),
+      QStringLiteral("Orbit Object\nPlaceholder"),
+      [this]() { this->showTaskQuickPlaceholder(QStringLiteral("Orbit Object")); });
+  addButton(
+      QStringLiteral("return_to_base.xpm"),
+      QStringLiteral("RT"),
+      QColor(QStringLiteral("#55d3ff")),
+      QStringLiteral("Return To Base\nPlaceholder"),
+      [this]() { this->showTaskQuickPlaceholder(QStringLiteral("Return To Base")); });
+  addButton(
+      QStringLiteral("execute_surface_attack.xpm"),
+      QStringLiteral("SA"),
+      QColor(QStringLiteral("#ff6c52")),
+      QStringLiteral("Execute Surface Attack\nPlaceholder"),
+      [this]() { this->showTaskQuickPlaceholder(QStringLiteral("Execute Surface Attack")); });
+  addButton(
+      QStringLiteral("fire_at.xpm"),
+      QStringLiteral("FA"),
+      QColor(QStringLiteral("#ff6c52")),
+      QStringLiteral("Fire At\nPlaceholder"),
+      [this]() { this->showTaskQuickPlaceholder(QStringLiteral("Fire At")); });
+
+  panel->adjustSize();
+  panel->show();
+  panel->raise();
+  this->_taskQuickBar = panel;
+}
+
+void MainWindow::positionTaskQuickBar() {
+  if (!this->_taskQuickBar || !this->_ui || !this->_ui->viewerHost) {
+    return;
+  }
+
+  this->_taskQuickBar->adjustSize();
+  const QRect hostRect = this->_ui->viewerHost->rect();
+  const QSize panelSize = this->_taskQuickBar->sizeHint();
+  const int x = qMax(
+      kTaskQuickBarMarginPixels,
+      hostRect.width() - panelSize.width() - kTaskQuickBarMarginPixels);
+  const int y = qMax(
+      kTaskQuickBarMarginPixels,
+      hostRect.height() - panelSize.height() - kTaskQuickBarMarginPixels);
+  this->_taskQuickBar->resize(panelSize);
+  this->_taskQuickBar->move(x, y);
+  this->_taskQuickBar->raise();
+}
+
+void MainWindow::updateTaskQuickBarState() {
+  const bool enabled = this->currentSelectionIsOperableEntity();
+  for (QToolButton* button : this->_taskQuickButtons) {
+    if (button) {
+      button->setEnabled(enabled);
+    }
+  }
+}
+
+void MainWindow::showTaskQuickPlaceholder(const QString& actionName) {
+  const QString entityName = this->selectedEntityName();
+  const QString targetLabel = entityName.isEmpty()
+      ? actionName
+      : QStringLiteral("%1 for %2").arg(actionName, entityName);
+  this->appendLogMessage(
+      QStringLiteral("Quick task placeholder requested: %1").arg(targetLabel));
+  this->_ui->statusLabel->setText(
+      QStringLiteral("%1 aun no esta implementado en esta quick bar.")
+          .arg(actionName));
+}
+
+void MainWindow::populateEntityContextMenu(QMenu& menu) {
+  const bool entityDestroyed = this->selectedEntityIsDestroyed();
+  QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
+  QMenu* movementMenu = taskMenu->addMenu(QStringLiteral("Movement"));
+  movementMenu->addAction(
+      QStringLiteral("Fly Heading / Altitude / Speed..."),
+      this,
+      &MainWindow::assignFlyHeadingAltitudeSpeedTask);
+  movementMenu->addAction(
+      QStringLiteral("Move To Location..."),
+      this,
+      &MainWindow::assignMoveToLocationTask);
+  movementMenu->addAction(
+      QStringLiteral("Move To Waypoint..."),
+      this,
+      &MainWindow::assignMoveToWaypointTask);
+  movementMenu->addAction(
+      QStringLiteral("Move Along Route..."),
+      this,
+      &MainWindow::assignMoveAlongRouteTask);
+  movementMenu->addAction(
+      QStringLiteral("Patrol Area..."),
+      this,
+      &MainWindow::assignPatrolAreaTask);
+  movementMenu->addAction(
+      QStringLiteral("Orbit Area..."),
+      this,
+      &MainWindow::assignOrbitAreaTask);
+  movementMenu->addAction(
+      QStringLiteral("Follow Entity..."),
+      this,
+      &MainWindow::assignFollowEntityTask);
+  taskMenu->addSeparator();
+  taskMenu->addAction(QStringLiteral("Clear Current Task"), this, &MainWindow::clearSelectedTask);
+  taskMenu->setEnabled(!entityDestroyed);
+
+  QMenu* setMenu = menu.addMenu(QStringLiteral("Set"));
+  setMenu->addAction(QStringLiteral("Heading..."), this, &MainWindow::setSelectedEntityHeading);
+  setMenu->addAction(QStringLiteral("Altitude..."), this, &MainWindow::setSelectedEntityAltitude);
+  setMenu->addAction(QStringLiteral("Speed..."), this, &MainWindow::setSelectedEntitySpeed);
+  setMenu->setEnabled(!entityDestroyed);
+
+  menu.addSeparator();
+  menu.addAction(QStringLiteral("Information..."), this, &MainWindow::openSelectedEntityDetails);
+  menu.addAction(QStringLiteral("Focus / Track Camera"), this, &MainWindow::focusSelectedEntityInMap);
+  menu.addSeparator();
+
+  QAction* editAction = menu.addAction(QStringLiteral("Edit..."));
+  QObject::connect(
+      editAction,
+      &QAction::triggered,
+      this,
+      [this]() { this->showContextMenuPlaceholder(QStringLiteral("Edit")); });
+
+  menu.addAction(QStringLiteral("Delete"), this, &MainWindow::deleteSelectedEntity);
+
+  QAction* hideAction = menu.addAction(QStringLiteral("Hide"));
+  QObject::connect(
+      hideAction,
+      &QAction::triggered,
+      this,
+      [this]() { this->showContextMenuPlaceholder(QStringLiteral("Hide")); });
+
+  if (entityDestroyed) {
+    menu.addAction(QStringLiteral("Restore"), this, &MainWindow::restoreSelectedEntity);
+  } else {
+    menu.addAction(QStringLiteral("Destroyed"), this, &MainWindow::destroySelectedEntity);
+  }
+
+  menu.addSeparator();
+
+  QAction* radarCoverageAction = menu.addAction(QStringLiteral("Show Radar Coverage"));
+  QObject::connect(
+      radarCoverageAction,
+      &QAction::triggered,
+      this,
+      [this]() { this->showContextMenuPlaceholder(QStringLiteral("Show Radar Coverage")); });
+
+  QAction* trackHistoryAction = menu.addAction(QStringLiteral("Show Track History"));
+  QObject::connect(
+      trackHistoryAction,
+      &QAction::triggered,
+      this,
+      [this]() { this->showContextMenuPlaceholder(QStringLiteral("Show Track History")); });
+}
+
+bool MainWindow::resolveSelectedEntityFlyTargets(
+    double& headingDegrees,
+    int& altitudeMeters,
+    double& speedKnots) const {
+  if (!this->currentSelectionIsOperableEntity()) {
+    return false;
+  }
+
+  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  if (summary.isEmpty()) {
+    return false;
+  }
+
+  const bool hasRunningTaskTargets =
+      summary.value(QStringLiteral("taskEnabled")).toBool() &&
+      summary.value(QStringLiteral("taskStatus")).toString() == QStringLiteral("Running") &&
+      !summary.value(QStringLiteral("taskType")).toString().trimmed().isEmpty();
+
+  headingDegrees = hasRunningTaskTargets
+      ? summary.value(QStringLiteral("taskTargetHeadingDegrees")).toDouble()
+      : summary.value(QStringLiteral("headingDegrees")).toDouble();
+  altitudeMeters = hasRunningTaskTargets
+      ? summary.value(QStringLiteral("taskTargetAltitudeMeters")).toInt()
+      : summary.value(QStringLiteral("altitude")).toInt();
+  speedKnots = hasRunningTaskTargets
+      ? summary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble()
+      : summary.value(QStringLiteral("speedKnots")).toDouble();
+  return true;
+}
+
+void MainWindow::applyFlyHeadingAltitudeSpeedTask(
+    double headingDegrees,
+    int altitudeMeters,
+    double speedKnots) {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty() || this->selectedEntityIsDestroyed()) {
+    return;
+  }
+
+  EntityTask task;
+  task.taskType = QStringLiteral("FlyHeadingAltitudeSpeed");
+  task.enabled = true;
+  task.status = QStringLiteral("Running");
+  task.targetHeadingDegrees = headingDegrees;
+  task.targetAltitudeMeters = altitudeMeters;
+  task.targetSpeedKnots = speedKnots;
+
+  if (!this->_scenarioState->assignTask(entityName, task)) {
+    return;
+  }
+
+  if (domain::TaskStack* stack = this->_scenarioState->getTaskStack(entityName)) {
+    while (!stack->isEmpty()) {
+      stack->pop();
+    }
+    stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
+        headingDegrees,
+        static_cast<double>(altitudeMeters),
+        speedKnots));
+  }
+
+  if (m_simulationEngine) {
+    m_simulationEngine->enqueueCommand(
+        std::make_unique<application::CmdAssignFlyHeadingTask>(
+            entityName,
+            headingDegrees,
+            static_cast<double>(altitudeMeters),
+            speedKnots));
+  }
+
+  this->appendLogMessage(
+      QStringLiteral("Set FlyHeadingAltitudeSpeed applied to %1 (hdg %2 deg, alt %3 m, spd %4 kts)")
+          .arg(entityName)
+          .arg(headingDegrees, 0, 'f', 1)
+          .arg(altitudeMeters)
+          .arg(speedKnots, 0, 'f', 1));
+  this->syncScenarioStateToUi();
+}
+
+void MainWindow::setSelectedEntityHeading() {
+  double headingDegrees = 0.0;
+  int altitudeMeters = 0;
+  double speedKnots = 0.0;
+  if (!this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots)) {
+    return;
+  }
+
+  bool ok = false;
+  const double newHeadingDegrees = QInputDialog::getDouble(
+      this,
+      QStringLiteral("Set Heading"),
+      QStringLiteral("Heading (deg)"),
+      headingDegrees,
+      0.0,
+      360.0,
+      1,
+      &ok);
+  if (!ok) {
+    return;
+  }
+
+  this->applyFlyHeadingAltitudeSpeedTask(newHeadingDegrees, altitudeMeters, speedKnots);
+}
+
+void MainWindow::setSelectedEntityAltitude() {
+  double headingDegrees = 0.0;
+  int altitudeMeters = 0;
+  double speedKnots = 0.0;
+  if (!this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots)) {
+    return;
+  }
+
+  bool ok = false;
+  const double newAltitudeMeters = QInputDialog::getDouble(
+      this,
+      QStringLiteral("Set Altitude"),
+      QStringLiteral("Altitude (m)"),
+      static_cast<double>(altitudeMeters),
+      0.0,
+      60000.0,
+      0,
+      &ok);
+  if (!ok) {
+    return;
+  }
+
+  this->applyFlyHeadingAltitudeSpeedTask(
+      headingDegrees,
+      static_cast<int>(std::lround(newAltitudeMeters)),
+      speedKnots);
+}
+
+void MainWindow::setSelectedEntitySpeed() {
+  double headingDegrees = 0.0;
+  int altitudeMeters = 0;
+  double speedKnots = 0.0;
+  if (!this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots)) {
+    return;
+  }
+
+  bool ok = false;
+  const double newSpeedKnots = QInputDialog::getDouble(
+      this,
+      QStringLiteral("Set Speed"),
+      QStringLiteral("Speed (kts)"),
+      speedKnots,
+      0.0,
+      2000.0,
+      1,
+      &ok);
+  if (!ok) {
+    return;
+  }
+
+  this->applyFlyHeadingAltitudeSpeedTask(headingDegrees, altitudeMeters, newSpeedKnots);
+}
+
+void MainWindow::focusSelectedEntityInMap() {
+  if (!this->currentSelectionIsEntity()) {
+    return;
+  }
+
+  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  if (summary.isEmpty()) {
+    return;
+  }
+
+  const QString entityName = summary.value(QStringLiteral("name")).toString();
+  this->sendTrackToMap(summary, true);
+  this->appendLogMessage(QStringLiteral("Camera focused on %1").arg(entityName));
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Camara siguiendo a %1.").arg(entityName));
+}
+
+void MainWindow::setSelectedEntityDestroyed(bool destroyed) {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  if (!this->_scenarioState->setEntityDestroyed(entityName, destroyed)) {
+    return;
+  }
+
+  if (destroyed && this->_taskDialog) {
+    this->_taskDialog->close();
+  }
+
+  this->appendLogMessage(
+      QStringLiteral("Entity %1 %2")
+          .arg(entityName, destroyed ? QStringLiteral("marked as destroyed")
+                                     : QStringLiteral("restored")));
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      destroyed
+          ? QStringLiteral("Entidad destruida: %1").arg(entityName)
+          : QStringLiteral("Entidad restaurada: %1").arg(entityName));
+}
+
+void MainWindow::destroySelectedEntity() {
+  this->setSelectedEntityDestroyed(true);
+}
+
+void MainWindow::restoreSelectedEntity() {
+  this->setSelectedEntityDestroyed(false);
+}
+
+void MainWindow::showContextMenuPlaceholder(const QString& actionName) {
+  const QString entityName = this->selectedEntityName();
+  const QString targetLabel = entityName.isEmpty()
+      ? actionName
+      : QStringLiteral("%1 for %2").arg(actionName, entityName);
+  this->appendLogMessage(
+      QStringLiteral("Context menu placeholder requested: %1").arg(targetLabel));
+  this->_ui->statusLabel->setText(
+      QStringLiteral("%1 aun no esta implementado en este menu contextual.")
+          .arg(actionName));
 }
 
 void MainWindow::openObjectsContextMenu(const QPoint& position) {
@@ -1554,20 +2216,7 @@ void MainWindow::openObjectsContextMenu(const QPoint& position) {
 
   QMenu menu(this);
   if (this->currentSelectionIsEntity()) {
-    QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
-    QMenu* movementMenu = taskMenu->addMenu(QStringLiteral("Movement"));
-    movementMenu->addAction(QStringLiteral("Fly Heading / Altitude / Speed..."), this, &MainWindow::assignFlyHeadingAltitudeSpeedTask);
-    movementMenu->addAction(QStringLiteral("Move To Location..."), this, &MainWindow::assignMoveToLocationTask);
-    movementMenu->addAction(QStringLiteral("Move To Waypoint..."), this, &MainWindow::assignMoveToWaypointTask);
-    movementMenu->addAction(QStringLiteral("Move Along Route..."), this, &MainWindow::assignMoveAlongRouteTask);
-    movementMenu->addAction(QStringLiteral("Patrol Area..."), this, &MainWindow::assignPatrolAreaTask);
-    movementMenu->addAction(QStringLiteral("Orbit Area..."), this, &MainWindow::assignOrbitAreaTask);
-    movementMenu->addAction(QStringLiteral("Follow Entity..."), this, &MainWindow::assignFollowEntityTask);
-    taskMenu->addSeparator();
-    taskMenu->addAction(QStringLiteral("Clear Current Task"), this, &MainWindow::clearSelectedTask);
-    menu.addSeparator();
-    menu.addAction(QStringLiteral("Entity Details..."), this, &MainWindow::openSelectedEntityDetails);
-    menu.addAction(QStringLiteral("Delete Entity"), this, &MainWindow::deleteSelectedEntity);
+    this->populateEntityContextMenu(menu);
   } else {
     menu.addAction(QStringLiteral("Delete Graphic"), this, &MainWindow::deleteSelectedEntity);
   }
@@ -1604,7 +2253,7 @@ void MainWindow::assignFollowEntityTask() {
 
 void MainWindow::clearSelectedTask() {
   const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
+  if (entityName.isEmpty() || this->selectedEntityIsDestroyed()) {
     return;
   }
 
@@ -1719,6 +2368,22 @@ bool MainWindow::currentSelectionIsEntity() const {
   return !this->_tacticalGraphicsRootItem || currentIndex.parent() != this->_tacticalGraphicsRootItem->index();
 }
 
+bool MainWindow::currentSelectionIsOperableEntity() const {
+  return this->currentSelectionIsEntity() && !this->selectedEntityIsDestroyed();
+}
+
+bool MainWindow::selectedEntityIsDestroyed() const {
+  if (!this->currentSelectionIsEntity()) {
+    return false;
+  }
+
+  return this->_ui->objectsTreeView->currentIndex()
+      .data(kTrackSummaryRole)
+      .toMap()
+      .value(QStringLiteral("destroyed"))
+      .toBool();
+}
+
 bool MainWindow::currentSelectionIsTacticalGraphic() const {
   const QModelIndex currentIndex = this->_ui->objectsTreeView->currentIndex();
   if (!currentIndex.isValid() || !this->_tacticalGraphicsRootItem) {
@@ -1740,6 +2405,12 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
 
   const QString entityName = this->selectedEntityName();
   if (entityName.isEmpty()) {
+    return;
+  }
+
+  if (!this->currentSelectionIsOperableEntity()) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("La entidad seleccionada no esta operable."));
     return;
   }
 

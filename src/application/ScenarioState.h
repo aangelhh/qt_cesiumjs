@@ -27,6 +27,7 @@ public:
   bool removeArea(const QString& areaName);
   bool assignTask(const QString& entityName, const EntityTask& task);
   bool clearTask(const QString& entityName);
+  bool setEntityDestroyed(const QString& entityName, bool destroyed);
   domain::TaskStack* getTaskStack(const QString& entityName);
   void refreshSensors();
   void advanceSimulation(double deltaSeconds);
@@ -38,7 +39,7 @@ public:
 
 private:
   QVector<Entity> _entities;
-std::unordered_map<QString, domain::TaskStack> _taskStacks;
+  std::unordered_map<QString, domain::TaskStack> _taskStacks;
   QVector<Waypoint> _waypoints;
   QVector<RouteGraphic> _routes;
   QVector<AreaDefinition> _areas;

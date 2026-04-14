@@ -125,6 +125,9 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
 
   for (int sourceIndex = 0; sourceIndex < entities.size(); ++sourceIndex) {
     Entity& source = entities[sourceIndex];
+    if (source.destroyed) {
+      continue;
+    }
     if (!isCombatObserver(source)) {
       continue;
     }
@@ -141,6 +144,9 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
         }
 
         const Entity& target = entities[targetIndex];
+        if (target.destroyed) {
+          continue;
+        }
         if (!isEnemyTarget(source, target)) {
           continue;
         }

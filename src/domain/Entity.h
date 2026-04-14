@@ -62,6 +62,7 @@ struct Entity {
   QString jsbsimAircraftModel;
   double speedKnots = 0.0;
   double verticalSpeedMetersPerSecond = 0.0;
+  bool destroyed = false;
   EntityTask currentTask;
   SensorDefinitions sensors;
   SensorContacts sensorContacts;

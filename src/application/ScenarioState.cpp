@@ -268,6 +268,7 @@ QJsonObject toJson(const Entity& entity) {
       {QStringLiteral("jsbsimAircraftModel"), entity.jsbsimAircraftModel},
       {QStringLiteral("speedKnots"), entity.speedKnots},
       {QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond},
+      {QStringLiteral("destroyed"), entity.destroyed},
       {QStringLiteral("currentTask"), toJson(entity.currentTask)},
       {QStringLiteral("sensors"), sensors},
       {QStringLiteral("sensorContacts"), contacts},
@@ -302,6 +303,7 @@ Entity entityFromJson(const QJsonObject& object) {
   entity.jsbsimAircraftModel = object.value(QStringLiteral("jsbsimAircraftModel")).toString();
   entity.speedKnots = object.value(QStringLiteral("speedKnots")).toDouble(0.0);
   entity.verticalSpeedMetersPerSecond = object.value(QStringLiteral("verticalSpeedMetersPerSecond")).toDouble(0.0);
+  entity.destroyed = object.value(QStringLiteral("destroyed")).toBool(false);
   entity.currentTask = taskFromJson(object.value(QStringLiteral("currentTask")).toObject());
 
   const QJsonArray sensors = object.value(QStringLiteral("sensors")).toArray();
@@ -444,6 +446,9 @@ bool ScenarioState::removeArea(const QString& areaName) {
 bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task) {
   for (Entity& entity : _entities) {
     if (entity.name == entityName) {
+      if (entity.destroyed) {
+        return false;
+      }
       entity.currentTask = task;
       if (entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") &&
           !entity.currentTask.targetWaypointName.trimmed().isEmpty()) {
@@ -532,6 +537,39 @@ bool ScenarioState::clearTask(const QString& entityName) {
   EntityTask clearedTask;
   clearedTask.status = QStringLiteral("Idle");
   return this->assignTask(entityName, clearedTask);
+}
+
+bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed) {
+  for (Entity& entity : _entities) {
+    if (entity.name != entityName) {
+      continue;
+    }
+
+    if (entity.destroyed == destroyed) {
+      return true;
+    }
+
+    entity.destroyed = destroyed;
+    entity.currentTask = EntityTask{};
+    entity.currentTask.status = destroyed
+        ? QStringLiteral("Destroyed")
+        : QStringLiteral("Idle");
+    entity.flightDynamicsEnabled = false;
+    entity.speedKnots = 0.0;
+    entity.verticalSpeedMetersPerSecond = 0.0;
+    entity.sensorContacts.clear();
+
+    if (domain::TaskStack* stack = this->getTaskStack(entityName)) {
+      while (!stack->isEmpty()) {
+        stack->pop();
+      }
+    }
+
+    this->refreshSensors();
+    this->save();
+    return true;
+  }
+  return false;
 }
 
 domain::TaskStack* ScenarioState::getTaskStack(const QString& entityName) {

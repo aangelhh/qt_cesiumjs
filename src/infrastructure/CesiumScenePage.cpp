@@ -229,6 +229,10 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           '00';
       }
 
+      function trackIsDestroyed(track) {
+        return !!(track && track.destroyed);
+      }
+
       function buildQtSymbolDataUrl(track) {
         const sidc = buildQtSidc(track);
         if (!sidc || typeof ms === 'undefined') {
@@ -240,7 +244,8 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             size: 34,
             frame: true,
             fill: true,
-            colorMode: 'Light'
+            colorMode: 'Light',
+            monoColor: trackIsDestroyed(track) ? '#9b9ea4' : ''
           });
           const svg = symbol.asSVG ? symbol.asSVG() :
             (symbol.getMarker ? symbol.getMarker().XML : null);
@@ -272,6 +277,10 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           return Cesium.Color.ORANGE;
         }
         return Cesium.Color.CYAN;
+      }
+
+      function trackDisplayColor(track) {
+        return trackIsDestroyed(track) ? Cesium.Color.GRAY : trackColor(track.team);
       }
 
       function buildRoutePositions(track, altitude) {
@@ -306,12 +315,18 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       }
 
       function shouldShowTrackLine(track) {
+        if (trackIsDestroyed(track)) {
+          return false;
+        }
         const speedKnots = Number(track.speedKnots || 0.0);
         const taskType = String(track.taskType || '').trim();
         return speedKnots > 1.0 || taskType.length > 0;
       }
 
       function buildAreaOptions(track, color, altitude) {
+        if (trackIsDestroyed(track)) {
+          return null;
+        }
         const kind = String(track.type || '').toLowerCase();
         if (kind.includes('aew')) {
           return {
@@ -638,6 +653,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       }
 
       function radarSensorsForTrack(track) {
+        if (trackIsDestroyed(track)) {
+          return [];
+        }
         if (!Array.isArray(track.sensors)) {
           return [];
         }
@@ -652,6 +670,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
 
       function buildSimulationObjectLabel(track) {
         return [
+          'State   : ' + (trackIsDestroyed(track) ? 'Destroyed' : 'Ready'),
           'Marking : ' + qtLabelMarking(track),
           'Type    : ' + qtLabelType(track),
           'Force   : ' + String(track.team || 'Unknown'),
@@ -696,6 +715,16 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           : null;
         refreshSimulationLabelVisibility();
       }
+
+      window.clearQtTrackSelection = function() {
+        if (!viewer) {
+          return false;
+        }
+        viewer.selectedEntity = undefined;
+        viewer.trackedEntity = undefined;
+        applyHighlight(null);
+        return true;
+      };
 
       function entityNameFromPick(picked) {
         if (!Cesium.defined(picked) || !picked.id) {
@@ -1626,12 +1655,28 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const latitude = Number(track.latitude || 0.0);
         const altitudeMatch = String(track.altitude || '').match(/-?\d+(?:\.\d+)?/);
         const altitude = altitudeMatch ? Number(altitudeMatch[0]) : 0.0;
-        const color = trackColor(track.team);
+        const destroyed = trackIsDestroyed(track);
+        const color = trackDisplayColor(track);
         const modelUri = String(track.modelUri || '');
         const hasModel = modelUri.length > 0;
         const symbolDataUrl = buildQtSymbolDataUrl(track);
         const hasSymbol = !!symbolDataUrl;
         const symbolSidc = buildQtSidc(track);
+        const pointColor = destroyed
+          ? Cesium.Color.GRAY.withAlpha(0.55)
+          : color;
+        const billboardColor = destroyed
+          ? Cesium.Color.GRAY.withAlpha(0.7)
+          : Cesium.Color.WHITE;
+        const labelFillColor = destroyed
+          ? Cesium.Color.LIGHTGRAY
+          : Cesium.Color.WHITE;
+        const labelBackgroundColor = destroyed
+          ? new Cesium.Color(0.25, 0.25, 0.25, 0.82)
+          : new Cesium.Color(0.02, 0.08, 0.92, 0.72);
+        const modelColor = destroyed
+          ? Cesium.Color.GRAY.withAlpha(0.6)
+          : Cesium.Color.WHITE;
         const entityId = 'qt-track:' + track.name;
         let entity = qtEntitiesByName.get(track.name);
         const wasTrackedEntity = viewer.trackedEntity && viewer.trackedEntity === entity;
@@ -1653,7 +1698,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             point: {
               show: buildTrackPointShowProperty(hasModel, hasSymbol),
               pixelSize: 11,
-              color,
+              color: pointColor,
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 1,
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -1661,6 +1706,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             billboard: hasSymbol ? {
               image: symbolDataUrl,
               scale: 0.85,
+              color: billboardColor,
               verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
               pixelOffset: new Cesium.Cartesian2(0, hasModel ? -54 : -8),
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -1669,7 +1715,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               text: track.name,
               font: '12px sans-serif',
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-              fillColor: Cesium.Color.WHITE,
+              fillColor: labelFillColor,
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 2,
               verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
@@ -1691,6 +1737,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               minimumPixelSize: 48,
               maximumScale: 20000,
               scale: 1.0,
+              color: modelColor,
               show: buildTrackModelShowProperty(),
             };
             entityOptions.orientation = buildEntityOrientationProperty({
@@ -1712,8 +1759,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           entity.name = track.name;
           entity._qtTrackData = Object.assign({}, track);
           entity.point.show = buildTrackPointShowProperty(hasModel, hasSymbol);
-          entity.point.color = color;
+          entity.point.color = pointColor;
           entity.label.text = track.name;
+          entity.label.fillColor = labelFillColor;
           entity.properties = new Cesium.PropertyBag({
             qtTrackName: track.name,
             qtTrackType: track.type || '',
@@ -1727,6 +1775,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               minimumPixelSize: 48,
               maximumScale: 20000,
               scale: 1.0,
+              color: modelColor,
               show: buildTrackModelShowProperty(),
             });
             entity.orientation = buildEntityOrientationProperty(entity);
@@ -1738,6 +1787,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             entity.billboard = new Cesium.BillboardGraphics({
               image: symbolDataUrl,
               scale: 0.85,
+              color: billboardColor,
               verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
               pixelOffset: new Cesium.Cartesian2(0, hasModel ? -54 : -8),
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -1803,8 +1853,8 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               text: simulationLabelText,
               font: '15px monospace',
               showBackground: true,
-              backgroundColor: new Cesium.Color(0.02, 0.08, 0.92, 0.72),
-              fillColor: Cesium.Color.WHITE,
+              backgroundColor: labelBackgroundColor,
+              fillColor: labelFillColor,
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 1,
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
@@ -1822,6 +1872,8 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         } else {
           overlayBundle.label.position = entity.position;
           overlayBundle.label.label.text = simulationLabelText;
+          overlayBundle.label.label.backgroundColor = labelBackgroundColor;
+          overlayBundle.label.label.fillColor = labelFillColor;
         }
 
         const radarSensors = radarSensorsForTrack(track);
@@ -1925,6 +1977,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           selectedQtTrackName = null;
           applyHighlight(null);
         }
+        if (viewer.selectedEntity === entity) {
+          viewer.selectedEntity = undefined;
+        }
         if (viewer.trackedEntity === entity) {
           viewer.trackedEntity = undefined;
         }
@@ -2007,7 +2062,33 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
           handler.setInputAction(function(click) {
-            // Handle RIGHT CLICK for moving to location
+            const picked = viewer.scene.pick(click.position);
+            const trackName = entityNameFromPick(picked);
+            const entity = trackName ? qtEntitiesByName.get(trackName) : null;
+            const graphic = trackName ? qtGraphicsByName.get(trackName) : null;
+            if (entity) {
+              if (viewer.trackedEntity && viewer.trackedEntity !== entity) {
+                viewer.trackedEntity = undefined;
+              }
+              viewer.selectedEntity = entity;
+              applyHighlight(entity);
+              reportStatus('Menu contextual solicitado para: ' + trackName);
+              if (qtBridge && qtBridge.requestEntityContextMenu) {
+                qtBridge.requestEntityContextMenu(trackName, click.position.x, click.position.y);
+              }
+              return;
+            }
+
+            if (trackName && !graphic) {
+              window.clearQtTrackSelection();
+              reportStatus('Entidad no disponible para menu contextual: ' + trackName);
+              if (qtBridge && qtBridge.reportSelectedTrack) {
+                qtBridge.reportSelectedTrack('');
+              }
+              return;
+            }
+
+            // Keep existing behavior on empty map right-click.
             let cartesian;
             if (viewer.scene.pickPositionSupported) {
               cartesian = viewer.scene.pickPosition(click.position);
@@ -2074,10 +2155,11 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             const picked = viewer.scene.pick(click.position);
             const trackName = entityNameFromPick(picked);
             if (!trackName) {
-              viewer.selectedEntity = undefined;
-              viewer.trackedEntity = undefined;
-              applyHighlight(null);
+              window.clearQtTrackSelection();
               reportStatus('Seleccion borrada en mapa.');
+              if (qtBridge && qtBridge.reportSelectedTrack) {
+                qtBridge.reportSelectedTrack('');
+              }
               return;
             }
 

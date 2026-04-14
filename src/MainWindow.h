@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QList>
 #include <QModelIndex>
 #include <QPointer>
 #include <QVariantMap>
@@ -11,11 +12,14 @@ class QAction;
 class AddEntityDialog;
 class AssignTaskDialog;
 class MapBridge;
+class QMenu;
 class ScenarioState;
 class QStandardItem;
 class QStandardItemModel;
 class QTimer;
 class QPoint;
+class QEvent;
+class QToolButton;
 class QWidget;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
 class QWebEngineView;
@@ -32,6 +36,9 @@ public:
   explicit MainWindow(QWidget* parent = nullptr);
   ~MainWindow();
 
+protected:
+  bool eventFilter(QObject* watched, QEvent* event) override;
+
 private slots:
   void openAddEntityDialog();
   void beginEntityCoordinatePick();
@@ -40,6 +47,7 @@ private slots:
   void updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex& previous);
   void handleDetectedContactSelection(const QModelIndex& current, const QModelIndex& previous);
   void handleMapTrackSelection(const QString& trackName);
+  void openMapEntityContextMenu(const QString& trackName, int viewX, int viewY);
   void toggleTacticalOverlays(bool enabled);
   void openSelectedEntityDetails();
   void openObjectsContextMenu(const QPoint& position);
@@ -50,6 +58,11 @@ private slots:
   void assignPatrolAreaTask();
   void assignOrbitAreaTask();
   void assignFollowEntityTask();
+  void setSelectedEntityHeading();
+  void setSelectedEntityAltitude();
+  void setSelectedEntitySpeed();
+  void destroySelectedEntity();
+  void restoreSelectedEntity();
   void clearSelectedTask();
   void deleteSelectedEntity();
   void openAddWaypointDialog();
@@ -80,15 +93,34 @@ private:
   QString selectedEntityName() const;
   QString selectedObjectName() const;
   bool currentSelectionIsEntity() const;
+  bool currentSelectionIsOperableEntity() const;
+  bool selectedEntityIsDestroyed() const;
   bool currentSelectionIsTacticalGraphic() const;
   void openAssignTaskDialog(const QString& initialTaskType);
   void populateTaskCommands();
   void beginTaskCoordinatePick();
   void beginGraphicCoordinatePick();
   void updateSimulationControls();
+  void createTaskQuickBar();
+  void positionTaskQuickBar();
+  void updateTaskQuickBarState();
+  void showTaskQuickPlaceholder(const QString& actionName);
+  void populateEntityContextMenu(QMenu& menu);
+  bool resolveSelectedEntityFlyTargets(
+      double& headingDegrees,
+      int& altitudeMeters,
+      double& speedKnots) const;
+  void applyFlyHeadingAltitudeSpeedTask(
+      double headingDegrees,
+      int altitudeMeters,
+      double speedKnots);
+  void setSelectedEntityDestroyed(bool destroyed);
+  void focusSelectedEntityInMap();
+  void showContextMenuPlaceholder(const QString& actionName);
 
   Ui::MainWindow* _ui;
   QWidget* _contentWidget;
+  QWidget* _taskQuickBar;
   MapBridge* _mapBridge;
   ScenarioState* _scenarioState;
   QStandardItemModel* _objectsModel;
@@ -115,6 +147,7 @@ private:
   double _pendingAreaSemiMinorMeters;
   double _pendingAreaRotationDegrees;
   QVector<QVariantMap> _pendingAreaPoints;
+  QList<QToolButton*> _taskQuickButtons;
   application::SimulationEngine* m_simulationEngine;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;

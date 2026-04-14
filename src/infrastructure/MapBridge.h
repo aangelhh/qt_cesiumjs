@@ -45,10 +45,15 @@ public slots:
     emit selectedTrack(trackName);
   }
 
+  void requestEntityContextMenu(const QString& trackName, int viewX, int viewY) {
+    emit entityContextMenuRequested(trackName, viewX, viewY);
+  }
+
 signals:
   void pickedCoordinate(double longitude, double latitude, double height);
   void mapStatus(const QString& message);
   void selectedTrack(const QString& trackName);
+  void entityContextMenuRequested(const QString& trackName, int viewX, int viewY);
   
   // Bridge C++ to JS via QWebChannel
   void telemetryUpdated(const QVariantMap& track);
