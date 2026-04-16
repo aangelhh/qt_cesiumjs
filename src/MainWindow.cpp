@@ -172,6 +172,9 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("taskTargetWaypointName"), QString()},
       {QStringLiteral("taskTargetRouteName"), QString()},
       {QStringLiteral("destroyed"), false},
+      {QStringLiteral("hidden"), false},
+      {QStringLiteral("radarCoverageVisible"), false},
+      {QStringLiteral("trackHistoryVisible"), false},
   };
 }
 
@@ -243,6 +246,9 @@ QVariantMap makeTrackSummary(const Entity& entity) {
   summary.insert(QStringLiteral("speedKnots"), entity.speedKnots);
   summary.insert(QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond);
   summary.insert(QStringLiteral("destroyed"), entity.destroyed);
+  summary.insert(QStringLiteral("hidden"), entity.hidden);
+  summary.insert(QStringLiteral("radarCoverageVisible"), entity.radarCoverageVisible);
+  summary.insert(QStringLiteral("trackHistoryVisible"), entity.trackHistoryVisible);
   summary.insert(QStringLiteral("taskType"), entity.currentTask.taskType);
   summary.insert(QStringLiteral("taskEnabled"), entity.currentTask.enabled);
   summary.insert(QStringLiteral("taskStatus"), entity.currentTask.status);
@@ -1955,11 +1961,18 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   menu.addAction(QStringLiteral("Delete"), this, &MainWindow::deleteSelectedEntity);
 
   QAction* hideAction = menu.addAction(QStringLiteral("Hide"));
+  hideAction->setCheckable(true);
+  hideAction->setChecked(
+      this->_ui->objectsTreeView->currentIndex()
+          .data(kTrackSummaryRole)
+          .toMap()
+          .value(QStringLiteral("hidden"))
+          .toBool());
   QObject::connect(
       hideAction,
-      &QAction::triggered,
+      &QAction::toggled,
       this,
-      [this]() { this->showContextMenuPlaceholder(QStringLiteral("Hide")); });
+      [this](bool hidden) { this->setSelectedEntityHidden(hidden); });
 
   if (entityDestroyed) {
     menu.addAction(QStringLiteral("Restore"), this, &MainWindow::restoreSelectedEntity);
@@ -1970,18 +1983,32 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   menu.addSeparator();
 
   QAction* radarCoverageAction = menu.addAction(QStringLiteral("Show Radar Coverage"));
+  radarCoverageAction->setCheckable(true);
+  radarCoverageAction->setChecked(
+      this->_ui->objectsTreeView->currentIndex()
+          .data(kTrackSummaryRole)
+          .toMap()
+          .value(QStringLiteral("radarCoverageVisible"))
+          .toBool());
   QObject::connect(
       radarCoverageAction,
-      &QAction::triggered,
+      &QAction::toggled,
       this,
-      [this]() { this->showContextMenuPlaceholder(QStringLiteral("Show Radar Coverage")); });
+      [this](bool visible) { this->setSelectedEntityRadarCoverageVisible(visible); });
 
   QAction* trackHistoryAction = menu.addAction(QStringLiteral("Show Track History"));
+  trackHistoryAction->setCheckable(true);
+  trackHistoryAction->setChecked(
+      this->_ui->objectsTreeView->currentIndex()
+          .data(kTrackSummaryRole)
+          .toMap()
+          .value(QStringLiteral("trackHistoryVisible"))
+          .toBool());
   QObject::connect(
       trackHistoryAction,
-      &QAction::triggered,
+      &QAction::toggled,
       this,
-      [this]() { this->showContextMenuPlaceholder(QStringLiteral("Show Track History")); });
+      [this](bool visible) { this->setSelectedEntityTrackHistoryVisible(visible); });
 }
 
 bool MainWindow::resolveSelectedEntityFlyTargets(
@@ -2181,6 +2208,69 @@ void MainWindow::setSelectedEntityDestroyed(bool destroyed) {
       destroyed
           ? QStringLiteral("Entidad destruida: %1").arg(entityName)
           : QStringLiteral("Entidad restaurada: %1").arg(entityName));
+}
+
+void MainWindow::setSelectedEntityHidden(bool hidden) {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  if (!this->_scenarioState->setEntityHidden(entityName, hidden)) {
+    return;
+  }
+
+  this->appendLogMessage(
+      QStringLiteral("Entity %1 %2")
+          .arg(entityName, hidden ? QStringLiteral("hidden")
+                                  : QStringLiteral("shown")));
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      hidden
+          ? QStringLiteral("Entidad oculta: %1").arg(entityName)
+          : QStringLiteral("Entidad visible: %1").arg(entityName));
+}
+
+void MainWindow::setSelectedEntityRadarCoverageVisible(bool visible) {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  if (!this->_scenarioState->setEntityRadarCoverageVisible(entityName, visible)) {
+    return;
+  }
+
+  this->appendLogMessage(
+      QStringLiteral("Radar coverage %1 for %2")
+          .arg(visible ? QStringLiteral("enabled") : QStringLiteral("disabled"),
+               entityName));
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      visible
+          ? QStringLiteral("Cobertura radar visible para %1").arg(entityName)
+          : QStringLiteral("Cobertura radar oculta para %1").arg(entityName));
+}
+
+void MainWindow::setSelectedEntityTrackHistoryVisible(bool visible) {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  if (!this->_scenarioState->setEntityTrackHistoryVisible(entityName, visible)) {
+    return;
+  }
+
+  this->appendLogMessage(
+      QStringLiteral("Track history %1 for %2")
+          .arg(visible ? QStringLiteral("enabled") : QStringLiteral("disabled"),
+               entityName));
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      visible
+          ? QStringLiteral("Historial de trayectoria visible para %1").arg(entityName)
+          : QStringLiteral("Historial de trayectoria oculto para %1").arg(entityName));
 }
 
 void MainWindow::destroySelectedEntity() {

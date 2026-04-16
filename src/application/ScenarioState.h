@@ -28,6 +28,9 @@ public:
   bool assignTask(const QString& entityName, const EntityTask& task);
   bool clearTask(const QString& entityName);
   bool setEntityDestroyed(const QString& entityName, bool destroyed);
+  bool setEntityHidden(const QString& entityName, bool hidden);
+  bool setEntityRadarCoverageVisible(const QString& entityName, bool visible);
+  bool setEntityTrackHistoryVisible(const QString& entityName, bool visible);
   domain::TaskStack* getTaskStack(const QString& entityName);
   void refreshSensors();
   void advanceSimulation(double deltaSeconds);

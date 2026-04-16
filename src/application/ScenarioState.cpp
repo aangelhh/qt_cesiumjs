@@ -269,6 +269,9 @@ QJsonObject toJson(const Entity& entity) {
       {QStringLiteral("speedKnots"), entity.speedKnots},
       {QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond},
       {QStringLiteral("destroyed"), entity.destroyed},
+      {QStringLiteral("hidden"), entity.hidden},
+      {QStringLiteral("radarCoverageVisible"), entity.radarCoverageVisible},
+      {QStringLiteral("trackHistoryVisible"), entity.trackHistoryVisible},
       {QStringLiteral("currentTask"), toJson(entity.currentTask)},
       {QStringLiteral("sensors"), sensors},
       {QStringLiteral("sensorContacts"), contacts},
@@ -304,6 +307,9 @@ Entity entityFromJson(const QJsonObject& object) {
   entity.speedKnots = object.value(QStringLiteral("speedKnots")).toDouble(0.0);
   entity.verticalSpeedMetersPerSecond = object.value(QStringLiteral("verticalSpeedMetersPerSecond")).toDouble(0.0);
   entity.destroyed = object.value(QStringLiteral("destroyed")).toBool(false);
+  entity.hidden = object.value(QStringLiteral("hidden")).toBool(false);
+  entity.radarCoverageVisible = object.value(QStringLiteral("radarCoverageVisible")).toBool(false);
+  entity.trackHistoryVisible = object.value(QStringLiteral("trackHistoryVisible")).toBool(false);
   entity.currentTask = taskFromJson(object.value(QStringLiteral("currentTask")).toObject());
 
   const QJsonArray sensors = object.value(QStringLiteral("sensors")).toArray();
@@ -566,6 +572,57 @@ bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed
     }
 
     this->refreshSensors();
+    this->save();
+    return true;
+  }
+  return false;
+}
+
+bool ScenarioState::setEntityHidden(const QString& entityName, bool hidden) {
+  for (Entity& entity : _entities) {
+    if (entity.name != entityName) {
+      continue;
+    }
+
+    if (entity.hidden == hidden) {
+      return true;
+    }
+
+    entity.hidden = hidden;
+    this->save();
+    return true;
+  }
+  return false;
+}
+
+bool ScenarioState::setEntityRadarCoverageVisible(const QString& entityName, bool visible) {
+  for (Entity& entity : _entities) {
+    if (entity.name != entityName) {
+      continue;
+    }
+
+    if (entity.radarCoverageVisible == visible) {
+      return true;
+    }
+
+    entity.radarCoverageVisible = visible;
+    this->save();
+    return true;
+  }
+  return false;
+}
+
+bool ScenarioState::setEntityTrackHistoryVisible(const QString& entityName, bool visible) {
+  for (Entity& entity : _entities) {
+    if (entity.name != entityName) {
+      continue;
+    }
+
+    if (entity.trackHistoryVisible == visible) {
+      return true;
+    }
+
+    entity.trackHistoryVisible = visible;
     this->save();
     return true;
   }

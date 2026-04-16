@@ -165,6 +165,8 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       let selectedQtTrackName = null;
       const qtEntitiesByName = new Map();
       const qtOverlayEntitiesByName = new Map();
+      const qtTrackHistoryMaxSamples = 96;
+      const qtTrackHistorySampleDistanceMeters = 150.0;
 
       function qtAffiliationCode(forceIdentifier) {
         const code = Number(forceIdentifier || 0);
@@ -231,6 +233,17 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
 
       function trackIsDestroyed(track) {
         return !!(track && track.destroyed);
+      }
+
+      function trackIsHidden(track) {
+        return !!(track && track.hidden);
+      }
+
+      function trackHistoryShouldRender(track) {
+        return !!track &&
+          !trackIsHidden(track) &&
+          !trackIsDestroyed(track) &&
+          track.trackHistoryVisible === true;
       }
 
       function buildQtSymbolDataUrl(track) {
@@ -390,6 +403,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           for (const fan of bundle.radarFans) {
             setRadarFanBundleVisibility(fan, visible);
           }
+        }
+        if (bundle.trackHistory) {
+          bundle.trackHistory.show = visible;
         }
       }
 
@@ -653,7 +669,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       }
 
       function radarSensorsForTrack(track) {
-        if (trackIsDestroyed(track)) {
+        if (trackIsHidden(track) ||
+            trackIsDestroyed(track) ||
+            track.radarCoverageVisible !== true) {
           return [];
         }
         if (!Array.isArray(track.sensors)) {
@@ -666,6 +684,39 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             sensor.emitting !== false &&
             Number(sensor.maxRangeMeters || 0.0) > 0.0;
         });
+      }
+
+      function clearTrackHistoryBundle(bundle) {
+        if (!bundle) {
+          return;
+        }
+        bundle.trackHistoryPositions = [];
+        if (bundle.trackHistory) {
+          viewer.entities.remove(bundle.trackHistory);
+          bundle.trackHistory = null;
+        }
+      }
+
+      function appendTrackHistorySample(bundle, position) {
+        if (!bundle || !position) {
+          return;
+        }
+
+        if (!Array.isArray(bundle.trackHistoryPositions)) {
+          bundle.trackHistoryPositions = [];
+        }
+
+        const positions = bundle.trackHistoryPositions;
+        const lastPosition = positions.length > 0 ? positions[positions.length - 1] : null;
+        if (lastPosition &&
+            Cesium.Cartesian3.distance(lastPosition, position) < qtTrackHistorySampleDistanceMeters) {
+          return;
+        }
+
+        positions.push(Cesium.Cartesian3.clone(position));
+        if (positions.length > qtTrackHistoryMaxSamples) {
+          positions.splice(0, positions.length - qtTrackHistoryMaxSamples);
+        }
       }
 
       function buildSimulationObjectLabel(track) {
@@ -1650,6 +1701,10 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         if (!viewer || !track || !track.name) {
           return false;
         }
+        if (trackIsHidden(track)) {
+          window.removeQtTrack(track.name);
+          return true;
+        }
 
         const longitude = Number(track.longitude || 0.0);
         const latitude = Number(track.latitude || 0.0);
@@ -1685,6 +1740,8 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           area: null,
           label: null,
           radarFans: [],
+          trackHistory: null,
+          trackHistoryPositions: [],
           trackName: track.name,
         };
         overlayBundle.trackName = track.name;
@@ -1904,6 +1961,29 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           );
         });
 
+        if (trackHistoryShouldRender(track)) {
+          appendTrackHistorySample(overlayBundle, position);
+          if (!overlayBundle.trackHistory) {
+            overlayBundle.trackHistory = viewer.entities.add({
+              id: entityId + ':history',
+              polyline: {
+                positions: new Cesium.CallbackProperty(function() {
+                  return overlayBundle.trackHistoryPositions || [];
+                }, false),
+                width: 2.0,
+                material: color.withAlpha(0.42),
+                arcType: Cesium.ArcType.GEODESIC,
+                clampToGround: false,
+              },
+              show: overlaysVisible,
+            });
+          } else {
+            overlayBundle.trackHistory.polyline.material = color.withAlpha(0.42);
+          }
+        } else {
+          clearTrackHistoryBundle(overlayBundle);
+        }
+
         setOverlayVisibility(overlayBundle, overlaysVisible);
         qtOverlayEntitiesByName.set(track.name, overlayBundle);
 
@@ -1970,6 +2050,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               removeRadarFanBundle(fan);
             }
           }
+          clearTrackHistoryBundle(overlayBundle);
           qtOverlayEntitiesByName.delete(trackName);
         }
 

@@ -115,6 +115,9 @@ private:
       int altitudeMeters,
       double speedKnots);
   void setSelectedEntityDestroyed(bool destroyed);
+  void setSelectedEntityHidden(bool hidden);
+  void setSelectedEntityRadarCoverageVisible(bool visible);
+  void setSelectedEntityTrackHistoryVisible(bool visible);
   void focusSelectedEntityInMap();
   void showContextMenuPlaceholder(const QString& actionName);
 
