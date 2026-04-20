@@ -63,9 +63,6 @@ struct Entity {
   double speedKnots = 0.0;
   double verticalSpeedMetersPerSecond = 0.0;
   bool destroyed = false;
-  bool hidden = false;
-  bool radarCoverageVisible = false;
-  bool trackHistoryVisible = false;
   EntityTask currentTask;
   SensorDefinitions sensors;
   SensorContacts sensorContacts;

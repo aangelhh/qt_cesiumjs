@@ -1,10 +1,13 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QHash>
 #include <QList>
 #include <QModelIndex>
 #include <QPointer>
+#include <QStringList>
 #include <QVariantMap>
+#include <QVector>
 
 #include "application/SimulationEngine.h"
 
@@ -24,6 +27,9 @@ class QWidget;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
 class QWebEngineView;
 #endif
+struct AreaDefinition;
+struct RouteGraphic;
+struct Waypoint;
 
 namespace Ui {
 class MainWindow;
@@ -57,7 +63,11 @@ private slots:
   void assignMoveAlongRouteTask();
   void assignPatrolAreaTask();
   void assignOrbitAreaTask();
+  void assignReturnToBaseTask();
+  void assignPatrolRouteTask();
+  void assignOrbitHoldLocationTask();
   void assignFollowEntityTask();
+  void openEntityPlanDialog();
   void setSelectedEntityHeading();
   void setSelectedEntityAltitude();
   void setSelectedEntitySpeed();
@@ -73,6 +83,42 @@ private slots:
   void stopSimulation();
 
 private:
+  struct EntityVisualState {
+    bool hidden = false;
+    bool radarCoverageVisible = false;
+    bool trackHistoryVisible = false;
+  };
+
+  struct EntityHomePosition {
+    double latitude = 0.0;
+    double longitude = 0.0;
+    int altitudeMeters = 0;
+    bool valid = false;
+  };
+
+  enum class PlanStepKind {
+    MoveToLocation,
+    MoveToWaypoint,
+    MoveAlongRoute,
+    PatrolArea,
+    FlyHeadingAltitudeSpeed,
+    OrbitHoldLocation,
+    ReturnToBase,
+  };
+
+  struct PlanStep {
+    PlanStepKind kind = PlanStepKind::MoveToLocation;
+    EntityTask task;
+    QString label;
+  };
+
+  struct EntityPlan {
+    QVector<PlanStep> steps;
+    int currentStepIndex = -1;
+    bool running = false;
+    int currentStableTicks = 0;
+  };
+
   void initializeModels();
   void appendEntityToUi(const class Entity& entity);
   QStandardItem* rootItemForForceIdentifier(int forceIdentifier) const;
@@ -90,6 +136,7 @@ private:
   void syncScenarioStateToUi();
   void selectObjectByName(const QString& trackName, bool notifyMap);
   QStandardItem* findTrackItemByName(QStandardItem* parent, const QString& trackName) const;
+  const class Entity* findEntityByName(const QString& entityName) const;
   QString selectedEntityName() const;
   QString selectedObjectName() const;
   bool currentSelectionIsEntity() const;
@@ -106,6 +153,41 @@ private:
   void updateTaskQuickBarState();
   void showTaskQuickPlaceholder(const QString& actionName);
   void populateEntityContextMenu(QMenu& menu);
+  QVariantMap makeEntityTrackSummary(const class Entity& entity) const;
+  EntityVisualState entityVisualStateFor(const QString& entityName) const;
+  EntityVisualState& ensureEntityVisualState(const QString& entityName);
+  EntityHomePosition entityHomePositionFor(const QString& entityName) const;
+  const Waypoint* findWaypointByName(const QString& waypointName) const;
+  const RouteGraphic* findRouteByName(const QString& routeName) const;
+  const AreaDefinition* findAreaByNameOrId(const QString& areaNameOrId) const;
+  QStringList availableWaypointNames() const;
+  QStringList availableRouteNames(bool requirePoints) const;
+  QStringList availableAreaNames() const;
+  EntityPlan& ensureEntityPlan(const QString& entityName);
+  void rememberEntityHomePosition(const class Entity& entity);
+  QString entityVisualStatePath() const;
+  void loadEntityVisualStates();
+  void saveEntityVisualStates() const;
+  void pruneEntityVisualStates();
+  void pruneEntityHomePositions();
+  void pruneEntityPlans();
+  QString planStepDisplayLabel(const PlanStep& step) const;
+  bool captureTaskConfiguration(
+      const QString& entityName,
+      const EntityTask& initialTask,
+      const QString& initialTaskType,
+      EntityTask& outTask);
+  bool configurePlanStep(const QString& entityName, PlanStepKind kind, PlanStep& step);
+  bool validatePlanStepForExecution(const PlanStep& step, QString* reason) const;
+  bool activeTaskMatchesPlanStep(const class Entity& entity, const PlanStep& step) const;
+  bool startEntityPlan(const QString& entityName);
+  void stopEntityPlan(const QString& entityName, bool clearCurrentTask);
+  void advanceEntityPlans();
+  bool activePlanStepCompleted(const class Entity& entity, EntityPlan& plan) const;
+  bool applyEntityTask(
+      const QString& entityName,
+      const EntityTask& task,
+      bool syncUi = true);
   bool resolveSelectedEntityFlyTargets(
       double& headingDegrees,
       int& altitudeMeters,
@@ -151,6 +233,9 @@ private:
   double _pendingAreaRotationDegrees;
   QVector<QVariantMap> _pendingAreaPoints;
   QList<QToolButton*> _taskQuickButtons;
+  QHash<QString, EntityVisualState> _entityVisualStates;
+  QHash<QString, EntityHomePosition> _entityHomePositions;
+  QHash<QString, EntityPlan> _entityPlans;
   application::SimulationEngine* m_simulationEngine;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;

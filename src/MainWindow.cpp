@@ -18,8 +18,11 @@
 #include <QDateTime>
 #include <QDir>
 #include <QEvent>
+#include <QFile>
 #include <QFileInfo>
 #include <QColor>
+#include <QDialog>
+#include <QEventLoop>
 #include <QFrame>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -34,6 +37,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QPushButton>
 #include <QStandardItemModel>
 #include <QTimer>
 #include <QInputDialog>
@@ -64,6 +68,7 @@ constexpr double kPolygonCloseDistanceMeters = 50.0;
 constexpr int kTaskQuickBarMarginPixels = 14;
 constexpr int kTaskQuickBarButtonPixels = 30;
 constexpr int kTaskQuickBarIconPixels = 18;
+constexpr double kOrbitHoldDefaultRadiusMeters = 1500.0;
 
 QString projectRootPath() {
 #ifdef QTTEST_SOURCE_DIR
@@ -215,87 +220,38 @@ double distanceMeters(
   return earthRadiusMeters * c;
 }
 
-QVariantMap makeTrackSummary(const Entity& entity) {
-  QVariantMap summary = makeTrackSummary(
-      entity.name,
-      entity.type,
-      forceIdentifierLabel(entity.forceIdentifier),
-      QStringLiteral("%1 m").arg(entity.altitude),
-      formatPosition(entity.latitude, entity.longitude),
-      entity.destroyed ? QStringLiteral("Destroyed") : QStringLiteral("Ready"),
-      entity.latitude,
-      entity.longitude);
-  summary.insert(QStringLiteral("domain"), entity.domain);
-  summary.insert(QStringLiteral("category"), entity.category);
-  summary.insert(QStringLiteral("callsign"), entity.callsign);
-  summary.insert(QStringLiteral("forceIdentifier"), entity.forceIdentifier);
-  summary.insert(QStringLiteral("entityKind"), entity.entityKind);
-  summary.insert(QStringLiteral("entityDomain"), entity.entityDomain);
-  summary.insert(QStringLiteral("entityCountry"), entity.entityCountry);
-  summary.insert(QStringLiteral("entityCategory"), entity.entityCategory);
-  summary.insert(QStringLiteral("entitySubcategory"), entity.entitySubcategory);
-  summary.insert(QStringLiteral("entitySpecific"), entity.entitySpecific);
-  summary.insert(QStringLiteral("entityExtra"), entity.entityExtra);
-  summary.insert(QStringLiteral("entityTypeCode"), entity.entityTypeCode);
-  summary.insert(QStringLiteral("modelName"), entity.modelName);
-  summary.insert(QStringLiteral("modelUri"), entity.modelUri);
-  summary.insert(QStringLiteral("headingDegrees"), entity.headingDegrees);
-  summary.insert(QStringLiteral("flightDynamicsEnabled"), entity.flightDynamicsEnabled);
-  summary.insert(QStringLiteral("flightDynamicsMode"), entity.flightDynamicsMode);
-  summary.insert(QStringLiteral("jsbsimAircraftModel"), entity.jsbsimAircraftModel);
-  summary.insert(QStringLiteral("speedKnots"), entity.speedKnots);
-  summary.insert(QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond);
-  summary.insert(QStringLiteral("destroyed"), entity.destroyed);
-  summary.insert(QStringLiteral("hidden"), entity.hidden);
-  summary.insert(QStringLiteral("radarCoverageVisible"), entity.radarCoverageVisible);
-  summary.insert(QStringLiteral("trackHistoryVisible"), entity.trackHistoryVisible);
-  summary.insert(QStringLiteral("taskType"), entity.currentTask.taskType);
-  summary.insert(QStringLiteral("taskEnabled"), entity.currentTask.enabled);
-  summary.insert(QStringLiteral("taskStatus"), entity.currentTask.status);
-  summary.insert(QStringLiteral("taskTargetHeadingDegrees"), entity.currentTask.targetHeadingDegrees);
-  summary.insert(QStringLiteral("taskTargetAltitudeMeters"), entity.currentTask.targetAltitudeMeters);
-  summary.insert(QStringLiteral("taskTargetSpeedKnots"), entity.currentTask.targetSpeedKnots);
-  summary.insert(QStringLiteral("taskTargetLatitude"), entity.currentTask.targetLatitude);
-  summary.insert(QStringLiteral("taskTargetLongitude"), entity.currentTask.targetLongitude);
-  summary.insert(QStringLiteral("taskTargetEntityName"), entity.currentTask.targetEntityName);
-  summary.insert(QStringLiteral("taskTargetWaypointName"), entity.currentTask.targetWaypointName);
-  summary.insert(QStringLiteral("taskTargetRouteName"), entity.currentTask.targetRouteName);
-  summary.insert(QStringLiteral("taskTargetAreaName"), entity.currentTask.targetAreaName);
-  summary.insert(QStringLiteral("taskTargetAreaRadiusMeters"), entity.currentTask.targetAreaRadiusMeters);
-  summary.insert(QStringLiteral("sensorCount"), entity.sensors.size());
-  summary.insert(QStringLiteral("contactCount"), entity.sensorContacts.size());
-
-  QVariantList sensors;
-  for (const SensorDefinition& sensor : entity.sensors) {
-    sensors.push_back(QVariantMap{
-        {QStringLiteral("id"), sensor.id},
-        {QStringLiteral("name"), sensor.name},
-        {QStringLiteral("sensorType"), sensor.sensorType},
-        {QStringLiteral("enabled"), sensor.enabled},
-        {QStringLiteral("emitting"), sensor.emitting},
-        {QStringLiteral("maxRangeMeters"), sensor.maxRangeMeters},
-        {QStringLiteral("azimuthCenterDegrees"), sensor.azimuthCenterDegrees},
-        {QStringLiteral("azimuthWidthDegrees"), sensor.azimuthWidthDegrees},
-        {QStringLiteral("elevationCenterDegrees"), sensor.elevationCenterDegrees},
-        {QStringLiteral("elevationWidthDegrees"), sensor.elevationWidthDegrees},
-        {QStringLiteral("maxTracks"), sensor.maxTracks},
-    });
+double normalizeDegrees360(double degrees) {
+  while (degrees < 0.0) {
+    degrees += 360.0;
   }
-  summary.insert(QStringLiteral("sensors"), sensors);
-
-  QVariantList contacts;
-  for (const SensorContact& contact : entity.sensorContacts) {
-    contacts.push_back(QVariantMap{
-        {QStringLiteral("sensorId"), contact.sensorId},
-        {QStringLiteral("targetEntityName"), contact.targetEntityName},
-        {QStringLiteral("rangeMeters"), contact.rangeMeters},
-        {QStringLiteral("bearingDegrees"), contact.bearingDegrees},
-        {QStringLiteral("lineOfSight"), contact.lineOfSight},
-        {QStringLiteral("detected"), contact.detected},
-    });
+  while (degrees >= 360.0) {
+    degrees -= 360.0;
   }
-  summary.insert(QStringLiteral("sensorContacts"), contacts);
-  return summary;
+  return degrees;
+}
+
+double shortestSignedAngle(double currentHeading, double targetHeading) {
+  double delta = normalizeDegrees360(targetHeading) - normalizeDegrees360(currentHeading);
+  while (delta > 180.0) {
+    delta -= 360.0;
+  }
+  while (delta < -180.0) {
+    delta += 360.0;
+  }
+  return delta;
+}
+
+int entityAltitudeMeters(const ScenarioState* scenarioState, const QString& entityName) {
+  if (!scenarioState || entityName.trimmed().isEmpty()) {
+    return 0;
+  }
+
+  for (const Entity& entity : scenarioState->entities()) {
+    if (entity.name == entityName) {
+      return entity.altitude;
+    }
+  }
+  return 0;
 }
 
 void setTrackData(QStandardItem* item, const QVariantMap& summary) {
@@ -444,6 +400,8 @@ MainWindow::MainWindow(QWidget* parent)
 
   this->initializeModels();
   this->populateTaskCommands();
+  this->loadEntityVisualStates();
+  this->pruneEntityVisualStates();
   for (const Entity& entity : this->_scenarioState->entities()) {
     this->appendEntityToUi(entity);
   }
@@ -451,6 +409,7 @@ MainWindow::MainWindow(QWidget* parent)
   _simulationTimer->setInterval(33);
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
     this->_scenarioState->advanceSimulation(0.033);
+    this->advanceEntityPlans();
     this->syncScenarioStateToUi();
   });
 
@@ -872,6 +831,8 @@ void MainWindow::initializeModels() {
 }
 
 void MainWindow::appendEntityToUi(const Entity& entity) {
+  this->rememberEntityHomePosition(entity);
+
   QStandardItem* rootItem = this->rootItemForForceIdentifier(entity.forceIdentifier);
   if (!rootItem) {
     return;
@@ -885,7 +846,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
     category = QStringLiteral("Other");
   }
 
-  const QVariantMap summary = makeTrackSummary(entity);
+  const QVariantMap summary = this->makeEntityTrackSummary(entity);
   QStandardItem* categoryItem = this->ensureGroupItem(
       rootItem,
       category,
@@ -910,6 +871,419 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
   this->appendLogMessage(EntityTextFormatter::listLabel(entity));
   this->sendTrackToMap(summary, true);
   this->syncDetectedContactsToUi();
+}
+
+QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
+  const EntityVisualState visualState = this->entityVisualStateFor(entity.name);
+
+  QVariantMap summary = makeTrackSummary(
+      entity.name,
+      entity.type,
+      forceIdentifierLabel(entity.forceIdentifier),
+      QStringLiteral("%1 m").arg(entity.altitude),
+      formatPosition(entity.latitude, entity.longitude),
+      entity.destroyed ? QStringLiteral("Destroyed") : QStringLiteral("Ready"),
+      entity.latitude,
+      entity.longitude);
+  summary.insert(QStringLiteral("domain"), entity.domain);
+  summary.insert(QStringLiteral("category"), entity.category);
+  summary.insert(QStringLiteral("callsign"), entity.callsign);
+  summary.insert(QStringLiteral("forceIdentifier"), entity.forceIdentifier);
+  summary.insert(QStringLiteral("entityKind"), entity.entityKind);
+  summary.insert(QStringLiteral("entityDomain"), entity.entityDomain);
+  summary.insert(QStringLiteral("entityCountry"), entity.entityCountry);
+  summary.insert(QStringLiteral("entityCategory"), entity.entityCategory);
+  summary.insert(QStringLiteral("entitySubcategory"), entity.entitySubcategory);
+  summary.insert(QStringLiteral("entitySpecific"), entity.entitySpecific);
+  summary.insert(QStringLiteral("entityExtra"), entity.entityExtra);
+  summary.insert(QStringLiteral("entityTypeCode"), entity.entityTypeCode);
+  summary.insert(QStringLiteral("modelName"), entity.modelName);
+  summary.insert(QStringLiteral("modelUri"), entity.modelUri);
+  summary.insert(QStringLiteral("headingDegrees"), entity.headingDegrees);
+  summary.insert(QStringLiteral("flightDynamicsEnabled"), entity.flightDynamicsEnabled);
+  summary.insert(QStringLiteral("flightDynamicsMode"), entity.flightDynamicsMode);
+  summary.insert(QStringLiteral("jsbsimAircraftModel"), entity.jsbsimAircraftModel);
+  summary.insert(QStringLiteral("speedKnots"), entity.speedKnots);
+  summary.insert(QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond);
+  summary.insert(QStringLiteral("destroyed"), entity.destroyed);
+  summary.insert(QStringLiteral("hidden"), visualState.hidden);
+  summary.insert(QStringLiteral("radarCoverageVisible"), visualState.radarCoverageVisible);
+  summary.insert(QStringLiteral("trackHistoryVisible"), visualState.trackHistoryVisible);
+  summary.insert(QStringLiteral("taskType"), entity.currentTask.taskType);
+  summary.insert(QStringLiteral("taskEnabled"), entity.currentTask.enabled);
+  summary.insert(QStringLiteral("taskStatus"), entity.currentTask.status);
+  summary.insert(QStringLiteral("taskTargetHeadingDegrees"), entity.currentTask.targetHeadingDegrees);
+  summary.insert(QStringLiteral("taskTargetAltitudeMeters"), entity.currentTask.targetAltitudeMeters);
+  summary.insert(QStringLiteral("taskTargetSpeedKnots"), entity.currentTask.targetSpeedKnots);
+  summary.insert(QStringLiteral("taskTargetLatitude"), entity.currentTask.targetLatitude);
+  summary.insert(QStringLiteral("taskTargetLongitude"), entity.currentTask.targetLongitude);
+  summary.insert(QStringLiteral("taskTargetEntityName"), entity.currentTask.targetEntityName);
+  summary.insert(QStringLiteral("taskTargetWaypointName"), entity.currentTask.targetWaypointName);
+  summary.insert(QStringLiteral("taskTargetRouteName"), entity.currentTask.targetRouteName);
+  summary.insert(QStringLiteral("taskTargetAreaName"), entity.currentTask.targetAreaName);
+  summary.insert(QStringLiteral("taskTargetAreaRadiusMeters"), entity.currentTask.targetAreaRadiusMeters);
+  summary.insert(QStringLiteral("sensorCount"), entity.sensors.size());
+  summary.insert(QStringLiteral("contactCount"), entity.sensorContacts.size());
+
+  QVariantList sensors;
+  for (const SensorDefinition& sensor : entity.sensors) {
+    sensors.push_back(QVariantMap{
+        {QStringLiteral("id"), sensor.id},
+        {QStringLiteral("name"), sensor.name},
+        {QStringLiteral("sensorType"), sensor.sensorType},
+        {QStringLiteral("enabled"), sensor.enabled},
+        {QStringLiteral("emitting"), sensor.emitting},
+        {QStringLiteral("maxRangeMeters"), sensor.maxRangeMeters},
+        {QStringLiteral("azimuthCenterDegrees"), sensor.azimuthCenterDegrees},
+        {QStringLiteral("azimuthWidthDegrees"), sensor.azimuthWidthDegrees},
+        {QStringLiteral("elevationCenterDegrees"), sensor.elevationCenterDegrees},
+        {QStringLiteral("elevationWidthDegrees"), sensor.elevationWidthDegrees},
+        {QStringLiteral("maxTracks"), sensor.maxTracks},
+    });
+  }
+  summary.insert(QStringLiteral("sensors"), sensors);
+
+  QVariantList contacts;
+  for (const SensorContact& contact : entity.sensorContacts) {
+    contacts.push_back(QVariantMap{
+        {QStringLiteral("sensorId"), contact.sensorId},
+        {QStringLiteral("targetEntityName"), contact.targetEntityName},
+        {QStringLiteral("rangeMeters"), contact.rangeMeters},
+        {QStringLiteral("bearingDegrees"), contact.bearingDegrees},
+        {QStringLiteral("lineOfSight"), contact.lineOfSight},
+        {QStringLiteral("detected"), contact.detected},
+    });
+  }
+  summary.insert(QStringLiteral("sensorContacts"), contacts);
+  return summary;
+}
+
+MainWindow::EntityVisualState MainWindow::entityVisualStateFor(const QString& entityName) const {
+  return this->_entityVisualStates.value(entityName);
+}
+
+MainWindow::EntityVisualState& MainWindow::ensureEntityVisualState(const QString& entityName) {
+  return this->_entityVisualStates[entityName];
+}
+
+MainWindow::EntityHomePosition MainWindow::entityHomePositionFor(const QString& entityName) const {
+  return this->_entityHomePositions.value(entityName);
+}
+
+const Waypoint* MainWindow::findWaypointByName(const QString& waypointName) const {
+  if (waypointName.trimmed().isEmpty()) {
+    return nullptr;
+  }
+
+  for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
+    if (waypoint.name == waypointName) {
+      return &waypoint;
+    }
+  }
+
+  return nullptr;
+}
+
+const RouteGraphic* MainWindow::findRouteByName(const QString& routeName) const {
+  if (routeName.trimmed().isEmpty()) {
+    return nullptr;
+  }
+
+  for (const RouteGraphic& route : this->_scenarioState->routes()) {
+    if (route.name == routeName) {
+      return &route;
+    }
+  }
+
+  return nullptr;
+}
+
+const AreaDefinition* MainWindow::findAreaByNameOrId(const QString& areaNameOrId) const {
+  if (areaNameOrId.trimmed().isEmpty()) {
+    return nullptr;
+  }
+
+  for (const AreaDefinition& area : this->_scenarioState->areas()) {
+    if (area.name == areaNameOrId || area.id == areaNameOrId) {
+      return &area;
+    }
+  }
+
+  return nullptr;
+}
+
+QStringList MainWindow::availableWaypointNames() const {
+  QStringList names;
+  QSet<QString> seen;
+  for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
+    const QString name = waypoint.name.trimmed();
+    if (name.isEmpty() || seen.contains(name)) {
+      continue;
+    }
+    seen.insert(name);
+    names.append(name);
+  }
+  return names;
+}
+
+QStringList MainWindow::availableRouteNames(bool requirePoints) const {
+  QStringList names;
+  QSet<QString> seen;
+  for (const RouteGraphic& route : this->_scenarioState->routes()) {
+    const QString name = route.name.trimmed();
+    if (name.isEmpty() || seen.contains(name)) {
+      continue;
+    }
+    if (requirePoints && route.points.isEmpty()) {
+      continue;
+    }
+    seen.insert(name);
+    names.append(name);
+  }
+  return names;
+}
+
+QStringList MainWindow::availableAreaNames() const {
+  QStringList names;
+  QSet<QString> seen;
+  for (const AreaDefinition& area : this->_scenarioState->areas()) {
+    QString name = area.name.trimmed();
+    if (name.isEmpty()) {
+      name = area.id.trimmed();
+    }
+    if (name.isEmpty() || seen.contains(name)) {
+      continue;
+    }
+    seen.insert(name);
+    names.append(name);
+  }
+  return names;
+}
+
+MainWindow::EntityPlan& MainWindow::ensureEntityPlan(const QString& entityName) {
+  return this->_entityPlans[entityName];
+}
+
+void MainWindow::rememberEntityHomePosition(const Entity& entity) {
+  if (entity.name.trimmed().isEmpty() || this->_entityHomePositions.contains(entity.name)) {
+    return;
+  }
+
+  this->_entityHomePositions.insert(entity.name, EntityHomePosition{
+      entity.latitude,
+      entity.longitude,
+      entity.altitude,
+      true,
+  });
+}
+
+QString MainWindow::entityVisualStatePath() const {
+  return QDir(projectRootPath()).absoluteFilePath(QStringLiteral("Data/entity_visual_state.json"));
+}
+
+void MainWindow::loadEntityVisualStates() {
+  this->_entityVisualStates.clear();
+
+  QFile file(this->entityVisualStatePath());
+  if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
+    return;
+  }
+
+  const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+  if (!document.isObject()) {
+    return;
+  }
+
+  const QJsonObject entitiesObject = document.object().value(QStringLiteral("entities")).toObject();
+  for (auto it = entitiesObject.begin(); it != entitiesObject.end(); ++it) {
+    const QJsonObject stateObject = it.value().toObject();
+    EntityVisualState visualState;
+    visualState.hidden = stateObject.value(QStringLiteral("hidden")).toBool(false);
+    visualState.radarCoverageVisible =
+        stateObject.value(QStringLiteral("radarCoverageVisible")).toBool(false);
+    visualState.trackHistoryVisible =
+        stateObject.value(QStringLiteral("trackHistoryVisible")).toBool(false);
+    this->_entityVisualStates.insert(it.key(), visualState);
+  }
+}
+
+void MainWindow::saveEntityVisualStates() const {
+  QJsonObject entitiesObject;
+  for (auto it = this->_entityVisualStates.constBegin(); it != this->_entityVisualStates.constEnd(); ++it) {
+    entitiesObject.insert(it.key(), QJsonObject{
+                                      {QStringLiteral("hidden"), it.value().hidden},
+                                      {QStringLiteral("radarCoverageVisible"),
+                                       it.value().radarCoverageVisible},
+                                      {QStringLiteral("trackHistoryVisible"),
+                                       it.value().trackHistoryVisible},
+                                  });
+  }
+
+  QFile file(this->entityVisualStatePath());
+  const QFileInfo info(file);
+  QDir().mkpath(info.absolutePath());
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    return;
+  }
+
+  const QJsonDocument document(QJsonObject{
+      {QStringLiteral("entities"), entitiesObject},
+  });
+  file.write(document.toJson(QJsonDocument::Indented));
+}
+
+void MainWindow::pruneEntityVisualStates() {
+  QSet<QString> validEntityNames;
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    validEntityNames.insert(entity.name);
+  }
+
+  bool removed = false;
+  for (auto it = this->_entityVisualStates.begin(); it != this->_entityVisualStates.end();) {
+    if (!validEntityNames.contains(it.key())) {
+      it = this->_entityVisualStates.erase(it);
+      removed = true;
+      continue;
+    }
+    ++it;
+  }
+
+  if (removed) {
+    this->saveEntityVisualStates();
+  }
+}
+
+void MainWindow::pruneEntityHomePositions() {
+  QSet<QString> validEntityNames;
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    validEntityNames.insert(entity.name);
+  }
+
+  for (auto it = this->_entityHomePositions.begin(); it != this->_entityHomePositions.end();) {
+    if (!validEntityNames.contains(it.key())) {
+      it = this->_entityHomePositions.erase(it);
+      continue;
+    }
+    ++it;
+  }
+}
+
+void MainWindow::pruneEntityPlans() {
+  QSet<QString> validEntityNames;
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    validEntityNames.insert(entity.name);
+  }
+
+  for (auto it = this->_entityPlans.begin(); it != this->_entityPlans.end();) {
+    if (!validEntityNames.contains(it.key())) {
+      it = this->_entityPlans.erase(it);
+      continue;
+    }
+    ++it;
+  }
+}
+
+QString MainWindow::planStepDisplayLabel(const PlanStep& step) const {
+  if (!step.label.trimmed().isEmpty()) {
+    return step.label;
+  }
+
+  switch (step.kind) {
+    case PlanStepKind::MoveToLocation:
+      return QStringLiteral("Move To Location");
+    case PlanStepKind::MoveToWaypoint:
+      return QStringLiteral("Move To Waypoint");
+    case PlanStepKind::MoveAlongRoute:
+      return QStringLiteral("Move Along Route");
+    case PlanStepKind::PatrolArea:
+      return QStringLiteral("Patrol Area");
+    case PlanStepKind::FlyHeadingAltitudeSpeed:
+      return QStringLiteral("Fly Heading / Altitude / Speed");
+    case PlanStepKind::OrbitHoldLocation:
+      return QStringLiteral("Orbit / Hold (Location)");
+    case PlanStepKind::ReturnToBase:
+      return QStringLiteral("Return To Base");
+  }
+
+  return QStringLiteral("Plan Step");
+}
+
+bool MainWindow::captureTaskConfiguration(
+    const QString& entityName,
+    const EntityTask& initialTask,
+    const QString& initialTaskType,
+    EntityTask& outTask) {
+  if (this->_taskDialog) {
+    this->_taskDialog->close();
+    this->_taskDialog = nullptr;
+  }
+
+  QStringList availableTargets;
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    if (entity.name != entityName) {
+      availableTargets.append(entity.name);
+    }
+  }
+
+  const QStringList availableWaypoints = this->availableWaypointNames();
+  const QStringList availableRoutes = this->availableRouteNames(false);
+  const QStringList availableAreas = this->availableAreaNames();
+
+  QPointer<AssignTaskDialog> dialog = new AssignTaskDialog(
+      entityName,
+      availableTargets,
+      availableWaypoints,
+      availableRoutes,
+      availableAreas,
+      initialTask,
+      initialTaskType,
+      this);
+  dialog->setAttribute(Qt::WA_DeleteOnClose, false);
+  dialog->setWindowModality(Qt::NonModal);
+  this->_taskDialog = dialog;
+
+  QEventLoop loop;
+  bool accepted = false;
+
+  QObject::connect(
+      dialog,
+      &QObject::destroyed,
+      &loop,
+      [this, &loop]() {
+        this->_taskDialog = nullptr;
+        if (loop.isRunning()) {
+          loop.quit();
+        }
+      });
+  QObject::connect(
+      dialog,
+      &AssignTaskDialog::pickOnMapRequested,
+      this,
+      &MainWindow::beginTaskCoordinatePick);
+  QObject::connect(
+      dialog,
+      &QDialog::finished,
+      &loop,
+      [dialog, &accepted, &outTask, &loop](int result) {
+        accepted = result == QDialog::Accepted;
+        if (accepted && dialog) {
+          outTask = dialog->task();
+        }
+        if (loop.isRunning()) {
+          loop.quit();
+        }
+      });
+
+  dialog->show();
+  dialog->raise();
+  dialog->activateWindow();
+  loop.exec();
+
+  if (dialog) {
+    dialog->deleteLater();
+  }
+
+  return accepted;
 }
 
 QStandardItem* MainWindow::rootItemForForceIdentifier(int forceIdentifier) const {
@@ -975,6 +1349,19 @@ void MainWindow::openAddEntityDialog() {
       this,
       [this, dialog]() {
         const Entity entity = dialog->entity();
+        const bool hasRadarSensor = std::any_of(
+            entity.sensors.cbegin(),
+            entity.sensors.cend(),
+            [](const SensorDefinition& sensor) {
+              return sensor.sensorType.compare(QStringLiteral("radar"), Qt::CaseInsensitive) == 0;
+            });
+        if (hasRadarSensor && !entity.name.trimmed().isEmpty() &&
+            !this->_entityVisualStates.contains(entity.name)) {
+          EntityVisualState& visualState = this->ensureEntityVisualState(entity.name);
+          visualState.radarCoverageVisible = true;
+          visualState.trackHistoryVisible = false;
+          this->saveEntityVisualStates();
+        }
         this->_scenarioState->addEntity(entity);
         this->appendEntityToUi(entity);
         this->_ui->statusLabel->setText(
@@ -1211,10 +1598,16 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
     this->_entityDialog->activateWindow();
   }
   if (this->_taskDialog) {
-    this->_taskDialog->setPickedCoordinate(longitude, latitude, height);
-    this->_taskDialog->show();
-    this->_taskDialog->raise();
-    this->_taskDialog->activateWindow();
+    QPointer<AssignTaskDialog> taskDialog = this->_taskDialog;
+    taskDialog->setPickedCoordinate(longitude, latitude, height);
+    QTimer::singleShot(0, this, [taskDialog]() {
+      if (!taskDialog) {
+        return;
+      }
+      taskDialog->show();
+      taskDialog->raise();
+      taskDialog->activateWindow();
+    });
   }
 
   if (!handledGraphic) {
@@ -1704,7 +2097,13 @@ void MainWindow::syncScenarioStateToUi() {
     this->_ui->statusLabel->setText(QStringLiteral("No hay entidad seleccionada."));
   }
 
+  this->pruneEntityVisualStates();
+  this->pruneEntityHomePositions();
+  this->pruneEntityPlans();
+
   for (const Entity& entity : this->_scenarioState->entities()) {
+    this->rememberEntityHomePosition(entity);
+
     QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entity.name);
     if (!item) {
       item = this->findTrackItemByName(this->_opposingRootItem, entity.name);
@@ -1713,7 +2112,7 @@ void MainWindow::syncScenarioStateToUi() {
       item = this->findTrackItemByName(this->_neutralRootItem, entity.name);
     }
 
-    const QVariantMap summary = makeTrackSummary(entity);
+    const QVariantMap summary = this->makeEntityTrackSummary(entity);
     if (!item) {
       this->appendEntityToUi(entity);
       continue;
@@ -1925,6 +2324,18 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
       this,
       &MainWindow::assignMoveAlongRouteTask);
   movementMenu->addAction(
+      QStringLiteral("Patrol Route..."),
+      this,
+      &MainWindow::assignPatrolRouteTask);
+  movementMenu->addAction(
+      QStringLiteral("Orbit / Hold (Location)..."),
+      this,
+      &MainWindow::assignOrbitHoldLocationTask);
+  movementMenu->addAction(
+      QStringLiteral("Return To Base"),
+      this,
+      &MainWindow::assignReturnToBaseTask);
+  movementMenu->addAction(
       QStringLiteral("Patrol Area..."),
       this,
       &MainWindow::assignPatrolAreaTask);
@@ -1945,6 +2356,9 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   setMenu->addAction(QStringLiteral("Altitude..."), this, &MainWindow::setSelectedEntityAltitude);
   setMenu->addAction(QStringLiteral("Speed..."), this, &MainWindow::setSelectedEntitySpeed);
   setMenu->setEnabled(!entityDestroyed);
+
+  QAction* planAction = menu.addAction(QStringLiteral("Plan..."), this, &MainWindow::openEntityPlanDialog);
+  planAction->setEnabled(!entityDestroyed);
 
   menu.addSeparator();
   menu.addAction(QStringLiteral("Information..."), this, &MainWindow::openSelectedEntityDetails);
@@ -2011,6 +2425,724 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
       [this](bool visible) { this->setSelectedEntityTrackHistoryVisible(visible); });
 }
 
+bool MainWindow::applyEntityTask(const QString& entityName, const EntityTask& task, bool syncUi) {
+  if (entityName.isEmpty()) {
+    return false;
+  }
+
+  if (!this->_scenarioState->assignTask(entityName, task)) {
+    return false;
+  }
+
+  this->appendLogMessage(
+      QStringLiteral("Task %1 assigned to %2").arg(task.taskType, entityName));
+
+  Entity resolvedEntity;
+  bool foundEntity = false;
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    if (entity.name != entityName) {
+      continue;
+    }
+    resolvedEntity = entity;
+    foundEntity = true;
+    break;
+  }
+  if (!foundEntity) {
+    return false;
+  }
+
+  if (domain::TaskStack* stack = this->_scenarioState->getTaskStack(entityName)) {
+    while (!stack->isEmpty()) {
+      stack->pop();
+    }
+    if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
+      double targetLat = resolvedEntity.currentTask.targetLatitude;
+      double targetLon = resolvedEntity.currentTask.targetLongitude;
+      double targetAlt = resolvedEntity.currentTask.targetAltitudeMeters;
+      double targetSpeed = resolvedEntity.currentTask.targetSpeedKnots;
+      if (task.taskType == "MoveToWaypoint" && !task.targetWaypointName.trimmed().isEmpty()) {
+        for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
+          if (waypoint.name == task.targetWaypointName) {
+            targetLat = waypoint.latitude;
+            targetLon = waypoint.longitude;
+            targetAlt = waypoint.altitudeMeters;
+            break;
+          }
+        }
+      }
+      stack->push(std::make_unique<domain::MoveToLocationTask>(
+          targetLat,
+          targetLon,
+          targetAlt,
+          targetSpeed));
+    } else if (task.taskType == "MoveAlongRoute") {
+      bool createdRouteTask = false;
+      for (const RouteGraphic& route : this->_scenarioState->routes()) {
+        if (route.name != resolvedEntity.currentTask.targetRouteName ||
+            route.points.isEmpty()) {
+          continue;
+        }
+        stack->push(std::make_unique<domain::RouteTask>(
+            route.points,
+            resolvedEntity.currentTask.targetSpeedKnots));
+        createdRouteTask = true;
+        break;
+      }
+      if (!createdRouteTask) {
+        stack->push(std::make_unique<domain::MoveToLocationTask>(
+            resolvedEntity.currentTask.targetLatitude,
+            resolvedEntity.currentTask.targetLongitude,
+            resolvedEntity.currentTask.targetAltitudeMeters,
+            resolvedEntity.currentTask.targetSpeedKnots));
+      }
+    } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
+      stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
+          task.targetHeadingDegrees,
+          static_cast<double>(task.targetAltitudeMeters),
+          task.targetSpeedKnots));
+    } else if (task.taskType == "FollowEntity") {
+      stack->push(std::make_unique<domain::FollowEntityTask>(
+          static_cast<double>(task.targetAltitudeMeters),
+          task.targetSpeedKnots));
+    } else if (task.taskType == "PatrolArea") {
+      for (const AreaDefinition& area : this->_scenarioState->areas()) {
+        if (area.name != resolvedEntity.currentTask.targetAreaName &&
+            area.id != resolvedEntity.currentTask.targetAreaName) {
+          continue;
+        }
+        stack->push(std::make_unique<domain::PatrolAreaTask>(
+            domain::buildPatrolRouteFromArea(area),
+            static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
+            resolvedEntity.currentTask.targetSpeedKnots));
+        break;
+      }
+      if (stack->isEmpty()) {
+        stack->push(std::make_unique<domain::OrbitAreaTask>(
+            resolvedEntity.currentTask.targetLatitude,
+            resolvedEntity.currentTask.targetLongitude,
+            resolvedEntity.currentTask.targetAreaRadiusMeters,
+            static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
+            resolvedEntity.currentTask.targetSpeedKnots,
+            true));
+      }
+    } else if (task.taskType == "OrbitArea") {
+      stack->push(std::make_unique<domain::OrbitAreaTask>(
+          resolvedEntity.currentTask.targetLatitude,
+          resolvedEntity.currentTask.targetLongitude,
+          resolvedEntity.currentTask.targetAreaRadiusMeters,
+          static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
+          resolvedEntity.currentTask.targetSpeedKnots,
+          false));
+    }
+  }
+
+  if (m_simulationEngine) {
+    if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
+      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignMoveTask>(
+          0,
+          entityName,
+          resolvedEntity.currentTask.targetLatitude,
+          resolvedEntity.currentTask.targetLongitude,
+          resolvedEntity.currentTask.targetAltitudeMeters,
+          resolvedEntity.currentTask.targetSpeedKnots));
+    } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
+      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignFlyHeadingTask>(
+          entityName,
+          task.targetHeadingDegrees,
+          task.targetAltitudeMeters,
+          task.targetSpeedKnots));
+    } else if (task.taskType == "FollowEntity") {
+      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignFollowTask>(
+          entityName,
+          task.targetEntityName,
+          task.targetAltitudeMeters,
+          task.targetSpeedKnots));
+    } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
+      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignOrbitTask>(
+          entityName,
+          resolvedEntity.currentTask.targetAreaName,
+          resolvedEntity.currentTask.targetLatitude,
+          resolvedEntity.currentTask.targetLongitude,
+          resolvedEntity.currentTask.targetAreaRadiusMeters,
+          resolvedEntity.currentTask.targetAltitudeMeters,
+          resolvedEntity.currentTask.targetSpeedKnots,
+          (task.taskType == "PatrolArea")));
+    }
+  }
+
+  if (syncUi) {
+    this->syncScenarioStateToUi();
+  }
+  return true;
+}
+
+bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind, PlanStep& step) {
+  const Entity* entity = this->findEntityByName(entityName);
+  if (!entity) {
+    return false;
+  }
+
+  const QVariantMap summary = this->makeEntityTrackSummary(*entity);
+  const bool hasRunningTaskTargets =
+      summary.value(QStringLiteral("taskEnabled")).toBool() &&
+      summary.value(QStringLiteral("taskStatus")).toString() == QStringLiteral("Running") &&
+      !summary.value(QStringLiteral("taskType")).toString().trimmed().isEmpty();
+
+  const double defaultHeading = hasRunningTaskTargets
+      ? summary.value(QStringLiteral("taskTargetHeadingDegrees")).toDouble()
+      : entity->headingDegrees;
+  const int defaultAltitudeMeters = hasRunningTaskTargets
+      ? summary.value(QStringLiteral("taskTargetAltitudeMeters")).toInt()
+      : entity->altitude;
+  double defaultSpeedKnots = hasRunningTaskTargets
+      ? summary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble()
+      : entity->speedKnots;
+  if (defaultSpeedKnots <= 0.0) {
+    defaultSpeedKnots =
+        entity->domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0 ? 220.0 : 12.0;
+  }
+
+  step = PlanStep{};
+  step.kind = kind;
+  step.task.enabled = true;
+  step.task.status = QStringLiteral("Running");
+
+  bool ok = false;
+  switch (kind) {
+    case PlanStepKind::MoveToLocation: {
+      EntityTask initialTask;
+      initialTask.taskType = QStringLiteral("MoveToLocation");
+      initialTask.enabled = true;
+      initialTask.status = QStringLiteral("Queued");
+      initialTask.targetLatitude = entity->latitude;
+      initialTask.targetLongitude = entity->longitude;
+      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
+      initialTask.targetSpeedKnots = defaultSpeedKnots;
+      if (!this->captureTaskConfiguration(
+              entityName,
+              initialTask,
+              QStringLiteral("MoveToLocation"),
+              step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.label = QStringLiteral("Move To %1, %2")
+                       .arg(step.task.targetLatitude, 0, 'f', 4)
+                       .arg(step.task.targetLongitude, 0, 'f', 4);
+      return true;
+    }
+
+    case PlanStepKind::MoveToWaypoint: {
+      EntityTask initialTask;
+      initialTask.taskType = QStringLiteral("MoveToWaypoint");
+      initialTask.enabled = true;
+      initialTask.status = QStringLiteral("Queued");
+      initialTask.targetWaypointName = summary.value(QStringLiteral("taskTargetWaypointName")).toString();
+      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
+      initialTask.targetSpeedKnots = defaultSpeedKnots;
+      if (!this->captureTaskConfiguration(
+              entityName,
+              initialTask,
+              QStringLiteral("MoveToWaypoint"),
+              step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.label = QStringLiteral("Move To Waypoint: %1").arg(step.task.targetWaypointName);
+      return true;
+    }
+
+    case PlanStepKind::MoveAlongRoute: {
+      EntityTask initialTask;
+      initialTask.taskType = QStringLiteral("MoveAlongRoute");
+      initialTask.enabled = true;
+      initialTask.status = QStringLiteral("Queued");
+      initialTask.targetRouteName = summary.value(QStringLiteral("taskTargetRouteName")).toString();
+      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
+      initialTask.targetSpeedKnots = defaultSpeedKnots;
+      if (!this->captureTaskConfiguration(
+              entityName,
+              initialTask,
+              QStringLiteral("MoveAlongRoute"),
+              step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.label = QStringLiteral("Move Along Route: %1").arg(step.task.targetRouteName);
+      return true;
+    }
+
+    case PlanStepKind::PatrolArea: {
+      EntityTask initialTask;
+      initialTask.taskType = QStringLiteral("PatrolArea");
+      initialTask.enabled = true;
+      initialTask.status = QStringLiteral("Queued");
+      initialTask.targetAreaName = summary.value(QStringLiteral("taskTargetAreaName")).toString();
+      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
+      initialTask.targetSpeedKnots = defaultSpeedKnots;
+      if (!this->captureTaskConfiguration(
+              entityName,
+              initialTask,
+              QStringLiteral("PatrolArea"),
+              step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      if (const AreaDefinition* area = this->findAreaByNameOrId(step.task.targetAreaName)) {
+        step.task.targetLatitude = area->centerLatitude;
+        step.task.targetLongitude = area->centerLongitude;
+        double radiusMeters = area->radiusMeters;
+        if (radiusMeters <= 0.0) {
+          if (area->areaType == QStringLiteral("Ellipse")) {
+            radiusMeters = qMax(area->semiMinorAxisMeters, 100.0);
+          } else if (!area->points.isEmpty()) {
+            radiusMeters = 250.0;
+          } else {
+            radiusMeters = 500.0;
+          }
+        }
+        step.task.targetAreaRadiusMeters = radiusMeters;
+      }
+      step.label = QStringLiteral("Patrol Area: %1").arg(step.task.targetAreaName);
+      return true;
+    }
+
+    case PlanStepKind::FlyHeadingAltitudeSpeed: {
+      EntityTask initialTask;
+      initialTask.taskType = QStringLiteral("FlyHeadingAltitudeSpeed");
+      initialTask.enabled = true;
+      initialTask.status = QStringLiteral("Queued");
+      initialTask.targetHeadingDegrees = defaultHeading;
+      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
+      initialTask.targetSpeedKnots = defaultSpeedKnots;
+      if (!this->captureTaskConfiguration(
+              entityName,
+              initialTask,
+              QStringLiteral("FlyHeadingAltitudeSpeed"),
+              step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.label = QStringLiteral("Fly H%1 A%2 S%3")
+                       .arg(step.task.targetHeadingDegrees, 0, 'f', 0)
+                       .arg(step.task.targetAltitudeMeters)
+                       .arg(step.task.targetSpeedKnots, 0, 'f', 0);
+      return true;
+    }
+
+    case PlanStepKind::OrbitHoldLocation: {
+      double centerLatitude = entity->latitude;
+      double centerLongitude = entity->longitude;
+      const QString centerMode = QInputDialog::getItem(
+          this,
+          QStringLiteral("Plan Step: Orbit / Hold (Location)"),
+          QStringLiteral("Center"),
+          QStringList{
+              QStringLiteral("Current Position"),
+              QStringLiteral("Custom Coordinates"),
+          },
+          0,
+          false,
+          &ok);
+      if (!ok) {
+        return false;
+      }
+
+      if (centerMode == QStringLiteral("Custom Coordinates")) {
+        centerLatitude = QInputDialog::getDouble(
+            this,
+            QStringLiteral("Plan Step: Orbit / Hold (Location)"),
+            QStringLiteral("Latitude"),
+            centerLatitude,
+            -90.0,
+            90.0,
+            6,
+            &ok);
+        if (!ok) {
+          return false;
+        }
+
+        centerLongitude = QInputDialog::getDouble(
+            this,
+            QStringLiteral("Plan Step: Orbit / Hold (Location)"),
+            QStringLiteral("Longitude"),
+            centerLongitude,
+            -180.0,
+            180.0,
+            6,
+            &ok);
+        if (!ok) {
+          return false;
+        }
+      }
+
+      step.task.taskType = QStringLiteral("OrbitArea");
+      step.task.targetLatitude = centerLatitude;
+      step.task.targetLongitude = centerLongitude;
+      step.task.targetAltitudeMeters = defaultAltitudeMeters;
+      step.task.targetSpeedKnots = defaultSpeedKnots;
+      step.task.targetAreaRadiusMeters = kOrbitHoldDefaultRadiusMeters;
+      step.label = QStringLiteral("Orbit / Hold at %1, %2")
+                       .arg(centerLatitude, 0, 'f', 4)
+                       .arg(centerLongitude, 0, 'f', 4);
+      return true;
+    }
+
+    case PlanStepKind::ReturnToBase: {
+      const EntityHomePosition homePosition = this->entityHomePositionFor(entityName);
+      step.task.taskType = QStringLiteral("MoveToLocation");
+      step.task.targetLatitude = homePosition.valid ? homePosition.latitude : entity->latitude;
+      step.task.targetLongitude = homePosition.valid ? homePosition.longitude : entity->longitude;
+      step.task.targetAltitudeMeters =
+          homePosition.valid ? homePosition.altitudeMeters : defaultAltitudeMeters;
+      step.task.targetSpeedKnots = defaultSpeedKnots;
+      step.label = QStringLiteral("Return To Base");
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool MainWindow::validatePlanStepForExecution(const PlanStep& step, QString* reason) const {
+  auto setReason = [reason](const QString& text) {
+    if (reason) {
+      *reason = text;
+    }
+    return false;
+  };
+
+  if (step.task.taskType.trimmed().isEmpty()) {
+    return setReason(QStringLiteral("step task type is empty"));
+  }
+
+  switch (step.kind) {
+    case PlanStepKind::MoveToWaypoint:
+      if (step.task.targetWaypointName.trimmed().isEmpty()) {
+        return setReason(QStringLiteral("waypoint is not set"));
+      }
+      if (!this->findWaypointByName(step.task.targetWaypointName)) {
+        return setReason(
+            QStringLiteral("waypoint '%1' no longer exists").arg(step.task.targetWaypointName));
+      }
+      return true;
+
+    case PlanStepKind::MoveAlongRoute: {
+      if (step.task.targetRouteName.trimmed().isEmpty()) {
+        return setReason(QStringLiteral("route is not set"));
+      }
+      const RouteGraphic* route = this->findRouteByName(step.task.targetRouteName);
+      if (!route) {
+        return setReason(
+            QStringLiteral("route '%1' no longer exists").arg(step.task.targetRouteName));
+      }
+      if (route->points.isEmpty()) {
+        return setReason(
+            QStringLiteral("route '%1' has no points").arg(step.task.targetRouteName));
+      }
+      return true;
+    }
+
+    case PlanStepKind::PatrolArea:
+      if (step.task.targetAreaName.trimmed().isEmpty()) {
+        return setReason(QStringLiteral("area is not set"));
+      }
+      if (!this->findAreaByNameOrId(step.task.targetAreaName)) {
+        return setReason(
+            QStringLiteral("area '%1' no longer exists").arg(step.task.targetAreaName));
+      }
+      return true;
+
+    case PlanStepKind::MoveToLocation:
+    case PlanStepKind::FlyHeadingAltitudeSpeed:
+    case PlanStepKind::OrbitHoldLocation:
+    case PlanStepKind::ReturnToBase:
+      return true;
+  }
+
+  return true;
+}
+
+bool MainWindow::activeTaskMatchesPlanStep(const Entity& entity, const PlanStep& step) const {
+  const EntityTask& currentTask = entity.currentTask;
+  if (currentTask.taskType != step.task.taskType) {
+    return false;
+  }
+
+  auto nearlyEqual = [](double left, double right, double epsilon) {
+    return qAbs(left - right) <= epsilon;
+  };
+
+  switch (step.kind) {
+    case PlanStepKind::MoveToLocation:
+    case PlanStepKind::ReturnToBase:
+      return nearlyEqual(currentTask.targetLatitude, step.task.targetLatitude, 1e-6) &&
+             nearlyEqual(currentTask.targetLongitude, step.task.targetLongitude, 1e-6) &&
+             currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
+             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+
+    case PlanStepKind::MoveToWaypoint:
+      return currentTask.targetWaypointName == step.task.targetWaypointName &&
+             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+
+    case PlanStepKind::MoveAlongRoute:
+      return currentTask.targetRouteName == step.task.targetRouteName &&
+             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+
+    case PlanStepKind::PatrolArea:
+      return currentTask.targetAreaName == step.task.targetAreaName &&
+             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+
+    case PlanStepKind::FlyHeadingAltitudeSpeed:
+      return nearlyEqual(currentTask.targetHeadingDegrees, step.task.targetHeadingDegrees, 0.1) &&
+             currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
+             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+
+    case PlanStepKind::OrbitHoldLocation:
+      return nearlyEqual(currentTask.targetLatitude, step.task.targetLatitude, 1e-6) &&
+             nearlyEqual(currentTask.targetLongitude, step.task.targetLongitude, 1e-6) &&
+             currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
+             nearlyEqual(currentTask.targetAreaRadiusMeters, step.task.targetAreaRadiusMeters, 1.0) &&
+             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+  }
+
+  return false;
+}
+
+bool MainWindow::startEntityPlan(const QString& entityName) {
+  const Entity* entity = this->findEntityByName(entityName);
+  if (!entity || entity->destroyed) {
+    return false;
+  }
+
+  EntityPlan& plan = this->ensureEntityPlan(entityName);
+  if (plan.steps.isEmpty()) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("El plan esta vacio para %1.").arg(entityName));
+    return false;
+  }
+
+  QString invalidReason;
+  if (!this->validatePlanStepForExecution(plan.steps.front(), &invalidReason)) {
+    plan.running = false;
+    plan.currentStepIndex = -1;
+    plan.currentStableTicks = 0;
+    const QString stepLabel = this->planStepDisplayLabel(plan.steps.front());
+    this->appendLogMessage(
+        QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
+            .arg(entityName, stepLabel, invalidReason));
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
+    return false;
+  }
+
+  plan.running = true;
+  plan.currentStepIndex = 0;
+  plan.currentStableTicks = 0;
+
+  if (!this->applyEntityTask(entityName, plan.steps.at(plan.currentStepIndex).task, false)) {
+    plan.running = false;
+    plan.currentStepIndex = -1;
+    return false;
+  }
+
+  this->appendLogMessage(
+      QStringLiteral("Plan started for %1").arg(entityName));
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Plan en ejecucion para %1.").arg(entityName));
+  return true;
+}
+
+void MainWindow::stopEntityPlan(const QString& entityName, bool clearCurrentTask) {
+  auto it = this->_entityPlans.find(entityName);
+  if (it == this->_entityPlans.end()) {
+    return;
+  }
+
+  it->running = false;
+  it->currentStepIndex = -1;
+  it->currentStableTicks = 0;
+
+  if (clearCurrentTask) {
+    this->_scenarioState->clearTask(entityName);
+    this->syncScenarioStateToUi();
+  }
+}
+
+bool MainWindow::activePlanStepCompleted(const Entity& entity, EntityPlan& plan) const {
+  if (plan.currentStepIndex < 0 || plan.currentStepIndex >= plan.steps.size()) {
+    return false;
+  }
+
+  const PlanStep& step = plan.steps.at(plan.currentStepIndex);
+  switch (step.kind) {
+    case PlanStepKind::MoveToLocation:
+    case PlanStepKind::MoveToWaypoint:
+    case PlanStepKind::MoveAlongRoute:
+    case PlanStepKind::ReturnToBase:
+      plan.currentStableTicks = 0;
+      return entity.currentTask.status == QStringLiteral("On target");
+
+    case PlanStepKind::PatrolArea: {
+      const double distanceToCenterMeters = distanceMeters(
+          entity.latitude,
+          entity.longitude,
+          step.task.targetLatitude,
+          step.task.targetLongitude);
+      const double holdDistanceMeters = qMax(
+          100.0,
+          step.task.targetAreaRadiusMeters * 1.15);
+      if (distanceToCenterMeters <= holdDistanceMeters) {
+        ++plan.currentStableTicks;
+      } else {
+        plan.currentStableTicks = 0;
+      }
+      return plan.currentStableTicks >= 3;
+    }
+
+    case PlanStepKind::FlyHeadingAltitudeSpeed: {
+      const double headingErrorDegrees = qAbs(shortestSignedAngle(
+          entity.headingDegrees,
+          step.task.targetHeadingDegrees));
+      const int altitudeErrorMeters = qAbs(entity.altitude - step.task.targetAltitudeMeters);
+      const double speedErrorKnots = qAbs(entity.speedKnots - step.task.targetSpeedKnots);
+      if (headingErrorDegrees <= 5.0 &&
+          altitudeErrorMeters <= 50 &&
+          speedErrorKnots <= 10.0) {
+        ++plan.currentStableTicks;
+      } else {
+        plan.currentStableTicks = 0;
+      }
+      return plan.currentStableTicks >= 3;
+    }
+
+    case PlanStepKind::OrbitHoldLocation: {
+      const double distanceToCenterMeters = distanceMeters(
+          entity.latitude,
+          entity.longitude,
+          step.task.targetLatitude,
+          step.task.targetLongitude);
+      const double holdDistanceMeters = qMax(
+          100.0,
+          step.task.targetAreaRadiusMeters * 1.15);
+      if (distanceToCenterMeters <= holdDistanceMeters) {
+        ++plan.currentStableTicks;
+      } else {
+        plan.currentStableTicks = 0;
+      }
+      return plan.currentStableTicks >= 3;
+    }
+  }
+
+  return false;
+}
+
+void MainWindow::advanceEntityPlans() {
+  for (auto it = this->_entityPlans.begin(); it != this->_entityPlans.end(); ++it) {
+    const QString entityName = it.key();
+    EntityPlan& plan = it.value();
+    if (!plan.running) {
+      continue;
+    }
+
+    const Entity* entity = this->findEntityByName(entityName);
+    if (!entity || entity->destroyed) {
+      plan.running = false;
+      plan.currentStepIndex = -1;
+      plan.currentStableTicks = 0;
+      continue;
+    }
+
+    if (plan.currentStepIndex < 0 || plan.currentStepIndex >= plan.steps.size()) {
+      plan.running = false;
+      plan.currentStepIndex = -1;
+      plan.currentStableTicks = 0;
+      continue;
+    }
+
+    const PlanStep& activeStep = plan.steps.at(plan.currentStepIndex);
+    QString invalidReason;
+    if (!this->validatePlanStepForExecution(activeStep, &invalidReason)) {
+      this->appendLogMessage(
+          QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
+              .arg(entityName, this->planStepDisplayLabel(activeStep), invalidReason));
+      this->_ui->statusLabel->setText(
+          QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
+      plan.running = false;
+      plan.currentStepIndex = -1;
+      plan.currentStableTicks = 0;
+      continue;
+    }
+
+    if (!entity->currentTask.enabled ||
+        !this->activeTaskMatchesPlanStep(*entity, activeStep)) {
+      this->appendLogMessage(
+          QStringLiteral("Plan stopped for %1 after task override.").arg(entityName));
+      this->_ui->statusLabel->setText(
+          QStringLiteral("Plan detenido para %1: task modificada manualmente.").arg(entityName));
+      plan.running = false;
+      plan.currentStepIndex = -1;
+      plan.currentStableTicks = 0;
+      continue;
+    }
+
+    if (entity->currentTask.status == QStringLiteral("Target unavailable")) {
+      this->appendLogMessage(
+          QStringLiteral("Plan halted for %1 because the active step failed.").arg(entityName));
+      plan.running = false;
+      plan.currentStepIndex = -1;
+      plan.currentStableTicks = 0;
+      continue;
+    }
+
+    if (!this->activePlanStepCompleted(*entity, plan)) {
+      continue;
+    }
+
+    const QString completedLabel = this->planStepDisplayLabel(activeStep);
+    ++plan.currentStepIndex;
+    plan.currentStableTicks = 0;
+
+    if (plan.currentStepIndex >= plan.steps.size()) {
+      plan.running = false;
+      plan.currentStepIndex = -1;
+      this->appendLogMessage(
+          QStringLiteral("Plan completed for %1 after %2.")
+              .arg(entityName, completedLabel));
+      this->_ui->statusLabel->setText(
+          QStringLiteral("Plan completado para %1.").arg(entityName));
+      continue;
+    }
+
+    const PlanStep& nextStep = plan.steps.at(plan.currentStepIndex);
+    QString nextInvalidReason;
+    if (!this->validatePlanStepForExecution(nextStep, &nextInvalidReason)) {
+      this->appendLogMessage(
+          QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
+              .arg(entityName, this->planStepDisplayLabel(nextStep), nextInvalidReason));
+      this->_ui->statusLabel->setText(
+          QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
+      plan.running = false;
+      plan.currentStepIndex = -1;
+      plan.currentStableTicks = 0;
+      continue;
+    }
+
+    const QString nextLabel = this->planStepDisplayLabel(nextStep);
+    if (!this->applyEntityTask(entityName, nextStep.task, false)) {
+      plan.running = false;
+      plan.currentStepIndex = -1;
+      this->appendLogMessage(
+          QStringLiteral("Plan halted for %1 while starting step %2.")
+              .arg(entityName, nextLabel));
+      continue;
+    }
+
+    this->appendLogMessage(
+        QStringLiteral("Plan advanced for %1: %2").arg(entityName, nextLabel));
+  }
+}
+
 bool MainWindow::resolveSelectedEntityFlyTargets(
     double& headingDegrees,
     int& altitudeMeters,
@@ -2029,12 +3161,16 @@ bool MainWindow::resolveSelectedEntityFlyTargets(
       summary.value(QStringLiteral("taskStatus")).toString() == QStringLiteral("Running") &&
       !summary.value(QStringLiteral("taskType")).toString().trimmed().isEmpty();
 
+  const int currentEntityAltitudeMeters = entityAltitudeMeters(
+      this->_scenarioState,
+      summary.value(QStringLiteral("name")).toString());
+
   headingDegrees = hasRunningTaskTargets
       ? summary.value(QStringLiteral("taskTargetHeadingDegrees")).toDouble()
       : summary.value(QStringLiteral("headingDegrees")).toDouble();
   altitudeMeters = hasRunningTaskTargets
       ? summary.value(QStringLiteral("taskTargetAltitudeMeters")).toInt()
-      : summary.value(QStringLiteral("altitude")).toInt();
+      : currentEntityAltitudeMeters;
   speedKnots = hasRunningTaskTargets
       ? summary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble()
       : summary.value(QStringLiteral("speedKnots")).toDouble();
@@ -2216,9 +3352,20 @@ void MainWindow::setSelectedEntityHidden(bool hidden) {
     return;
   }
 
-  if (!this->_scenarioState->setEntityHidden(entityName, hidden)) {
+  EntityVisualState visualState = this->entityVisualStateFor(entityName);
+  if (visualState.hidden == hidden) {
     return;
   }
+
+  visualState.hidden = hidden;
+  if (!visualState.hidden &&
+      !visualState.radarCoverageVisible &&
+      !visualState.trackHistoryVisible) {
+    this->_entityVisualStates.remove(entityName);
+  } else {
+    this->ensureEntityVisualState(entityName) = visualState;
+  }
+  this->saveEntityVisualStates();
 
   this->appendLogMessage(
       QStringLiteral("Entity %1 %2")
@@ -2237,9 +3384,20 @@ void MainWindow::setSelectedEntityRadarCoverageVisible(bool visible) {
     return;
   }
 
-  if (!this->_scenarioState->setEntityRadarCoverageVisible(entityName, visible)) {
+  EntityVisualState visualState = this->entityVisualStateFor(entityName);
+  if (visualState.radarCoverageVisible == visible) {
     return;
   }
+
+  visualState.radarCoverageVisible = visible;
+  if (!visualState.hidden &&
+      !visualState.radarCoverageVisible &&
+      !visualState.trackHistoryVisible) {
+    this->_entityVisualStates.remove(entityName);
+  } else {
+    this->ensureEntityVisualState(entityName) = visualState;
+  }
+  this->saveEntityVisualStates();
 
   this->appendLogMessage(
       QStringLiteral("Radar coverage %1 for %2")
@@ -2258,9 +3416,20 @@ void MainWindow::setSelectedEntityTrackHistoryVisible(bool visible) {
     return;
   }
 
-  if (!this->_scenarioState->setEntityTrackHistoryVisible(entityName, visible)) {
+  EntityVisualState visualState = this->entityVisualStateFor(entityName);
+  if (visualState.trackHistoryVisible == visible) {
     return;
   }
+
+  visualState.trackHistoryVisible = visible;
+  if (!visualState.hidden &&
+      !visualState.radarCoverageVisible &&
+      !visualState.trackHistoryVisible) {
+    this->_entityVisualStates.remove(entityName);
+  } else {
+    this->ensureEntityVisualState(entityName) = visualState;
+  }
+  this->saveEntityVisualStates();
 
   this->appendLogMessage(
       QStringLiteral("Track history %1 for %2")
@@ -2329,6 +3498,178 @@ void MainWindow::assignMoveAlongRouteTask() {
   this->openAssignTaskDialog(QStringLiteral("MoveAlongRoute"));
 }
 
+void MainWindow::assignReturnToBaseTask() {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty() || !this->currentSelectionIsOperableEntity()) {
+    return;
+  }
+
+  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  const EntityHomePosition homePosition = this->entityHomePositionFor(entityName);
+
+  double headingDegrees = 0.0;
+  int currentAltitudeMeters = 0;
+  double speedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
+  this->resolveSelectedEntityFlyTargets(headingDegrees, currentAltitudeMeters, speedKnots);
+
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveToLocation");
+  task.enabled = true;
+  task.status = QStringLiteral("Running");
+  task.targetLatitude = homePosition.valid
+      ? homePosition.latitude
+      : summary.value(QStringLiteral("latitude")).toDouble();
+  task.targetLongitude = homePosition.valid
+      ? homePosition.longitude
+      : summary.value(QStringLiteral("longitude")).toDouble();
+  task.targetAltitudeMeters = homePosition.valid
+      ? homePosition.altitudeMeters
+      : currentAltitudeMeters;
+  task.targetSpeedKnots = speedKnots;
+
+  if (!this->applyEntityTask(entityName, task)) {
+    return;
+  }
+
+  this->_ui->statusLabel->setText(
+      QStringLiteral("RTB asignado a %1.").arg(entityName));
+}
+
+void MainWindow::assignPatrolRouteTask() {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty() || !this->currentSelectionIsOperableEntity()) {
+    return;
+  }
+
+  const QStringList availableRoutes = this->availableRouteNames(true);
+  if (availableRoutes.isEmpty()) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No hay rutas disponibles para Patrol Route."));
+    return;
+  }
+
+  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  const QString currentRouteName = summary.value(QStringLiteral("taskTargetRouteName")).toString();
+  int routeIndex = availableRoutes.indexOf(currentRouteName);
+  if (routeIndex < 0) {
+    routeIndex = 0;
+  }
+
+  bool ok = false;
+  const QString routeName = QInputDialog::getItem(
+      this,
+      QStringLiteral("Patrol Route"),
+      QStringLiteral("Route"),
+      availableRoutes,
+      routeIndex,
+      false,
+      &ok);
+  if (!ok || routeName.trimmed().isEmpty()) {
+    return;
+  }
+
+  double headingDegrees = 0.0;
+  int altitudeMeters = 0;
+  double speedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
+  this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots);
+
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveAlongRoute");
+  task.enabled = true;
+  task.status = QStringLiteral("Running");
+  task.targetRouteName = routeName;
+  task.targetAltitudeMeters = altitudeMeters;
+  task.targetSpeedKnots = speedKnots;
+
+  if (!this->applyEntityTask(entityName, task)) {
+    return;
+  }
+
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Patrol Route asignado a %1 sobre %2.")
+          .arg(entityName, routeName));
+}
+
+void MainWindow::assignOrbitHoldLocationTask() {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty() || !this->currentSelectionIsOperableEntity()) {
+    return;
+  }
+
+  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  double centerLatitude = summary.value(QStringLiteral("latitude")).toDouble();
+  double centerLongitude = summary.value(QStringLiteral("longitude")).toDouble();
+
+  bool ok = false;
+  const QString centerMode = QInputDialog::getItem(
+      this,
+      QStringLiteral("Orbit / Hold (Location)"),
+      QStringLiteral("Center"),
+      QStringList{
+          QStringLiteral("Current Position"),
+          QStringLiteral("Custom Coordinates"),
+      },
+      0,
+      false,
+      &ok);
+  if (!ok) {
+    return;
+  }
+
+  if (centerMode == QStringLiteral("Custom Coordinates")) {
+    centerLatitude = QInputDialog::getDouble(
+        this,
+        QStringLiteral("Orbit / Hold (Location)"),
+        QStringLiteral("Latitude"),
+        centerLatitude,
+        -90.0,
+        90.0,
+        6,
+        &ok);
+    if (!ok) {
+      return;
+    }
+
+    centerLongitude = QInputDialog::getDouble(
+        this,
+        QStringLiteral("Orbit / Hold (Location)"),
+        QStringLiteral("Longitude"),
+        centerLongitude,
+        -180.0,
+        180.0,
+        6,
+        &ok);
+    if (!ok) {
+      return;
+    }
+  }
+
+  double headingDegrees = 0.0;
+  int altitudeMeters = 0;
+  double speedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
+  this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots);
+
+  EntityTask task;
+  task.taskType = QStringLiteral("OrbitArea");
+  task.enabled = true;
+  task.status = QStringLiteral("Running");
+  task.targetLatitude = centerLatitude;
+  task.targetLongitude = centerLongitude;
+  task.targetAltitudeMeters = altitudeMeters;
+  task.targetSpeedKnots = speedKnots;
+  task.targetAreaRadiusMeters = kOrbitHoldDefaultRadiusMeters;
+
+  if (!this->applyEntityTask(entityName, task)) {
+    return;
+  }
+
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Orbit / Hold asignado a %1 alrededor de %2, %3.")
+          .arg(entityName)
+          .arg(centerLatitude, 0, 'f', 4)
+          .arg(centerLongitude, 0, 'f', 4));
+}
+
 void MainWindow::assignPatrolAreaTask() {
   this->openAssignTaskDialog(QStringLiteral("PatrolArea"));
 }
@@ -2339,6 +3680,247 @@ void MainWindow::assignOrbitAreaTask() {
 
 void MainWindow::assignFollowEntityTask() {
   this->openAssignTaskDialog(QStringLiteral("FollowEntity"));
+}
+
+void MainWindow::openEntityPlanDialog() {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  this->ensureEntityPlan(entityName);
+
+  QDialog dialog(this);
+  dialog.setWindowTitle(QStringLiteral("Plan for %1").arg(entityName));
+  dialog.resize(520, 420);
+  dialog.setWindowModality(Qt::WindowModal);
+
+  auto planForEntity = [this, entityName]() -> EntityPlan& {
+    return this->ensureEntityPlan(entityName);
+  };
+
+  auto* layout = new QVBoxLayout(&dialog);
+  auto* stepsList = new QListWidget(&dialog);
+  layout->addWidget(stepsList);
+
+  auto* editButtonsLayout = new QHBoxLayout();
+  auto* addButton = new QPushButton(QStringLiteral("Add"), &dialog);
+  auto* removeButton = new QPushButton(QStringLiteral("Remove"), &dialog);
+  auto* upButton = new QPushButton(QStringLiteral("Up"), &dialog);
+  auto* downButton = new QPushButton(QStringLiteral("Down"), &dialog);
+  editButtonsLayout->addWidget(addButton);
+  editButtonsLayout->addWidget(removeButton);
+  editButtonsLayout->addWidget(upButton);
+  editButtonsLayout->addWidget(downButton);
+  editButtonsLayout->addStretch(1);
+  layout->addLayout(editButtonsLayout);
+
+  auto* actionButtonsLayout = new QHBoxLayout();
+  auto* runButton = new QPushButton(QStringLiteral("Run Plan"), &dialog);
+  auto* stopButton = new QPushButton(QStringLiteral("Stop Plan"), &dialog);
+  auto* closeButton = new QPushButton(QStringLiteral("Close"), &dialog);
+  actionButtonsLayout->addWidget(runButton);
+  actionButtonsLayout->addWidget(stopButton);
+  actionButtonsLayout->addStretch(1);
+  actionButtonsLayout->addWidget(closeButton);
+  layout->addLayout(actionButtonsLayout);
+
+  auto refreshList = [this, planForEntity, stepsList]() {
+    const EntityPlan& plan = planForEntity();
+    const int previousRow = stepsList->currentRow();
+    stepsList->clear();
+    for (int index = 0; index < plan.steps.size(); ++index) {
+      const QString prefix =
+          (plan.running && index == plan.currentStepIndex) ? QStringLiteral(">> ") : QString();
+      stepsList->addItem(
+          QStringLiteral("%1%2. %3")
+              .arg(prefix)
+              .arg(index + 1)
+              .arg(this->planStepDisplayLabel(plan.steps.at(index))));
+    }
+
+    if (!plan.steps.isEmpty()) {
+      stepsList->setCurrentRow(qBound(0, previousRow, plan.steps.size() - 1));
+    }
+  };
+
+  auto refreshButtons = [this,
+                         planForEntity,
+                         entityName,
+                         stepsList,
+                         addButton,
+                         removeButton,
+                         upButton,
+                         downButton,
+                         runButton,
+                         stopButton]() {
+    const EntityPlan& plan = planForEntity();
+    const int currentRow = stepsList->currentRow();
+    const bool hasSelection = currentRow >= 0 && currentRow < plan.steps.size();
+    const bool editable = !plan.running;
+    const Entity* entity = this->findEntityByName(entityName);
+
+    addButton->setEnabled(editable);
+    removeButton->setEnabled(editable && hasSelection);
+    upButton->setEnabled(editable && hasSelection && currentRow > 0);
+    downButton->setEnabled(
+        editable &&
+        hasSelection &&
+        currentRow >= 0 &&
+        currentRow < plan.steps.size() - 1);
+    runButton->setEnabled(editable && entity && !entity->destroyed && !plan.steps.isEmpty());
+    stopButton->setEnabled(plan.running);
+  };
+
+  QObject::connect(stepsList, &QListWidget::currentRowChanged, &dialog, refreshButtons);
+
+  QObject::connect(addButton, &QPushButton::clicked, &dialog, [this, &dialog, planForEntity, entityName, stepsList, refreshList, refreshButtons, addButton]() {
+    if (planForEntity().running) {
+      refreshButtons();
+      return;
+    }
+
+    QMenu addMenu(&dialog);
+    QAction* moveToLocationAction = addMenu.addAction(QStringLiteral("Move To Location"));
+    moveToLocationAction->setData(static_cast<int>(PlanStepKind::MoveToLocation));
+    QAction* moveToWaypointAction = addMenu.addAction(QStringLiteral("Move To Waypoint"));
+    moveToWaypointAction->setData(static_cast<int>(PlanStepKind::MoveToWaypoint));
+    QAction* moveAlongRouteAction = addMenu.addAction(QStringLiteral("Move Along Route"));
+    moveAlongRouteAction->setData(static_cast<int>(PlanStepKind::MoveAlongRoute));
+    QAction* patrolAreaAction = addMenu.addAction(QStringLiteral("Patrol Area"));
+    patrolAreaAction->setData(static_cast<int>(PlanStepKind::PatrolArea));
+    QAction* flyAction = addMenu.addAction(QStringLiteral("Fly Heading / Altitude / Speed"));
+    flyAction->setData(static_cast<int>(PlanStepKind::FlyHeadingAltitudeSpeed));
+    QAction* orbitAction = addMenu.addAction(QStringLiteral("Orbit / Hold (Location)"));
+    orbitAction->setData(static_cast<int>(PlanStepKind::OrbitHoldLocation));
+    QAction* rtbAction = addMenu.addAction(QStringLiteral("Return To Base"));
+    rtbAction->setData(static_cast<int>(PlanStepKind::ReturnToBase));
+
+    QAction* selectedAction = addMenu.exec(addButton->mapToGlobal(QPoint(0, addButton->height())));
+    if (!selectedAction) {
+      return;
+    }
+
+    PlanStep step;
+    dialog.hide();
+    const bool configured = this->configurePlanStep(
+        entityName,
+        static_cast<PlanStepKind>(selectedAction->data().toInt()),
+        step);
+    dialog.show();
+    dialog.raise();
+    dialog.activateWindow();
+    if (!configured) {
+      return;
+    }
+
+    EntityPlan& plan = planForEntity();
+    plan.steps.push_back(step);
+    refreshList();
+    stepsList->setCurrentRow(plan.steps.size() - 1);
+    refreshButtons();
+  });
+
+  QObject::connect(removeButton, &QPushButton::clicked, &dialog, [planForEntity, stepsList, refreshList, refreshButtons]() {
+    EntityPlan& plan = planForEntity();
+    if (plan.running) {
+      refreshButtons();
+      return;
+    }
+
+    const int row = stepsList->currentRow();
+    if (row < 0 || row >= plan.steps.size()) {
+      return;
+    }
+    plan.steps.removeAt(row);
+    refreshList();
+    refreshButtons();
+  });
+
+  QObject::connect(upButton, &QPushButton::clicked, &dialog, [planForEntity, stepsList, refreshList, refreshButtons]() {
+    EntityPlan& plan = planForEntity();
+    if (plan.running) {
+      refreshButtons();
+      return;
+    }
+
+    const int row = stepsList->currentRow();
+    if (row <= 0 || row >= plan.steps.size()) {
+      return;
+    }
+    plan.steps.swapItemsAt(row, row - 1);
+    refreshList();
+    stepsList->setCurrentRow(row - 1);
+    refreshButtons();
+  });
+
+  QObject::connect(downButton, &QPushButton::clicked, &dialog, [planForEntity, stepsList, refreshList, refreshButtons]() {
+    EntityPlan& plan = planForEntity();
+    if (plan.running) {
+      refreshButtons();
+      return;
+    }
+
+    const int row = stepsList->currentRow();
+    if (row < 0 || row >= plan.steps.size() - 1) {
+      return;
+    }
+    plan.steps.swapItemsAt(row, row + 1);
+    refreshList();
+    stepsList->setCurrentRow(row + 1);
+    refreshButtons();
+  });
+
+  QObject::connect(runButton, &QPushButton::clicked, &dialog, [this, entityName, refreshList, refreshButtons]() {
+    if (!this->startEntityPlan(entityName)) {
+      return;
+    }
+    this->syncScenarioStateToUi();
+    refreshList();
+    refreshButtons();
+  });
+
+  QObject::connect(stopButton, &QPushButton::clicked, &dialog, [this, entityName, refreshList, refreshButtons]() {
+    this->stopEntityPlan(entityName, true);
+    this->appendLogMessage(QStringLiteral("Plan stopped for %1").arg(entityName));
+    this->_ui->statusLabel->setText(QStringLiteral("Plan detenido para %1.").arg(entityName));
+    refreshList();
+    refreshButtons();
+  });
+
+  QObject::connect(closeButton, &QPushButton::clicked, &dialog, &QDialog::accept);
+
+  QTimer refreshTimer(&dialog);
+  refreshTimer.setInterval(250);
+  QObject::connect(&refreshTimer, &QTimer::timeout, &dialog, [refreshList, refreshButtons]() {
+    refreshList();
+    refreshButtons();
+  });
+  refreshTimer.start();
+
+  QEventLoop loop;
+  QObject::connect(&dialog, &QDialog::accepted, &loop, [&loop]() {
+    if (loop.isRunning()) {
+      loop.quit();
+    }
+  });
+  QObject::connect(&dialog, &QDialog::rejected, &loop, [&loop]() {
+    if (loop.isRunning()) {
+      loop.quit();
+    }
+  });
+  QObject::connect(&dialog, &QObject::destroyed, &loop, [&loop]() {
+    if (loop.isRunning()) {
+      loop.quit();
+    }
+  });
+
+  refreshList();
+  refreshButtons();
+  dialog.show();
+  dialog.raise();
+  dialog.activateWindow();
+  loop.exec();
 }
 
 void MainWindow::clearSelectedTask() {
@@ -2430,6 +4012,15 @@ QStandardItem* MainWindow::findTrackItemByName(QStandardItem* parent, const QStr
   return nullptr;
 }
 
+const Entity* MainWindow::findEntityByName(const QString& entityName) const {
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    if (entity.name == entityName) {
+      return &entity;
+    }
+  }
+  return nullptr;
+}
+
 QString MainWindow::selectedEntityName() const {
   if (!this->currentSelectionIsEntity()) {
     return QString();
@@ -2488,11 +4079,6 @@ bool MainWindow::currentSelectionIsTacticalGraphic() const {
 }
 
 void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
-  if (this->_taskDialog) {
-    this->_taskDialog->close();
-    this->_taskDialog = nullptr;
-  }
-
   const QString entityName = this->selectedEntityName();
   if (entityName.isEmpty()) {
     return;
@@ -2521,195 +4107,12 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
   currentTask.targetAreaName = currentSummary.value(QStringLiteral("taskTargetAreaName")).toString();
   currentTask.targetAreaRadiusMeters = currentSummary.value(QStringLiteral("taskTargetAreaRadiusMeters")).toDouble();
 
-  QStringList availableTargets;
-  for (const Entity& entity : this->_scenarioState->entities()) {
-    if (entity.name != entityName) {
-      availableTargets.append(entity.name);
-    }
+  EntityTask configuredTask;
+  if (!this->captureTaskConfiguration(entityName, currentTask, initialTaskType, configuredTask)) {
+    return;
   }
 
-  QStringList availableWaypoints;
-  for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
-    availableWaypoints.append(waypoint.name);
-  }
-
-  QStringList availableRoutes;
-  for (const RouteGraphic& route : this->_scenarioState->routes()) {
-    availableRoutes.append(route.name);
-  }
-
-  QStringList availableAreas;
-  for (const AreaDefinition& area : this->_scenarioState->areas()) {
-    availableAreas.append(area.name);
-  }
-
-  auto* dialog = new AssignTaskDialog(
-      entityName,
-      availableTargets,
-      availableWaypoints,
-      availableRoutes,
-      availableAreas,
-      currentTask,
-      initialTaskType,
-      this);
-  dialog->setAttribute(Qt::WA_DeleteOnClose);
-  this->_taskDialog = dialog;
-
-  QObject::connect(
-      dialog,
-      &QObject::destroyed,
-      this,
-      [this]() { this->_taskDialog = nullptr; });
-  QObject::connect(
-      dialog,
-      &AssignTaskDialog::pickOnMapRequested,
-      this,
-      &MainWindow::beginTaskCoordinatePick);
-  QObject::connect(
-      dialog,
-      &QDialog::accepted,
-      this,
-      [this, dialog, entityName]() {
-        const EntityTask task = dialog->task();
-        if (this->_scenarioState->assignTask(entityName, task)) {
-          this->appendLogMessage(
-              QStringLiteral("Task %1 assigned to %2").arg(task.taskType, entityName));
-
-          Entity resolvedEntity;
-          for (const Entity& e : this->_scenarioState->entities()) {
-            if (e.name == entityName) {
-              resolvedEntity = e;
-              break;
-            }
-          }
-
-          // Push task to TaskStack immediately so movement works even if SimulationEngine isn't running.
-          if (domain::TaskStack* stack = this->_scenarioState->getTaskStack(entityName)) {
-            while (!stack->isEmpty()) {
-              stack->pop();
-            }
-            if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
-              double targetLat = resolvedEntity.currentTask.targetLatitude;
-              double targetLon = resolvedEntity.currentTask.targetLongitude;
-              double targetAlt = resolvedEntity.currentTask.targetAltitudeMeters;
-              double targetSpeed = resolvedEntity.currentTask.targetSpeedKnots;
-              if (task.taskType == "MoveToWaypoint" && !task.targetWaypointName.trimmed().isEmpty()) {
-                for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
-                  if (waypoint.name == task.targetWaypointName) {
-                    targetLat = waypoint.latitude;
-                    targetLon = waypoint.longitude;
-                    targetAlt = waypoint.altitudeMeters;
-                    break;
-                  }
-                }
-              }
-              stack->push(std::make_unique<domain::MoveToLocationTask>(
-                  targetLat,
-                  targetLon,
-                  targetAlt,
-                  targetSpeed
-              ));
-            } else if (task.taskType == "MoveAlongRoute") {
-              bool createdRouteTask = false;
-              for (const RouteGraphic& route : this->_scenarioState->routes()) {
-                if (route.name != resolvedEntity.currentTask.targetRouteName ||
-                    route.points.isEmpty()) {
-                  continue;
-                }
-                stack->push(std::make_unique<domain::RouteTask>(
-                    route.points,
-                    resolvedEntity.currentTask.targetSpeedKnots));
-                createdRouteTask = true;
-                break;
-              }
-              if (!createdRouteTask) {
-                stack->push(std::make_unique<domain::MoveToLocationTask>(
-                    resolvedEntity.currentTask.targetLatitude,
-                    resolvedEntity.currentTask.targetLongitude,
-                    resolvedEntity.currentTask.targetAltitudeMeters,
-                    resolvedEntity.currentTask.targetSpeedKnots));
-              }
-            } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
-              stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
-                  task.targetHeadingDegrees,
-                  static_cast<double>(task.targetAltitudeMeters),
-                  task.targetSpeedKnots
-              ));
-            } else if (task.taskType == "FollowEntity") {
-              stack->push(std::make_unique<domain::FollowEntityTask>(
-                  static_cast<double>(task.targetAltitudeMeters),
-                  task.targetSpeedKnots
-              ));
-            } else if (task.taskType == "PatrolArea") {
-              for (const AreaDefinition& area : this->_scenarioState->areas()) {
-                if (area.name != resolvedEntity.currentTask.targetAreaName &&
-                    area.id != resolvedEntity.currentTask.targetAreaName) {
-                  continue;
-                }
-                stack->push(std::make_unique<domain::PatrolAreaTask>(
-                    domain::buildPatrolRouteFromArea(area),
-                    static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
-                    resolvedEntity.currentTask.targetSpeedKnots
-                ));
-                break;
-              }
-              if (stack->isEmpty()) {
-                stack->push(std::make_unique<domain::OrbitAreaTask>(
-                    resolvedEntity.currentTask.targetLatitude,
-                    resolvedEntity.currentTask.targetLongitude,
-                    resolvedEntity.currentTask.targetAreaRadiusMeters,
-                    static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
-                    resolvedEntity.currentTask.targetSpeedKnots,
-                    true
-                ));
-              }
-            } else if (task.taskType == "OrbitArea") {
-              stack->push(std::make_unique<domain::OrbitAreaTask>(
-                  resolvedEntity.currentTask.targetLatitude,
-                  resolvedEntity.currentTask.targetLongitude,
-                  resolvedEntity.currentTask.targetAreaRadiusMeters,
-                  static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
-                  resolvedEntity.currentTask.targetSpeedKnots,
-                  false
-              ));
-            }
-          }
-
-          if (!m_simulationEngine) return;
-
-          if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
-              // Map to existing CmdAssignMoveTask using resolved coordinates
-              m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignMoveTask>(
-                  0, entityName, resolvedEntity.currentTask.targetLatitude, resolvedEntity.currentTask.targetLongitude, resolvedEntity.currentTask.targetAltitudeMeters, resolvedEntity.currentTask.targetSpeedKnots
-              ));
-          } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
-              m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignFlyHeadingTask>(
-                  entityName, task.targetHeadingDegrees, task.targetAltitudeMeters, task.targetSpeedKnots
-              ));
-          } else if (task.taskType == "FollowEntity") {
-              m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignFollowTask>(
-                  entityName, task.targetEntityName, task.targetAltitudeMeters, task.targetSpeedKnots
-              ));
-          } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
-              m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignOrbitTask>(
-                  entityName,
-                  resolvedEntity.currentTask.targetAreaName,
-                  resolvedEntity.currentTask.targetLatitude,
-                  resolvedEntity.currentTask.targetLongitude,
-                  resolvedEntity.currentTask.targetAreaRadiusMeters,
-                  resolvedEntity.currentTask.targetAltitudeMeters,
-                  resolvedEntity.currentTask.targetSpeedKnots,
-                  (task.taskType == "PatrolArea")
-              ));
-          }
-
-          this->syncScenarioStateToUi();
-        }
-      });
-
-  dialog->show();
-  dialog->raise();
-  dialog->activateWindow();
+  this->applyEntityTask(entityName, configuredTask);
 }
 
 void MainWindow::populateTaskCommands() {
