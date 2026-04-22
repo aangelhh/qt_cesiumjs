@@ -235,6 +235,93 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         return !!(track && track.destroyed);
       }
 
+      function trackIsEffect(track) {
+        return String(track && track.type || '').toLowerCase() === 'effect';
+      }
+
+      function trackIsPendingBombTarget(track) {
+        return String(track && track.type || '').toLowerCase() === 'pendingbombtarget';
+      }
+
+      function trackIsPendingBombTargetLine(track) {
+        return String(track && track.type || '').toLowerCase() === 'pendingbombtargetline';
+      }
+
+      function pendingBombReleaseState(track) {
+        const state = String(track && track.pendingBombReleaseState || '').trim();
+        return state.length > 0 ? state : 'Armed';
+      }
+
+      function effectDisplayColor(track) {
+        const effectType = String(track && track.effectType || '').toLowerCase();
+        if (effectType === 'bombsmoketrail') {
+          return Cesium.Color.fromCssColorString('#c9cdd1').withAlpha(0.55);
+        }
+        if (effectType === 'bombimpactflash') {
+          return Cesium.Color.fromCssColorString('#ffd08a').withAlpha(0.92);
+        }
+        if (effectType === 'bombsmoke') {
+          return Cesium.Color.fromCssColorString('#70757d').withAlpha(0.72);
+        }
+        if (effectType === 'impactflash') {
+          return Cesium.Color.ORANGE.withAlpha(0.92);
+        }
+        return Cesium.Color.fromCssColorString('#fff4b0').withAlpha(0.95);
+      }
+
+      function effectPointSize(track) {
+        const configuredSize = Math.max(4.0, Number(track && track.pointSize || 0.0));
+        if (configuredSize > 0.0) {
+          return configuredSize;
+        }
+        const effectType = String(track && track.effectType || '').toLowerCase();
+        if (effectType === 'bombsmoketrail') {
+          return 8.0;
+        }
+        if (effectType === 'bombimpactflash') {
+          return 16.0;
+        }
+        if (effectType === 'bombsmoke') {
+          return 20.0;
+        }
+        return effectType === 'impactflash' ? 18.0 : 10.0;
+      }
+
+      function trackDamageState(track) {
+        if (!track) {
+          return 'Intact';
+        }
+        const explicitState = String(track.damageState || '').trim();
+        if (explicitState.length > 0) {
+          return explicitState;
+        }
+        const damagePercent = Math.max(0.0, Math.min(100.0, Number(track.damagePercent || 0.0)));
+        if (trackIsDestroyed(track) || damagePercent >= 100.0) {
+          return 'Destroyed';
+        }
+        if (damagePercent >= 30.0) {
+          return 'Damaged';
+        }
+        if (damagePercent > 0.0) {
+          return 'Lightly Damaged';
+        }
+        return 'Intact';
+      }
+
+      function trackDamageCssColor(track) {
+        const state = trackDamageState(track);
+        if (state === 'Destroyed') {
+          return '#9b9ea4';
+        }
+        if (state === 'Damaged') {
+          return '#ffb347';
+        }
+        if (state === 'Lightly Damaged') {
+          return '#e6d37a';
+        }
+        return '';
+      }
+
       function trackIsHidden(track) {
         return !!(track && track.hidden);
       }
@@ -253,12 +340,13 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         }
 
         try {
+          const monoColor = trackDamageCssColor(track);
           const symbol = new ms.Symbol(sidc, {
             size: 34,
             frame: true,
             fill: true,
             colorMode: 'Light',
-            monoColor: trackIsDestroyed(track) ? '#9b9ea4' : ''
+            monoColor: monoColor
           });
           const svg = symbol.asSVG ? symbol.asSVG() :
             (symbol.getMarker ? symbol.getMarker().XML : null);
@@ -293,7 +381,24 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       }
 
       function trackDisplayColor(track) {
-        return trackIsDestroyed(track) ? Cesium.Color.GRAY : trackColor(track.team);
+        if (trackIsEffect(track)) {
+          return effectDisplayColor(track);
+        }
+        if (trackIsPendingBombTarget(track)) {
+          return pendingBombReleaseState(track) === 'In Release Window'
+            ? Cesium.Color.fromCssColorString('#63d67a')
+            : Cesium.Color.fromCssColorString('#f2a33b');
+        }
+        if (trackIsPendingBombTargetLine(track)) {
+          return pendingBombReleaseState(track) === 'In Release Window'
+            ? Cesium.Color.fromCssColorString('#63d67a')
+            : Cesium.Color.fromCssColorString('#f2a33b');
+        }
+        const damageColor = trackDamageCssColor(track);
+        if (damageColor.length > 0) {
+          return Cesium.Color.fromCssColorString(damageColor);
+        }
+        return trackColor(track.team);
       }
 
       function buildRoutePositions(track, altitude) {
@@ -721,7 +826,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
 
       function buildSimulationObjectLabel(track) {
         return [
-          'State   : ' + (trackIsDestroyed(track) ? 'Destroyed' : 'Ready'),
+          'State   : ' + trackDamageState(track),
           'Marking : ' + qtLabelMarking(track),
           'Type    : ' + qtLabelType(track),
           'Force   : ' + String(track.team || 'Unknown'),
@@ -911,6 +1016,20 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           },
           cartographic.height || 0.0
         );
+      }
+
+      function buildPendingBombTargetLinePositions(track) {
+        const routePoints = Array.isArray(track && track.routePoints) ? track.routePoints : [];
+        if (routePoints.length < 2) {
+          return [];
+        }
+        return routePoints.map(function(point) {
+          return Cesium.Cartesian3.fromDegrees(
+            Number(point.longitude || 0.0),
+            Number(point.latitude || 0.0),
+            Number(point.altitudeMeters || 0.0)
+          );
+        });
       }
 
       function emptyRadarPolygonHierarchy() {
@@ -1717,29 +1836,57 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const altitudeMatch = String(track.altitude || '').match(/-?\d+(?:\.\d+)?/);
         const altitude = altitudeMatch ? Number(altitudeMatch[0]) : 0.0;
         const destroyed = trackIsDestroyed(track);
+        const isEffect = trackIsEffect(track);
+        const isPendingBombTargetLine = trackIsPendingBombTargetLine(track);
+        const isPendingBombTarget = trackIsPendingBombTarget(track);
         const color = trackDisplayColor(track);
+        const damageState = trackDamageState(track);
         const modelUri = String(track.modelUri || '');
-        const hasModel = modelUri.length > 0;
-        const symbolDataUrl = buildQtSymbolDataUrl(track);
+        const hasModel = !isEffect && !isPendingBombTargetLine && modelUri.length > 0;
+        const modelScale = Math.max(0.05, Number(track.modelScale || 1.0));
+        const labelVisible = !isEffect && !isPendingBombTargetLine && track.labelVisible !== false;
+        const pointPixelSize = isEffect ? effectPointSize(track) : Math.max(4.0, Number(track.pointSize || 11.0));
+        const symbolDataUrl = (isEffect || isPendingBombTargetLine) ? null : buildQtSymbolDataUrl(track);
         const hasSymbol = !!symbolDataUrl;
         const symbolSidc = buildQtSidc(track);
-        const pointColor = destroyed
+        const pointColor = isEffect
+          ? color
+          : (destroyed
           ? Cesium.Color.GRAY.withAlpha(0.55)
-          : color;
+          : color);
         const billboardColor = destroyed
           ? Cesium.Color.GRAY.withAlpha(0.7)
-          : Cesium.Color.WHITE;
+          : (isPendingBombTarget
+            ? color.withAlpha(0.95)
+            : (damageState === 'Intact'
+            ? Cesium.Color.WHITE
+            : color.withAlpha(0.95)));
         const labelFillColor = destroyed
           ? Cesium.Color.LIGHTGRAY
-          : Cesium.Color.WHITE;
+          : (isPendingBombTarget
+            ? color
+            : (damageState === 'Intact'
+            ? Cesium.Color.WHITE
+            : color));
         const labelBackgroundColor = destroyed
           ? new Cesium.Color(0.25, 0.25, 0.25, 0.82)
-          : new Cesium.Color(0.02, 0.08, 0.92, 0.72);
+          : (isPendingBombTarget
+            ? new Cesium.Color(0.22, 0.12, 0.02, 0.82)
+            : (damageState === 'Damaged'
+            ? new Cesium.Color(0.35, 0.22, 0.03, 0.82)
+            : (damageState === 'Lightly Damaged'
+              ? new Cesium.Color(0.42, 0.35, 0.08, 0.78)
+              : new Cesium.Color(0.02, 0.08, 0.92, 0.72))));
         const modelColor = destroyed
           ? Cesium.Color.GRAY.withAlpha(0.6)
-          : Cesium.Color.WHITE;
+          : (damageState === 'Intact'
+            ? Cesium.Color.WHITE
+            : color.withAlpha(0.9));
         const entityId = 'qt-track:' + track.name;
         let entity = qtEntitiesByName.get(track.name);
+        const labelText = isPendingBombTarget
+          ? ('Bomb Target\n' + pendingBombReleaseState(track))
+          : track.name;
         const wasTrackedEntity = viewer.trackedEntity && viewer.trackedEntity === entity;
         let overlayBundle = qtOverlayEntitiesByName.get(track.name) || {
           route: null,
@@ -1760,7 +1907,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             position,
             point: {
               show: buildTrackPointShowProperty(hasModel, hasSymbol),
-              pixelSize: 11,
+              pixelSize: pointPixelSize,
               color: pointColor,
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 1,
@@ -1775,7 +1922,8 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
             } : undefined,
             label: {
-              text: track.name,
+              text: labelText,
+              show: labelVisible,
               font: '12px sans-serif',
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
               fillColor: labelFillColor,
@@ -1789,17 +1937,28 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               qtTrackName: track.name,
               qtTrackType: track.type || '',
               qtTrackTeam: track.team || '',
-              qtTrackModelName: track.modelName || '',
-              qtTrackSidc: symbolSidc || '',
-            },
-            orientation: undefined,
+            qtTrackModelName: track.modelName || '',
+            qtTrackSidc: symbolSidc || '',
+          },
+          orientation: undefined,
           };
+          if (isPendingBombTargetLine) {
+            entityOptions.point.show = false;
+            entityOptions.billboard = undefined;
+            entityOptions.label.show = false;
+            entityOptions.polyline = {
+              positions: buildPendingBombTargetLinePositions(track),
+              width: 2.0,
+              material: color.withAlpha(0.58),
+              arcType: Cesium.ArcType.GEODESIC,
+            };
+          }
           if (hasModel) {
             entityOptions.model = {
               uri: modelUri,
               minimumPixelSize: 48,
               maximumScale: 20000,
-              scale: 1.0,
+              scale: modelScale,
               color: modelColor,
               show: buildTrackModelShowProperty(),
             };
@@ -1821,9 +1980,13 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           updateInterpolatedPosition(entity, position, track);
           entity.name = track.name;
           entity._qtTrackData = Object.assign({}, track);
-          entity.point.show = buildTrackPointShowProperty(hasModel, hasSymbol);
+          entity.point.show = isPendingBombTargetLine
+            ? false
+            : buildTrackPointShowProperty(hasModel, hasSymbol);
+          entity.point.pixelSize = pointPixelSize;
           entity.point.color = pointColor;
-          entity.label.text = track.name;
+          entity.label.text = labelText;
+          entity.label.show = labelVisible;
           entity.label.fillColor = labelFillColor;
           entity.properties = new Cesium.PropertyBag({
             qtTrackName: track.name,
@@ -1837,7 +2000,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               uri: modelUri,
               minimumPixelSize: 48,
               maximumScale: 20000,
-              scale: 1.0,
+              scale: modelScale,
               color: modelColor,
               show: buildTrackModelShowProperty(),
             });
@@ -1857,6 +2020,16 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             });
           } else {
             entity.billboard = undefined;
+          }
+          if (isPendingBombTargetLine) {
+            entity.polyline = new Cesium.PolylineGraphics({
+              positions: buildPendingBombTargetLinePositions(track),
+              width: 2.0,
+              material: color.withAlpha(0.58),
+              arcType: Cesium.ArcType.GEODESIC,
+            });
+          } else {
+            entity.polyline = undefined;
           }
         }
 
@@ -1907,36 +2080,43 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           overlayBundle.area = null;
         }
 
-        const simulationLabelText = buildSimulationObjectLabel(track);
-        if (!overlayBundle.label) {
-          overlayBundle.label = viewer.entities.add({
-            id: entityId + ':label',
-            position: entity.position,
-            label: {
-              text: simulationLabelText,
-              font: '15px monospace',
-              showBackground: true,
-              backgroundColor: labelBackgroundColor,
-              fillColor: labelFillColor,
-              outlineColor: Cesium.Color.BLACK,
-              outlineWidth: 1,
-              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-              horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
-              verticalOrigin: Cesium.VerticalOrigin.TOP,
-              pixelOffset: new Cesium.Cartesian2(72, 56),
-              eyeOffset: new Cesium.Cartesian3(0.0, 0.0, -20.0),
-              disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            },
-            properties: {
-              qtTrackName: track.name,
-            },
-            show: overlaysVisible && track.name === selectedQtTrackName,
-          });
+        if (isEffect) {
+          if (overlayBundle.label) {
+            viewer.entities.remove(overlayBundle.label);
+            overlayBundle.label = null;
+          }
         } else {
-          overlayBundle.label.position = entity.position;
-          overlayBundle.label.label.text = simulationLabelText;
-          overlayBundle.label.label.backgroundColor = labelBackgroundColor;
-          overlayBundle.label.label.fillColor = labelFillColor;
+          const simulationLabelText = buildSimulationObjectLabel(track);
+          if (!overlayBundle.label) {
+            overlayBundle.label = viewer.entities.add({
+              id: entityId + ':label',
+              position: entity.position,
+              label: {
+                text: simulationLabelText,
+                font: '15px monospace',
+                showBackground: true,
+                backgroundColor: labelBackgroundColor,
+                fillColor: labelFillColor,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 1,
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
+                verticalOrigin: Cesium.VerticalOrigin.TOP,
+                pixelOffset: new Cesium.Cartesian2(72, 56),
+                eyeOffset: new Cesium.Cartesian3(0.0, 0.0, -20.0),
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+              properties: {
+                qtTrackName: track.name,
+              },
+              show: overlaysVisible && track.name === selectedQtTrackName,
+            });
+          } else {
+            overlayBundle.label.position = entity.position;
+            overlayBundle.label.label.text = simulationLabelText;
+            overlayBundle.label.label.backgroundColor = labelBackgroundColor;
+            overlayBundle.label.label.fillColor = labelFillColor;
+          }
         }
 
         const radarSensors = radarSensorsForTrack(track);

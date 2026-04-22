@@ -127,9 +127,11 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
       _speedSpin(new QDoubleSpinBox(this)),
       _verticalSpeedSpin(new QDoubleSpinBox(this)),
       _enableFlightTaskCheck(new QCheckBox(QStringLiteral("Assign initial flight task"), this)),
+      _attachMissilesCheck(new QCheckBox(QStringLiteral("Attach missiles"), this)),
       _taskHeadingSpin(new QDoubleSpinBox(this)),
       _taskAltitudeSpin(new QSpinBox(this)),
       _taskSpeedSpin(new QDoubleSpinBox(this)),
+      _missileCountSpin(new QSpinBox(this)),
       _radarRangeSpin(new QDoubleSpinBox(this)),
       _radarAzimuthSpin(new QDoubleSpinBox(this)),
       _radarElevationCenterSpin(new QDoubleSpinBox(this)),
@@ -240,11 +242,15 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   _taskSpeedSpin->setSuffix(QStringLiteral(" kts"));
   _taskSpeedSpin->setValue(320.0);
 
+  _missileCountSpin->setRange(1, 12);
+  _missileCountSpin->setValue(2);
+
   _nameEdit->setPlaceholderText(QStringLiteral("Entity Alpha"));
   _callsignEdit->setPlaceholderText(QStringLiteral("Eagle 1"));
   _radarNameEdit->setPlaceholderText(QStringLiteral("Primary Radar"));
   _addRadarCheck->setChecked(false);
   _enableDynamicsCheck->setChecked(true);
+  _attachMissilesCheck->setChecked(false);
 
   _forceIdentifierCombo->addItem(QStringLiteral("Friendly"), 1);
   _forceIdentifierCombo->addItem(QStringLiteral("Opposing"), 2);
@@ -344,6 +350,10 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
     _taskAltitudeSpin->setEnabled(enabled);
     _taskSpeedSpin->setEnabled(enabled);
   });
+  QObject::connect(_attachMissilesCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+    Q_UNUSED(enabled)
+    this->syncWeaponControls();
+  });
 
   formLayout->addRow(QStringLiteral("Name"), _nameEdit);
   formLayout->addRow(QStringLiteral("forceIdentifier"), _forceIdentifierCombo);
@@ -368,6 +378,8 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   formLayout->addRow(QStringLiteral("Initial Task Heading"), _taskHeadingSpin);
   formLayout->addRow(QStringLiteral("Initial Task Altitude"), _taskAltitudeSpin);
   formLayout->addRow(QStringLiteral("Initial Task Speed"), _taskSpeedSpin);
+  formLayout->addRow(QStringLiteral("Weapons"), _attachMissilesCheck);
+  formLayout->addRow(QStringLiteral("Missile Count"), _missileCountSpin);
   formLayout->addRow(QStringLiteral("Sensor"), _addRadarCheck);
   formLayout->addRow(QStringLiteral("Radar Name"), _radarNameEdit);
   formLayout->addRow(QStringLiteral("Radar Range"), _radarRangeSpin);
@@ -393,6 +405,7 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   _radarElevationWidthSpin->setEnabled(_addRadarCheck->isChecked());
   _radarMaxTracksSpin->setEnabled(_addRadarCheck->isChecked());
   this->syncDynamicsControls();
+  this->syncWeaponControls();
   _taskHeadingSpin->setEnabled(_enableFlightTaskCheck->isChecked());
   _taskAltitudeSpin->setEnabled(_enableFlightTaskCheck->isChecked());
   _taskSpeedSpin->setEnabled(_enableFlightTaskCheck->isChecked());
@@ -788,6 +801,10 @@ void AddEntityDialog::syncDynamicsControls() {
   _jsbsimModelCombo->setEnabled(useJsbsim);
 }
 
+void AddEntityDialog::syncWeaponControls() {
+  _missileCountSpin->setEnabled(_attachMissilesCheck->isChecked());
+}
+
 Entity AddEntityDialog::entity() const {
   Entity entity;
   entity.name = _nameEdit->text().trimmed();
@@ -846,6 +863,11 @@ Entity AddEntityDialog::entity() const {
     if (entity.modelName == selectedEntry->name && entity.type == entity.category) {
       entity.type = selectedEntry->name;
     }
+  }
+
+  if (_attachMissilesCheck->isChecked()) {
+    entity.weapons.push_back(
+        WeaponInventoryItem{QStringLiteral("Missile"), _missileCountSpin->value()});
   }
 
   entity.refreshEntityTypeCode();

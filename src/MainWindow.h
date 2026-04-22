@@ -5,6 +5,7 @@
 #include <QList>
 #include <QModelIndex>
 #include <QPointer>
+#include <QSet>
 #include <QStringList>
 #include <QVariantMap>
 #include <QVector>
@@ -73,6 +74,13 @@ private slots:
   void setSelectedEntitySpeed();
   void destroySelectedEntity();
   void restoreSelectedEntity();
+  void addMissileToSelectedEntity();
+  void addBombToSelectedEntity();
+  void launchMissileFromSelectedEntity();
+  void launchMissileAtSelectedEntity();
+  void releaseBombFromSelectedEntity();
+  void releaseBombAtSurfaceEntity();
+  void releaseBombAtCustomCoordinates();
   void clearSelectedTask();
   void deleteSelectedEntity();
   void openAddWaypointDialog();
@@ -94,6 +102,16 @@ private:
     double longitude = 0.0;
     int altitudeMeters = 0;
     bool valid = false;
+  };
+
+  struct PendingBombRelease {
+    QString launcherEntityName;
+    double targetLatitude = 0.0;
+    double targetLongitude = 0.0;
+    double targetAltitudeMeters = 0.0;
+    QString targetLabel;
+    QString sourceDescription;
+    bool pending = false;
   };
 
   enum class PlanStepKind {
@@ -143,6 +161,16 @@ private:
   bool currentSelectionIsOperableEntity() const;
   bool selectedEntityIsDestroyed() const;
   bool currentSelectionIsTacticalGraphic() const;
+  void queuePendingBombRelease(
+      const QString& launcherEntityName,
+      double targetLatitude,
+      double targetLongitude,
+      double targetAltitudeMeters,
+      const QString& targetLabel,
+      const QString& sourceDescription);
+  void clearPendingBombRelease();
+  void validatePendingBombRelease();
+  void processPendingBombRelease();
   void openAssignTaskDialog(const QString& initialTaskType);
   void populateTaskCommands();
   void beginTaskCoordinatePick();
@@ -222,8 +250,10 @@ private:
   QTimer* _simulationTimer;
   bool _applyingMapSelection;
   bool _simulationRunning;
+  bool _isPickingBombTarget;
   QString _pendingGraphicMode;
   QString _pendingGraphicName;
+  QString _bombTargetPickLauncherName;
   QVector<QVariantMap> _pendingRoutePoints;
   QString _pendingAreaType;
   double _pendingAreaRadiusMeters;
@@ -233,9 +263,12 @@ private:
   double _pendingAreaRotationDegrees;
   QVector<QVariantMap> _pendingAreaPoints;
   QList<QToolButton*> _taskQuickButtons;
+  QSet<QString> _activeMunitionTrackNames;
+  QSet<QString> _activeEffectTrackNames;
   QHash<QString, EntityVisualState> _entityVisualStates;
   QHash<QString, EntityHomePosition> _entityHomePositions;
   QHash<QString, EntityPlan> _entityPlans;
+  PendingBombRelease _pendingBombRelease;
   application::SimulationEngine* m_simulationEngine;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;

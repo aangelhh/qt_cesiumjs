@@ -69,6 +69,10 @@ constexpr int kTaskQuickBarMarginPixels = 14;
 constexpr int kTaskQuickBarButtonPixels = 30;
 constexpr int kTaskQuickBarIconPixels = 18;
 constexpr double kOrbitHoldDefaultRadiusMeters = 1500.0;
+constexpr double kKnotsToMetersPerSecond = 0.514444;
+constexpr double kBombReleaseGravityMetersPerSecondSquared = 9.81;
+constexpr double kBombReleaseHeadingConeDegrees = 35.0;
+constexpr double kBombReleaseDistanceToleranceMeters = 150.0;
 
 QString projectRootPath() {
 #ifdef QTTEST_SOURCE_DIR
@@ -159,9 +163,14 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("entityTypeCode"), QString()},
       {QStringLiteral("modelName"), QString()},
       {QStringLiteral("modelUri"), QString()},
+      {QStringLiteral("munitionType"), QString()},
+      {QStringLiteral("effectType"), QString()},
       {QStringLiteral("headingDegrees"), 0.0},
       {QStringLiteral("pitchDegrees"), 0.0},
       {QStringLiteral("rollDegrees"), 0.0},
+      {QStringLiteral("modelScale"), 1.0},
+      {QStringLiteral("pointSize"), 11},
+      {QStringLiteral("labelVisible"), true},
       {QStringLiteral("flightDynamicsEnabled"), false},
       {QStringLiteral("flightDynamicsMode"), QStringLiteral("kinematic")},
       {QStringLiteral("jsbsimAircraftModel"), QString()},
@@ -179,6 +188,8 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("taskTargetWaypointName"), QString()},
       {QStringLiteral("taskTargetRouteName"), QString()},
       {QStringLiteral("destroyed"), false},
+      {QStringLiteral("damagePercent"), 0.0},
+      {QStringLiteral("damageState"), QStringLiteral("Intact")},
       {QStringLiteral("hidden"), false},
       {QStringLiteral("radarCoverageVisible"), false},
       {QStringLiteral("trackHistoryVisible"), false},
@@ -198,11 +209,212 @@ QString forceIdentifierLabel(int forceIdentifier) {
   }
 }
 
+bool entityCanUseMissileActions(const Entity& entity) {
+  return !entity.destroyed &&
+         entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0 &&
+         entity.category.compare(QStringLiteral("Fighter"), Qt::CaseInsensitive) == 0;
+}
+
+int weaponQuantity(const Entity& entity, const QString& weaponType) {
+  for (const WeaponInventoryItem& item : entity.weapons) {
+    if (item.weaponType.compare(weaponType, Qt::CaseInsensitive) == 0) {
+      return item.quantity;
+    }
+  }
+  return 0;
+}
+
+struct MissileTargetCandidate {
+  const Entity* entity = nullptr;
+  double rangeMeters = -1.0;
+};
+
+QVector<MissileTargetCandidate> detectedMissileTargetsInRange(
+    const ScenarioState* scenarioState,
+    const Entity& launcher) {
+  QVector<MissileTargetCandidate> targets;
+  if (!scenarioState) {
+    return targets;
+  }
+
+  const double maxRangeMeters = ScenarioState::missileMaxRangeMeters();
+  QSet<QString> addedTargetNames;
+  for (const SensorContact& contact : launcher.sensorContacts) {
+    if (!contact.detected || contact.rangeMeters <= 0.0 ||
+        contact.rangeMeters > maxRangeMeters) {
+      continue;
+    }
+
+    const QString targetName = contact.targetEntityName.trimmed();
+    const QString targetKey = targetName.toCaseFolded();
+    if (targetName.isEmpty() || addedTargetNames.contains(targetKey)) {
+      continue;
+    }
+
+    for (const Entity& candidate : scenarioState->entities()) {
+      if (candidate.name.compare(targetName, Qt::CaseInsensitive) != 0 ||
+          candidate.name == launcher.name ||
+          candidate.destroyed ||
+          candidate.forceIdentifier == launcher.forceIdentifier ||
+          candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
+        continue;
+      }
+      targets.push_back({&candidate, contact.rangeMeters});
+      addedTargetNames.insert(targetKey);
+      break;
+    }
+  }
+
+  return targets;
+}
+
+QString missileTargetDisplayLabel(const Entity& entity, double rangeMeters) {
+  return QStringLiteral("%1 (%2 / %3, %4 km)")
+      .arg(
+          entity.name,
+          forceIdentifierLabel(entity.forceIdentifier),
+          entity.category,
+          QString::number(rangeMeters / 1000.0, 'f', 1));
+}
+
 QString formatPosition(double latitude, double longitude) {
   return QStringLiteral("%1, %2")
       .arg(latitude, 0, 'f', 4)
       .arg(longitude, 0, 'f', 4);
 }
+
+QVariantMap makeMunitionTrackSummary(const ActiveMunition& munition) {
+  const double altitudeMeters = qMax(0.0, munition.altitudeMeters);
+  const double speedKnots = munition.speedMetersPerSecond / 0.514444;
+  const QString munitionType = munition.munitionType.trimmed();
+  const bool isBomb = munitionType.compare(QStringLiteral("Bomb"), Qt::CaseInsensitive) == 0;
+  QVariantMap summary = makeTrackSummary(
+      munition.id,
+      QStringLiteral("Munition"),
+      forceIdentifierLabel(munition.forceIdentifier),
+      QStringLiteral("%1 m").arg(altitudeMeters, 0, 'f', 0),
+      formatPosition(munition.latitude, munition.longitude),
+      munition.status.trimmed().isEmpty() ? QStringLiteral("Flying") : munition.status,
+      munition.latitude,
+      munition.longitude);
+  summary.insert(QStringLiteral("category"), isBomb ? QStringLiteral("Bomb") : QStringLiteral("Missile"));
+  summary.insert(QStringLiteral("munitionType"), munition.munitionType);
+  summary.insert(QStringLiteral("forceIdentifier"), munition.forceIdentifier);
+  summary.insert(QStringLiteral("modelName"), isBomb ? QStringLiteral("Bomb") : QStringLiteral("Missile"));
+  summary.insert(QStringLiteral("modelUri"), munition.modelUri);
+  summary.insert(QStringLiteral("headingDegrees"), munition.headingDegrees);
+  summary.insert(QStringLiteral("pitchDegrees"), munition.pitchDegrees);
+  summary.insert(QStringLiteral("rollDegrees"), munition.rollDegrees);
+  summary.insert(QStringLiteral("speedKnots"), speedKnots);
+  summary.insert(QStringLiteral("modelScale"), isBomb ? 0.5 : 0.35);
+  summary.insert(QStringLiteral("labelVisible"), false);
+  return summary;
+}
+
+QVariantMap makeTransientEffectTrackSummary(const TransientEffect& effect) {
+  const double altitudeMeters = qMax(0.0, effect.altitudeMeters);
+  const QString effectType = effect.effectType.trimmed().toCaseFolded();
+  int pointSize = 10;
+  if (effectType == QStringLiteral("impactflash")) {
+    pointSize = 18;
+  } else if (effectType == QStringLiteral("bombsmoketrail")) {
+    pointSize = 8;
+  } else if (effectType == QStringLiteral("bombimpactflash")) {
+    pointSize = 16;
+  } else if (effectType == QStringLiteral("bombsmoke")) {
+    pointSize = 20;
+  }
+  QVariantMap summary = makeTrackSummary(
+      effect.id,
+      QStringLiteral("Effect"),
+      forceIdentifierLabel(effect.forceIdentifier),
+      QStringLiteral("%1 m").arg(altitudeMeters, 0, 'f', 0),
+      formatPosition(effect.latitude, effect.longitude),
+      effect.effectType,
+      effect.latitude,
+      effect.longitude);
+  summary.insert(QStringLiteral("category"), QStringLiteral("Effect"));
+  summary.insert(QStringLiteral("effectType"), effect.effectType);
+  summary.insert(QStringLiteral("forceIdentifier"), effect.forceIdentifier);
+  summary.insert(QStringLiteral("labelVisible"), false);
+  summary.insert(QStringLiteral("pointSize"), pointSize);
+  return summary;
+}
+
+QVariantMap makePendingBombTargetTrackSummary(
+    const QString& targetLabel,
+    double latitude,
+    double longitude,
+    double targetAltitudeMeters,
+    const QString& teamLabel,
+    const QString& releaseStateLabel) {
+  QVariantMap summary = makeTrackSummary(
+      QStringLiteral("Bomb Target"),
+      QStringLiteral("PendingBombTarget"),
+      teamLabel.trimmed().isEmpty() ? QStringLiteral("Friendly") : teamLabel,
+      QStringLiteral("%1 m").arg(qMax(0.0, targetAltitudeMeters), 0, 'f', 0),
+      formatPosition(latitude, longitude),
+      releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel,
+      latitude,
+      longitude);
+  summary.insert(QStringLiteral("category"), QStringLiteral("PendingBombTarget"));
+  summary.insert(QStringLiteral("pointSize"), 16);
+  summary.insert(QStringLiteral("labelVisible"), true);
+  summary.insert(QStringLiteral("pendingBombReleaseState"), releaseStateLabel);
+  summary.insert(QStringLiteral("pendingBombTargetLabel"), targetLabel);
+  return summary;
+}
+
+QVariantMap makePendingBombTargetLineTrackSummary(
+    const Entity& launcher,
+    double targetLatitude,
+    double targetLongitude,
+    double targetAltitudeMeters,
+    const QString& teamLabel,
+    const QString& releaseStateLabel) {
+  QVariantMap summary = makeTrackSummary(
+      QStringLiteral("Bomb Target Line"),
+      QStringLiteral("PendingBombTargetLine"),
+      teamLabel.trimmed().isEmpty() ? QStringLiteral("Friendly") : teamLabel,
+      QStringLiteral("%1 m").arg(qMax(0, launcher.altitude)),
+      formatPosition(launcher.latitude, launcher.longitude),
+      releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel,
+      launcher.latitude,
+      launcher.longitude);
+  summary.insert(QStringLiteral("category"), QStringLiteral("PendingBombTargetLine"));
+  summary.insert(QStringLiteral("labelVisible"), false);
+  summary.insert(QStringLiteral("pendingBombReleaseState"), releaseStateLabel);
+  QVariantList routePoints;
+  routePoints.push_back(QVariantMap{
+      {QStringLiteral("longitude"), launcher.longitude},
+      {QStringLiteral("latitude"), launcher.latitude},
+      {QStringLiteral("altitudeMeters"), static_cast<double>(launcher.altitude)},
+  });
+  routePoints.push_back(QVariantMap{
+      {QStringLiteral("longitude"), targetLongitude},
+      {QStringLiteral("latitude"), targetLatitude},
+      {QStringLiteral("altitudeMeters"), targetAltitudeMeters},
+  });
+  summary.insert(QStringLiteral("routePoints"), routePoints);
+  return summary;
+}
+
+struct BombReleaseGateEvaluation {
+  bool valid = false;
+  bool targetAhead = false;
+  bool withinHeadingCone = false;
+  bool withinReleaseWindow = false;
+
+  bool readyToRelease() const {
+    return valid && targetAhead && withinHeadingCone && withinReleaseWindow;
+  }
+
+  QString stateLabel() const {
+    return readyToRelease()
+        ? QStringLiteral("In Release Window")
+        : QStringLiteral("Armed");
+  }
+};
 
 double distanceMeters(
     double latitude1,
@@ -243,6 +455,88 @@ double shortestSignedAngle(double currentHeading, double targetHeading) {
   return delta;
 }
 
+double bearingDegrees(
+    double latitude1,
+    double longitude1,
+    double latitude2,
+    double longitude2) {
+  const double lat1 = qDegreesToRadians(latitude1);
+  const double lon1 = qDegreesToRadians(longitude1);
+  const double lat2 = qDegreesToRadians(latitude2);
+  const double lon2 = qDegreesToRadians(longitude2);
+  const double deltaLon = lon2 - lon1;
+
+  const double y = qSin(deltaLon) * qCos(lat2);
+  const double x = qCos(lat1) * qSin(lat2) -
+                   qSin(lat1) * qCos(lat2) * qCos(deltaLon);
+  return normalizeDegrees360(qRadiansToDegrees(qAtan2(y, x)));
+}
+
+BombReleaseGateEvaluation evaluateBombReleaseGate(
+    const Entity& launcher,
+    double targetLatitude,
+    double targetLongitude,
+    double targetAltitudeMeters) {
+  BombReleaseGateEvaluation evaluation;
+  const double relativeAltitudeMeters = qMax(
+      0.0,
+      static_cast<double>(launcher.altitude) - targetAltitudeMeters);
+  const double horizontalSpeedMetersPerSecond = qMax(
+      0.0,
+      launcher.speedKnots * kKnotsToMetersPerSecond *
+          qCos(qDegreesToRadians(launcher.pitchDegrees)));
+  if (relativeAltitudeMeters <= 0.0 || horizontalSpeedMetersPerSecond <= 1.0) {
+    return evaluation;
+  }
+
+  const double verticalSpeedMetersPerSecond =
+      launcher.verticalSpeedMetersPerSecond;
+  const double discriminant =
+      qPow(verticalSpeedMetersPerSecond, 2.0) +
+      2.0 * kBombReleaseGravityMetersPerSecondSquared * relativeAltitudeMeters;
+  if (discriminant < 0.0) {
+    return evaluation;
+  }
+
+  const double timeToImpactSeconds =
+      (verticalSpeedMetersPerSecond + qSqrt(discriminant)) /
+      kBombReleaseGravityMetersPerSecondSquared;
+  if (timeToImpactSeconds <= 0.0) {
+    return evaluation;
+  }
+
+  const double releaseDistanceMeters =
+      horizontalSpeedMetersPerSecond * timeToImpactSeconds;
+  const double distanceToTargetMeters = distanceMeters(
+      launcher.latitude,
+      launcher.longitude,
+      targetLatitude,
+      targetLongitude);
+  const double desiredHeadingDegrees = bearingDegrees(
+      launcher.latitude,
+      launcher.longitude,
+      targetLatitude,
+      targetLongitude);
+  const double headingErrorDegrees = qAbs(shortestSignedAngle(
+      launcher.headingDegrees,
+      desiredHeadingDegrees));
+
+  evaluation.valid = true;
+  evaluation.targetAhead = headingErrorDegrees <= 90.0;
+  evaluation.withinHeadingCone =
+      headingErrorDegrees <= kBombReleaseHeadingConeDegrees;
+  evaluation.withinReleaseWindow = qAbs(
+      distanceToTargetMeters - releaseDistanceMeters) <=
+      kBombReleaseDistanceToleranceMeters;
+  return evaluation;
+}
+
+QString attackPointLabel(double latitude, double longitude) {
+  return QStringLiteral("%1, %2")
+      .arg(latitude, 0, 'f', 4)
+      .arg(longitude, 0, 'f', 4);
+}
+
 int entityAltitudeMeters(const ScenarioState* scenarioState, const QString& entityName) {
   if (!scenarioState || entityName.trimmed().isEmpty()) {
     return 0;
@@ -254,6 +548,31 @@ int entityAltitudeMeters(const ScenarioState* scenarioState, const QString& enti
     }
   }
   return 0;
+}
+
+QVector<const Entity*> validBombReleaseTargets(
+    const ScenarioState* scenarioState,
+    const Entity& launcher) {
+  QVector<const Entity*> targets;
+  if (!scenarioState) {
+    return targets;
+  }
+
+  for (const Entity& candidate : scenarioState->entities()) {
+    if (candidate.name == launcher.name ||
+        candidate.destroyed ||
+        candidate.forceIdentifier == launcher.forceIdentifier ||
+        candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
+      continue;
+    }
+    targets.push_back(&candidate);
+  }
+  return targets;
+}
+
+QString bombTargetDisplayLabel(const Entity& entity) {
+  return QStringLiteral("%1 (%2 / %3)")
+      .arg(entity.name, forceIdentifierLabel(entity.forceIdentifier), entity.domain);
 }
 
 void setTrackData(QStandardItem* item, const QVariantMap& summary) {
@@ -383,8 +702,10 @@ MainWindow::MainWindow(QWidget* parent)
       _simulationTimer(new QTimer(this)),
       _applyingMapSelection(false),
       _simulationRunning(false),
+      _isPickingBombTarget(false),
       _pendingGraphicMode(),
       _pendingGraphicName(),
+      _bombTargetPickLauncherName(),
       _pendingAreaType(QStringLiteral("Circle")),
       _pendingAreaRadiusMeters(1000.0),
       _pendingAreaAltitudeMeters(0.0),
@@ -412,6 +733,7 @@ MainWindow::MainWindow(QWidget* parent)
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
     this->_scenarioState->advanceSimulation(0.033);
     this->advanceEntityPlans();
+    this->processPendingBombRelease();
     this->syncScenarioStateToUi();
   });
 
@@ -877,6 +1199,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
 
 QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
   const EntityVisualState visualState = this->entityVisualStateFor(entity.name);
+  const QString damageState = entity.damageStateLabel();
 
   QVariantMap summary = makeTrackSummary(
       entity.name,
@@ -884,7 +1207,7 @@ QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
       forceIdentifierLabel(entity.forceIdentifier),
       QStringLiteral("%1 m").arg(entity.altitude),
       formatPosition(entity.latitude, entity.longitude),
-      entity.destroyed ? QStringLiteral("Destroyed") : QStringLiteral("Ready"),
+      damageState,
       entity.latitude,
       entity.longitude);
   summary.insert(QStringLiteral("domain"), entity.domain);
@@ -910,6 +1233,8 @@ QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
   summary.insert(QStringLiteral("speedKnots"), entity.speedKnots);
   summary.insert(QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond);
   summary.insert(QStringLiteral("destroyed"), entity.destroyed);
+  summary.insert(QStringLiteral("damagePercent"), entity.damagePercent);
+  summary.insert(QStringLiteral("damageState"), damageState);
   summary.insert(QStringLiteral("hidden"), visualState.hidden);
   summary.insert(QStringLiteral("radarCoverageVisible"), visualState.radarCoverageVisible);
   summary.insert(QStringLiteral("trackHistoryVisible"), visualState.trackHistoryVisible);
@@ -1595,6 +1920,31 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
     }
   }
 
+  if (this->_isPickingBombTarget) {
+    const QString launcherName = this->_bombTargetPickLauncherName.trimmed();
+    this->_isPickingBombTarget = false;
+    this->_bombTargetPickLauncherName.clear();
+
+    const Entity* launcher = this->findEntityByName(launcherName);
+    const int bombCount =
+        launcher ? weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
+    if (!launcher || launcher->destroyed || bombCount <= 0) {
+      this->_ui->statusLabel->setText(
+          QStringLiteral("No se pudo programar el release de bomba para %1.")
+              .arg(launcherName));
+      return;
+    }
+
+    this->queuePendingBombRelease(
+        launcherName,
+        latitude,
+        longitude,
+        0.0,
+        attackPointLabel(latitude, longitude),
+        QStringLiteral("Pick on map"));
+    return;
+  }
+
   if (this->_entityDialog) {
     this->_entityDialog->setPickedCoordinate(longitude, latitude, height);
     this->_entityDialog->show();
@@ -1679,6 +2029,9 @@ void MainWindow::pauseSimulation() {
 void MainWindow::stopSimulation() {
   this->_simulationRunning = false;
   this->_simulationTimer->stop();
+  this->_isPickingBombTarget = false;
+  this->_bombTargetPickLauncherName.clear();
+  this->clearPendingBombRelease();
   this->_scenarioState->stopMission();
   this->syncScenarioStateToUi();
   this->_ui->statusLabel->setText(QStringLiteral("Mision detenida. Todas las tasks han terminado."));
@@ -2036,6 +2389,7 @@ void MainWindow::syncDetectedContactsToUi() {
 }
 
 void MainWindow::syncScenarioStateToUi() {
+  this->validatePendingBombRelease();
   const QString selectedEntityNameBeforeSync = this->selectedEntityName();
   bool selectedEntityRemoved = false;
 
@@ -2129,7 +2483,77 @@ void MainWindow::syncScenarioStateToUi() {
     }
   }
 
+  QSet<QString> currentMunitionTrackNames;
+  for (const ActiveMunition& munition : this->_scenarioState->activeMunitions()) {
+    currentMunitionTrackNames.insert(munition.id);
+    this->sendTrackToMap(makeMunitionTrackSummary(munition), false);
+  }
+
+  for (const QString& previousName : this->_activeMunitionTrackNames) {
+    if (!currentMunitionTrackNames.contains(previousName)) {
+      this->removeTrackFromMap(previousName);
+    }
+  }
+  this->_activeMunitionTrackNames = currentMunitionTrackNames;
+
+  QSet<QString> currentEffectTrackNames;
+  for (const TransientEffect& effect : this->_scenarioState->transientEffects()) {
+    currentEffectTrackNames.insert(effect.id);
+    this->sendTrackToMap(makeTransientEffectTrackSummary(effect), false);
+  }
+
+  for (const QString& previousName : this->_activeEffectTrackNames) {
+    if (!currentEffectTrackNames.contains(previousName)) {
+      this->removeTrackFromMap(previousName);
+    }
+  }
+  this->_activeEffectTrackNames = currentEffectTrackNames;
+
+  const QString pendingBombTargetTrackName = QStringLiteral("Bomb Target");
+  const QString pendingBombTargetLineTrackName = QStringLiteral("Bomb Target Line");
+  if (this->_pendingBombRelease.pending) {
+    QString teamLabel = QStringLiteral("Friendly");
+    QString releaseStateLabel = QStringLiteral("Armed");
+    if (const Entity* launcher =
+            this->findEntityByName(this->_pendingBombRelease.launcherEntityName)) {
+      teamLabel = forceIdentifierLabel(launcher->forceIdentifier);
+      const BombReleaseGateEvaluation evaluation = evaluateBombReleaseGate(
+          *launcher,
+          this->_pendingBombRelease.targetLatitude,
+          this->_pendingBombRelease.targetLongitude,
+          this->_pendingBombRelease.targetAltitudeMeters);
+      releaseStateLabel = evaluation.stateLabel();
+      this->sendTrackToMap(
+          makePendingBombTargetLineTrackSummary(
+              *launcher,
+              this->_pendingBombRelease.targetLatitude,
+              this->_pendingBombRelease.targetLongitude,
+              this->_pendingBombRelease.targetAltitudeMeters,
+              teamLabel,
+              releaseStateLabel),
+          false);
+    } else {
+      this->removeTrackFromMap(pendingBombTargetLineTrackName);
+    }
+    this->sendTrackToMap(
+        makePendingBombTargetTrackSummary(
+            this->_pendingBombRelease.targetLabel,
+            this->_pendingBombRelease.targetLatitude,
+            this->_pendingBombRelease.targetLongitude,
+            this->_pendingBombRelease.targetAltitudeMeters,
+            teamLabel,
+            releaseStateLabel),
+        false);
+  } else {
+    this->removeTrackFromMap(pendingBombTargetTrackName);
+    this->removeTrackFromMap(pendingBombTargetLineTrackName);
+  }
+
   this->syncDetectedContactsToUi();
+
+  for (const QString& message : this->_scenarioState->takePendingEventLogMessages()) {
+    this->appendLogMessage(message);
+  }
 
   if (!this->_simulationRunning) {
     this->rebuildTacticalGraphicsTree();
@@ -2309,6 +2733,15 @@ void MainWindow::showTaskQuickPlaceholder(const QString& actionName) {
 
 void MainWindow::populateEntityContextMenu(QMenu& menu) {
   const bool entityDestroyed = this->selectedEntityIsDestroyed();
+  const QString entityName = this->selectedEntityName();
+  const Entity* entity = this->findEntityByName(entityName);
+  const bool canUseWeapons = entity && entityCanUseMissileActions(*entity);
+  const int missileCount =
+      entity ? weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
+  const int bombCount =
+      entity ? weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
+  const int detectedMissileTargetCount =
+      entity ? detectedMissileTargetsInRange(this->_scenarioState, *entity).size() : 0;
   QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
   QMenu* movementMenu = taskMenu->addMenu(QStringLiteral("Movement"));
   movementMenu->addAction(
@@ -2363,6 +2796,62 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
 
   QAction* planAction = menu.addAction(QStringLiteral("Plan..."), this, &MainWindow::openEntityPlanDialog);
   planAction->setEnabled(!entityDestroyed);
+
+  QMenu* weaponsMenu = menu.addMenu(QStringLiteral("Weapons"));
+  QAction* addMissileAction = weaponsMenu->addAction(
+      QStringLiteral("Add Missile"),
+      this,
+      &MainWindow::addMissileToSelectedEntity);
+  QAction* addBombAction = weaponsMenu->addAction(
+      QStringLiteral("Add Bomb"),
+      this,
+      &MainWindow::addBombToSelectedEntity);
+  QAction* launchMissileAction = weaponsMenu->addAction(
+      QStringLiteral("Launch Missile (%1)").arg(missileCount),
+      this,
+      &MainWindow::launchMissileFromSelectedEntity);
+  QAction* launchMissileAtAction = weaponsMenu->addAction(
+      QStringLiteral("Launch Missile At..."),
+      this,
+      &MainWindow::launchMissileAtSelectedEntity);
+  QAction* releaseBombAction = weaponsMenu->addAction(
+      QStringLiteral("Release Bomb (%1)").arg(bombCount),
+      this,
+      &MainWindow::releaseBombFromSelectedEntity);
+  QMenu* releaseBombAtMenu = weaponsMenu->addMenu(QStringLiteral("Release Bomb At..."));
+  QAction* releaseBombAtSurfaceAction = releaseBombAtMenu->addAction(
+      QStringLiteral("Surface Entity..."),
+      this,
+      &MainWindow::releaseBombAtSurfaceEntity);
+  QAction* releaseBombAtCustomAction = releaseBombAtMenu->addAction(
+      QStringLiteral("Custom Coordinates..."),
+      this,
+      &MainWindow::releaseBombAtCustomCoordinates);
+  addMissileAction->setEnabled(canUseWeapons);
+  addBombAction->setEnabled(canUseWeapons);
+  launchMissileAction->setEnabled(
+      canUseWeapons && missileCount > 0 && this->_simulationRunning);
+  launchMissileAtAction->setEnabled(
+      canUseWeapons &&
+      missileCount > 0 &&
+      this->_simulationRunning &&
+      detectedMissileTargetCount > 0);
+  releaseBombAction->setEnabled(
+      canUseWeapons && bombCount > 0 && this->_simulationRunning);
+  releaseBombAtMenu->setEnabled(
+      canUseWeapons && bombCount > 0 && this->_simulationRunning);
+  releaseBombAtSurfaceAction->setEnabled(
+      canUseWeapons && bombCount > 0 && this->_simulationRunning);
+  releaseBombAtCustomAction->setEnabled(
+      canUseWeapons && bombCount > 0 && this->_simulationRunning);
+  if (canUseWeapons && missileCount > 0 && this->_simulationRunning &&
+      detectedMissileTargetCount <= 0) {
+    const QString message =
+        QStringLiteral("No detected air targets in missile range for %1.")
+            .arg(entityName);
+    launchMissileAtAction->setToolTip(message);
+    launchMissileAtAction->setStatusTip(message);
+  }
 
   menu.addSeparator();
   menu.addAction(QStringLiteral("Information..."), this, &MainWindow::openSelectedEntityDetails);
@@ -3454,6 +3943,191 @@ void MainWindow::restoreSelectedEntity() {
   this->setSelectedEntityDestroyed(false);
 }
 
+void MainWindow::addMissileToSelectedEntity() {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  if (!this->_scenarioState->addMissileToEntity(entityName, 1)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No se pudo anadir un misil a %1.").arg(entityName));
+    return;
+  }
+
+  this->appendLogMessage(QStringLiteral("Missile added to %1").arg(entityName));
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Misil anadido a %1.").arg(entityName));
+}
+
+void MainWindow::addBombToSelectedEntity() {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  if (!this->_scenarioState->addBombToEntity(entityName, 1)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No se pudo anadir una bomba a %1.").arg(entityName));
+    return;
+  }
+
+  this->appendLogMessage(QStringLiteral("Bomb added to %1").arg(entityName));
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Bomba anadida a %1.").arg(entityName));
+}
+
+void MainWindow::launchMissileFromSelectedEntity() {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  const Entity* entity = this->findEntityByName(entityName);
+  const int missileCount =
+      entity ? weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
+
+  if (missileCount <= 0) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No hay misiles disponibles en %1.").arg(entityName));
+    return;
+  }
+
+  if (!this->_simulationRunning) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Arranca la simulacion para lanzar el misil."));
+    return;
+  }
+
+  if (!this->_scenarioState->launchMissile(entityName)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No se pudo lanzar un misil desde %1.").arg(entityName));
+    return;
+  }
+
+  this->appendLogMessage(QStringLiteral("Missile launched from %1").arg(entityName));
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Misil lanzado desde %1. Quedan %2.")
+          .arg(entityName)
+          .arg(qMax(0, missileCount - 1)));
+}
+
+void MainWindow::releaseBombFromSelectedEntity() {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty()) {
+    return;
+  }
+
+  const Entity* entity = this->findEntityByName(entityName);
+  const int bombCount =
+      entity ? weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
+
+  if (bombCount <= 0) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No hay bombas disponibles en %1.").arg(entityName));
+    return;
+  }
+
+  if (!this->_simulationRunning) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Arranca la simulacion para soltar la bomba."));
+    return;
+  }
+
+  if (!this->_scenarioState->releaseBomb(entityName)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No se pudo soltar una bomba desde %1.").arg(entityName));
+    return;
+  }
+
+  this->appendLogMessage(QStringLiteral("Bomb released from %1").arg(entityName));
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Bomba soltada desde %1. Quedan %2.")
+          .arg(entityName)
+          .arg(qMax(0, bombCount - 1)));
+}
+
+void MainWindow::launchMissileAtSelectedEntity() {
+  const QString launcherName = this->selectedEntityName();
+  if (launcherName.isEmpty()) {
+    return;
+  }
+
+  const Entity* launcher = this->findEntityByName(launcherName);
+  const int missileCount =
+      launcher ? weaponQuantity(*launcher, QStringLiteral("Missile")) : 0;
+  if (!launcher || missileCount <= 0) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No hay misiles disponibles en %1.").arg(launcherName));
+    return;
+  }
+
+  if (!this->_simulationRunning) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Arranca la simulacion para lanzar el misil."));
+    return;
+  }
+
+  const QVector<MissileTargetCandidate> targets =
+      detectedMissileTargetsInRange(this->_scenarioState, *launcher);
+  if (targets.isEmpty()) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No detected air targets in missile range for %1.")
+            .arg(launcherName));
+    return;
+  }
+
+  QStringList options;
+  QHash<QString, QString> targetNameByOption;
+  for (const MissileTargetCandidate& candidate : targets) {
+    if (!candidate.entity) {
+      continue;
+    }
+    const QString option =
+        missileTargetDisplayLabel(*candidate.entity, candidate.rangeMeters);
+    options.push_back(option);
+    targetNameByOption.insert(option, candidate.entity->name);
+  }
+
+  bool ok = false;
+  const QString selectedOption = QInputDialog::getItem(
+      this,
+      QStringLiteral("Launch Missile At"),
+      QStringLiteral("Target"),
+      options,
+      0,
+      false,
+      &ok);
+  if (!ok || selectedOption.trimmed().isEmpty()) {
+    return;
+  }
+
+  const QString targetName = targetNameByOption.value(selectedOption).trimmed();
+  if (targetName.isEmpty()) {
+    return;
+  }
+
+  if (!this->_scenarioState->launchMissileAt(launcherName, targetName)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Target out of missile range for %1.")
+            .arg(launcherName));
+    return;
+  }
+
+  this->appendLogMessage(
+      QStringLiteral("Missile launched from %1 at %2")
+          .arg(launcherName, targetName));
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Misil lanzado desde %1 hacia %2. Quedan %3.")
+          .arg(launcherName, targetName)
+          .arg(qMax(0, missileCount - 1)));
+}
+
 void MainWindow::showContextMenuPlaceholder(const QString& actionName) {
   const QString entityName = this->selectedEntityName();
   const QString targetLabel = entityName.isEmpty()
@@ -4080,6 +4754,232 @@ bool MainWindow::currentSelectionIsTacticalGraphic() const {
     return false;
   }
   return currentIndex.parent() == this->_tacticalGraphicsRootItem->index();
+}
+
+void MainWindow::queuePendingBombRelease(
+    const QString& launcherEntityName,
+    double targetLatitude,
+    double targetLongitude,
+    double targetAltitudeMeters,
+    const QString& targetLabel,
+    const QString& sourceDescription) {
+  this->_pendingBombRelease.launcherEntityName = launcherEntityName.trimmed();
+  this->_pendingBombRelease.targetLatitude = targetLatitude;
+  this->_pendingBombRelease.targetLongitude = targetLongitude;
+  this->_pendingBombRelease.targetAltitudeMeters = targetAltitudeMeters;
+  this->_pendingBombRelease.targetLabel = targetLabel.trimmed();
+  this->_pendingBombRelease.sourceDescription = sourceDescription.trimmed();
+  this->_pendingBombRelease.pending = true;
+
+  this->appendLogMessage(
+      QStringLiteral("Bomb release queued for %1 on %2 (%3)")
+          .arg(
+              this->_pendingBombRelease.launcherEntityName,
+              this->_pendingBombRelease.targetLabel,
+              this->_pendingBombRelease.sourceDescription));
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Bomb release armed for %1 on %2.")
+          .arg(
+              this->_pendingBombRelease.launcherEntityName,
+              this->_pendingBombRelease.targetLabel));
+}
+
+void MainWindow::clearPendingBombRelease() {
+  this->_pendingBombRelease = PendingBombRelease{};
+}
+
+void MainWindow::validatePendingBombRelease() {
+  if (!this->_pendingBombRelease.pending) {
+    return;
+  }
+
+  const Entity* launcher =
+      this->findEntityByName(this->_pendingBombRelease.launcherEntityName);
+  if (!launcher || launcher->destroyed) {
+    const QString launcherName = this->_pendingBombRelease.launcherEntityName;
+    this->clearPendingBombRelease();
+    if (!launcherName.trimmed().isEmpty()) {
+      this->_ui->statusLabel->setText(
+          QStringLiteral("Bomb release cleared for %1.").arg(launcherName));
+    }
+  }
+}
+
+void MainWindow::processPendingBombRelease() {
+  if (!this->_pendingBombRelease.pending) {
+    return;
+  }
+
+  const Entity* launcher =
+      this->findEntityByName(this->_pendingBombRelease.launcherEntityName);
+  if (!launcher || launcher->destroyed) {
+    this->validatePendingBombRelease();
+    return;
+  }
+
+  const int bombCount = weaponQuantity(*launcher, QStringLiteral("Bomb"));
+  if (bombCount <= 0) {
+    const QString launcherName = this->_pendingBombRelease.launcherEntityName;
+    this->clearPendingBombRelease();
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Bomb release cleared for %1. No bombs available.")
+            .arg(launcherName));
+    return;
+  }
+
+  const BombReleaseGateEvaluation evaluation = evaluateBombReleaseGate(
+      *launcher,
+      this->_pendingBombRelease.targetLatitude,
+      this->_pendingBombRelease.targetLongitude,
+      this->_pendingBombRelease.targetAltitudeMeters);
+  if (!evaluation.readyToRelease()) {
+    return;
+  }
+
+  const QString launcherName = this->_pendingBombRelease.launcherEntityName;
+  const QString targetLabel = this->_pendingBombRelease.targetLabel;
+  const QString sourceDescription = this->_pendingBombRelease.sourceDescription;
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Bomb release window reached for %1 on %2.")
+          .arg(launcherName, targetLabel));
+  QTimer::singleShot(0, this, [this, launcherName, targetLabel, sourceDescription]() {
+    if (!this->_pendingBombRelease.pending ||
+        this->_pendingBombRelease.launcherEntityName != launcherName) {
+      return;
+    }
+    if (!this->_scenarioState->releaseBomb(launcherName)) {
+      this->clearPendingBombRelease();
+      this->_ui->statusLabel->setText(
+          QStringLiteral("No se pudo soltar una bomba desde %1.")
+              .arg(launcherName));
+      this->syncScenarioStateToUi();
+      return;
+    }
+
+    this->appendLogMessage(
+        QStringLiteral("Bomb released from %1 at %2 (%3)")
+            .arg(
+                launcherName,
+                targetLabel,
+                sourceDescription));
+    this->clearPendingBombRelease();
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Bomba soltada desde %1 sobre %2.")
+            .arg(launcherName, targetLabel));
+    this->syncScenarioStateToUi();
+  });
+}
+
+void MainWindow::releaseBombAtSurfaceEntity() {
+  this->clearPendingBombRelease();
+
+  const QString launcherName = this->selectedEntityName();
+  if (launcherName.isEmpty()) {
+    return;
+  }
+
+  const Entity* launcher = this->findEntityByName(launcherName);
+  const int bombCount =
+      launcher ? weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
+  if (!launcher || bombCount <= 0) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No hay bombas disponibles en %1.").arg(launcherName));
+    return;
+  }
+
+  if (!this->_simulationRunning) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Arranca la simulacion para programar el release de la bomba."));
+    return;
+  }
+
+  const QVector<const Entity*> targets =
+      validBombReleaseTargets(this->_scenarioState, *launcher);
+  if (targets.isEmpty()) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No hay surface targets validos para %1.")
+            .arg(launcherName));
+    return;
+  }
+
+  QStringList options;
+  QHash<QString, QString> targetNameByOption;
+  for (const Entity* target : targets) {
+    if (!target) {
+      continue;
+    }
+    const QString option = bombTargetDisplayLabel(*target);
+    options.push_back(option);
+    targetNameByOption.insert(option, target->name);
+  }
+
+  bool ok = false;
+  const QString selectedOption = QInputDialog::getItem(
+      this,
+      QStringLiteral("Release Bomb At"),
+      QStringLiteral("Surface Target"),
+      options,
+      0,
+      false,
+      &ok);
+  if (!ok || selectedOption.trimmed().isEmpty()) {
+    this->clearPendingBombRelease();
+    return;
+  }
+
+  const QString targetName = targetNameByOption.value(selectedOption).trimmed();
+  const Entity* target = this->findEntityByName(targetName);
+  if (!target) {
+    this->clearPendingBombRelease();
+    return;
+  }
+
+  this->queuePendingBombRelease(
+      launcherName,
+      target->latitude,
+      target->longitude,
+      static_cast<double>(target->altitude),
+      target->name,
+      QStringLiteral("Surface Entity"));
+}
+
+void MainWindow::releaseBombAtCustomCoordinates() {
+  this->clearPendingBombRelease();
+  this->_isPickingBombTarget = false;
+  this->_bombTargetPickLauncherName.clear();
+
+  const QString launcherName = this->selectedEntityName();
+  if (launcherName.isEmpty()) {
+    return;
+  }
+
+  const Entity* launcher = this->findEntityByName(launcherName);
+  const int bombCount =
+      launcher ? weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
+  if (!launcher || bombCount <= 0) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No hay bombas disponibles en %1.").arg(launcherName));
+    return;
+  }
+
+  if (!this->_simulationRunning) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Arranca la simulacion para programar el release de la bomba."));
+    return;
+  }
+
+  if (!this->_pendingGraphicMode.trimmed().isEmpty()) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Termina antes la captura de coordenadas que ya esta activa."));
+    return;
+  }
+
+  this->_isPickingBombTarget = true;
+  this->_bombTargetPickLauncherName = launcherName;
+  this->beginTaskCoordinatePick();
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Haz clic en el mapa para fijar el punto de ataque de %1.")
+          .arg(launcherName));
 }
 
 void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {

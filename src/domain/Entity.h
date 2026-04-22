@@ -6,6 +6,11 @@
 #include <QString>
 #include <QVector>
 
+struct WeaponInventoryItem {
+  QString weaponType;
+  int quantity = 0;
+};
+
 struct Entity {
   static QString buildEntityTypeCode(
       int kind,
@@ -34,6 +39,19 @@ struct Entity {
         entitySubcategory,
         entitySpecific,
         entityExtra);
+  }
+
+  QString damageStateLabel() const {
+    if (destroyed || damagePercent >= 100.0) {
+      return QStringLiteral("Destroyed");
+    }
+    if (damagePercent >= 30.0) {
+      return QStringLiteral("Damaged");
+    }
+    if (damagePercent > 0.0) {
+      return QStringLiteral("Lightly Damaged");
+    }
+    return QStringLiteral("Intact");
   }
 
   QString name;
@@ -65,7 +83,9 @@ struct Entity {
   double speedKnots = 0.0;
   double verticalSpeedMetersPerSecond = 0.0;
   bool destroyed = false;
+  double damagePercent = 0.0;
   EntityTask currentTask;
+  QVector<WeaponInventoryItem> weapons;
   SensorDefinitions sensors;
   SensorContacts sensorContacts;
 };

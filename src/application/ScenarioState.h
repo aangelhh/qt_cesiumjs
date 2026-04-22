@@ -1,10 +1,12 @@
 #pragma once
 
 #include "domain/Entity.h"
+#include "domain/Munition.h"
 #include "domain/TacticalGraphic.h"
 #include "domain/Task.h"
 
 #include <QString>
+#include <QStringList>
 #include <QVector>
 #include <unordered_map>
 
@@ -14,6 +16,8 @@ public:
 
   void addEntity(const Entity& entity);
   const QVector<Entity>& entities() const;
+  const QVector<ActiveMunition>& activeMunitions() const;
+  const QVector<TransientEffect>& transientEffects() const;
   QVector<Entity>& entitiesMutable() { return _entities; }
   bool removeEntity(const QString& entityName);
   void addWaypoint(const Waypoint& waypoint);
@@ -28,6 +32,14 @@ public:
   bool assignTask(const QString& entityName, const EntityTask& task);
   bool clearTask(const QString& entityName);
   bool setEntityDestroyed(const QString& entityName, bool destroyed);
+  void applyMissileDamage(const QString& targetName, double damageAmount);
+  bool addMissileToEntity(const QString& entityName, int quantity = 1);
+  bool addBombToEntity(const QString& entityName, int quantity = 1);
+  bool launchMissile(const QString& entityName);
+  bool launchMissileAt(const QString& launcherName, const QString& targetName);
+  bool releaseBomb(const QString& entityName);
+  static double missileMaxRangeMeters();
+  QStringList takePendingEventLogMessages();
   domain::TaskStack* getTaskStack(const QString& entityName);
   void refreshSensors();
   void advanceSimulation(double deltaSeconds);
@@ -39,8 +51,20 @@ public:
 
 private:
   QVector<Entity> _entities;
+  QVector<ActiveMunition> _activeMunitions;
+  QVector<TransientEffect> _transientEffects;
+  QStringList _pendingEventLogMessages;
   std::unordered_map<QString, domain::TaskStack> _taskStacks;
   QVector<Waypoint> _waypoints;
   QVector<RouteGraphic> _routes;
   QVector<AreaDefinition> _areas;
+  int _nextMunitionSerial = 1;
+
+  void applyDamageWithSource(
+      const QString& targetName,
+      double damageAmount,
+      const QString& sourceLabel);
+  void applyBombBlastDamage(const ActiveMunition& munition);
+  void advanceActiveMunitions(double deltaSeconds);
+  void advanceTransientEffects(double deltaSeconds);
 };

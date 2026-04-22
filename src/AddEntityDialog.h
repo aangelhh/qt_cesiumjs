@@ -41,6 +41,7 @@ private:
   void syncModelFromDisSelection();
   void applyModelSelectionToDisFields();
   void syncDynamicsControls();
+  void syncWeaponControls();
 
   QVector<ModelCatalogEntry> _modelCatalog;
   DisEntityCatalog _disCatalog;
@@ -66,9 +67,11 @@ private:
   QDoubleSpinBox* _speedSpin;
   QDoubleSpinBox* _verticalSpeedSpin;
   QCheckBox* _enableFlightTaskCheck;
+  QCheckBox* _attachMissilesCheck;
   QDoubleSpinBox* _taskHeadingSpin;
   QSpinBox* _taskAltitudeSpin;
   QDoubleSpinBox* _taskSpeedSpin;
+  QSpinBox* _missileCountSpin;
   QDoubleSpinBox* _radarRangeSpin;
   QDoubleSpinBox* _radarAzimuthSpin;
   QDoubleSpinBox* _radarElevationCenterSpin;
