@@ -57,6 +57,8 @@ struct Entity {
   int entitySpecific = 0;
   int entityExtra = 0;
   double headingDegrees = 0.0;
+  double pitchDegrees = 0.0;
+  double rollDegrees = 0.0;
   bool flightDynamicsEnabled = false;
   QString flightDynamicsMode = QStringLiteral("kinematic");
   QString jsbsimAircraftModel;

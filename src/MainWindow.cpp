@@ -160,6 +160,8 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("modelName"), QString()},
       {QStringLiteral("modelUri"), QString()},
       {QStringLiteral("headingDegrees"), 0.0},
+      {QStringLiteral("pitchDegrees"), 0.0},
+      {QStringLiteral("rollDegrees"), 0.0},
       {QStringLiteral("flightDynamicsEnabled"), false},
       {QStringLiteral("flightDynamicsMode"), QStringLiteral("kinematic")},
       {QStringLiteral("jsbsimAircraftModel"), QString()},
@@ -900,6 +902,8 @@ QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
   summary.insert(QStringLiteral("modelName"), entity.modelName);
   summary.insert(QStringLiteral("modelUri"), entity.modelUri);
   summary.insert(QStringLiteral("headingDegrees"), entity.headingDegrees);
+  summary.insert(QStringLiteral("pitchDegrees"), entity.pitchDegrees);
+  summary.insert(QStringLiteral("rollDegrees"), entity.rollDegrees);
   summary.insert(QStringLiteral("flightDynamicsEnabled"), entity.flightDynamicsEnabled);
   summary.insert(QStringLiteral("flightDynamicsMode"), entity.flightDynamicsMode);
   summary.insert(QStringLiteral("jsbsimAircraftModel"), entity.jsbsimAircraftModel);

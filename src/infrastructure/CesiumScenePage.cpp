@@ -1253,7 +1253,13 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           }
 
           const headingRadians = Cesium.Math.toRadians(Number(track.headingDegrees || 0.0));
-          const headingPitchRoll = new Cesium.HeadingPitchRoll(headingRadians, 0.0, 0.0);
+          const pitchRadians = Cesium.Math.toRadians(Number(track.pitchDegrees || 0.0));
+          const rollRadians = Cesium.Math.toRadians(Number(track.rollDegrees || 0.0));
+          const headingPitchRoll = new Cesium.HeadingPitchRoll(
+            headingRadians,
+            pitchRadians,
+            rollRadians
+          );
           return Cesium.Transforms.headingPitchRollQuaternion(
             position,
             headingPitchRoll

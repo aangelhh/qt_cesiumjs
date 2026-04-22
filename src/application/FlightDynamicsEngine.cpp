@@ -21,6 +21,15 @@ constexpr double kAccelerationKnotsPerSecond = 8.0;
 constexpr double kClimbRateMetersPerSecond = 20.0;
 constexpr double kMetersToFeet = 3.28084;
 constexpr double kFeetToMeters = 1.0 / kMetersToFeet;
+constexpr double kMinimumAttitudeSpeedMetersPerSecond = 5.0;
+constexpr double kPitchResponseDegreesPerSecond = 18.0;
+constexpr double kRollResponseDegreesPerSecond = 45.0;
+constexpr double kMaxPitchDegrees = 20.0;
+constexpr double kMaxRollDegrees = 35.0;
+constexpr double kGravityMetersPerSecondSquared = 9.81;
+constexpr double kClimbPitchBiasDegrees = 4.0;
+constexpr double kSettledHeadingStepDegrees = 0.08;
+constexpr double kSettledHeadingErrorDegrees = 0.75;
 
 double clampStep(double currentValue, double targetValue, double maxStep) {
   const double delta = targetValue - currentValue;
@@ -49,6 +58,91 @@ double shortestSignedAngle(double currentHeading, double targetHeading) {
     delta += 360.0;
   }
   return delta;
+}
+
+double smoothAttitudeDegrees(
+    double currentDegrees,
+    double targetDegrees,
+    double maxAbsDegrees,
+    double responseDegreesPerSecond,
+    double deltaSeconds) {
+  const double limitedTargetDegrees = qBound(-maxAbsDegrees, targetDegrees, maxAbsDegrees);
+  return clampStep(
+      currentDegrees,
+      limitedTargetDegrees,
+      responseDegreesPerSecond * deltaSeconds);
+}
+
+void relaxDerivedAttitude(Entity& entity, double deltaSeconds) {
+  entity.pitchDegrees = smoothAttitudeDegrees(
+      entity.pitchDegrees,
+      0.0,
+      kMaxPitchDegrees,
+      kPitchResponseDegreesPerSecond,
+      deltaSeconds);
+  entity.rollDegrees = smoothAttitudeDegrees(
+      entity.rollDegrees,
+      0.0,
+      kMaxRollDegrees,
+      kRollResponseDegreesPerSecond,
+      deltaSeconds);
+}
+
+void updateDerivedKinematicAttitude(
+    Entity& entity,
+    double previousHeadingDegrees,
+    double deltaSeconds) {
+  if (deltaSeconds <= 0.0) {
+    return;
+  }
+
+  const double horizontalSpeedMetersPerSecond =
+      qMax(0.0, entity.speedKnots * kKnotsToMetersPerSecond);
+  if (horizontalSpeedMetersPerSecond < kMinimumAttitudeSpeedMetersPerSecond) {
+    relaxDerivedAttitude(entity, deltaSeconds);
+    return;
+  }
+
+  const double flightPathPitchDegrees = qRadiansToDegrees(qAtan2(
+      entity.verticalSpeedMetersPerSecond,
+      horizontalSpeedMetersPerSecond));
+  const double headingStepDegrees =
+      shortestSignedAngle(previousHeadingDegrees, entity.headingDegrees);
+  const double headingErrorDegrees = shortestSignedAngle(
+      entity.headingDegrees,
+      entity.currentTask.targetHeadingDegrees);
+  const double yawRateRadiansPerSecond =
+      qDegreesToRadians(headingStepDegrees) / deltaSeconds;
+  const double rawRollDegrees = qRadiansToDegrees(qAtan(
+      (horizontalSpeedMetersPerSecond * yawRateRadiansPerSecond) /
+      kGravityMetersPerSecondSquared));
+  const double climbBiasDegrees = qBound(
+      -kClimbPitchBiasDegrees,
+      (entity.verticalSpeedMetersPerSecond / kClimbRateMetersPerSecond) *
+          kClimbPitchBiasDegrees,
+      kClimbPitchBiasDegrees);
+  const double rawPitchDegrees = flightPathPitchDegrees + climbBiasDegrees;
+  const bool onTarget = entity.currentTask.status == QStringLiteral("On target");
+
+  const double safePitchDegrees = std::isfinite(rawPitchDegrees) ? rawPitchDegrees : 0.0;
+  double safeRollDegrees = std::isfinite(rawRollDegrees) ? rawRollDegrees : 0.0;
+  if (onTarget ||
+      qAbs(headingStepDegrees) <= kSettledHeadingStepDegrees ||
+      qAbs(headingErrorDegrees) <= kSettledHeadingErrorDegrees) {
+    safeRollDegrees = 0.0;
+  }
+  entity.pitchDegrees = smoothAttitudeDegrees(
+      entity.pitchDegrees,
+      safePitchDegrees,
+      kMaxPitchDegrees,
+      kPitchResponseDegreesPerSecond,
+      deltaSeconds);
+  entity.rollDegrees = smoothAttitudeDegrees(
+      entity.rollDegrees,
+      safeRollDegrees,
+      kMaxRollDegrees,
+      kRollResponseDegreesPerSecond,
+      deltaSeconds);
 }
 
 double bearingDegrees(
@@ -289,6 +383,7 @@ struct AircraftState {
   double longitudeDeg = 0.0;
   double altitudeMeters = 0.0;
   double headingDeg = 0.0;
+  double pitchRad = 0.0;
   double bankRad = 0.0;
   double trueAirspeedKnots = 0.0;
   double verticalSpeedMetersPerSecond = 0.0;
@@ -345,6 +440,7 @@ bool readJsbsimAircraftState(JSBSim::FGFDMExec& exec, AircraftState& state) {
   const double longitudeDeg = exec.GetPropertyValue("position/long-gc-deg");
   const double altitudeFeet = exec.GetPropertyValue("position/h-sl-ft");
   const double headingDeg = exec.GetPropertyValue("attitude/psi-deg");
+  const double pitchRad = exec.GetPropertyValue("attitude/theta-rad");
   const double bankRad = exec.GetPropertyValue("attitude/phi-rad");
   const double trueAirspeedKnots = exec.GetPropertyValue("velocities/vtrue-kts");
   const double verticalSpeedFeetPerSecond = exec.GetPropertyValue("velocities/h-dot-fps");
@@ -353,6 +449,7 @@ bool readJsbsimAircraftState(JSBSim::FGFDMExec& exec, AircraftState& state) {
       !std::isfinite(longitudeDeg) ||
       !std::isfinite(altitudeFeet) ||
       !std::isfinite(headingDeg) ||
+      !std::isfinite(pitchRad) ||
       !std::isfinite(bankRad) ||
       !std::isfinite(trueAirspeedKnots) ||
       !std::isfinite(verticalSpeedFeetPerSecond)) {
@@ -363,6 +460,7 @@ bool readJsbsimAircraftState(JSBSim::FGFDMExec& exec, AircraftState& state) {
   state.longitudeDeg = longitudeDeg;
   state.altitudeMeters = altitudeFeet * kFeetToMeters;
   state.headingDeg = normalizeDegrees360(headingDeg);
+  state.pitchRad = pitchRad;
   state.bankRad = bankRad;
   state.trueAirspeedKnots = trueAirspeedKnots;
   state.verticalSpeedMetersPerSecond = verticalSpeedFeetPerSecond * kFeetToMeters;
@@ -513,6 +611,8 @@ bool applyJsbsimStep(Entity& entity, double deltaSeconds) {
       0,
       static_cast<int>(qRound(aircraftState.altitudeMeters)));
   entity.headingDegrees = aircraftState.headingDeg;
+  entity.pitchDegrees = qRadiansToDegrees(aircraftState.pitchRad);
+  entity.rollDegrees = qRadiansToDegrees(aircraftState.bankRad);
   entity.speedKnots = qMax(0.0, aircraftState.trueAirspeedKnots);
   entity.verticalSpeedMetersPerSecond =
       aircraftState.verticalSpeedMetersPerSecond;
@@ -544,9 +644,11 @@ void FlightDynamicsEngine::advanceEntity(
   if (!entity.currentTask.enabled) {
     entity.speedKnots = 0.0;
     entity.verticalSpeedMetersPerSecond = 0.0;
+    relaxDerivedAttitude(entity, deltaSeconds);
     return;
   }
 
+  const double previousHeadingDegrees = entity.headingDegrees;
   resolveTaskTargets(entity, taskStacks, snapshot, deltaSeconds);
 
 #if defined(QTTEST_HAS_JSBSIM)
@@ -565,4 +667,5 @@ void FlightDynamicsEngine::advanceEntity(
 #endif
 
   applyKinematicStep(entity, deltaSeconds);
+  updateDerivedKinematicAttitude(entity, previousHeadingDegrees, deltaSeconds);
 }
