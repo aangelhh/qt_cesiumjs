@@ -165,6 +165,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       let selectedQtTrackName = null;
       const qtEntitiesByName = new Map();
       const qtOverlayEntitiesByName = new Map();
+      const qtNonPickablePrimitivesByName = new Map();
       const qtTrackHistoryMaxSamples = 96;
       const qtTrackHistorySampleDistanceMeters = 150.0;
 
@@ -250,6 +251,14 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       function pendingBombReleaseState(track) {
         const state = String(track && track.pendingBombReleaseState || '').trim();
         return state.length > 0 ? state : 'Armed';
+      }
+
+      function pendingBombTargetDistanceText(track) {
+        const distanceMeters = Number(track && track.pendingBombTargetDistanceMeters);
+        if (!Number.isFinite(distanceMeters) || distanceMeters < 0.0) {
+          return '';
+        }
+        return (distanceMeters / 1000.0).toFixed(1) + ' km';
       }
 
       function effectDisplayColor(track) {
@@ -843,6 +852,12 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         for (const bundle of qtOverlayEntitiesByName.values()) {
           setOverlayVisibility(bundle, overlaysVisible);
         }
+        for (const primitiveBundle of qtNonPickablePrimitivesByName.values()) {
+          const primitive = primitiveBundle.collection || primitiveBundle.primitive || primitiveBundle;
+          if (primitive) {
+            primitive.show = overlaysVisible;
+          }
+        }
         reportStatus(overlaysVisible
           ? 'Overlays tacticos visibles.'
           : 'Overlays tacticos ocultos.');
@@ -892,6 +907,103 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           return entity.properties.qtTrackName.getValue();
         }
         return entity.name || null;
+      }
+
+      function trackNameIsSelectable(trackName) {
+        if (!trackName) {
+          return false;
+        }
+        if (qtGraphicsByName.has(trackName)) {
+          return true;
+        }
+        const entity = qtEntitiesByName.get(trackName);
+        const track = entity && entity._qtTrackData ? entity._qtTrackData : null;
+        if (!entity || !track) {
+          return false;
+        }
+        return !trackIsPendingBombTarget(track) && !trackIsPendingBombTargetLine(track);
+      }
+
+      function trackCanBeTracked(track) {
+        return !!track &&
+          !trackIsEffect(track) &&
+          !trackIsPendingBombTarget(track) &&
+          !trackIsPendingBombTargetLine(track);
+      }
+
+      function clearTrackingIfNonTrackable(entity, track) {
+        if (!viewer || !entity || trackCanBeTracked(track)) {
+          return;
+        }
+        if (viewer.trackedEntity === entity) {
+          viewer.trackedEntity = undefined;
+        }
+        if (viewer.selectedEntity === entity) {
+          viewer.selectedEntity = undefined;
+        }
+        if (highlightedEntity === entity) {
+          applyHighlight(null);
+        }
+      }
+
+      let selectionGuardActive = false;
+      let lastTrackableSelectedEntity = null;
+
+      function restoreTrackableSelection() {
+        if (!viewer || selectionGuardActive) {
+          return;
+        }
+
+        const entity = lastTrackableSelectedEntity;
+        selectionGuardActive = true;
+        if (entity && trackCanBeTracked(entity._qtTrackData)) {
+          viewer.selectedEntity = entity;
+          applyHighlight(entity);
+        } else {
+          viewer.selectedEntity = undefined;
+          applyHighlight(null);
+        }
+        selectionGuardActive = false;
+      }
+
+      function selectAndTrackEntity(entity) {
+        if (!viewer || !entity || !trackCanBeTracked(entity._qtTrackData)) {
+          return;
+        }
+        if (viewer.trackedEntity && viewer.trackedEntity !== entity) {
+          viewer.trackedEntity = undefined;
+        }
+        lastTrackableSelectedEntity = entity;
+        viewer.selectedEntity = entity;
+        applyHighlight(entity);
+        window.setTimeout(function() {
+          if (viewer && trackCanBeTracked(entity._qtTrackData)) {
+            lastTrackableSelectedEntity = entity;
+            viewer.selectedEntity = entity;
+            applyHighlight(entity);
+            viewer.trackedEntity = entity;
+          }
+        }, 0);
+      }
+
+      function selectableTrackNameFromWindowPosition(windowPosition) {
+        if (!viewer || !windowPosition) {
+          return null;
+        }
+
+        const picks = viewer.scene.drillPick(windowPosition);
+        if (Array.isArray(picks)) {
+          for (const picked of picks) {
+            const trackName = entityNameFromPick(picked);
+            if (trackNameIsSelectable(trackName)) {
+              return trackName;
+            }
+          }
+        }
+
+        const picked = viewer.scene.pick(windowPosition);
+        const trackName = entityNameFromPick(picked);
+        return trackNameIsSelectable(trackName) ? trackName : null;
       }
 
       function createInterpolatedMotionState(initialPosition) {
@@ -1030,6 +1142,54 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             Number(point.altitudeMeters || 0.0)
           );
         });
+      }
+
+      function removeQtNonPickablePrimitive(name) {
+        if (!viewer || !name) {
+          return;
+        }
+        const primitiveBundle = qtNonPickablePrimitivesByName.get(name);
+        const primitive = primitiveBundle
+          ? (primitiveBundle.collection || primitiveBundle.primitive || primitiveBundle)
+          : null;
+        if (primitive) {
+          viewer.scene.primitives.remove(primitive);
+          qtNonPickablePrimitivesByName.delete(name);
+        }
+      }
+
+      function addOrUpdatePendingBombTargetLine(track, color) {
+        if (!viewer || !track || !track.name) {
+          return false;
+        }
+
+        const positions = buildPendingBombTargetLinePositions(track);
+        if (positions.length < 2) {
+          removeQtNonPickablePrimitive(track.name);
+          return true;
+        }
+
+        const material = Cesium.Material.fromType('Color', {
+          color: color.withAlpha(0.58),
+        });
+        let bundle = qtNonPickablePrimitivesByName.get(track.name);
+        if (!bundle || !bundle.collection || !bundle.polyline) {
+          const collection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
+          const polyline = collection.add({
+            positions: positions,
+            width: 2.0,
+            material: material,
+          });
+          collection.show = overlaysVisible;
+          bundle = { collection: collection, polyline: polyline };
+          qtNonPickablePrimitivesByName.set(track.name, bundle);
+        } else {
+          bundle.collection.show = overlaysVisible;
+          bundle.polyline.positions = positions;
+          bundle.polyline.width = 2.0;
+          bundle.polyline.material = material;
+        }
+        return true;
       }
 
       function emptyRadarPolygonHierarchy() {
@@ -1840,6 +2000,35 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const isPendingBombTargetLine = trackIsPendingBombTargetLine(track);
         const isPendingBombTarget = trackIsPendingBombTarget(track);
         const color = trackDisplayColor(track);
+        if (isPendingBombTargetLine) {
+          const existingEntity = qtEntitiesByName.get(track.name);
+          if (existingEntity) {
+            clearTrackingIfNonTrackable(existingEntity, track);
+            viewer.entities.remove(existingEntity);
+            qtEntitiesByName.delete(track.name);
+          }
+          const overlayBundle = qtOverlayEntitiesByName.get(track.name);
+          if (overlayBundle) {
+            if (overlayBundle.route) {
+              viewer.entities.remove(overlayBundle.route);
+            }
+            if (overlayBundle.area) {
+              viewer.entities.remove(overlayBundle.area);
+            }
+            if (overlayBundle.label) {
+              viewer.entities.remove(overlayBundle.label);
+            }
+            if (overlayBundle.radarFans) {
+              for (const fan of overlayBundle.radarFans) {
+                removeRadarFanBundle(fan);
+              }
+            }
+            clearTrackHistoryBundle(overlayBundle);
+            qtOverlayEntitiesByName.delete(track.name);
+          }
+          return addOrUpdatePendingBombTargetLine(track, color);
+        }
+        removeQtNonPickablePrimitive(track.name);
         const damageState = trackDamageState(track);
         const modelUri = String(track.modelUri || '');
         const hasModel = !isEffect && !isPendingBombTargetLine && modelUri.length > 0;
@@ -1884,10 +2073,13 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             : color.withAlpha(0.9));
         const entityId = 'qt-track:' + track.name;
         let entity = qtEntitiesByName.get(track.name);
+        const canTrack = trackCanBeTracked(track);
+        const bombTargetDistanceText = pendingBombTargetDistanceText(track);
         const labelText = isPendingBombTarget
-          ? ('Bomb Target\n' + pendingBombReleaseState(track))
+          ? ('Bomb Target\n' + pendingBombReleaseState(track) +
+              (bombTargetDistanceText.length > 0 ? ('\n' + bombTargetDistanceText) : ''))
           : track.name;
-        const wasTrackedEntity = viewer.trackedEntity && viewer.trackedEntity === entity;
+        const wasTrackedEntity = canTrack && viewer.trackedEntity && viewer.trackedEntity === entity;
         let overlayBundle = qtOverlayEntitiesByName.get(track.name) || {
           route: null,
           area: null,
@@ -2173,7 +2365,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         setOverlayVisibility(overlayBundle, overlaysVisible);
         qtOverlayEntitiesByName.set(track.name, overlayBundle);
 
-        if (focus) {
+        clearTrackingIfNonTrackable(entity, track);
+
+        if (focus && canTrack) {
           if (viewer.trackedEntity && viewer.trackedEntity !== entity) {
             viewer.trackedEntity = undefined;
           }
@@ -2213,6 +2407,8 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         if (!viewer || !trackName) {
           return false;
         }
+
+        removeQtNonPickablePrimitive(trackName);
 
         const entity = qtEntitiesByName.get(trackName);
         if (entity) {
@@ -2317,6 +2513,32 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           viewer.scene.globe.enableLighting = true;
           viewer.clock.shouldAnimate = true;
           viewer.camera.flyHome(0);
+          viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK);
+          viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+          if (viewer.selectedEntityChanged &&
+              typeof viewer.selectedEntityChanged.addEventListener === 'function') {
+            viewer.selectedEntityChanged.addEventListener(function(entity) {
+              if (selectionGuardActive || !entity) {
+                return;
+              }
+              if (!trackCanBeTracked(entity._qtTrackData)) {
+                restoreTrackableSelection();
+                return;
+              }
+              lastTrackableSelectedEntity = entity;
+            });
+          }
+          if (viewer.trackedEntityChanged &&
+              typeof viewer.trackedEntityChanged.addEventListener === 'function') {
+            viewer.trackedEntityChanged.addEventListener(function(entity) {
+              if (selectionGuardActive || !entity) {
+                return;
+              }
+              if (!trackCanBeTracked(entity._qtTrackData)) {
+                viewer.trackedEntity = lastTrackableSelectedEntity || undefined;
+              }
+            });
+          }
 
           const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
           handler.setInputAction(function(movement) {
@@ -2329,16 +2551,11 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
           handler.setInputAction(function(click) {
-            const picked = viewer.scene.pick(click.position);
-            const trackName = entityNameFromPick(picked);
+            const trackName = selectableTrackNameFromWindowPosition(click.position);
             const entity = trackName ? qtEntitiesByName.get(trackName) : null;
             const graphic = trackName ? qtGraphicsByName.get(trackName) : null;
             if (entity) {
-              if (viewer.trackedEntity && viewer.trackedEntity !== entity) {
-                viewer.trackedEntity = undefined;
-              }
-              viewer.selectedEntity = entity;
-              applyHighlight(entity);
+              selectAndTrackEntity(entity);
               reportStatus('Menu contextual solicitado para: ' + trackName);
               if (qtBridge && qtBridge.requestEntityContextMenu) {
                 qtBridge.requestEntityContextMenu(trackName, click.position.x, click.position.y);
@@ -2419,8 +2636,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               return;
             }
 
-            const picked = viewer.scene.pick(click.position);
-            const trackName = entityNameFromPick(picked);
+            const trackName = selectableTrackNameFromWindowPosition(click.position);
             if (!trackName) {
               window.clearQtTrackSelection();
               reportStatus('Seleccion borrada en mapa.');
@@ -2432,16 +2648,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
 
             const entity = qtEntitiesByName.get(trackName);
             if (entity) {
-              if (viewer.trackedEntity && viewer.trackedEntity !== entity) {
-                viewer.trackedEntity = undefined;
-              }
-              viewer.selectedEntity = entity;
-              applyHighlight(entity);
-              window.setTimeout(function() {
-                if (viewer) {
-                  viewer.trackedEntity = entity;
-                }
-              }, 0);
+              selectAndTrackEntity(entity);
             }
             reportStatus('Track seleccionado en mapa: ' + trackName);
             if (qtBridge && qtBridge.reportSelectedTrack) {
