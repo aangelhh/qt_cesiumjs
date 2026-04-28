@@ -347,14 +347,23 @@ QVariantMap makePendingBombTargetTrackSummary(
     double longitude,
     double targetAltitudeMeters,
     const QString& teamLabel,
-    const QString& releaseStateLabel) {
+    const QString& releaseStateLabel,
+    double distanceMetersToTarget) {
+  const QString distanceText = distanceMetersToTarget >= 0.0
+      ? QStringLiteral("%1 km").arg(distanceMetersToTarget / 1000.0, 0, 'f', 1)
+      : QString();
   QVariantMap summary = makeTrackSummary(
       QStringLiteral("Bomb Target"),
       QStringLiteral("PendingBombTarget"),
       teamLabel.trimmed().isEmpty() ? QStringLiteral("Friendly") : teamLabel,
       QStringLiteral("%1 m").arg(qMax(0.0, targetAltitudeMeters), 0, 'f', 0),
       formatPosition(latitude, longitude),
-      releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel,
+      distanceText.trimmed().isEmpty()
+          ? (releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel)
+          : QStringLiteral("%1 | %2")
+                .arg(
+                    releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel,
+                    distanceText),
       latitude,
       longitude);
   summary.insert(QStringLiteral("category"), QStringLiteral("PendingBombTarget"));
@@ -362,6 +371,7 @@ QVariantMap makePendingBombTargetTrackSummary(
   summary.insert(QStringLiteral("labelVisible"), true);
   summary.insert(QStringLiteral("pendingBombReleaseState"), releaseStateLabel);
   summary.insert(QStringLiteral("pendingBombTargetLabel"), targetLabel);
+  summary.insert(QStringLiteral("pendingBombTargetDistanceMeters"), distanceMetersToTarget);
   return summary;
 }
 
@@ -2128,6 +2138,11 @@ void MainWindow::handleMapTrackSelection(const QString& trackName) {
     return;
   }
 
+  if (this->currentSelectionIsEntity()) {
+    const QVariantMap summary =
+        this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+    this->sendTrackToMap(summary, true);
+  }
   this->updateTaskQuickBarState();
 }
 
@@ -2514,9 +2529,15 @@ void MainWindow::syncScenarioStateToUi() {
   if (this->_pendingBombRelease.pending) {
     QString teamLabel = QStringLiteral("Friendly");
     QString releaseStateLabel = QStringLiteral("Armed");
+    double distanceToBombTargetMeters = -1.0;
     if (const Entity* launcher =
             this->findEntityByName(this->_pendingBombRelease.launcherEntityName)) {
       teamLabel = forceIdentifierLabel(launcher->forceIdentifier);
+      distanceToBombTargetMeters = distanceMeters(
+          launcher->latitude,
+          launcher->longitude,
+          this->_pendingBombRelease.targetLatitude,
+          this->_pendingBombRelease.targetLongitude);
       const BombReleaseGateEvaluation evaluation = evaluateBombReleaseGate(
           *launcher,
           this->_pendingBombRelease.targetLatitude,
@@ -2542,7 +2563,8 @@ void MainWindow::syncScenarioStateToUi() {
             this->_pendingBombRelease.targetLongitude,
             this->_pendingBombRelease.targetAltitudeMeters,
             teamLabel,
-            releaseStateLabel),
+            releaseStateLabel,
+            distanceToBombTargetMeters),
         false);
   } else {
     this->removeTrackFromMap(pendingBombTargetTrackName);
@@ -2827,6 +2849,10 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
       QStringLiteral("Custom Coordinates..."),
       this,
       &MainWindow::releaseBombAtCustomCoordinates);
+  QAction* cancelBombReleaseAction = weaponsMenu->addAction(
+      QStringLiteral("Cancel Bomb Release"),
+      this,
+      &MainWindow::cancelPendingBombRelease);
   addMissileAction->setEnabled(canUseWeapons);
   addBombAction->setEnabled(canUseWeapons);
   launchMissileAction->setEnabled(
@@ -2844,6 +2870,10 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
       canUseWeapons && bombCount > 0 && this->_simulationRunning);
   releaseBombAtCustomAction->setEnabled(
       canUseWeapons && bombCount > 0 && this->_simulationRunning);
+  cancelBombReleaseAction->setEnabled(
+      this->_pendingBombRelease.pending &&
+      entity &&
+      this->_pendingBombRelease.launcherEntityName.compare(entity->name, Qt::CaseInsensitive) == 0);
   if (canUseWeapons && missileCount > 0 && this->_simulationRunning &&
       detectedMissileTargetCount <= 0) {
     const QString message =
@@ -4782,6 +4812,7 @@ void MainWindow::queuePendingBombRelease(
           .arg(
               this->_pendingBombRelease.launcherEntityName,
               this->_pendingBombRelease.targetLabel));
+  this->selectObjectByName(this->_pendingBombRelease.launcherEntityName, true);
 }
 
 void MainWindow::clearPendingBombRelease() {
@@ -4980,6 +5011,25 @@ void MainWindow::releaseBombAtCustomCoordinates() {
   this->_ui->statusLabel->setText(
       QStringLiteral("Haz clic en el mapa para fijar el punto de ataque de %1.")
           .arg(launcherName));
+}
+
+void MainWindow::cancelPendingBombRelease() {
+  if (!this->_pendingBombRelease.pending) {
+    this->_ui->statusLabel->setText(QStringLiteral("No hay release de bomba pendiente."));
+    return;
+  }
+
+  const QString launcherName = this->_pendingBombRelease.launcherEntityName;
+  const QString targetLabel = this->_pendingBombRelease.targetLabel;
+  this->_isPickingBombTarget = false;
+  this->_bombTargetPickLauncherName.clear();
+  this->clearPendingBombRelease();
+  this->appendLogMessage(
+      QStringLiteral("Bomb release canceled for %1 on %2")
+          .arg(launcherName, targetLabel));
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Release de bomba cancelado para %1.").arg(launcherName));
 }
 
 void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {

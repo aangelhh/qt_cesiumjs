@@ -81,6 +81,7 @@ private slots:
   void releaseBombFromSelectedEntity();
   void releaseBombAtSurfaceEntity();
   void releaseBombAtCustomCoordinates();
+  void cancelPendingBombRelease();
   void clearSelectedTask();
   void deleteSelectedEntity();
   void openAddWaypointDialog();
