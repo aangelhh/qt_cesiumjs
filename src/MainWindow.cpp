@@ -75,6 +75,7 @@ constexpr double kKnotsToMetersPerSecond = 0.514444;
 constexpr double kBombReleaseGravityMetersPerSecondSquared = 9.81;
 constexpr double kBombReleaseHeadingConeDegrees = 35.0;
 constexpr double kBombReleaseDistanceToleranceMeters = 150.0;
+constexpr double kAutoBombReleaseCooldownSeconds = 20.0;
 
 QStringList behaviorModeOptions() {
   return {
@@ -591,6 +592,42 @@ QVector<const Entity*> validBombReleaseTargets(
   return targets;
 }
 
+const Entity* bestDetectedSurfaceBombTarget(
+    const ScenarioState* scenarioState,
+    const Entity& launcher) {
+  if (!scenarioState) {
+    return nullptr;
+  }
+
+  const Entity* selectedTarget = nullptr;
+  double selectedRangeMeters = -1.0;
+  for (const SensorContact& contact : launcher.sensorContacts) {
+    if (!contact.detected || contact.targetEntityName.trimmed().isEmpty()) {
+      continue;
+    }
+
+    const QString targetName = contact.targetEntityName.trimmed();
+    for (const Entity& candidate : scenarioState->entities()) {
+      if (candidate.name.compare(targetName, Qt::CaseInsensitive) != 0 ||
+          candidate.name == launcher.name ||
+          candidate.destroyed ||
+          candidate.forceIdentifier == launcher.forceIdentifier ||
+          candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
+        continue;
+      }
+
+      if (selectedRangeMeters < 0.0 ||
+          contact.rangeMeters < selectedRangeMeters) {
+        selectedTarget = &candidate;
+        selectedRangeMeters = contact.rangeMeters;
+      }
+      break;
+    }
+  }
+
+  return selectedTarget;
+}
+
 QString bombTargetDisplayLabel(const Entity& entity) {
   return QStringLiteral("%1 (%2 / %3)")
       .arg(entity.name, forceIdentifierLabel(entity.forceIdentifier), entity.domain);
@@ -754,6 +791,7 @@ MainWindow::MainWindow(QWidget* parent)
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
     this->_scenarioState->advanceSimulation(0.033);
     this->advanceEntityPlans();
+    this->processAutoBombingBehaviors(0.033);
     this->processPendingBombRelease();
     this->syncScenarioStateToUi();
   });
@@ -2122,6 +2160,7 @@ void MainWindow::stopSimulation() {
   this->_simulationTimer->stop();
   this->_isPickingBombTarget = false;
   this->_bombTargetPickLauncherName.clear();
+  this->_autoBombReleaseCooldownSeconds.clear();
   this->clearPendingBombRelease();
   this->_scenarioState->stopMission();
   this->syncScenarioStateToUi();
@@ -4917,7 +4956,9 @@ void MainWindow::queuePendingBombRelease(
     double targetLongitude,
     double targetAltitudeMeters,
     const QString& targetLabel,
-    const QString& sourceDescription) {
+    const QString& sourceDescription,
+    bool logQueued,
+    bool focusLauncher) {
   this->_pendingBombRelease.launcherEntityName = launcherEntityName.trimmed();
   this->_pendingBombRelease.targetLatitude = targetLatitude;
   this->_pendingBombRelease.targetLongitude = targetLongitude;
@@ -4926,18 +4967,22 @@ void MainWindow::queuePendingBombRelease(
   this->_pendingBombRelease.sourceDescription = sourceDescription.trimmed();
   this->_pendingBombRelease.pending = true;
 
-  this->appendLogMessage(
-      QStringLiteral("Bomb release queued for %1 on %2 (%3)")
-          .arg(
-              this->_pendingBombRelease.launcherEntityName,
-              this->_pendingBombRelease.targetLabel,
-              this->_pendingBombRelease.sourceDescription));
+  if (logQueued) {
+    this->appendLogMessage(
+        QStringLiteral("Bomb release queued for %1 on %2 (%3)")
+            .arg(
+                this->_pendingBombRelease.launcherEntityName,
+                this->_pendingBombRelease.targetLabel,
+                this->_pendingBombRelease.sourceDescription));
+  }
   this->_ui->statusLabel->setText(
       QStringLiteral("Bomb release armed for %1 on %2.")
           .arg(
               this->_pendingBombRelease.launcherEntityName,
               this->_pendingBombRelease.targetLabel));
-  this->selectObjectByName(this->_pendingBombRelease.launcherEntityName, true);
+  if (focusLauncher) {
+    this->selectObjectByName(this->_pendingBombRelease.launcherEntityName, true);
+  }
 }
 
 void MainWindow::clearPendingBombRelease() {
@@ -4958,6 +5003,69 @@ void MainWindow::validatePendingBombRelease() {
       this->_ui->statusLabel->setText(
           QStringLiteral("Bomb release cleared for %1.").arg(launcherName));
     }
+  }
+}
+
+void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
+  if (deltaSeconds > 0.0) {
+    for (auto it = this->_autoBombReleaseCooldownSeconds.begin();
+         it != this->_autoBombReleaseCooldownSeconds.end();) {
+      it.value() = qMax(0.0, it.value() - deltaSeconds);
+      if (it.value() <= 0.0) {
+        it = this->_autoBombReleaseCooldownSeconds.erase(it);
+        continue;
+      }
+      ++it;
+    }
+  }
+
+  if (!this->_simulationRunning || this->_pendingBombRelease.pending) {
+    return;
+  }
+
+  for (const Entity& launcher : this->_scenarioState->entities()) {
+    const QString behaviorMode = launcher.behaviorMode.trimmed().isEmpty()
+        ? QStringLiteral("Manual")
+        : launcher.behaviorMode.trimmed();
+    if (behaviorMode.compare(QStringLiteral("Aggressive"), Qt::CaseInsensitive) != 0 ||
+        launcher.destroyed ||
+        launcher.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0 ||
+        weaponQuantity(launcher, QStringLiteral("Bomb")) <= 0) {
+      continue;
+    }
+
+    const auto cooldownIt =
+        this->_autoBombReleaseCooldownSeconds.constFind(launcher.name);
+    if (cooldownIt != this->_autoBombReleaseCooldownSeconds.constEnd() &&
+        cooldownIt.value() > 0.0) {
+      continue;
+    }
+
+    const Entity* target =
+        bestDetectedSurfaceBombTarget(this->_scenarioState, launcher);
+    if (!target) {
+      continue;
+    }
+
+    this->queuePendingBombRelease(
+        launcher.name,
+        target->latitude,
+        target->longitude,
+        static_cast<double>(target->altitude),
+        target->name,
+        QStringLiteral("Auto Behavior"),
+        false,
+        false);
+    this->_autoBombReleaseCooldownSeconds.insert(
+        launcher.name,
+        kAutoBombReleaseCooldownSeconds);
+    this->appendLogMessage(
+        QStringLiteral("%1 auto-armed bomb release at %2")
+            .arg(launcher.name, target->name));
+    this->_ui->statusLabel->setText(
+        QStringLiteral("%1 auto-armed bomb release at %2.")
+            .arg(launcher.name, target->name));
+    return;
   }
 }
 

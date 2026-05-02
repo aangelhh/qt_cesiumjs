@@ -169,9 +169,12 @@ private:
       double targetLongitude,
       double targetAltitudeMeters,
       const QString& targetLabel,
-      const QString& sourceDescription);
+      const QString& sourceDescription,
+      bool logQueued = true,
+      bool focusLauncher = true);
   void clearPendingBombRelease();
   void validatePendingBombRelease();
+  void processAutoBombingBehaviors(double deltaSeconds);
   void processPendingBombRelease();
   void openAssignTaskDialog(const QString& initialTaskType);
   void populateTaskCommands();
@@ -269,6 +272,7 @@ private:
   QSet<QString> _activeEffectTrackNames;
   QHash<QString, EntityVisualState> _entityVisualStates;
   QHash<QString, EntityHomePosition> _entityHomePositions;
+  QHash<QString, double> _autoBombReleaseCooldownSeconds;
   QHash<QString, EntityPlan> _entityPlans;
   PendingBombRelease _pendingBombRelease;
   application::SimulationEngine* m_simulationEngine;
