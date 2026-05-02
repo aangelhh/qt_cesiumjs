@@ -317,20 +317,6 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         return 'Intact';
       }
 
-      function trackDamageCssColor(track) {
-        const state = trackDamageState(track);
-        if (state === 'Destroyed') {
-          return '#9b9ea4';
-        }
-        if (state === 'Damaged') {
-          return '#ffb347';
-        }
-        if (state === 'Lightly Damaged') {
-          return '#e6d37a';
-        }
-        return '';
-      }
-
       function trackIsHidden(track) {
         return !!(track && track.hidden);
       }
@@ -349,13 +335,11 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         }
 
         try {
-          const monoColor = trackDamageCssColor(track);
           const symbol = new ms.Symbol(sidc, {
             size: 34,
             frame: true,
             fill: true,
-            colorMode: 'Light',
-            monoColor: monoColor
+            colorMode: 'Light'
           });
           const svg = symbol.asSVG ? symbol.asSVG() :
             (symbol.getMarker ? symbol.getMarker().XML : null);
@@ -383,10 +367,19 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
 
       function trackColor(team) {
         const normalized = String(team || '').toLowerCase();
-        if (normalized.includes('red') || normalized.includes('opposing')) {
-          return Cesium.Color.ORANGE;
+        if (normalized.includes('hostile') ||
+            normalized.includes('opposing') ||
+            normalized.includes('red') ||
+            normalized.includes('enemy')) {
+          return Cesium.Color.fromCssColorString('#ff3b30');
         }
-        return Cesium.Color.CYAN;
+        if (normalized.includes('neutral') || normalized.includes('green')) {
+          return Cesium.Color.fromCssColorString('#35c759');
+        }
+        if (normalized.includes('unknown') || normalized.includes('yellow')) {
+          return Cesium.Color.fromCssColorString('#ffd60a');
+        }
+        return Cesium.Color.fromCssColorString('#2f8cff');
       }
 
       function trackDisplayColor(track) {
@@ -403,11 +396,64 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             ? Cesium.Color.fromCssColorString('#63d67a')
             : Cesium.Color.fromCssColorString('#f2a33b');
         }
-        const damageColor = trackDamageCssColor(track);
-        if (damageColor.length > 0) {
-          return Cesium.Color.fromCssColorString(damageColor);
-        }
         return trackColor(track.team);
+      }
+
+      function trackDamageIndicatorText(track) {
+        const state = trackDamageState(track);
+        if (state === 'Destroyed') {
+          return 'X';
+        }
+        if (state === 'Damaged') {
+          return '!!';
+        }
+        if (state === 'Lightly Damaged') {
+          return '!';
+        }
+        return '';
+      }
+
+      function trackDamageIndicatorFont(track) {
+        const state = trackDamageState(track);
+        if (state === 'Destroyed') {
+          return 'bold 32px sans-serif';
+        }
+        if (state === 'Damaged') {
+          return 'bold 18px sans-serif';
+        }
+        return 'bold 13px sans-serif';
+      }
+
+      function trackDamageIndicatorFillColor(track) {
+        const state = trackDamageState(track);
+        if (state === 'Destroyed') {
+          return Cesium.Color.fromCssColorString('#20242a');
+        }
+        if (state === 'Damaged') {
+          return Cesium.Color.fromCssColorString('#ff9f1a');
+        }
+        return Cesium.Color.fromCssColorString('#ffd166');
+      }
+
+      function trackDamageIndicatorOutlineColor(track) {
+        return trackDamageState(track) === 'Destroyed'
+          ? Cesium.Color.fromCssColorString('#d4d7dc')
+          : Cesium.Color.BLACK;
+      }
+
+      function trackDamageIndicatorBackgroundColor(track) {
+        return trackDamageState(track) === 'Destroyed'
+          ? Cesium.Color.TRANSPARENT
+          : Cesium.Color.fromCssColorString('#1f1600').withAlpha(0.72);
+      }
+
+      function trackDamageIndicatorOffset(track, hasModel, hasSymbol) {
+        const state = trackDamageState(track);
+        const symbolCenterY = hasModel ? -68 : (hasSymbol ? -22 : -8);
+        if (state === 'Destroyed') {
+          return new Cesium.Cartesian2(0, symbolCenterY);
+        }
+        return new Cesium.Cartesian2(15, symbolCenterY - 14);
       }
 
       function buildRoutePositions(track, altitude) {
@@ -1995,7 +2041,6 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const latitude = Number(track.latitude || 0.0);
         const altitudeMatch = String(track.altitude || '').match(/-?\d+(?:\.\d+)?/);
         const altitude = altitudeMatch ? Number(altitudeMatch[0]) : 0.0;
-        const destroyed = trackIsDestroyed(track);
         const isEffect = trackIsEffect(track);
         const isPendingBombTargetLine = trackIsPendingBombTargetLine(track);
         const isPendingBombTarget = trackIsPendingBombTarget(track);
@@ -2017,6 +2062,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             }
             if (overlayBundle.label) {
               viewer.entities.remove(overlayBundle.label);
+            }
+            if (overlayBundle.damageIndicator) {
+              viewer.entities.remove(overlayBundle.damageIndicator);
             }
             if (overlayBundle.radarFans) {
               for (const fan of overlayBundle.radarFans) {
@@ -2040,37 +2088,17 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const symbolSidc = buildQtSidc(track);
         const pointColor = isEffect
           ? color
-          : (destroyed
-          ? Cesium.Color.GRAY.withAlpha(0.55)
-          : color);
-        const billboardColor = destroyed
-          ? Cesium.Color.GRAY.withAlpha(0.7)
-          : (isPendingBombTarget
+          : color;
+        const billboardColor = isPendingBombTarget
             ? color.withAlpha(0.95)
-            : (damageState === 'Intact'
-            ? Cesium.Color.WHITE
-            : color.withAlpha(0.95)));
-        const labelFillColor = destroyed
-          ? Cesium.Color.LIGHTGRAY
-          : (isPendingBombTarget
+            : Cesium.Color.WHITE;
+        const labelFillColor = isPendingBombTarget
             ? color
-            : (damageState === 'Intact'
-            ? Cesium.Color.WHITE
-            : color));
-        const labelBackgroundColor = destroyed
-          ? new Cesium.Color(0.25, 0.25, 0.25, 0.82)
-          : (isPendingBombTarget
+            : color;
+        const labelBackgroundColor = isPendingBombTarget
             ? new Cesium.Color(0.22, 0.12, 0.02, 0.82)
-            : (damageState === 'Damaged'
-            ? new Cesium.Color(0.35, 0.22, 0.03, 0.82)
-            : (damageState === 'Lightly Damaged'
-              ? new Cesium.Color(0.42, 0.35, 0.08, 0.78)
-              : new Cesium.Color(0.02, 0.08, 0.92, 0.72))));
-        const modelColor = destroyed
-          ? Cesium.Color.GRAY.withAlpha(0.6)
-          : (damageState === 'Intact'
-            ? Cesium.Color.WHITE
-            : color.withAlpha(0.9));
+            : color.withAlpha(0.18);
+        const modelColor = Cesium.Color.WHITE;
         const entityId = 'qt-track:' + track.name;
         let entity = qtEntitiesByName.get(track.name);
         const canTrack = trackCanBeTracked(track);
@@ -2084,6 +2112,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           route: null,
           area: null,
           label: null,
+          damageIndicator: null,
           radarFans: [],
           trackHistory: null,
           trackHistoryPositions: [],
@@ -2311,6 +2340,57 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           }
         }
 
+        const damageIndicatorText = trackDamageIndicatorText(track);
+        const showDamageIndicator =
+          !isEffect &&
+          !isPendingBombTarget &&
+          !isPendingBombTargetLine &&
+          damageIndicatorText.length > 0;
+        if (showDamageIndicator) {
+          const damageIndicatorOptions = {
+            text: damageIndicatorText,
+            show: true,
+            font: trackDamageIndicatorFont(track),
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            fillColor: trackDamageIndicatorFillColor(track),
+            outlineColor: trackDamageIndicatorOutlineColor(track),
+            outlineWidth: damageState === 'Destroyed' ? 3 : 2,
+            showBackground: damageState !== 'Destroyed',
+            backgroundColor: trackDamageIndicatorBackgroundColor(track),
+            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+            verticalOrigin: Cesium.VerticalOrigin.CENTER,
+            pixelOffset: trackDamageIndicatorOffset(track, hasModel, hasSymbol),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          };
+          if (!overlayBundle.damageIndicator) {
+            overlayBundle.damageIndicator = viewer.entities.add({
+              id: entityId + ':damage-indicator',
+              position: entity.position,
+              label: damageIndicatorOptions,
+              properties: {
+                qtTrackName: track.name,
+              },
+            });
+          } else {
+            overlayBundle.damageIndicator.position = entity.position;
+            overlayBundle.damageIndicator.label.text = damageIndicatorOptions.text;
+            overlayBundle.damageIndicator.label.show = damageIndicatorOptions.show;
+            overlayBundle.damageIndicator.label.font = damageIndicatorOptions.font;
+            overlayBundle.damageIndicator.label.fillColor = damageIndicatorOptions.fillColor;
+            overlayBundle.damageIndicator.label.outlineColor = damageIndicatorOptions.outlineColor;
+            overlayBundle.damageIndicator.label.outlineWidth = damageIndicatorOptions.outlineWidth;
+            overlayBundle.damageIndicator.label.showBackground = damageIndicatorOptions.showBackground;
+            overlayBundle.damageIndicator.label.backgroundColor = damageIndicatorOptions.backgroundColor;
+            overlayBundle.damageIndicator.label.pixelOffset = damageIndicatorOptions.pixelOffset;
+            overlayBundle.damageIndicator.properties = new Cesium.PropertyBag({
+              qtTrackName: track.name,
+            });
+          }
+        } else if (overlayBundle.damageIndicator) {
+          viewer.entities.remove(overlayBundle.damageIndicator);
+          overlayBundle.damageIndicator = null;
+        }
+
         const radarSensors = radarSensorsForTrack(track);
         if (overlayBundle.radarFans && overlayBundle.radarFans.length > radarSensors.length) {
           for (let index = radarSensors.length; index < overlayBundle.radarFans.length; ++index) {
@@ -2426,6 +2506,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           }
           if (overlayBundle.label) {
             viewer.entities.remove(overlayBundle.label);
+          }
+          if (overlayBundle.damageIndicator) {
+            viewer.entities.remove(overlayBundle.damageIndicator);
           }
           if (overlayBundle.radarFans) {
             for (const fan of overlayBundle.radarFans) {
