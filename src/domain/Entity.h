@@ -84,6 +84,8 @@ struct Entity {
   double verticalSpeedMetersPerSecond = 0.0;
   bool destroyed = false;
   double damagePercent = 0.0;
+  QString behaviorMode = QStringLiteral("Manual");
+  QString behaviorTargetEntityName;
   EntityTask currentTask;
   QVector<WeaponInventoryItem> weapons;
   SensorDefinitions sensors;

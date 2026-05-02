@@ -32,6 +32,7 @@ public:
   bool assignTask(const QString& entityName, const EntityTask& task);
   bool clearTask(const QString& entityName);
   bool setEntityDestroyed(const QString& entityName, bool destroyed);
+  bool setEntityBehaviorMode(const QString& entityName, const QString& behaviorMode);
   void applyMissileDamage(const QString& targetName, double damageAmount);
   bool addMissileToEntity(const QString& entityName, int quantity = 1);
   bool addBombToEntity(const QString& entityName, int quantity = 1);
@@ -65,6 +66,7 @@ private:
       double damageAmount,
       const QString& sourceLabel);
   void applyBombBlastDamage(const ActiveMunition& munition);
+  void advanceBehaviors(double deltaSeconds);
   void advanceActiveMunitions(double deltaSeconds);
   void advanceTransientEffects(double deltaSeconds);
 };

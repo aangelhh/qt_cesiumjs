@@ -59,6 +59,25 @@ QString defaultBombModelUri() {
   return QUrl::fromLocalFile(path).toString();
 }
 
+QStringList supportedBehaviorModes() {
+  return {
+      QStringLiteral("Manual"),
+      QStringLiteral("Aggressive"),
+      QStringLiteral("Defensive"),
+      QStringLiteral("Patrol"),
+  };
+}
+
+QString normalizedBehaviorMode(const QString& behaviorMode) {
+  const QString trimmed = behaviorMode.trimmed();
+  for (const QString& mode : supportedBehaviorModes()) {
+    if (mode.compare(trimmed, Qt::CaseInsensitive) == 0) {
+      return mode;
+    }
+  }
+  return QStringLiteral("Manual");
+}
+
 bool entityCanCarryMissiles(const Entity& entity) {
   return !entity.destroyed &&
          entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0 &&
@@ -123,6 +142,40 @@ double detectedTargetRangeMeters(
   }
 
   return closestRangeMeters;
+}
+
+bool entityIsValidBehaviorTarget(
+    const Entity& observer,
+    const Entity& target) {
+  return !target.destroyed &&
+         target.name != observer.name &&
+         target.forceIdentifier != observer.forceIdentifier;
+}
+
+QString selectBestBehaviorTargetName(
+    const Entity& observer,
+    const QVector<Entity>& entities) {
+  QString selectedTargetName;
+  double selectedRangeMeters = -1.0;
+
+  for (const SensorContact& contact : observer.sensorContacts) {
+    if (!contact.detected || contact.targetEntityName.trimmed().isEmpty()) {
+      continue;
+    }
+
+    const Entity* target =
+        findEntityByName(entities, contact.targetEntityName.trimmed());
+    if (!target || !entityIsValidBehaviorTarget(observer, *target)) {
+      continue;
+    }
+
+    if (selectedRangeMeters < 0.0 || contact.rangeMeters < selectedRangeMeters) {
+      selectedRangeMeters = contact.rangeMeters;
+      selectedTargetName = target->name;
+    }
+  }
+
+  return selectedTargetName;
 }
 
 double normalizeDegrees360(double degrees) {
@@ -604,6 +657,7 @@ QJsonObject toJson(const Entity& entity) {
       {QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond},
       {QStringLiteral("destroyed"), entity.destroyed},
       {QStringLiteral("damagePercent"), entity.damagePercent},
+      {QStringLiteral("behaviorMode"), normalizedBehaviorMode(entity.behaviorMode)},
       {QStringLiteral("currentTask"), toJson(entity.currentTask)},
       {QStringLiteral("weapons"), weapons},
       {QStringLiteral("sensors"), sensors},
@@ -644,6 +698,8 @@ Entity entityFromJson(const QJsonObject& object) {
       0.0,
       object.value(QStringLiteral("damagePercent")).toDouble(0.0),
       100.0);
+  entity.behaviorMode =
+      normalizedBehaviorMode(object.value(QStringLiteral("behaviorMode")).toString(QStringLiteral("Manual")));
   entity.currentTask = taskFromJson(object.value(QStringLiteral("currentTask")).toObject());
 
   const QJsonArray weapons = object.value(QStringLiteral("weapons")).toArray();
@@ -926,6 +982,32 @@ bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed
     }
 
     this->refreshSensors();
+    this->save();
+    return true;
+  }
+  return false;
+}
+
+bool ScenarioState::setEntityBehaviorMode(
+    const QString& entityName,
+    const QString& behaviorMode) {
+  const QString normalizedMode = normalizedBehaviorMode(behaviorMode);
+  for (Entity& entity : _entities) {
+    if (entity.name != entityName) {
+      continue;
+    }
+
+    if (entity.behaviorMode == normalizedMode) {
+      return true;
+    }
+
+    entity.behaviorMode = normalizedMode;
+    if (normalizedMode == QStringLiteral("Manual")) {
+      entity.behaviorTargetEntityName.clear();
+    }
+    _pendingEventLogMessages.push_back(
+        QStringLiteral("%1 behavior mode set to %2")
+            .arg(entity.name, entity.behaviorMode));
     this->save();
     return true;
   }
@@ -1466,8 +1548,44 @@ void ScenarioState::advanceTransientEffects(double deltaSeconds) {
   }
 }
 
+void ScenarioState::advanceBehaviors(double deltaSeconds) {
+  Q_UNUSED(deltaSeconds)
+
+  for (Entity& entity : _entities) {
+    if (entity.destroyed) {
+      entity.behaviorTargetEntityName.clear();
+      continue;
+    }
+
+    const QString behaviorMode = normalizedBehaviorMode(entity.behaviorMode);
+    if (behaviorMode == QStringLiteral("Manual")) {
+      entity.behaviorTargetEntityName.clear();
+      continue;
+    }
+
+    const QString selectedTargetName =
+        selectBestBehaviorTargetName(entity, _entities);
+    if (entity.behaviorTargetEntityName == selectedTargetName) {
+      continue;
+    }
+
+    const QString previousTargetName = entity.behaviorTargetEntityName;
+    entity.behaviorTargetEntityName = selectedTargetName;
+    if (!selectedTargetName.isEmpty()) {
+      _pendingEventLogMessages.push_back(
+          QStringLiteral("%1 behavior target selected: %2")
+              .arg(entity.name, selectedTargetName));
+    } else if (!previousTargetName.isEmpty()) {
+      _pendingEventLogMessages.push_back(
+          QStringLiteral("%1 behavior target cleared")
+              .arg(entity.name));
+    }
+  }
+}
+
 void ScenarioState::advanceSimulation(double deltaSeconds) {
   FlightDynamicsEngine::advanceEntities(_entities, _taskStacks, deltaSeconds);
+  this->advanceBehaviors(deltaSeconds);
   this->advanceActiveMunitions(deltaSeconds);
   this->advanceTransientEffects(deltaSeconds);
   this->refreshSensors();
