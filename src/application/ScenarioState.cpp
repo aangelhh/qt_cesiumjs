@@ -38,6 +38,7 @@ constexpr double kBombSmokeTrailIntervalSeconds = 0.25;
 constexpr double kBombSmokeTrailTtlSeconds = 1.0;
 constexpr double kBombImpactFlashTtlSeconds = 0.35;
 constexpr double kBombSmokeTtlSeconds = 3.0;
+constexpr double kBehaviorAutoMissileCooldownSeconds = 12.0;
 
 QString projectRoot() {
 #ifdef QTTEST_SOURCE_DIR
@@ -97,6 +98,17 @@ WeaponInventoryItem* findWeaponInventoryItem(
     }
   }
   return nullptr;
+}
+
+int weaponQuantity(
+    const Entity& entity,
+    const QString& weaponType) {
+  for (const WeaponInventoryItem& item : entity.weapons) {
+    if (item.weaponType.compare(weaponType, Qt::CaseInsensitive) == 0) {
+      return item.quantity;
+    }
+  }
+  return 0;
 }
 
 const Entity* findEntityByName(
@@ -176,6 +188,18 @@ QString selectBestBehaviorTargetName(
   }
 
   return selectedTargetName;
+}
+
+bool entityPassesAutoMissileQuickValidation(
+    const Entity& launcher,
+    const Entity& target) {
+  return !launcher.destroyed &&
+         !target.destroyed &&
+         !launcher.name.trimmed().isEmpty() &&
+         !target.name.trimmed().isEmpty() &&
+         launcher.name != target.name &&
+         launcher.forceIdentifier != target.forceIdentifier &&
+         weaponQuantity(launcher, QStringLiteral("Missile")) > 0;
 }
 
 double normalizeDegrees360(double degrees) {
@@ -759,6 +783,7 @@ bool ScenarioState::removeEntity(const QString& entityName) {
     if (_entities.at(index).name == entityName) {
       _entities.removeAt(index);
       _taskStacks.erase(entityName); // Clean up stack for removed entity
+      _behaviorMissileCooldownSeconds.erase(entityName);
       this->refreshSensors();
       this->save();
       return true;
@@ -970,6 +995,10 @@ bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed
     entity.currentTask.status = destroyed
         ? QStringLiteral("Destroyed")
         : QStringLiteral("Idle");
+    if (destroyed) {
+      entity.behaviorTargetEntityName.clear();
+      _behaviorMissileCooldownSeconds.erase(entity.name);
+    }
     entity.flightDynamicsEnabled = false;
     entity.speedKnots = 0.0;
     entity.verticalSpeedMetersPerSecond = 0.0;
@@ -1549,7 +1578,17 @@ void ScenarioState::advanceTransientEffects(double deltaSeconds) {
 }
 
 void ScenarioState::advanceBehaviors(double deltaSeconds) {
-  Q_UNUSED(deltaSeconds)
+  if (deltaSeconds > 0.0) {
+    for (auto it = _behaviorMissileCooldownSeconds.begin();
+         it != _behaviorMissileCooldownSeconds.end();) {
+      it->second = qMax(0.0, it->second - deltaSeconds);
+      if (it->second <= 0.0) {
+        it = _behaviorMissileCooldownSeconds.erase(it);
+        continue;
+      }
+      ++it;
+    }
+  }
 
   for (Entity& entity : _entities) {
     if (entity.destroyed) {
@@ -1565,21 +1604,48 @@ void ScenarioState::advanceBehaviors(double deltaSeconds) {
 
     const QString selectedTargetName =
         selectBestBehaviorTargetName(entity, _entities);
-    if (entity.behaviorTargetEntityName == selectedTargetName) {
+    if (entity.behaviorTargetEntityName != selectedTargetName) {
+      const QString previousTargetName = entity.behaviorTargetEntityName;
+      entity.behaviorTargetEntityName = selectedTargetName;
+      if (!selectedTargetName.isEmpty()) {
+        _pendingEventLogMessages.push_back(
+            QStringLiteral("%1 behavior target selected: %2")
+                .arg(entity.name, selectedTargetName));
+      } else if (!previousTargetName.isEmpty()) {
+        _pendingEventLogMessages.push_back(
+            QStringLiteral("%1 behavior target cleared")
+                .arg(entity.name));
+      }
+    }
+
+    if (behaviorMode != QStringLiteral("Aggressive") ||
+        entity.behaviorTargetEntityName.trimmed().isEmpty()) {
       continue;
     }
 
-    const QString previousTargetName = entity.behaviorTargetEntityName;
-    entity.behaviorTargetEntityName = selectedTargetName;
-    if (!selectedTargetName.isEmpty()) {
-      _pendingEventLogMessages.push_back(
-          QStringLiteral("%1 behavior target selected: %2")
-              .arg(entity.name, selectedTargetName));
-    } else if (!previousTargetName.isEmpty()) {
-      _pendingEventLogMessages.push_back(
-          QStringLiteral("%1 behavior target cleared")
-              .arg(entity.name));
+    const auto cooldownIt = _behaviorMissileCooldownSeconds.find(entity.name);
+    if (cooldownIt != _behaviorMissileCooldownSeconds.end() &&
+        cooldownIt->second > 0.0) {
+      continue;
     }
+
+    const Entity* target =
+        findEntityByName(_entities, entity.behaviorTargetEntityName.trimmed());
+    if (!target || !entityPassesAutoMissileQuickValidation(entity, *target)) {
+      continue;
+    }
+
+    const QString launcherName = entity.name;
+    const QString targetName = target->name;
+    if (!this->launchMissileAt(launcherName, targetName)) {
+      continue;
+    }
+
+    _behaviorMissileCooldownSeconds[launcherName] =
+        kBehaviorAutoMissileCooldownSeconds;
+    _pendingEventLogMessages.push_back(
+        QStringLiteral("%1 auto-launched missile at %2")
+            .arg(launcherName, targetName));
   }
 }
 
@@ -1598,11 +1664,13 @@ void ScenarioState::stopMission() {
     entity.speedKnots = 0.0;
     entity.verticalSpeedMetersPerSecond = 0.0;
     entity.sensorContacts.clear();
+    entity.behaviorTargetEntityName.clear();
   }
   _activeMunitions.clear();
   _transientEffects.clear();
   _pendingEventLogMessages.clear();
   _taskStacks.clear();
+  _behaviorMissileCooldownSeconds.clear();
   this->refreshSensors();
   this->save();
 }
@@ -1654,6 +1722,7 @@ bool ScenarioState::load() {
   _routes.clear();
   _areas.clear();
   _taskStacks.clear(); // Clear all stacks before loading new scenario
+  _behaviorMissileCooldownSeconds.clear();
   _nextMunitionSerial = 1;
 
   QFile file(this->storagePath());
@@ -1708,6 +1777,7 @@ void ScenarioState::reset() {
   _routes.clear();
   _areas.clear();
   _taskStacks.clear(); // Clear all stacks before reset
+  _behaviorMissileCooldownSeconds.clear();
   _nextMunitionSerial = 1;
   this->save();
 }
