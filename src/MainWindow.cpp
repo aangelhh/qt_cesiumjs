@@ -15,6 +15,7 @@
 
 #include <QAbstractItemView>
 #include <QAction>
+#include <QActionGroup>
 #include <QDateTime>
 #include <QDir>
 #include <QEvent>
@@ -51,6 +52,7 @@
 #include <QVBoxLayout>
 #include <QTimer>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
@@ -73,6 +75,15 @@ constexpr double kKnotsToMetersPerSecond = 0.514444;
 constexpr double kBombReleaseGravityMetersPerSecondSquared = 9.81;
 constexpr double kBombReleaseHeadingConeDegrees = 35.0;
 constexpr double kBombReleaseDistanceToleranceMeters = 150.0;
+
+QStringList behaviorModeOptions() {
+  return {
+      QStringLiteral("Manual"),
+      QStringLiteral("Aggressive"),
+      QStringLiteral("Defensive"),
+      QStringLiteral("Patrol"),
+  };
+}
 
 QString projectRootPath() {
 #ifdef QTTEST_SOURCE_DIR
@@ -1050,10 +1061,76 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
   this->_ui->selectionTypeValueLabel->setText(type);
   const QString taskType = value("taskType", QStringLiteral("No current tasks"));
   const QString taskStatus = value("taskStatus", QStringLiteral("-"));
-  this->_ui->selectionStateValueLabel->setText(
+  const QString operationalState =
       taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
           ? status
-          : QStringLiteral("%1 (%2)").arg(taskType, taskStatus));
+          : QStringLiteral("%1 (%2)").arg(taskType, taskStatus);
+  const QString behaviorMode = value("behaviorMode", QStringLiteral("Manual"));
+  const QString behaviorTarget = value("behaviorTargetEntityName");
+  struct ContactDebugLine {
+    double rangeMeters = 0.0;
+    QString text;
+  };
+  QVector<ContactDebugLine> contactLines;
+  const QVariantList contacts = summary.value(QStringLiteral("sensorContacts")).toList();
+  const int ownForceIdentifier = summary.value(QStringLiteral("forceIdentifier")).toInt(0);
+  for (const QVariant& contactValue : contacts) {
+    const QVariantMap contact = contactValue.toMap();
+    const QString targetName =
+        contact.value(QStringLiteral("targetEntityName")).toString().trimmed();
+    const Entity* target = this->findEntityByName(targetName);
+    const bool detected =
+        contact.value(QStringLiteral("detected"), false).toBool();
+    const double rangeMeters =
+        contact.value(QStringLiteral("rangeMeters"), 0.0).toDouble();
+    const double bearingDegrees =
+        contact.value(QStringLiteral("bearingDegrees"), 0.0).toDouble();
+    const bool friendly =
+        target && target->forceIdentifier == ownForceIdentifier;
+    const bool destroyed = target && target->destroyed;
+    const bool validBehaviorTarget =
+        detected &&
+        target &&
+        !destroyed &&
+        target->name != name &&
+        !friendly;
+
+    contactLines.push_back(ContactDebugLine{
+        rangeMeters,
+        QStringLiteral("%1 | %2 | %3 km | brg %4 deg | %5 | %6 | %7")
+            .arg(targetName.isEmpty() ? QStringLiteral("<unknown>") : targetName)
+            .arg(detected ? QStringLiteral("detected") : QStringLiteral("not detected"))
+            .arg(rangeMeters / 1000.0, 0, 'f', 1)
+            .arg(bearingDegrees, 0, 'f', 1)
+            .arg(target
+                     ? (friendly ? QStringLiteral("friendly") : QStringLiteral("enemy"))
+                     : QStringLiteral("unknown side"))
+            .arg(target
+                     ? (destroyed ? QStringLiteral("destroyed") : QStringLiteral("alive"))
+                     : QStringLiteral("unknown state"))
+            .arg(validBehaviorTarget
+                     ? QStringLiteral("behavior valid")
+                     : QStringLiteral("behavior blocked")),
+    });
+  }
+  std::sort(
+      contactLines.begin(),
+      contactLines.end(),
+      [](const ContactDebugLine& left, const ContactDebugLine& right) {
+        return left.rangeMeters < right.rangeMeters;
+      });
+
+  QStringList contactTextLines;
+  for (int index = 0; index < contactLines.size() && index < 10; ++index) {
+    contactTextLines.push_back(contactLines.at(index).text);
+  }
+  const QString contactsText = contactTextLines.isEmpty()
+      ? QStringLiteral("No contacts")
+      : contactTextLines.join(QStringLiteral("\n"));
+  this->_ui->selectionStateValueLabel->setWordWrap(true);
+  this->_ui->selectionStateValueLabel->setText(
+      QStringLiteral("%1\nBehavior: %2\nBehavior Target: %3\nSensor Contacts:\n%4")
+          .arg(operationalState, behaviorMode, behaviorTarget, contactsText));
   this->_ui->selectionPositionValueLabel->setText(position);
 }
 
@@ -1245,6 +1322,10 @@ QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
   summary.insert(QStringLiteral("destroyed"), entity.destroyed);
   summary.insert(QStringLiteral("damagePercent"), entity.damagePercent);
   summary.insert(QStringLiteral("damageState"), damageState);
+  summary.insert(QStringLiteral("behaviorMode"), entity.behaviorMode.trimmed().isEmpty()
+      ? QStringLiteral("Manual")
+      : entity.behaviorMode);
+  summary.insert(QStringLiteral("behaviorTargetEntityName"), entity.behaviorTargetEntityName);
   summary.insert(QStringLiteral("hidden"), visualState.hidden);
   summary.insert(QStringLiteral("radarCoverageVisible"), visualState.radarCoverageVisible);
   summary.insert(QStringLiteral("trackHistoryVisible"), visualState.trackHistoryVisible);
@@ -2575,6 +2656,9 @@ void MainWindow::syncScenarioStateToUi() {
 
   for (const QString& message : this->_scenarioState->takePendingEventLogMessages()) {
     this->appendLogMessage(message);
+    if (message.contains(QStringLiteral("behavior"), Qt::CaseInsensitive)) {
+      this->_ui->statusLabel->setText(message);
+    }
   }
 
   if (!this->_simulationRunning) {
@@ -2815,6 +2899,28 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   setMenu->addAction(QStringLiteral("Altitude..."), this, &MainWindow::setSelectedEntityAltitude);
   setMenu->addAction(QStringLiteral("Speed..."), this, &MainWindow::setSelectedEntitySpeed);
   setMenu->setEnabled(!entityDestroyed);
+
+  QMenu* behaviorMenu = menu.addMenu(QStringLiteral("Behavior"));
+  QActionGroup* behaviorGroup = new QActionGroup(behaviorMenu);
+  behaviorGroup->setExclusive(true);
+  const QString currentBehaviorMode = entity && !entity->behaviorMode.trimmed().isEmpty()
+      ? entity->behaviorMode.trimmed()
+      : QStringLiteral("Manual");
+  for (const QString& behaviorMode : behaviorModeOptions()) {
+    QAction* behaviorAction = behaviorMenu->addAction(behaviorMode);
+    behaviorAction->setCheckable(true);
+    behaviorAction->setChecked(
+        behaviorMode.compare(currentBehaviorMode, Qt::CaseInsensitive) == 0);
+    behaviorGroup->addAction(behaviorAction);
+    QObject::connect(
+        behaviorAction,
+        &QAction::triggered,
+        this,
+        [this, behaviorMode]() {
+          this->setSelectedEntityBehaviorMode(behaviorMode);
+        });
+  }
+  behaviorMenu->setEnabled(entity && !entityDestroyed);
 
   QAction* planAction = menu.addAction(QStringLiteral("Plan..."), this, &MainWindow::openEntityPlanDialog);
   planAction->setEnabled(!entityDestroyed);
@@ -3825,6 +3931,25 @@ void MainWindow::setSelectedEntitySpeed() {
   }
 
   this->applyFlyHeadingAltitudeSpeedTask(headingDegrees, altitudeMeters, newSpeedKnots);
+}
+
+void MainWindow::setSelectedEntityBehaviorMode(const QString& behaviorMode) {
+  const QString entityName = this->selectedEntityName();
+  if (entityName.isEmpty() || this->selectedEntityIsDestroyed()) {
+    return;
+  }
+
+  if (!this->_scenarioState->setEntityBehaviorMode(entityName, behaviorMode)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No se pudo cambiar el behavior mode de %1.")
+            .arg(entityName));
+    return;
+  }
+
+  this->syncScenarioStateToUi();
+  this->_ui->statusLabel->setText(
+      QStringLiteral("%1 behavior mode: %2.")
+          .arg(entityName, behaviorMode));
 }
 
 void MainWindow::focusSelectedEntityInMap() {
