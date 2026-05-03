@@ -643,16 +643,23 @@ QJsonObject mapToJsonObject(const QVariantMap& map) {
 QColor forceColorFromLabel(const QString& team) {
   const QString normalized = team.trimmed().toLower();
   if (normalized.contains(QStringLiteral("opposing"))) {
-    return QColor(QStringLiteral("#ff9b59"));
+    return QColor(QStringLiteral("#ff3b30"));
   }
   if (normalized.contains(QStringLiteral("neutral"))) {
-    return QColor(QStringLiteral("#b7c0c9"));
+    return QColor(QStringLiteral("#35c759"));
+  }
+  if (normalized.contains(QStringLiteral("unknown"))) {
+    return QColor(QStringLiteral("#ffd60a"));
   }
   return QColor(QStringLiteral("#55d3ff"));
 }
 
 QString categoryGlyph(const QString& category) {
   const QString normalized = category.trimmed().toLower();
+  const QString compact = QString(normalized)
+      .remove(QChar(' '))
+      .remove(QChar('_'))
+      .remove(QChar('-'));
   if (normalized == QStringLiteral("fighter")) {
     return QStringLiteral("F");
   }
@@ -664,6 +671,18 @@ QString categoryGlyph(const QString& category) {
   }
   if (normalized == QStringLiteral("transport")) {
     return QStringLiteral("T");
+  }
+  if (normalized == QStringLiteral("tank")) {
+    return QStringLiteral("K");
+  }
+  if (normalized == QStringLiteral("truck")) {
+    return QStringLiteral("R");
+  }
+  if (normalized == QStringLiteral("radar")) {
+    return QStringLiteral("D");
+  }
+  if (compact == QStringLiteral("samlauncher")) {
+    return QStringLiteral("A");
   }
   if (normalized == QStringLiteral("other")) {
     return QStringLiteral("O");
@@ -1291,7 +1310,12 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
   if (category != QStringLiteral("Fighter") &&
       category != QStringLiteral("Bomber") &&
       category != QStringLiteral("Helicopter") &&
-      category != QStringLiteral("Transport")) {
+      category != QStringLiteral("Transport") &&
+      category != QStringLiteral("Tank") &&
+      category != QStringLiteral("Truck") &&
+      category != QStringLiteral("Radar") &&
+      category != QStringLiteral("SAMLauncher") &&
+      category != QStringLiteral("SAM Launcher")) {
     category = QStringLiteral("Other");
   }
 

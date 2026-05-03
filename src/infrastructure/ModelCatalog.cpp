@@ -42,13 +42,61 @@ QString normalizeAbsolutePath(const QString& relativePath) {
   return QDir(projectRoot()).absoluteFilePath(cleaned);
 }
 
+QString normalizeDomainName(const QString& rawDomain) {
+  const QString normalized = rawDomain.trimmed().toLower();
+  if (normalized == QStringLiteral("air")) {
+    return QStringLiteral("Air");
+  }
+  if (normalized == QStringLiteral("ground")) {
+    return QStringLiteral("Ground");
+  }
+  if (normalized == QStringLiteral("surface")) {
+    return QStringLiteral("Surface");
+  }
+  return rawDomain.trimmed();
+}
+
+QString normalizeCategoryName(const QString& rawCategory) {
+  const QString normalized = rawCategory.trimmed().toLower();
+  if (normalized == QStringLiteral("fighter")) {
+    return QStringLiteral("Fighter");
+  }
+  if (normalized == QStringLiteral("bomber")) {
+    return QStringLiteral("Bomber");
+  }
+  if (normalized == QStringLiteral("helicopter")) {
+    return QStringLiteral("Helicopter");
+  }
+  if (normalized == QStringLiteral("transport")) {
+    return QStringLiteral("Transport");
+  }
+  if (normalized == QStringLiteral("tank")) {
+    return QStringLiteral("Tank");
+  }
+  if (normalized == QStringLiteral("truck")) {
+    return QStringLiteral("Truck");
+  }
+  if (normalized == QStringLiteral("armored_vehicle")) {
+    return QStringLiteral("Armored Vehicle");
+  }
+  if (normalized == QStringLiteral("sam_launcher") ||
+      normalized == QStringLiteral("sam launcher") ||
+      normalized == QStringLiteral("samlauncher")) {
+    return QStringLiteral("SAMLauncher");
+  }
+  if (normalized == QStringLiteral("radar")) {
+    return QStringLiteral("Radar");
+  }
+  return rawCategory.trimmed();
+}
+
 QString inferDomain(const QString& relativePath) {
   QString cleaned = relativePath;
   if (cleaned.startsWith('/')) {
     cleaned.remove(0, 1);
   }
   const QStringList parts = cleaned.split('/', Qt::SkipEmptyParts);
-  return parts.size() >= 2 ? parts.at(1) : QStringLiteral("Air");
+  return parts.size() >= 2 ? normalizeDomainName(parts.at(1)) : QStringLiteral("Air");
 }
 
 QString inferCategory(const QString& relativePath) {
@@ -57,7 +105,7 @@ QString inferCategory(const QString& relativePath) {
     cleaned.remove(0, 1);
   }
   const QStringList parts = cleaned.split('/', Qt::SkipEmptyParts);
-  return parts.size() >= 3 ? parts.at(2) : QStringLiteral("Fighter");
+  return parts.size() >= 3 ? normalizeCategoryName(parts.at(2)) : QStringLiteral("Fighter");
 }
 
 int parseTrailingInteger(const QString& line, const QString& key) {

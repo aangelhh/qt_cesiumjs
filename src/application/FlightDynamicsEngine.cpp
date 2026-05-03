@@ -88,11 +88,29 @@ void relaxDerivedAttitude(Entity& entity, double deltaSeconds) {
       deltaSeconds);
 }
 
+bool entityIsGround(const Entity& entity) {
+  return entity.domain.compare(QStringLiteral("Ground"), Qt::CaseInsensitive) == 0;
+}
+
+void applyKinematicStep(Entity& entity, double deltaSeconds);
+
+void normalizeGroundKinematics(Entity& entity) {
+  entity.altitude = 0;
+  entity.verticalSpeedMetersPerSecond = 0.0;
+  entity.pitchDegrees = 0.0;
+  entity.rollDegrees = 0.0;
+}
+
 void updateDerivedKinematicAttitude(
     Entity& entity,
     double previousHeadingDegrees,
     double deltaSeconds) {
   if (deltaSeconds <= 0.0) {
+    return;
+  }
+
+  if (entityIsGround(entity)) {
+    normalizeGroundKinematics(entity);
     return;
   }
 
@@ -641,6 +659,24 @@ void FlightDynamicsEngine::advanceEntity(
   // An entity must only move when it has an active task.
   // flightDynamicsEnabled / flightDynamicsMode only control how movement is simulated,
   // not whether the entity should move at all.
+  if (entityIsGround(entity)) {
+    normalizeGroundKinematics(entity);
+    if (!entity.currentTask.enabled) {
+      entity.speedKnots = 0.0;
+      return;
+    }
+
+    resolveTaskTargets(entity, taskStacks, snapshot, deltaSeconds);
+    if (entity.speedKnots <= 0.0) {
+      normalizeGroundKinematics(entity);
+      return;
+    }
+
+    applyKinematicStep(entity, deltaSeconds);
+    normalizeGroundKinematics(entity);
+    return;
+  }
+
   if (!entity.currentTask.enabled) {
     entity.speedKnots = 0.0;
     entity.verticalSpeedMetersPerSecond = 0.0;
