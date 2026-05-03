@@ -678,6 +678,10 @@ QString categoryGlyph(const QString& category) {
   if (normalized == QStringLiteral("truck")) {
     return QStringLiteral("R");
   }
+  if (compact == QStringLiteral("armoredvehicle") ||
+      compact == QStringLiteral("armouredvehicle")) {
+    return QStringLiteral("V");
+  }
   if (normalized == QStringLiteral("radar")) {
     return QStringLiteral("D");
   }
@@ -1313,6 +1317,8 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
       category != QStringLiteral("Transport") &&
       category != QStringLiteral("Tank") &&
       category != QStringLiteral("Truck") &&
+      category != QStringLiteral("ArmoredVehicle") &&
+      category != QStringLiteral("Armored Vehicle") &&
       category != QStringLiteral("Radar") &&
       category != QStringLiteral("SAMLauncher") &&
       category != QStringLiteral("SAM Launcher")) {

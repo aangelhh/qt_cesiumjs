@@ -76,8 +76,13 @@ QString normalizeCategoryName(const QString& rawCategory) {
   if (normalized == QStringLiteral("truck")) {
     return QStringLiteral("Truck");
   }
-  if (normalized == QStringLiteral("armored_vehicle")) {
-    return QStringLiteral("Armored Vehicle");
+  if (normalized == QStringLiteral("armored_vehicle") ||
+      normalized == QStringLiteral("armored vehicle") ||
+      normalized == QStringLiteral("armoredvehicle") ||
+      normalized == QStringLiteral("armoured_vehicle") ||
+      normalized == QStringLiteral("armoured vehicle") ||
+      normalized == QStringLiteral("armouredvehicle")) {
+    return QStringLiteral("ArmoredVehicle");
   }
   if (normalized == QStringLiteral("sam_launcher") ||
       normalized == QStringLiteral("sam launcher") ||

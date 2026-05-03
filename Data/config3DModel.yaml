@@ -1717,6 +1717,17 @@ GroundModels:
       Extra: 0
     urlLocation: "/models/ground/truck/truck.glb"
 
+  - name: Armored Vehicle
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 0
+      Category: 2
+      Subcategory: 0
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/ground/armored_vehicle/armored_vehicle.glb"
+
   - name: Mobile Anti-Air Radar
     entityType:
       Kind: 9

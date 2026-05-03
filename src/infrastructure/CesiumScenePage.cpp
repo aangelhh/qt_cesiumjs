@@ -229,6 +229,10 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         if (compactCategory === 'truck') {
           return 'UST---';
         }
+        if (compactCategory === 'armoredvehicle' ||
+            compactCategory === 'armouredvehicle') {
+          return 'UCAW--';
+        }
         if (compactCategory === 'radar') {
           return 'UCFTR-';
         }
@@ -253,6 +257,8 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const isGroundTrack = domain.includes('ground') ||
           compactCategory === 'tank' ||
           compactCategory === 'truck' ||
+          compactCategory === 'armoredvehicle' ||
+          compactCategory === 'armouredvehicle' ||
           compactCategory === 'radar' ||
           compactCategory === 'samlauncher';
 

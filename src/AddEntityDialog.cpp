@@ -484,6 +484,7 @@ void AddEntityDialog::populateCategoryCombo() {
     if (isGroundDomain(currentDomain)) {
       categories.insert(QStringLiteral("Tank"));
       categories.insert(QStringLiteral("Truck"));
+      categories.insert(QStringLiteral("ArmoredVehicle"));
       categories.insert(QStringLiteral("Radar"));
       categories.insert(QStringLiteral("SAMLauncher"));
     } else {
