@@ -183,6 +183,20 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         return '00';
       }
 
+      function qtLegacyAffiliationCode(forceIdentifier) {
+        const code = Number(forceIdentifier || 0);
+        if (code === 1) {
+          return 'F';
+        }
+        if (code === 2) {
+          return 'H';
+        }
+        if (code === 3) {
+          return 'N';
+        }
+        return 'U';
+      }
+
       function qtAirFunctionCode(track) {
         const category = String(track.category || track.type || '').toLowerCase();
         const type = String(track.type || '').toLowerCase();
@@ -205,10 +219,30 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         return '110100';
       }
 
+      function qtGroundFunctionCode(track) {
+        const category = String(track.category || track.type || '').toLowerCase();
+        const compactCategory = category.replace(/[\s_-]/g, '');
+
+        if (compactCategory === 'tank') {
+          return 'UCA---';
+        }
+        if (compactCategory === 'truck') {
+          return 'UST---';
+        }
+        if (compactCategory === 'radar') {
+          return 'UCFTR-';
+        }
+        if (compactCategory === 'samlauncher') {
+          return 'UCD---';
+        }
+        return 'UC----';
+      }
+
       function buildQtSidc(track) {
         const domain = String(track.domain || '').toLowerCase();
         const category = String(track.category || track.type || '').toLowerCase();
         const type = String(track.type || '').toLowerCase();
+        const compactCategory = category.replace(/[\s_-]/g, '');
         const isAirTrack = domain.includes('air') ||
           category.includes('fighter') ||
           category.includes('bomber') ||
@@ -216,20 +250,33 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           category.includes('cargo') ||
           category.includes('helicopter') ||
           type.includes('aew');
+        const isGroundTrack = domain.includes('ground') ||
+          compactCategory === 'tank' ||
+          compactCategory === 'truck' ||
+          compactCategory === 'radar' ||
+          compactCategory === 'samlauncher';
 
-        if (!isAirTrack) {
-          return null;
+        if (isGroundTrack) {
+          return 'S' +
+            qtLegacyAffiliationCode(track.forceIdentifier) +
+            'GP' +
+            qtGroundFunctionCode(track) +
+            '----';
         }
 
-        return '10' +
-          qtAffiliationCode(track.forceIdentifier) +
-          '01' +
-          '0' +
-          '0' +
-          '00' +
-          qtAirFunctionCode(track) +
-          '00' +
-          '00';
+        if (isAirTrack) {
+          return '10' +
+            qtAffiliationCode(track.forceIdentifier) +
+            '01' +
+            '0' +
+            '0' +
+            '00' +
+            qtAirFunctionCode(track) +
+            '00' +
+            '00';
+        }
+
+        return null;
       }
 
       function trackIsDestroyed(track) {

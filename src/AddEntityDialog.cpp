@@ -36,6 +36,10 @@ const ModelCatalogEntry* findSelectedModelEntry(
   return nullptr;
 }
 
+bool isGroundDomain(const QString& domain) {
+  return domain.trimmed().compare(QStringLiteral("Ground"), Qt::CaseInsensitive) == 0;
+}
+
 } // namespace
 
 namespace {
@@ -283,10 +287,14 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
     this->populateCategoryCombo();
     this->populateModelCombo();
     this->populateJsbsimModelCombo();
+    this->syncDynamicsControls();
+    this->syncWeaponControls();
   });
   QObject::connect(_categoryCombo, &QComboBox::currentTextChanged, this, [this]() {
     this->populateModelCombo();
     this->populateJsbsimModelCombo();
+    this->syncDynamicsControls();
+    this->syncWeaponControls();
   });
   QObject::connect(_modelCombo, &QComboBox::currentTextChanged, this, [this]() {
     this->applyModelSelectionToDisFields();
@@ -447,9 +455,8 @@ void AddEntityDialog::populateDomainCombo() {
   for (const ModelCatalogEntry& entry : _modelCatalog) {
     domains.insert(entry.domain);
   }
-  if (domains.isEmpty()) {
-    domains.insert(QStringLiteral("Air"));
-  }
+  domains.insert(QStringLiteral("Air"));
+  domains.insert(QStringLiteral("Ground"));
 
   QStringList ordered = domains.values();
   std::sort(ordered.begin(), ordered.end());
@@ -474,7 +481,14 @@ void AddEntityDialog::populateCategoryCombo() {
     }
   }
   if (categories.isEmpty()) {
-    categories.insert(QStringLiteral("Fighter"));
+    if (isGroundDomain(currentDomain)) {
+      categories.insert(QStringLiteral("Tank"));
+      categories.insert(QStringLiteral("Truck"));
+      categories.insert(QStringLiteral("Radar"));
+      categories.insert(QStringLiteral("SAMLauncher"));
+    } else {
+      categories.insert(QStringLiteral("Fighter"));
+    }
   }
 
   QStringList ordered = categories.values();
@@ -793,16 +807,45 @@ void AddEntityDialog::applyModelSelectionToDisFields() {
 }
 
 void AddEntityDialog::syncDynamicsControls() {
-  const bool enabled = _enableDynamicsCheck->isChecked();
+  const bool isGround = isGroundDomain(_domainCombo->currentText());
+  if (isGround) {
+    QSignalBlocker dynamicsBlocker(_enableDynamicsCheck);
+    QSignalBlocker taskBlocker(_enableFlightTaskCheck);
+    _enableDynamicsCheck->setChecked(false);
+    _enableFlightTaskCheck->setChecked(false);
+    _altitudeSpin->setValue(0);
+    _taskAltitudeSpin->setValue(0);
+    _verticalSpeedSpin->setValue(0.0);
+  }
+
+  const bool enabled = !isGround && _enableDynamicsCheck->isChecked();
   const bool useJsbsim = enabled && _dynamicsModeCombo->currentData().toString() == QStringLiteral("jsbsim");
+  if (isGround) {
+    _speedSpin->setRange(0.0, 80.0);
+    _speedSpin->setValue(0.0);
+  } else {
+    _speedSpin->setRange(0.0, 1200.0);
+  }
+  _enableDynamicsCheck->setEnabled(!isGround);
+  _enableFlightTaskCheck->setEnabled(!isGround);
   _dynamicsModeCombo->setEnabled(enabled);
-  _speedSpin->setEnabled(enabled);
+  _speedSpin->setEnabled(isGround || enabled);
   _verticalSpeedSpin->setEnabled(enabled);
   _jsbsimModelCombo->setEnabled(useJsbsim);
+  _taskHeadingSpin->setEnabled(!isGround && _enableFlightTaskCheck->isChecked());
+  _taskAltitudeSpin->setEnabled(!isGround && _enableFlightTaskCheck->isChecked());
+  _taskSpeedSpin->setEnabled(!isGround && _enableFlightTaskCheck->isChecked());
+  _altitudeSpin->setEnabled(!isGround);
 }
 
 void AddEntityDialog::syncWeaponControls() {
-  _missileCountSpin->setEnabled(_attachMissilesCheck->isChecked());
+  const bool isGround = isGroundDomain(_domainCombo->currentText());
+  if (isGround) {
+    QSignalBlocker blocker(_attachMissilesCheck);
+    _attachMissilesCheck->setChecked(false);
+  }
+  _attachMissilesCheck->setEnabled(!isGround);
+  _missileCountSpin->setEnabled(!isGround && _attachMissilesCheck->isChecked());
 }
 
 Entity AddEntityDialog::entity() const {
@@ -818,7 +861,8 @@ Entity AddEntityDialog::entity() const {
   entity.type = entity.category;
   entity.callsign = _callsignEdit->text().trimmed();
   entity.headingDegrees = _headingSpin->value();
-  entity.flightDynamicsEnabled = _enableDynamicsCheck->isChecked();
+  const bool isGround = isGroundDomain(entity.domain);
+  entity.flightDynamicsEnabled = !isGround && _enableDynamicsCheck->isChecked();
   entity.flightDynamicsMode = entity.flightDynamicsEnabled
       ? _dynamicsModeCombo->currentData().toString()
       : QStringLiteral("kinematic");
@@ -827,8 +871,8 @@ Entity AddEntityDialog::entity() const {
       ? _jsbsimModelCombo->currentData().toString()
       : QString();
   entity.speedKnots = _speedSpin->value();
-  entity.verticalSpeedMetersPerSecond = _verticalSpeedSpin->value();
-  entity.currentTask.enabled = _enableFlightTaskCheck->isChecked();
+  entity.verticalSpeedMetersPerSecond = isGround ? 0.0 : _verticalSpeedSpin->value();
+  entity.currentTask.enabled = !isGround && _enableFlightTaskCheck->isChecked();
   entity.currentTask.taskType = entity.currentTask.enabled
       ? QStringLiteral("FlyHeadingAltitudeSpeed")
       : QString();
@@ -841,7 +885,7 @@ Entity AddEntityDialog::entity() const {
   entity.latitude = _latitudeSpin->value();
   entity.longitude = _longitudeSpin->value();
   entity.groundHeight = _groundHeightSpin->value();
-  entity.altitude = _altitudeSpin->value();
+  entity.altitude = isGround ? 0 : _altitudeSpin->value();
   entity.modelName = _modelCombo->currentText();
   const QString modelPath = _modelCombo->currentData().toString();
   entity.modelUri = modelPath.isEmpty() ? QString() : QUrl::fromLocalFile(modelPath).toString();

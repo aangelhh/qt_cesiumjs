@@ -1691,3 +1691,52 @@ Eurocopter_Tiger:
       Specific: 4
       Extra: 0
     urlLocation: "/models/Air/Helicopter/eurocopter_ec665_tigre.glb"
+
+GroundModels:
+  # Provisional SISO/FOM EntityType mapping pending EPIC 19.
+  # Values below only use generic mappings clearly present in Data/siso-std-010.xml.
+  - name: Tank
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 0
+      Category: 1
+      Subcategory: 0
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/ground/tank/tank.glb"
+
+  - name: Truck
+    entityType:
+      Kind: 1
+      Domain: 1
+      Country: 0
+      Category: 7
+      Subcategory: 0
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/ground/truck/truck.glb"
+
+  - name: Mobile Anti-Air Radar
+    entityType:
+      Kind: 9
+      Domain: 1
+      Country: 0
+      Category: 2
+      Subcategory: 1
+      Specific: 2
+      Extra: 0
+    urlLocation: "/models/ground/radar/mobile_anti-air_radar.glb"
+
+  - name: SAM Launcher
+    # No generic platform SAM launcher mapping is selected here without choosing
+    # a specific system (Patriot/HAWK/etc.). Exact mapping remains EPIC 19 work.
+    entityType:
+      Kind: 0
+      Domain: 0
+      Country: 0
+      Category: 0
+      Subcategory: 0
+      Specific: 0
+      Extra: 0
+    urlLocation: "/models/ground/sam_launcher/sam_launcher.glb"

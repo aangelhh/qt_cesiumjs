@@ -111,6 +111,26 @@ int weaponQuantity(
   return 0;
 }
 
+bool entityIsGroundDomain(const Entity& entity) {
+  return entity.domain.compare(QStringLiteral("Ground"), Qt::CaseInsensitive) == 0;
+}
+
+void normalizeGroundEntity(Entity& entity) {
+  if (!entityIsGroundDomain(entity)) {
+    return;
+  }
+
+  entity.altitude = 0;
+  entity.pitchDegrees = 0.0;
+  entity.rollDegrees = 0.0;
+  entity.flightDynamicsEnabled = false;
+  entity.flightDynamicsMode = QStringLiteral("kinematic");
+  entity.jsbsimAircraftModel.clear();
+  entity.speedKnots = 0.0;
+  entity.verticalSpeedMetersPerSecond = 0.0;
+  entity.currentTask = EntityTask{};
+}
+
 const Entity* findEntityByName(
     const QVector<Entity>& entities,
     const QString& entityName) {
@@ -741,6 +761,7 @@ Entity entityFromJson(const QJsonObject& object) {
     entity.sensorContacts.push_back(sensorContactFromJson(value.toObject()));
   }
 
+  normalizeGroundEntity(entity);
   if (entity.entityTypeCode.isEmpty()) {
     entity.refreshEntityTypeCode();
   }
@@ -755,6 +776,7 @@ ScenarioState::ScenarioState() {
 
 void ScenarioState::addEntity(const Entity& entity) {
   Entity newEntity = entity; // Create a mutable copy
+  normalizeGroundEntity(newEntity);
   newEntity.currentTask = EntityTask{}; // CRITICAL: Ensure new entity starts with clean task state
   _entities.push_back(newEntity);
   _taskStacks[newEntity.name] = domain::TaskStack(); // CRITICAL: Initialize empty stack for new entity
@@ -1598,6 +1620,11 @@ void ScenarioState::advanceBehaviors(double deltaSeconds) {
 
     const QString behaviorMode = normalizedBehaviorMode(entity.behaviorMode);
     if (behaviorMode == QStringLiteral("Manual")) {
+      entity.behaviorTargetEntityName.clear();
+      continue;
+    }
+
+    if (entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
       entity.behaviorTargetEntityName.clear();
       continue;
     }
