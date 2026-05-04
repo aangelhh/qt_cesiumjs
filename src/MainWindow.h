@@ -108,6 +108,7 @@ private:
 
   struct PendingBombRelease {
     QString launcherEntityName;
+    QString targetEntityName;
     double targetLatitude = 0.0;
     double targetLongitude = 0.0;
     double targetAltitudeMeters = 0.0;
@@ -170,9 +171,11 @@ private:
       double targetAltitudeMeters,
       const QString& targetLabel,
       const QString& sourceDescription,
+      const QString& targetEntityName = QString(),
       bool logQueued = true,
       bool focusLauncher = true);
   void clearPendingBombRelease();
+  QString cleanupRuntimeReferencesForRemovedEntity(const QString& entityName);
   void validatePendingBombRelease();
   void processAutoBombingBehaviors(double deltaSeconds);
   void processPendingBombRelease();

@@ -4862,11 +4862,18 @@ void MainWindow::deleteSelectedEntity() {
     label = QStringLiteral("Area");
   }
 
+  QString cleanupStatusMessage;
   if (removed) {
+    if (label == QStringLiteral("Entity")) {
+      cleanupStatusMessage = this->cleanupRuntimeReferencesForRemovedEntity(objectName);
+    }
     this->appendLogMessage(QStringLiteral("%1 deleted: %2").arg(label, objectName));
     this->removeTrackFromMap(objectName);
     this->syncScenarioStateToUi();
-    this->_ui->statusLabel->setText(QStringLiteral("%1 eliminado: %2").arg(label, objectName));
+    this->_ui->statusLabel->setText(
+        cleanupStatusMessage.isEmpty()
+            ? QStringLiteral("%1 eliminado: %2").arg(label, objectName)
+            : cleanupStatusMessage);
   }
 }
 
@@ -4987,9 +4994,11 @@ void MainWindow::queuePendingBombRelease(
     double targetAltitudeMeters,
     const QString& targetLabel,
     const QString& sourceDescription,
+    const QString& targetEntityName,
     bool logQueued,
     bool focusLauncher) {
   this->_pendingBombRelease.launcherEntityName = launcherEntityName.trimmed();
+  this->_pendingBombRelease.targetEntityName = targetEntityName.trimmed();
   this->_pendingBombRelease.targetLatitude = targetLatitude;
   this->_pendingBombRelease.targetLongitude = targetLongitude;
   this->_pendingBombRelease.targetAltitudeMeters = targetAltitudeMeters;
@@ -5017,6 +5026,50 @@ void MainWindow::queuePendingBombRelease(
 
 void MainWindow::clearPendingBombRelease() {
   this->_pendingBombRelease = PendingBombRelease{};
+}
+
+QString MainWindow::cleanupRuntimeReferencesForRemovedEntity(const QString& entityName) {
+  const QString removedEntityName = entityName.trimmed();
+  if (removedEntityName.isEmpty()) {
+    return QString();
+  }
+
+  this->_autoBombReleaseCooldownSeconds.remove(removedEntityName);
+
+  if (this->_bombTargetPickLauncherName.compare(
+          removedEntityName,
+          Qt::CaseInsensitive) == 0) {
+    this->_isPickingBombTarget = false;
+    this->_bombTargetPickLauncherName.clear();
+  }
+
+  if (!this->_pendingBombRelease.pending) {
+    return QString();
+  }
+
+  const bool launcherRemoved =
+      this->_pendingBombRelease.launcherEntityName.compare(
+          removedEntityName,
+          Qt::CaseInsensitive) == 0;
+  const bool targetRemoved =
+      !this->_pendingBombRelease.targetEntityName.trimmed().isEmpty() &&
+      this->_pendingBombRelease.targetEntityName.compare(
+          removedEntityName,
+          Qt::CaseInsensitive) == 0;
+  if (!launcherRemoved && !targetRemoved) {
+    return QString();
+  }
+
+  const QString reason = targetRemoved
+      ? QStringLiteral("target removed")
+      : QStringLiteral("launcher removed");
+  this->clearPendingBombRelease();
+  this->removeTrackFromMap(QStringLiteral("Bomb Target"));
+  this->removeTrackFromMap(QStringLiteral("Bomb Target Line"));
+  const QString message =
+      QStringLiteral("Pending bomb release cancelled: %1").arg(reason);
+  this->appendLogMessage(message);
+  return message;
 }
 
 void MainWindow::validatePendingBombRelease() {
@@ -5084,6 +5137,7 @@ void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
         static_cast<double>(target->altitude),
         target->name,
         QStringLiteral("Auto Behavior"),
+        target->name,
         false,
         false);
     this->_autoBombReleaseCooldownSeconds.insert(
@@ -5234,7 +5288,8 @@ void MainWindow::releaseBombAtSurfaceEntity() {
       target->longitude,
       static_cast<double>(target->altitude),
       target->name,
-      QStringLiteral("Surface Entity"));
+      QStringLiteral("Surface Entity"),
+      target->name);
 }
 
 void MainWindow::releaseBombAtCustomCoordinates() {

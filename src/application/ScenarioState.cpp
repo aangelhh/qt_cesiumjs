@@ -803,9 +803,24 @@ double ScenarioState::missileMaxRangeMeters() {
 bool ScenarioState::removeEntity(const QString& entityName) {
   for (qsizetype index = 0; index < _entities.size(); ++index) {
     if (_entities.at(index).name == entityName) {
+      const QString removedEntityName = _entities.at(index).name;
       _entities.removeAt(index);
-      _taskStacks.erase(entityName); // Clean up stack for removed entity
-      _behaviorMissileCooldownSeconds.erase(entityName);
+      _taskStacks.erase(removedEntityName); // Clean up stack for removed entity
+      _behaviorMissileCooldownSeconds.erase(removedEntityName);
+
+      for (Entity& entity : _entities) {
+        if (entity.behaviorTargetEntityName.compare(
+                removedEntityName,
+                Qt::CaseInsensitive) != 0) {
+          continue;
+        }
+
+        entity.behaviorTargetEntityName.clear();
+        _pendingEventLogMessages.push_back(
+            QStringLiteral("Behavior target cleared: target removed (%1 -> %2)")
+                .arg(entity.name, removedEntityName));
+      }
+
       this->refreshSensors();
       this->save();
       return true;
