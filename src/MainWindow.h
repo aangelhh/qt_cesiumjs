@@ -147,6 +147,9 @@ private:
   void rebuildTacticalGraphicsTree();
   void appendLogMessage(const QString& message);
   void setSelectedTrackDetails(const QVariantMap& summary);
+  QString buildSelectedEntityOperationalStatus(
+      const QVariantMap& summary,
+      const class Entity* entity) const;
   void sendTrackToMap(const QVariantMap& summary, bool focus = false);
   void removeTrackFromMap(const QString& trackName);
   void sendDraftGraphicToMap(const QVariantMap& summary);

@@ -1126,43 +1126,103 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
       taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
           ? status
           : QStringLiteral("%1 (%2)").arg(taskType, taskStatus);
-  const QString behaviorMode = value("behaviorMode", QStringLiteral("Manual"));
-  const QString behaviorTarget = value("behaviorTargetEntityName");
+  const Entity* selectedEntity = this->findEntityByName(name);
+  this->_ui->selectionStateValueLabel->setWordWrap(true);
+  this->_ui->selectionStateValueLabel->setText(
+      this->buildSelectedEntityOperationalStatus(summary, selectedEntity));
+  this->_ui->selectionPositionValueLabel->setText(position);
+}
+
+QString MainWindow::buildSelectedEntityOperationalStatus(
+    const QVariantMap& summary,
+    const Entity* entity) const {
+  const auto value = [&summary](const char* key, const QString& fallback = QStringLiteral("-")) {
+    const QString text = summary.value(QString::fromLatin1(key)).toString().trimmed();
+    return text.isEmpty() ? fallback : text;
+  };
+
+  const QString taskType = value("taskType", QStringLiteral("No current tasks"));
+  const QString taskStatus = value("taskStatus", QStringLiteral("-"));
+  const QString status = value("status");
+  const QString operationalState =
+      taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
+          ? status
+          : QStringLiteral("%1 (%2)").arg(taskType, taskStatus);
+
+  if (!entity) {
+    return operationalState;
+  }
+
+  const QString entityName = entity->name;
+  const int missileCount = weaponQuantity(*entity, QStringLiteral("Missile"));
+  const int bombCount = weaponQuantity(*entity, QStringLiteral("Bomb"));
+  const QString behaviorMode = entity->behaviorMode.trimmed().isEmpty()
+      ? QStringLiteral("Manual")
+      : entity->behaviorMode.trimmed();
+  const QString behaviorTargetName = entity->behaviorTargetEntityName.trimmed();
+  const Entity* behaviorTarget = this->findEntityByName(behaviorTargetName);
+
+  bool behaviorTargetDetected = false;
+  double behaviorTargetRangeMeters = -1.0;
+  for (const SensorContact& contact : entity->sensorContacts) {
+    if (contact.targetEntityName.compare(behaviorTargetName, Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    if (contact.detected) {
+      behaviorTargetDetected = true;
+      if (behaviorTargetRangeMeters < 0.0 ||
+          contact.rangeMeters < behaviorTargetRangeMeters) {
+        behaviorTargetRangeMeters = contact.rangeMeters;
+      }
+    }
+  }
+
+  const QString behaviorTargetStatus = behaviorTargetName.isEmpty()
+      ? QStringLiteral("-")
+      : QStringLiteral("%1 | %2 | %3%4")
+            .arg(
+                behaviorTargetDetected
+                    ? QStringLiteral("detected")
+                    : QStringLiteral("not detected"),
+                behaviorTarget
+                    ? (behaviorTarget->forceIdentifier == entity->forceIdentifier
+                           ? QStringLiteral("friendly")
+                           : QStringLiteral("enemy"))
+                    : QStringLiteral("unknown side"),
+                behaviorTarget
+                    ? (behaviorTarget->destroyed
+                           ? QStringLiteral("destroyed")
+                           : QStringLiteral("alive"))
+                    : QStringLiteral("missing"),
+                behaviorTargetRangeMeters >= 0.0
+                    ? QStringLiteral(" | %1 km")
+                          .arg(behaviorTargetRangeMeters / 1000.0, 0, 'f', 1)
+                    : QString());
+
   struct ContactDebugLine {
     double rangeMeters = 0.0;
     QString text;
   };
   QVector<ContactDebugLine> contactLines;
-  const QVariantList contacts = summary.value(QStringLiteral("sensorContacts")).toList();
-  const int ownForceIdentifier = summary.value(QStringLiteral("forceIdentifier")).toInt(0);
-  for (const QVariant& contactValue : contacts) {
-    const QVariantMap contact = contactValue.toMap();
-    const QString targetName =
-        contact.value(QStringLiteral("targetEntityName")).toString().trimmed();
+  for (const SensorContact& contact : entity->sensorContacts) {
+    const QString targetName = contact.targetEntityName.trimmed();
     const Entity* target = this->findEntityByName(targetName);
-    const bool detected =
-        contact.value(QStringLiteral("detected"), false).toBool();
-    const double rangeMeters =
-        contact.value(QStringLiteral("rangeMeters"), 0.0).toDouble();
-    const double bearingDegrees =
-        contact.value(QStringLiteral("bearingDegrees"), 0.0).toDouble();
-    const bool friendly =
-        target && target->forceIdentifier == ownForceIdentifier;
+    const bool friendly = target && target->forceIdentifier == entity->forceIdentifier;
     const bool destroyed = target && target->destroyed;
     const bool validBehaviorTarget =
-        detected &&
+        contact.detected &&
         target &&
         !destroyed &&
-        target->name != name &&
+        target->name != entityName &&
         !friendly;
 
     contactLines.push_back(ContactDebugLine{
-        rangeMeters,
+        contact.rangeMeters,
         QStringLiteral("%1 | %2 | %3 km | brg %4 deg | %5 | %6 | %7")
             .arg(targetName.isEmpty() ? QStringLiteral("<unknown>") : targetName)
-            .arg(detected ? QStringLiteral("detected") : QStringLiteral("not detected"))
-            .arg(rangeMeters / 1000.0, 0, 'f', 1)
-            .arg(bearingDegrees, 0, 'f', 1)
+            .arg(contact.detected ? QStringLiteral("detected") : QStringLiteral("not detected"))
+            .arg(contact.rangeMeters / 1000.0, 0, 'f', 1)
+            .arg(contact.bearingDegrees, 0, 'f', 1)
             .arg(target
                      ? (friendly ? QStringLiteral("friendly") : QStringLiteral("enemy"))
                      : QStringLiteral("unknown side"))
@@ -1183,16 +1243,148 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
 
   QStringList contactTextLines;
   for (int index = 0; index < contactLines.size() && index < 10; ++index) {
-    contactTextLines.push_back(contactLines.at(index).text);
+    contactTextLines.push_back(QStringLiteral("  %1").arg(contactLines.at(index).text));
   }
   const QString contactsText = contactTextLines.isEmpty()
-      ? QStringLiteral("No contacts")
+      ? QStringLiteral("  No contacts")
       : contactTextLines.join(QStringLiteral("\n"));
-  this->_ui->selectionStateValueLabel->setWordWrap(true);
-  this->_ui->selectionStateValueLabel->setText(
-      QStringLiteral("%1\nBehavior: %2\nBehavior Target: %3\nSensor Contacts:\n%4")
-          .arg(operationalState, behaviorMode, behaviorTarget, contactsText));
-  this->_ui->selectionPositionValueLabel->setText(position);
+
+  QString bombReleaseState = QStringLiteral("None");
+  QString bombTargetText = QStringLiteral("-");
+  QString bombDistanceText = QStringLiteral("-");
+  if (this->_pendingBombRelease.pending &&
+      this->_pendingBombRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0) {
+    const BombReleaseGateEvaluation evaluation = evaluateBombReleaseGate(
+        *entity,
+        this->_pendingBombRelease.targetLatitude,
+        this->_pendingBombRelease.targetLongitude,
+        this->_pendingBombRelease.targetAltitudeMeters);
+    bombReleaseState = evaluation.stateLabel();
+    bombTargetText = this->_pendingBombRelease.targetLabel.trimmed().isEmpty()
+        ? attackPointLabel(
+              this->_pendingBombRelease.targetLatitude,
+              this->_pendingBombRelease.targetLongitude)
+        : this->_pendingBombRelease.targetLabel.trimmed();
+    bombDistanceText = QStringLiteral("%1 km")
+        .arg(
+            distanceMeters(
+                entity->latitude,
+                entity->longitude,
+                this->_pendingBombRelease.targetLatitude,
+                this->_pendingBombRelease.targetLongitude) / 1000.0,
+            0,
+            'f',
+            1);
+  } else {
+    for (const ActiveMunition& munition : this->_scenarioState->activeMunitions()) {
+      if (munition.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0 &&
+          munition.munitionType.compare(QStringLiteral("Bomb"), Qt::CaseInsensitive) == 0) {
+        bombReleaseState = QStringLiteral("Released");
+        bombTargetText = munition.id;
+        break;
+      }
+    }
+  }
+
+  const bool canUseWeapons = entityCanUseMissileActions(*entity);
+
+  bool hasAirTarget = false;
+  bool hasDetectedAirTarget = false;
+  bool hasMissileTargetInRange = false;
+  const double missileMaxRangeMeters = ScenarioState::missileMaxRangeMeters();
+  for (const Entity& candidate : this->_scenarioState->entities()) {
+    if (candidate.name == entityName ||
+        candidate.destroyed ||
+        candidate.forceIdentifier == entity->forceIdentifier ||
+        candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    hasAirTarget = true;
+    for (const SensorContact& contact : entity->sensorContacts) {
+      if (!contact.detected ||
+          contact.targetEntityName.compare(candidate.name, Qt::CaseInsensitive) != 0) {
+        continue;
+      }
+      hasDetectedAirTarget = true;
+      if (contact.rangeMeters > 0.0 && contact.rangeMeters <= missileMaxRangeMeters) {
+        hasMissileTargetInRange = true;
+      }
+    }
+  }
+
+  const auto availabilityText = [](bool available, const QString& reason) {
+    return available
+        ? QStringLiteral("Available")
+        : QStringLiteral("Blocked (%1)").arg(reason);
+  };
+
+  QString launchMissileReason;
+  if (!canUseWeapons || entity->destroyed) {
+    launchMissileReason = QStringLiteral("platform not eligible");
+  } else if (missileCount <= 0) {
+    launchMissileReason = QStringLiteral("no missiles");
+  } else if (!this->_simulationRunning) {
+    launchMissileReason = QStringLiteral("simulation stopped");
+  } else if (!hasAirTarget) {
+    launchMissileReason = QStringLiteral("no target");
+  } else if (!hasDetectedAirTarget) {
+    launchMissileReason = QStringLiteral("target not detected");
+  } else if (!hasMissileTargetInRange) {
+    launchMissileReason = QStringLiteral("out of range");
+  }
+  const bool launchMissileAvailable = launchMissileReason.isEmpty();
+
+  QString releaseBombReason;
+  if (!canUseWeapons || entity->destroyed) {
+    releaseBombReason = QStringLiteral("platform not eligible");
+  } else if (bombCount <= 0) {
+    releaseBombReason = QStringLiteral("no bombs");
+  } else if (!this->_simulationRunning) {
+    releaseBombReason = QStringLiteral("simulation stopped");
+  }
+  const bool releaseBombAvailable = releaseBombReason.isEmpty();
+
+  const bool cancelBombAvailable =
+      this->_pendingBombRelease.pending &&
+      this->_pendingBombRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0;
+
+  QStringList lines;
+  lines << QStringLiteral("Entity")
+        << QStringLiteral("  State: %1").arg(operationalState)
+        << QStringLiteral("  Damage: %1 (%2%)")
+               .arg(
+                   value("damageState", QStringLiteral("Intact")),
+                   QString::number(summary.value(QStringLiteral("damagePercent"), 0.0).toDouble(), 'f', 0))
+        << QStringLiteral("")
+        << QStringLiteral("Weapons")
+        << QStringLiteral("  Missiles: %1").arg(missileCount)
+        << QStringLiteral("  Bombs: %1").arg(bombCount)
+        << QStringLiteral("")
+        << QStringLiteral("Behavior")
+        << QStringLiteral("  Behavior Mode: %1").arg(behaviorMode)
+        << QStringLiteral("  Behavior Target: %1")
+               .arg(behaviorTargetName.isEmpty() ? QStringLiteral("-") : behaviorTargetName)
+        << QStringLiteral("  Target status: %1").arg(behaviorTargetStatus)
+        << QStringLiteral("")
+        << QStringLiteral("Sensors")
+        << contactsText
+        << QStringLiteral("")
+        << QStringLiteral("Bombing")
+        << QStringLiteral("  Pending Bomb Release: %1").arg(bombReleaseState)
+        << QStringLiteral("  Bomb Target: %1").arg(bombTargetText)
+        << QStringLiteral("  Distance: %1").arg(bombDistanceText)
+        << QStringLiteral("")
+        << QStringLiteral("Action Availability")
+        << QStringLiteral("  Launch Missile At: %1")
+               .arg(availabilityText(launchMissileAvailable, launchMissileReason))
+        << QStringLiteral("  Release Bomb At: %1")
+               .arg(availabilityText(releaseBombAvailable, releaseBombReason))
+        << QStringLiteral("  Cancel Bomb Release: %1")
+               .arg(availabilityText(
+                   cancelBombAvailable,
+                   QStringLiteral("no pending release")));
+
+  return lines.join(QStringLiteral("\n"));
 }
 
 void MainWindow::initializeModels() {
