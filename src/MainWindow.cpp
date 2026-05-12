@@ -1127,10 +1127,12 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
           ? status
           : QStringLiteral("%1 (%2)").arg(taskType, taskStatus);
   const Entity* selectedEntity = this->findEntityByName(name);
-  this->_ui->selectionStateValueLabel->setWordWrap(true);
-  this->_ui->selectionStateValueLabel->setText(
-      this->buildSelectedEntityOperationalStatus(summary, selectedEntity));
+  this->_ui->selectionStateValueLabel->setWordWrap(false);
+  this->_ui->selectionStateValueLabel->setStyleSheet(QString());
+  this->_ui->selectionStateValueLabel->setText(operationalState);
   this->_ui->selectionPositionValueLabel->setText(position);
+  this->_ui->operationalStatusPlainTextEdit->setPlainText(
+      this->buildSelectedEntityOperationalStatus(summary, selectedEntity));
 }
 
 QString MainWindow::buildSelectedEntityOperationalStatus(
@@ -1246,7 +1248,7 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
     contactTextLines.push_back(QStringLiteral("  %1").arg(contactLines.at(index).text));
   }
   const QString contactsText = contactTextLines.isEmpty()
-      ? QStringLiteral("  No contacts")
+      ? QStringLiteral("  No contacts detected")
       : contactTextLines.join(QStringLiteral("\n"));
 
   QString bombReleaseState = QStringLiteral("None");
@@ -1314,8 +1316,13 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
 
   const auto availabilityText = [](bool available, const QString& reason) {
     return available
-        ? QStringLiteral("Available")
-        : QStringLiteral("Blocked (%1)").arg(reason);
+        ? QStringLiteral("✔ Available")
+        : QStringLiteral("✖ Blocked (%1)").arg(reason);
+  };
+  const auto fieldLine = [](const QString& label, const QString& text) {
+    return QStringLiteral("  %1 %2")
+        .arg(label + QStringLiteral(":"), -24, QLatin1Char(' '))
+        .arg(text);
   };
 
   QString launchMissileReason;
@@ -1349,38 +1356,52 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
       this->_pendingBombRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0;
 
   QStringList lines;
-  lines << QStringLiteral("Entity")
-        << QStringLiteral("  State: %1").arg(operationalState)
-        << QStringLiteral("  Damage: %1 (%2%)")
-               .arg(
-                   value("damageState", QStringLiteral("Intact")),
-                   QString::number(summary.value(QStringLiteral("damagePercent"), 0.0).toDouble(), 'f', 0))
+  lines << QStringLiteral("[ENTITY]")
+        << fieldLine(QStringLiteral("State"), operationalState)
+        << fieldLine(
+               QStringLiteral("Damage"),
+               QStringLiteral("%1 (%2%)")
+                   .arg(
+                       value("damageState", QStringLiteral("Intact")),
+                       QString::number(
+                           summary.value(QStringLiteral("damagePercent"), 0.0).toDouble(),
+                           'f',
+                           0)))
         << QStringLiteral("")
-        << QStringLiteral("Weapons")
-        << QStringLiteral("  Missiles: %1").arg(missileCount)
-        << QStringLiteral("  Bombs: %1").arg(bombCount)
         << QStringLiteral("")
-        << QStringLiteral("Behavior")
-        << QStringLiteral("  Behavior Mode: %1").arg(behaviorMode)
-        << QStringLiteral("  Behavior Target: %1")
-               .arg(behaviorTargetName.isEmpty() ? QStringLiteral("-") : behaviorTargetName)
-        << QStringLiteral("  Target status: %1").arg(behaviorTargetStatus)
+        << QStringLiteral("[WEAPONS]")
+        << fieldLine(QStringLiteral("Missiles"), QString::number(missileCount))
+        << fieldLine(QStringLiteral("Bombs"), QString::number(bombCount))
         << QStringLiteral("")
-        << QStringLiteral("Sensors")
+        << QStringLiteral("")
+        << QStringLiteral("[BEHAVIOR]")
+        << fieldLine(QStringLiteral("Mode"), behaviorMode)
+        << fieldLine(
+               QStringLiteral("Target"),
+               behaviorTargetName.isEmpty() ? QStringLiteral("-") : behaviorTargetName)
+        << fieldLine(QStringLiteral("Target status"), behaviorTargetStatus)
+        << QStringLiteral("")
+        << QStringLiteral("")
+        << QStringLiteral("[SENSORS]")
         << contactsText
         << QStringLiteral("")
-        << QStringLiteral("Bombing")
-        << QStringLiteral("  Pending Bomb Release: %1").arg(bombReleaseState)
-        << QStringLiteral("  Bomb Target: %1").arg(bombTargetText)
-        << QStringLiteral("  Distance: %1").arg(bombDistanceText)
         << QStringLiteral("")
-        << QStringLiteral("Action Availability")
-        << QStringLiteral("  Launch Missile At: %1")
-               .arg(availabilityText(launchMissileAvailable, launchMissileReason))
-        << QStringLiteral("  Release Bomb At: %1")
-               .arg(availabilityText(releaseBombAvailable, releaseBombReason))
-        << QStringLiteral("  Cancel Bomb Release: %1")
-               .arg(availabilityText(
+        << QStringLiteral("[BOMBING]")
+        << fieldLine(QStringLiteral("Pending Release"), bombReleaseState)
+        << fieldLine(QStringLiteral("Bomb Target"), bombTargetText)
+        << fieldLine(QStringLiteral("Distance"), bombDistanceText)
+        << QStringLiteral("")
+        << QStringLiteral("")
+        << QStringLiteral("[ACTIONS]")
+        << fieldLine(
+               QStringLiteral("Launch Missile At"),
+               availabilityText(launchMissileAvailable, launchMissileReason))
+        << fieldLine(
+               QStringLiteral("Release Bomb At"),
+               availabilityText(releaseBombAvailable, releaseBombReason))
+        << fieldLine(
+               QStringLiteral("Cancel Bomb Release"),
+               availabilityText(
                    cancelBombAvailable,
                    QStringLiteral("no pending release")));
 
