@@ -33,7 +33,7 @@ AssignTaskDialog::AssignTaskDialog(
 
   auto* layout = new QVBoxLayout(this);
   auto* hintLabel = new QLabel(
-      QStringLiteral("Assign a movement task to %1").arg(entityName),
+      QStringLiteral("Assign a task to %1").arg(entityName),
       this);
   hintLabel->setWordWrap(true);
   layout->addWidget(hintLabel);
@@ -45,6 +45,8 @@ AssignTaskDialog::AssignTaskDialog(
   _taskTypeCombo->addItem(QStringLiteral("Patrol Area"), QStringLiteral("PatrolArea"));
   _taskTypeCombo->addItem(QStringLiteral("Orbit Area"), QStringLiteral("OrbitArea"));
   _taskTypeCombo->addItem(QStringLiteral("Follow Entity"), QStringLiteral("FollowEntity"));
+  _taskTypeCombo->addItem(QStringLiteral("Attack Air"), QStringLiteral("AttackAir"));
+  _taskTypeCombo->addItem(QStringLiteral("Attack Surface"), QStringLiteral("AttackSurface"));
 
   _headingSpin->setRange(0.0, 359.0);
   _headingSpin->setDecimals(1);
@@ -70,7 +72,10 @@ AssignTaskDialog::AssignTaskDialog(
   _longitudeSpin->setSingleStep(0.001);
   _longitudeSpin->setSuffix(QStringLiteral(" deg"));
 
-  _followTargetCombo->addItems(availableTargets);
+  for (const QString& targetName : availableTargets) {
+    _followTargetCombo->addItem(targetName, targetName);
+  }
+  _followTargetCombo->addItem(QStringLiteral("Coordinates / None"), QString());
   _waypointCombo->addItems(availableWaypoints);
   _routeCombo->addItems(availableRoutes);
   _areaCombo->addItems(availableAreas);
@@ -99,9 +104,11 @@ AssignTaskDialog::AssignTaskDialog(
   _latitudeSpin->setValue(currentTask.targetLatitude);
   _longitudeSpin->setValue(currentTask.targetLongitude);
   _altitudeSpin->setValue(currentTask.targetAltitudeMeters);
-  const int followIndex = _followTargetCombo->findText(currentTask.targetEntityName);
-  if (followIndex >= 0) {
-    _followTargetCombo->setCurrentIndex(followIndex);
+  if (!currentTask.targetEntityName.trimmed().isEmpty()) {
+    const int followIndex = _followTargetCombo->findData(currentTask.targetEntityName);
+    if (followIndex >= 0) {
+      _followTargetCombo->setCurrentIndex(followIndex);
+    }
   }
   const int waypointIndex = _waypointCombo->findText(currentTask.targetWaypointName);
   if (waypointIndex >= 0) {
@@ -148,7 +155,7 @@ EntityTask AssignTaskDialog::task() const {
   task.targetSpeedKnots = _speedSpin->value();
   task.targetLatitude = _latitudeSpin->value();
   task.targetLongitude = _longitudeSpin->value();
-  task.targetEntityName = _followTargetCombo->currentText().trimmed();
+  task.targetEntityName = _followTargetCombo->currentData().toString().trimmed();
   task.targetWaypointName = _waypointCombo->currentText().trimmed();
   task.targetRouteName = _routeCombo->currentText().trimmed();
   task.targetAreaName = _areaCombo->currentText().trimmed();
@@ -165,15 +172,22 @@ void AssignTaskDialog::syncUiForTaskType() {
       taskType == QStringLiteral("PatrolArea") ||
       taskType == QStringLiteral("OrbitArea");
   const bool isFollowTask = taskType == QStringLiteral("FollowEntity");
+  const bool isAttackAirTask = taskType == QStringLiteral("AttackAir");
+  const bool isAttackSurfaceTask = taskType == QStringLiteral("AttackSurface");
 
   _headingSpin->setEnabled(isFlyTask);
-  _latitudeSpin->setEnabled(isMoveTask);
-  _longitudeSpin->setEnabled(isMoveTask);
-  _altitudeSpin->setEnabled(isFlyTask || isMoveTask || isWaypointTask || isAreaTask);
+  _latitudeSpin->setEnabled(isMoveTask || isAttackSurfaceTask);
+  _longitudeSpin->setEnabled(isMoveTask || isAttackSurfaceTask);
+  _altitudeSpin->setEnabled(
+      isFlyTask ||
+      isMoveTask ||
+      isWaypointTask ||
+      isAreaTask ||
+      isAttackSurfaceTask);
   _waypointCombo->setEnabled(isWaypointTask);
   _routeCombo->setEnabled(isRouteTask);
   _areaCombo->setEnabled(isAreaTask);
-  _followTargetCombo->setEnabled(isFollowTask);
+  _followTargetCombo->setEnabled(isFollowTask || isAttackAirTask || isAttackSurfaceTask);
 }
 
 void AssignTaskDialog::setPickedCoordinate(double longitude, double latitude, double height) {

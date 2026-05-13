@@ -79,6 +79,16 @@ QString normalizedBehaviorMode(const QString& behaviorMode) {
   return QStringLiteral("Manual");
 }
 
+bool isMovementTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("MoveToLocation") ||
+         taskType == QStringLiteral("MoveToWaypoint") ||
+         taskType == QStringLiteral("MoveAlongRoute") ||
+         taskType == QStringLiteral("PatrolArea") ||
+         taskType == QStringLiteral("OrbitArea") ||
+         taskType == QStringLiteral("FollowEntity") ||
+         taskType == QStringLiteral("FlyHeadingAltitudeSpeed");
+}
+
 bool entityCanCarryMissiles(const Entity& entity) {
   return !entity.destroyed &&
          entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0 &&
@@ -977,7 +987,7 @@ bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task
           break;
         }
       }
-      if (task.enabled) {
+      if (task.enabled && isMovementTaskType(entity.currentTask.taskType)) {
         entity.flightDynamicsEnabled = true;
         if (entity.flightDynamicsMode.trimmed().isEmpty()) {
           entity.flightDynamicsMode = QStringLiteral("kinematic");
@@ -999,6 +1009,13 @@ bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task
               entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0
               ? 220.0
               : 12.0;
+        }
+      }
+      if (!isMovementTaskType(entity.currentTask.taskType)) {
+        if (domain::TaskStack* stack = this->getTaskStack(entityName)) {
+          while (!stack->isEmpty()) {
+            stack->pop();
+          }
         }
       }
       this->save();
@@ -1662,6 +1679,13 @@ void ScenarioState::advanceBehaviors(double deltaSeconds) {
 
     if (behaviorMode != QStringLiteral("Aggressive") ||
         entity.behaviorTargetEntityName.trimmed().isEmpty()) {
+      continue;
+    }
+
+    const QString taskType = entity.currentTask.taskType.trimmed();
+    if (entity.currentTask.enabled &&
+        (taskType == QStringLiteral("AttackAir") ||
+         taskType == QStringLiteral("AttackSurface"))) {
       continue;
     }
 

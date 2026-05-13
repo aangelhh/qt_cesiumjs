@@ -68,6 +68,8 @@ private slots:
   void assignPatrolRouteTask();
   void assignOrbitHoldLocationTask();
   void assignFollowEntityTask();
+  void assignAttackAirTask();
+  void assignAttackSurfaceTask();
   void openEntityPlanDialog();
   void setSelectedEntityHeading();
   void setSelectedEntityAltitude();
@@ -115,6 +117,7 @@ private:
     QString targetLabel;
     QString sourceDescription;
     bool pending = false;
+    bool releaseCommandIssued = false;
   };
 
   enum class PlanStepKind {
@@ -180,6 +183,10 @@ private:
   void clearPendingBombRelease();
   QString cleanupRuntimeReferencesForRemovedEntity(const QString& entityName);
   void validatePendingBombRelease();
+  void processAttackTasks();
+  bool processAttackAirTask(const QString& entityName);
+  bool processAttackSurfaceTask(const QString& entityName);
+  bool setEntityTaskStatus(const QString& entityName, const QString& status);
   void processAutoBombingBehaviors(double deltaSeconds);
   void processPendingBombRelease();
   void openAssignTaskDialog(const QString& initialTaskType);

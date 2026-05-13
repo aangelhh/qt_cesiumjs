@@ -77,6 +77,22 @@ constexpr double kBombReleaseHeadingConeDegrees = 35.0;
 constexpr double kBombReleaseDistanceToleranceMeters = 150.0;
 constexpr double kAutoBombReleaseCooldownSeconds = 20.0;
 
+bool attackTaskStatusIsTerminal(const QString& status) {
+  return status == QStringLiteral("Completed") ||
+         status == QStringLiteral("Failed") ||
+         status == QStringLiteral("Target unavailable");
+}
+
+bool attackSurfaceCoordinatesAreUsable(double latitude, double longitude) {
+  if (!std::isfinite(latitude) || !std::isfinite(longitude)) {
+    return false;
+  }
+  if (latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0) {
+    return false;
+  }
+  return !(qFuzzyIsNull(latitude) && qFuzzyIsNull(longitude));
+}
+
 QStringList behaviorModeOptions() {
   return {
       QStringLiteral("Manual"),
@@ -814,6 +830,7 @@ MainWindow::MainWindow(QWidget* parent)
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
     this->_scenarioState->advanceSimulation(0.033);
     this->advanceEntityPlans();
+    this->processAttackTasks();
     this->processAutoBombingBehaviors(0.033);
     this->processPendingBombRelease();
     this->syncScenarioStateToUi();
@@ -925,6 +942,10 @@ MainWindow::MainWindow(QWidget* parent)
           this->assignOrbitAreaTask();
         } else if (taskType == QStringLiteral("FollowEntity")) {
           this->assignFollowEntityTask();
+        } else if (taskType == QStringLiteral("AttackAir")) {
+          this->assignAttackAirTask();
+        } else if (taskType == QStringLiteral("AttackSurface")) {
+          this->assignAttackSurfaceTask();
         } else if (taskType == QStringLiteral("ClearTask")) {
           this->clearSelectedTask();
         }
@@ -3172,6 +3193,15 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
       QStringLiteral("Follow Entity..."),
       this,
       &MainWindow::assignFollowEntityTask);
+  QMenu* attackTaskMenu = taskMenu->addMenu(QStringLiteral("Attack"));
+  attackTaskMenu->addAction(
+      QStringLiteral("Attack Air..."),
+      this,
+      &MainWindow::assignAttackAirTask);
+  attackTaskMenu->addAction(
+      QStringLiteral("Attack Surface..."),
+      this,
+      &MainWindow::assignAttackSurfaceTask);
   taskMenu->addSeparator();
   taskMenu->addAction(QStringLiteral("Clear Current Task"), this, &MainWindow::clearSelectedTask);
   taskMenu->setEnabled(!entityDestroyed);
@@ -4797,6 +4827,14 @@ void MainWindow::assignFollowEntityTask() {
   this->openAssignTaskDialog(QStringLiteral("FollowEntity"));
 }
 
+void MainWindow::assignAttackAirTask() {
+  this->openAssignTaskDialog(QStringLiteral("AttackAir"));
+}
+
+void MainWindow::assignAttackSurfaceTask() {
+  this->openAssignTaskDialog(QStringLiteral("AttackSurface"));
+}
+
 void MainWindow::openEntityPlanDialog() {
   const QString entityName = this->selectedEntityName();
   if (entityName.isEmpty()) {
@@ -5218,6 +5256,7 @@ void MainWindow::queuePendingBombRelease(
   this->_pendingBombRelease.targetLabel = targetLabel.trimmed();
   this->_pendingBombRelease.sourceDescription = sourceDescription.trimmed();
   this->_pendingBombRelease.pending = true;
+  this->_pendingBombRelease.releaseCommandIssued = false;
 
   if (logQueued) {
     this->appendLogMessage(
@@ -5302,6 +5341,172 @@ void MainWindow::validatePendingBombRelease() {
   }
 }
 
+void MainWindow::processAttackTasks() {
+  if (!this->_simulationRunning) {
+    return;
+  }
+
+  QStringList taskEntityNames;
+  for (const Entity& entity : this->_scenarioState->entities()) {
+    const QString taskType = entity.currentTask.taskType.trimmed();
+    const QString taskStatus = entity.currentTask.status.trimmed();
+    if (!entity.currentTask.enabled ||
+        entity.destroyed ||
+        (taskType != QStringLiteral("AttackAir") &&
+         taskType != QStringLiteral("AttackSurface")) ||
+        attackTaskStatusIsTerminal(taskStatus)) {
+      continue;
+    }
+    taskEntityNames.push_back(entity.name);
+  }
+
+  for (const QString& entityName : taskEntityNames) {
+    const Entity* entity = this->findEntityByName(entityName);
+    if (!entity || entity->destroyed) {
+      this->setEntityTaskStatus(entityName, QStringLiteral("Target unavailable"));
+      continue;
+    }
+
+    const QString taskType = entity->currentTask.taskType.trimmed();
+    if (taskType == QStringLiteral("AttackAir")) {
+      this->processAttackAirTask(entityName);
+    } else if (taskType == QStringLiteral("AttackSurface")) {
+      this->processAttackSurfaceTask(entityName);
+    }
+  }
+}
+
+bool MainWindow::processAttackAirTask(const QString& entityName) {
+  const Entity* launcher = this->findEntityByName(entityName);
+  if (!launcher || launcher->destroyed) {
+    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+
+  const QString targetName = launcher->currentTask.targetEntityName.trimmed();
+  if (targetName.isEmpty()) {
+    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+
+  this->setEntityTaskStatus(entityName, QStringLiteral("Running"));
+
+  const Entity* target = this->findEntityByName(targetName);
+  if (!target || target->destroyed || target->name == launcher->name) {
+    this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+    this->appendLogMessage(
+        QStringLiteral("Attack Air task failed for %1: target no longer valid.")
+            .arg(entityName));
+    return true;
+  }
+
+  if (weaponQuantity(*launcher, QStringLiteral("Missile")) <= 0) {
+    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+
+  if (!this->_scenarioState->launchMissileAt(entityName, targetName)) {
+    this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+    return false;
+  }
+
+  this->setEntityTaskStatus(entityName, QStringLiteral("Completed"));
+  this->appendLogMessage(
+      QStringLiteral("Attack Air task launched missile from %1 at %2")
+          .arg(entityName, targetName));
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Attack Air completado para %1.").arg(entityName));
+  return true;
+}
+
+bool MainWindow::processAttackSurfaceTask(const QString& entityName) {
+  const Entity* launcher = this->findEntityByName(entityName);
+  if (!launcher || launcher->destroyed) {
+    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+
+  if (weaponQuantity(*launcher, QStringLiteral("Bomb")) <= 0) {
+    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+
+  this->setEntityTaskStatus(entityName, QStringLiteral("Running"));
+
+  if (this->_pendingBombRelease.pending) {
+    if (this->_pendingBombRelease.launcherEntityName.compare(
+            entityName,
+            Qt::CaseInsensitive) == 0) {
+      return this->setEntityTaskStatus(entityName, QStringLiteral("Completed"));
+    }
+    this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+    return false;
+  }
+
+  const EntityTask task = launcher->currentTask;
+  const QString targetName = task.targetEntityName.trimmed();
+  QString targetLabel;
+  QString targetEntityName;
+  double targetLatitude = task.targetLatitude;
+  double targetLongitude = task.targetLongitude;
+  double targetAltitudeMeters = static_cast<double>(task.targetAltitudeMeters);
+
+  if (!targetName.isEmpty()) {
+    const Entity* target = this->findEntityByName(targetName);
+    if (!target || target->destroyed) {
+      this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+      this->appendLogMessage(
+          QStringLiteral("Attack Surface task failed for %1: target no longer valid.")
+              .arg(entityName));
+      return true;
+    }
+    if (target->name == launcher->name ||
+        target->forceIdentifier == launcher->forceIdentifier ||
+        target->domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
+      return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+    }
+
+    targetLatitude = target->latitude;
+    targetLongitude = target->longitude;
+    targetAltitudeMeters = static_cast<double>(target->altitude);
+    targetLabel = target->name;
+    targetEntityName = target->name;
+  } else {
+    if (!attackSurfaceCoordinatesAreUsable(targetLatitude, targetLongitude)) {
+      return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+    }
+    targetLabel = attackPointLabel(targetLatitude, targetLongitude);
+  }
+
+  this->queuePendingBombRelease(
+      entityName,
+      targetLatitude,
+      targetLongitude,
+      targetAltitudeMeters,
+      targetLabel,
+      QStringLiteral("Attack Surface Task"),
+      targetEntityName,
+      false,
+      false);
+  this->setEntityTaskStatus(entityName, QStringLiteral("Completed"));
+  this->appendLogMessage(
+      QStringLiteral("Attack Surface task armed bomb release for %1 at %2")
+          .arg(entityName, targetLabel));
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Attack Surface armado para %1.").arg(entityName));
+  return true;
+}
+
+bool MainWindow::setEntityTaskStatus(const QString& entityName, const QString& status) {
+  for (Entity& entity : this->_scenarioState->entitiesMutable()) {
+    if (entity.name != entityName) {
+      continue;
+    }
+    if (entity.currentTask.status == status) {
+      return true;
+    }
+    entity.currentTask.status = status;
+    this->_scenarioState->save();
+    return true;
+  }
+  return false;
+}
+
 void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
   if (deltaSeconds > 0.0) {
     for (auto it = this->_autoBombReleaseCooldownSeconds.begin();
@@ -5320,6 +5525,13 @@ void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
   }
 
   for (const Entity& launcher : this->_scenarioState->entities()) {
+    const QString taskType = launcher.currentTask.taskType.trimmed();
+    if (launcher.currentTask.enabled &&
+        (taskType == QStringLiteral("AttackAir") ||
+         taskType == QStringLiteral("AttackSurface"))) {
+      continue;
+    }
+
     const QString behaviorMode = launcher.behaviorMode.trimmed().isEmpty()
         ? QStringLiteral("Manual")
         : launcher.behaviorMode.trimmed();
@@ -5396,6 +5608,10 @@ void MainWindow::processPendingBombRelease() {
   if (!evaluation.readyToRelease()) {
     return;
   }
+  if (this->_pendingBombRelease.releaseCommandIssued) {
+    return;
+  }
+  this->_pendingBombRelease.releaseCommandIssued = true;
 
   const QString launcherName = this->_pendingBombRelease.launcherEntityName;
   const QString targetLabel = this->_pendingBombRelease.targetLabel;
@@ -5630,6 +5846,14 @@ void MainWindow::populateTaskCommands() {
   auto* followItem = new QListWidgetItem(QStringLiteral("Movement: Follow Entity..."));
   followItem->setData(Qt::UserRole, QStringLiteral("FollowEntity"));
   this->_ui->tasksListWidget->addItem(followItem);
+
+  auto* attackAirItem = new QListWidgetItem(QStringLiteral("Attack: Attack Air..."));
+  attackAirItem->setData(Qt::UserRole, QStringLiteral("AttackAir"));
+  this->_ui->tasksListWidget->addItem(attackAirItem);
+
+  auto* attackSurfaceItem = new QListWidgetItem(QStringLiteral("Attack: Attack Surface..."));
+  attackSurfaceItem->setData(Qt::UserRole, QStringLiteral("AttackSurface"));
+  this->_ui->tasksListWidget->addItem(attackSurfaceItem);
 
   auto* clearItem = new QListWidgetItem(QStringLiteral("Other: Clear Current Task"));
   clearItem->setData(Qt::UserRole, QStringLiteral("ClearTask"));

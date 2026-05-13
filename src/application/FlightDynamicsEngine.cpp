@@ -92,6 +92,16 @@ bool entityIsGround(const Entity& entity) {
   return entity.domain.compare(QStringLiteral("Ground"), Qt::CaseInsensitive) == 0;
 }
 
+bool isMovementTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("MoveToLocation") ||
+         taskType == QStringLiteral("MoveToWaypoint") ||
+         taskType == QStringLiteral("MoveAlongRoute") ||
+         taskType == QStringLiteral("PatrolArea") ||
+         taskType == QStringLiteral("OrbitArea") ||
+         taskType == QStringLiteral("FollowEntity") ||
+         taskType == QStringLiteral("FlyHeadingAltitudeSpeed");
+}
+
 void applyKinematicStep(Entity& entity, double deltaSeconds);
 
 void normalizeGroundKinematics(Entity& entity) {
@@ -286,6 +296,10 @@ void applyKinematicStep(Entity& entity, double deltaSeconds) {
 
 void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::TaskStack>& taskStacks, const QVector<Entity>& snapshot, double deltaSeconds) {
   if (!entity.currentTask.enabled) {
+    return;
+  }
+
+  if (!isMovementTaskType(entity.currentTask.taskType)) {
     return;
   }
   
@@ -665,6 +679,14 @@ void FlightDynamicsEngine::advanceEntity(
       entity.speedKnots = 0.0;
       return;
     }
+    if (!isMovementTaskType(entity.currentTask.taskType)) {
+      if (entity.speedKnots <= 0.0) {
+        return;
+      }
+      applyKinematicStep(entity, deltaSeconds);
+      normalizeGroundKinematics(entity);
+      return;
+    }
 
     resolveTaskTargets(entity, taskStacks, snapshot, deltaSeconds);
     if (entity.speedKnots <= 0.0) {
@@ -685,6 +707,13 @@ void FlightDynamicsEngine::advanceEntity(
   }
 
   const double previousHeadingDegrees = entity.headingDegrees;
+  if (!isMovementTaskType(entity.currentTask.taskType)) {
+    entity.verticalSpeedMetersPerSecond = 0.0;
+    applyKinematicStep(entity, deltaSeconds);
+    updateDerivedKinematicAttitude(entity, previousHeadingDegrees, deltaSeconds);
+    return;
+  }
+
   resolveTaskTargets(entity, taskStacks, snapshot, deltaSeconds);
 
 #if defined(QTTEST_HAS_JSBSIM)
