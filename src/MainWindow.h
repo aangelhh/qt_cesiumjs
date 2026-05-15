@@ -128,12 +128,15 @@ private:
     FlyHeadingAltitudeSpeed,
     OrbitHoldLocation,
     ReturnToBase,
+    AttackAir,
+    AttackSurface,
   };
 
   struct PlanStep {
     PlanStepKind kind = PlanStepKind::MoveToLocation;
     EntityTask task;
     QString label;
+    QString status = QStringLiteral("NotStarted");
   };
 
   struct EntityPlan {
@@ -141,6 +144,7 @@ private:
     int currentStepIndex = -1;
     bool running = false;
     int currentStableTicks = 0;
+    QString status = QStringLiteral("NotStarted");
   };
 
   void initializeModels();
@@ -183,8 +187,8 @@ private:
   void clearPendingBombRelease();
   QString cleanupRuntimeReferencesForRemovedEntity(const QString& entityName);
   void validatePendingBombRelease();
-  void processAttackTasks();
-  bool processAttackAirTask(const QString& entityName);
+  void processAttackTasks(double deltaSeconds);
+  bool processAttackAirTask(const QString& entityName, double deltaSeconds);
   bool processAttackSurfaceTask(const QString& entityName);
   bool setEntityTaskStatus(const QString& entityName, const QString& status);
   void processAutoBombingBehaviors(double deltaSeconds);
@@ -286,6 +290,8 @@ private:
   QHash<QString, EntityVisualState> _entityVisualStates;
   QHash<QString, EntityHomePosition> _entityHomePositions;
   QHash<QString, double> _autoBombReleaseCooldownSeconds;
+  QHash<QString, double> _attackAirElapsedSeconds;
+  QHash<QString, double> _attackAirMissileCooldownSeconds;
   QHash<QString, EntityPlan> _entityPlans;
   PendingBombRelease _pendingBombRelease;
   application::SimulationEngine* m_simulationEngine;

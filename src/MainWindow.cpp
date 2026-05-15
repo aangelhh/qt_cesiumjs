@@ -76,6 +76,10 @@ constexpr double kBombReleaseGravityMetersPerSecondSquared = 9.81;
 constexpr double kBombReleaseHeadingConeDegrees = 35.0;
 constexpr double kBombReleaseDistanceToleranceMeters = 150.0;
 constexpr double kAutoBombReleaseCooldownSeconds = 20.0;
+constexpr double kAttackAirTimeoutSeconds = 120.0;
+constexpr double kAttackAirMissileCooldownSeconds = 8.0;
+constexpr double kAttackAirMinimumPursuitSpeedKnots = 320.0;
+constexpr double kAttackAirTargetSpeedMarginKnots = 60.0;
 
 bool attackTaskStatusIsTerminal(const QString& status) {
   return status == QStringLiteral("Completed") ||
@@ -91,6 +95,27 @@ bool attackSurfaceCoordinatesAreUsable(double latitude, double longitude) {
     return false;
   }
   return !(qFuzzyIsNull(latitude) && qFuzzyIsNull(longitude));
+}
+
+bool activeMissileInFlightForTarget(
+    const ScenarioState* scenarioState,
+    const QString& launcherName,
+    const QString& targetName) {
+  if (!scenarioState) {
+    return false;
+  }
+
+  for (const ActiveMunition& munition : scenarioState->activeMunitions()) {
+    if (!munition.active ||
+        munition.munitionType.compare(QStringLiteral("Missile"), Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    if (munition.launcherEntityName.compare(launcherName, Qt::CaseInsensitive) == 0 &&
+        munition.targetEntityName.compare(targetName, Qt::CaseInsensitive) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 QStringList behaviorModeOptions() {
@@ -830,7 +855,7 @@ MainWindow::MainWindow(QWidget* parent)
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
     this->_scenarioState->advanceSimulation(0.033);
     this->advanceEntityPlans();
-    this->processAttackTasks();
+    this->processAttackTasks(0.033);
     this->processAutoBombingBehaviors(0.033);
     this->processPendingBombRelease();
     this->syncScenarioStateToUi();
@@ -1925,6 +1950,10 @@ QString MainWindow::planStepDisplayLabel(const PlanStep& step) const {
       return QStringLiteral("Orbit / Hold (Location)");
     case PlanStepKind::ReturnToBase:
       return QStringLiteral("Return To Base");
+    case PlanStepKind::AttackAir:
+      return QStringLiteral("Attack Air");
+    case PlanStepKind::AttackSurface:
+      return QStringLiteral("Attack Surface");
   }
 
   return QStringLiteral("Plan Step");
@@ -3546,7 +3575,8 @@ bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind,
   step = PlanStep{};
   step.kind = kind;
   step.task.enabled = true;
-  step.task.status = QStringLiteral("Running");
+  step.task.status = QStringLiteral("Queued");
+  step.status = QStringLiteral("NotStarted");
 
   bool ok = false;
   switch (kind) {
@@ -3740,6 +3770,52 @@ bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind,
       step.label = QStringLiteral("Return To Base");
       return true;
     }
+
+    case PlanStepKind::AttackAir: {
+      EntityTask initialTask;
+      initialTask.taskType = QStringLiteral("AttackAir");
+      initialTask.enabled = true;
+      initialTask.status = QStringLiteral("Queued");
+      if (!this->captureTaskConfiguration(
+              entityName,
+              initialTask,
+              QStringLiteral("AttackAir"),
+              step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.status = QStringLiteral("Queued");
+      step.label = QStringLiteral("Attack Air: %1")
+                       .arg(step.task.targetEntityName.trimmed().isEmpty()
+                                ? QStringLiteral("-")
+                                : step.task.targetEntityName.trimmed());
+      return true;
+    }
+
+    case PlanStepKind::AttackSurface: {
+      EntityTask initialTask;
+      initialTask.taskType = QStringLiteral("AttackSurface");
+      initialTask.enabled = true;
+      initialTask.status = QStringLiteral("Queued");
+      initialTask.targetLatitude = entity->latitude;
+      initialTask.targetLongitude = entity->longitude;
+      initialTask.targetAltitudeMeters = 0;
+      if (!this->captureTaskConfiguration(
+              entityName,
+              initialTask,
+              QStringLiteral("AttackSurface"),
+              step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.status = QStringLiteral("Queued");
+      const QString targetName = step.task.targetEntityName.trimmed();
+      step.label = targetName.isEmpty()
+          ? QStringLiteral("Attack Surface: %1")
+                .arg(attackPointLabel(step.task.targetLatitude, step.task.targetLongitude))
+          : QStringLiteral("Attack Surface: %1").arg(targetName);
+      return true;
+    }
   }
 
   return false;
@@ -3799,6 +3875,33 @@ bool MainWindow::validatePlanStepForExecution(const PlanStep& step, QString* rea
     case PlanStepKind::OrbitHoldLocation:
     case PlanStepKind::ReturnToBase:
       return true;
+
+    case PlanStepKind::AttackAir:
+      if (step.task.targetEntityName.trimmed().isEmpty()) {
+        return setReason(QStringLiteral("air target is not set"));
+      }
+      if (!this->findEntityByName(step.task.targetEntityName.trimmed())) {
+        return setReason(
+            QStringLiteral("air target '%1' no longer exists")
+                .arg(step.task.targetEntityName.trimmed()));
+      }
+      return true;
+
+    case PlanStepKind::AttackSurface:
+      if (!step.task.targetEntityName.trimmed().isEmpty()) {
+        if (!this->findEntityByName(step.task.targetEntityName.trimmed())) {
+          return setReason(
+              QStringLiteral("surface target '%1' no longer exists")
+                  .arg(step.task.targetEntityName.trimmed()));
+        }
+        return true;
+      }
+      if (!attackSurfaceCoordinatesAreUsable(
+              step.task.targetLatitude,
+              step.task.targetLongitude)) {
+        return setReason(QStringLiteral("surface target coordinates are not set"));
+      }
+      return true;
   }
 
   return true;
@@ -3845,6 +3948,17 @@ bool MainWindow::activeTaskMatchesPlanStep(const Entity& entity, const PlanStep&
              currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
              nearlyEqual(currentTask.targetAreaRadiusMeters, step.task.targetAreaRadiusMeters, 1.0) &&
              nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+
+    case PlanStepKind::AttackAir:
+      return currentTask.targetEntityName == step.task.targetEntityName;
+
+    case PlanStepKind::AttackSurface:
+      if (!step.task.targetEntityName.trimmed().isEmpty()) {
+        return currentTask.targetEntityName == step.task.targetEntityName;
+      }
+      return nearlyEqual(currentTask.targetLatitude, step.task.targetLatitude, 1e-6) &&
+             nearlyEqual(currentTask.targetLongitude, step.task.targetLongitude, 1e-6) &&
+             currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters;
   }
 
   return false;
@@ -3878,11 +3992,18 @@ bool MainWindow::startEntityPlan(const QString& entityName) {
   }
 
   plan.running = true;
+  plan.status = QStringLiteral("Running");
   plan.currentStepIndex = 0;
   plan.currentStableTicks = 0;
+  for (PlanStep& step : plan.steps) {
+    step.status = QStringLiteral("NotStarted");
+  }
+  plan.steps[plan.currentStepIndex].status = QStringLiteral("Running");
 
   if (!this->applyEntityTask(entityName, plan.steps.at(plan.currentStepIndex).task, false)) {
     plan.running = false;
+    plan.status = QStringLiteral("Failed");
+    plan.steps[plan.currentStepIndex].status = QStringLiteral("Failed");
     plan.currentStepIndex = -1;
     return false;
   }
@@ -3903,6 +4024,9 @@ void MainWindow::stopEntityPlan(const QString& entityName, bool clearCurrentTask
   it->running = false;
   it->currentStepIndex = -1;
   it->currentStableTicks = 0;
+  if (it->status == QStringLiteral("Running")) {
+    it->status = QStringLiteral("NotStarted");
+  }
 
   if (clearCurrentTask) {
     this->_scenarioState->clearTask(entityName);
@@ -3973,6 +4097,11 @@ bool MainWindow::activePlanStepCompleted(const Entity& entity, EntityPlan& plan)
       }
       return plan.currentStableTicks >= 3;
     }
+
+    case PlanStepKind::AttackAir:
+    case PlanStepKind::AttackSurface:
+      plan.currentStableTicks = 0;
+      return entity.currentTask.status == QStringLiteral("Completed");
   }
 
   return false;
@@ -3989,6 +4118,10 @@ void MainWindow::advanceEntityPlans() {
     const Entity* entity = this->findEntityByName(entityName);
     if (!entity || entity->destroyed) {
       plan.running = false;
+      plan.status = QStringLiteral("Failed");
+      if (plan.currentStepIndex >= 0 && plan.currentStepIndex < plan.steps.size()) {
+        plan.steps[plan.currentStepIndex].status = QStringLiteral("Failed");
+      }
       plan.currentStepIndex = -1;
       plan.currentStableTicks = 0;
       continue;
@@ -3996,12 +4129,14 @@ void MainWindow::advanceEntityPlans() {
 
     if (plan.currentStepIndex < 0 || plan.currentStepIndex >= plan.steps.size()) {
       plan.running = false;
+      plan.status = QStringLiteral("Failed");
       plan.currentStepIndex = -1;
       plan.currentStableTicks = 0;
       continue;
     }
 
-    const PlanStep& activeStep = plan.steps.at(plan.currentStepIndex);
+    PlanStep& activeStep = plan.steps[plan.currentStepIndex];
+    activeStep.status = QStringLiteral("Running");
     QString invalidReason;
     if (!this->validatePlanStepForExecution(activeStep, &invalidReason)) {
       this->appendLogMessage(
@@ -4010,6 +4145,8 @@ void MainWindow::advanceEntityPlans() {
       this->_ui->statusLabel->setText(
           QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
       plan.running = false;
+      plan.status = QStringLiteral("Failed");
+      activeStep.status = QStringLiteral("Failed");
       plan.currentStepIndex = -1;
       plan.currentStableTicks = 0;
       continue;
@@ -4022,15 +4159,20 @@ void MainWindow::advanceEntityPlans() {
       this->_ui->statusLabel->setText(
           QStringLiteral("Plan detenido para %1: task modificada manualmente.").arg(entityName));
       plan.running = false;
+      plan.status = QStringLiteral("Failed");
+      activeStep.status = QStringLiteral("Failed");
       plan.currentStepIndex = -1;
       plan.currentStableTicks = 0;
       continue;
     }
 
-    if (entity->currentTask.status == QStringLiteral("Target unavailable")) {
+    if (entity->currentTask.status == QStringLiteral("Target unavailable") ||
+        entity->currentTask.status == QStringLiteral("Failed")) {
       this->appendLogMessage(
           QStringLiteral("Plan halted for %1 because the active step failed.").arg(entityName));
       plan.running = false;
+      plan.status = QStringLiteral("Failed");
+      activeStep.status = QStringLiteral("Failed");
       plan.currentStepIndex = -1;
       plan.currentStableTicks = 0;
       continue;
@@ -4041,11 +4183,13 @@ void MainWindow::advanceEntityPlans() {
     }
 
     const QString completedLabel = this->planStepDisplayLabel(activeStep);
+    activeStep.status = QStringLiteral("Completed");
     ++plan.currentStepIndex;
     plan.currentStableTicks = 0;
 
     if (plan.currentStepIndex >= plan.steps.size()) {
       plan.running = false;
+      plan.status = QStringLiteral("Completed");
       plan.currentStepIndex = -1;
       this->appendLogMessage(
           QStringLiteral("Plan completed for %1 after %2.")
@@ -4055,7 +4199,8 @@ void MainWindow::advanceEntityPlans() {
       continue;
     }
 
-    const PlanStep& nextStep = plan.steps.at(plan.currentStepIndex);
+    PlanStep& nextStep = plan.steps[plan.currentStepIndex];
+    nextStep.status = QStringLiteral("Running");
     QString nextInvalidReason;
     if (!this->validatePlanStepForExecution(nextStep, &nextInvalidReason)) {
       this->appendLogMessage(
@@ -4064,6 +4209,8 @@ void MainWindow::advanceEntityPlans() {
       this->_ui->statusLabel->setText(
           QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
       plan.running = false;
+      plan.status = QStringLiteral("Failed");
+      nextStep.status = QStringLiteral("Failed");
       plan.currentStepIndex = -1;
       plan.currentStableTicks = 0;
       continue;
@@ -4072,6 +4219,8 @@ void MainWindow::advanceEntityPlans() {
     const QString nextLabel = this->planStepDisplayLabel(nextStep);
     if (!this->applyEntityTask(entityName, nextStep.task, false)) {
       plan.running = false;
+      plan.status = QStringLiteral("Failed");
+      nextStep.status = QStringLiteral("Failed");
       plan.currentStepIndex = -1;
       this->appendLogMessage(
           QStringLiteral("Plan halted for %1 while starting step %2.")
@@ -4855,6 +5004,8 @@ void MainWindow::openEntityPlanDialog() {
   auto* layout = new QVBoxLayout(&dialog);
   auto* stepsList = new QListWidget(&dialog);
   layout->addWidget(stepsList);
+  auto* planStatusLabel = new QLabel(&dialog);
+  layout->addWidget(planStatusLabel);
 
   auto* editButtonsLayout = new QHBoxLayout();
   auto* addButton = new QPushButton(QStringLiteral("Add"), &dialog);
@@ -4878,17 +5029,24 @@ void MainWindow::openEntityPlanDialog() {
   actionButtonsLayout->addWidget(closeButton);
   layout->addLayout(actionButtonsLayout);
 
-  auto refreshList = [this, planForEntity, stepsList]() {
+  auto refreshList = [this, planForEntity, stepsList, planStatusLabel]() {
     const EntityPlan& plan = planForEntity();
     const int previousRow = stepsList->currentRow();
     stepsList->clear();
+    planStatusLabel->setText(
+        QStringLiteral("Plan Status: %1").arg(plan.status.trimmed().isEmpty()
+            ? QStringLiteral("NotStarted")
+            : plan.status.trimmed()));
     for (int index = 0; index < plan.steps.size(); ++index) {
       const QString prefix =
           (plan.running && index == plan.currentStepIndex) ? QStringLiteral(">> ") : QString();
       stepsList->addItem(
-          QStringLiteral("%1%2. %3")
+          QStringLiteral("%1%2. [%3] %4")
               .arg(prefix)
               .arg(index + 1)
+              .arg(plan.steps.at(index).status.trimmed().isEmpty()
+                       ? QStringLiteral("NotStarted")
+                       : plan.steps.at(index).status.trimmed())
               .arg(this->planStepDisplayLabel(plan.steps.at(index))));
     }
 
@@ -4948,6 +5106,11 @@ void MainWindow::openEntityPlanDialog() {
     orbitAction->setData(static_cast<int>(PlanStepKind::OrbitHoldLocation));
     QAction* rtbAction = addMenu.addAction(QStringLiteral("Return To Base"));
     rtbAction->setData(static_cast<int>(PlanStepKind::ReturnToBase));
+    addMenu.addSeparator();
+    QAction* attackAirAction = addMenu.addAction(QStringLiteral("Attack Air"));
+    attackAirAction->setData(static_cast<int>(PlanStepKind::AttackAir));
+    QAction* attackSurfaceAction = addMenu.addAction(QStringLiteral("Attack Surface"));
+    attackSurfaceAction->setData(static_cast<int>(PlanStepKind::AttackSurface));
 
     QAction* selectedAction = addMenu.exec(addButton->mapToGlobal(QPoint(0, addButton->height())));
     if (!selectedAction) {
@@ -5287,6 +5450,8 @@ QString MainWindow::cleanupRuntimeReferencesForRemovedEntity(const QString& enti
   }
 
   this->_autoBombReleaseCooldownSeconds.remove(removedEntityName);
+  this->_attackAirElapsedSeconds.remove(removedEntityName);
+  this->_attackAirMissileCooldownSeconds.remove(removedEntityName);
 
   if (this->_bombTargetPickLauncherName.compare(
           removedEntityName,
@@ -5341,15 +5506,35 @@ void MainWindow::validatePendingBombRelease() {
   }
 }
 
-void MainWindow::processAttackTasks() {
+void MainWindow::processAttackTasks(double deltaSeconds) {
   if (!this->_simulationRunning) {
     return;
+  }
+
+  if (deltaSeconds > 0.0) {
+    for (auto it = this->_attackAirMissileCooldownSeconds.begin();
+         it != this->_attackAirMissileCooldownSeconds.end();) {
+      it.value() = qMax(0.0, it.value() - deltaSeconds);
+      if (it.value() <= 0.0) {
+        it = this->_attackAirMissileCooldownSeconds.erase(it);
+        continue;
+      }
+      ++it;
+    }
   }
 
   QStringList taskEntityNames;
   for (const Entity& entity : this->_scenarioState->entities()) {
     const QString taskType = entity.currentTask.taskType.trimmed();
     const QString taskStatus = entity.currentTask.status.trimmed();
+    if (entity.destroyed) {
+      this->_attackAirElapsedSeconds.remove(entity.name);
+      this->_attackAirMissileCooldownSeconds.remove(entity.name);
+    }
+    if (taskType == QStringLiteral("AttackAir") && attackTaskStatusIsTerminal(taskStatus)) {
+      this->_attackAirElapsedSeconds.remove(entity.name);
+      this->_attackAirMissileCooldownSeconds.remove(entity.name);
+    }
     if (!entity.currentTask.enabled ||
         entity.destroyed ||
         (taskType != QStringLiteral("AttackAir") &&
@@ -5369,14 +5554,14 @@ void MainWindow::processAttackTasks() {
 
     const QString taskType = entity->currentTask.taskType.trimmed();
     if (taskType == QStringLiteral("AttackAir")) {
-      this->processAttackAirTask(entityName);
+      this->processAttackAirTask(entityName, deltaSeconds);
     } else if (taskType == QStringLiteral("AttackSurface")) {
       this->processAttackSurfaceTask(entityName);
     }
   }
 }
 
-bool MainWindow::processAttackAirTask(const QString& entityName) {
+bool MainWindow::processAttackAirTask(const QString& entityName, double deltaSeconds) {
   const Entity* launcher = this->findEntityByName(entityName);
   if (!launcher || launcher->destroyed) {
     return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -5387,33 +5572,109 @@ bool MainWindow::processAttackAirTask(const QString& entityName) {
     return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
   }
 
-  this->setEntityTaskStatus(entityName, QStringLiteral("Running"));
-
   const Entity* target = this->findEntityByName(targetName);
-  if (!target || target->destroyed || target->name == launcher->name) {
+  if (target && target->destroyed) {
+    this->setEntityTaskStatus(entityName, QStringLiteral("Completed"));
+    this->_attackAirElapsedSeconds.remove(entityName);
+    this->_attackAirMissileCooldownSeconds.remove(entityName);
+    this->appendLogMessage(
+        QStringLiteral("Attack Air task completed for %1: target %2 destroyed.")
+            .arg(entityName, targetName));
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Attack Air completado para %1: target destruido.").arg(entityName));
+    return true;
+  }
+  if (!target || target->name == launcher->name) {
     this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+    this->_attackAirElapsedSeconds.remove(entityName);
+    this->_attackAirMissileCooldownSeconds.remove(entityName);
     this->appendLogMessage(
         QStringLiteral("Attack Air task failed for %1: target no longer valid.")
             .arg(entityName));
     return true;
   }
+  if (target->forceIdentifier == launcher->forceIdentifier ||
+      target->domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
+    this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+    this->_attackAirElapsedSeconds.remove(entityName);
+    this->_attackAirMissileCooldownSeconds.remove(entityName);
+    return true;
+  }
 
-  if (weaponQuantity(*launcher, QStringLiteral("Missile")) <= 0) {
+  this->_attackAirElapsedSeconds[entityName] =
+      this->_attackAirElapsedSeconds.value(entityName, 0.0) + qMax(0.0, deltaSeconds);
+  if (this->_attackAirElapsedSeconds.value(entityName) >= kAttackAirTimeoutSeconds) {
+    this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+    this->_attackAirElapsedSeconds.remove(entityName);
+    this->_attackAirMissileCooldownSeconds.remove(entityName);
+    this->appendLogMessage(
+        QStringLiteral("Attack Air task failed for %1: timeout against %2.")
+            .arg(entityName, targetName));
+    return true;
+  }
+
+  Entity* mutableLauncher = nullptr;
+  for (Entity& entity : this->_scenarioState->entitiesMutable()) {
+    if (entity.name == entityName) {
+      mutableLauncher = &entity;
+      break;
+    }
+  }
+  if (!mutableLauncher) {
     return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
   }
 
-  if (!this->_scenarioState->launchMissileAt(entityName, targetName)) {
-    this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  const double desiredHeadingDegrees = bearingDegrees(
+      launcher->latitude,
+      launcher->longitude,
+      target->latitude,
+      target->longitude);
+  const double desiredSpeedKnots = qMax(
+      kAttackAirMinimumPursuitSpeedKnots,
+      target->speedKnots + kAttackAirTargetSpeedMarginKnots);
+  mutableLauncher->currentTask.targetLatitude = target->latitude;
+  mutableLauncher->currentTask.targetLongitude = target->longitude;
+  mutableLauncher->currentTask.targetAltitudeMeters = target->altitude;
+  mutableLauncher->currentTask.targetHeadingDegrees = desiredHeadingDegrees;
+  mutableLauncher->currentTask.targetSpeedKnots = desiredSpeedKnots;
+  mutableLauncher->currentTask.status = QStringLiteral("Running");
+
+  const bool activeMissile =
+      activeMissileInFlightForTarget(this->_scenarioState, entityName, targetName);
+  if (weaponQuantity(*launcher, QStringLiteral("Missile")) <= 0) {
+    if (!activeMissile) {
+      this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+      this->_attackAirElapsedSeconds.remove(entityName);
+      this->_attackAirMissileCooldownSeconds.remove(entityName);
+      this->appendLogMessage(
+          QStringLiteral("Attack Air task failed for %1: no missiles remaining.")
+              .arg(entityName));
+      return true;
+    }
     return false;
   }
 
-  this->setEntityTaskStatus(entityName, QStringLiteral("Completed"));
-  this->appendLogMessage(
-      QStringLiteral("Attack Air task launched missile from %1 at %2")
-          .arg(entityName, targetName));
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Attack Air completado para %1.").arg(entityName));
-  return true;
+  if (activeMissile) {
+    return false;
+  }
+
+  if (this->_attackAirMissileCooldownSeconds.value(entityName, 0.0) > 0.0) {
+    return false;
+  }
+
+  if (this->_scenarioState->launchMissileAt(entityName, targetName)) {
+    this->_attackAirMissileCooldownSeconds[entityName] =
+        kAttackAirMissileCooldownSeconds;
+    this->appendLogMessage(
+        QStringLiteral("Attack Air task launched missile from %1 at %2")
+            .arg(entityName, targetName));
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Attack Air: %1 persiguiendo y atacando %2.")
+            .arg(entityName, targetName));
+    return true;
+  }
+
+  return false;
 }
 
 bool MainWindow::processAttackSurfaceTask(const QString& entityName) {

@@ -99,7 +99,14 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("PatrolArea") ||
          taskType == QStringLiteral("OrbitArea") ||
          taskType == QStringLiteral("FollowEntity") ||
-         taskType == QStringLiteral("FlyHeadingAltitudeSpeed");
+         taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
+         taskType == QStringLiteral("AttackAir");
+}
+
+bool taskStatusIsTerminal(const QString& status) {
+  return status == QStringLiteral("Completed") ||
+         status == QStringLiteral("Failed") ||
+         status == QStringLiteral("Target unavailable");
 }
 
 void applyKinematicStep(Entity& entity, double deltaSeconds);
@@ -299,6 +306,10 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
     return;
   }
 
+  if (taskStatusIsTerminal(entity.currentTask.status)) {
+    return;
+  }
+
   if (!isMovementTaskType(entity.currentTask.taskType)) {
     return;
   }
@@ -359,9 +370,12 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
       return;
   }
 
+  const bool isAttackAirTask =
+      entity.currentTask.taskType == QStringLiteral("AttackAir");
   if (entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
       entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
-      entity.currentTask.taskType == QStringLiteral("MoveAlongRoute")) {
+      entity.currentTask.taskType == QStringLiteral("MoveAlongRoute") ||
+      isAttackAirTask) {
     entity.currentTask.targetHeadingDegrees = bearingDegrees(
         entity.latitude,
         entity.longitude,
@@ -395,7 +409,7 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
         kClimbRateMetersPerSecond);
 
     entity.currentTask.status = QStringLiteral("Running");
-    if (distance < 200.0) {
+    if (!isAttackAirTask && distance < 200.0) {
       entity.currentTask.status = QStringLiteral("On target");
       entity.speedKnots = 0.0;
       entity.verticalSpeedMetersPerSecond = 0.0;
@@ -679,6 +693,10 @@ void FlightDynamicsEngine::advanceEntity(
       entity.speedKnots = 0.0;
       return;
     }
+    if (taskStatusIsTerminal(entity.currentTask.status)) {
+      entity.speedKnots = 0.0;
+      return;
+    }
     if (!isMovementTaskType(entity.currentTask.taskType)) {
       if (entity.speedKnots <= 0.0) {
         return;
@@ -705,6 +723,12 @@ void FlightDynamicsEngine::advanceEntity(
     relaxDerivedAttitude(entity, deltaSeconds);
     return;
   }
+  if (taskStatusIsTerminal(entity.currentTask.status)) {
+    entity.speedKnots = 0.0;
+    entity.verticalSpeedMetersPerSecond = 0.0;
+    relaxDerivedAttitude(entity, deltaSeconds);
+    return;
+  }
 
   const double previousHeadingDegrees = entity.headingDegrees;
   if (!isMovementTaskType(entity.currentTask.taskType)) {
@@ -723,7 +747,8 @@ void FlightDynamicsEngine::advanceEntity(
       entity.currentTask.taskType == QStringLiteral("MoveAlongRoute") ||
       entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
       entity.currentTask.taskType == QStringLiteral("OrbitArea") ||
-      entity.currentTask.taskType == QStringLiteral("FollowEntity");
+      entity.currentTask.taskType == QStringLiteral("FollowEntity") ||
+      entity.currentTask.taskType == QStringLiteral("AttackAir");
   if (!preferKinematicGuidance &&
       entity.flightDynamicsMode == QStringLiteral("jsbsim") &&
       applyJsbsimStep(entity, deltaSeconds)) {

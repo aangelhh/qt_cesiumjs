@@ -86,7 +86,8 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("PatrolArea") ||
          taskType == QStringLiteral("OrbitArea") ||
          taskType == QStringLiteral("FollowEntity") ||
-         taskType == QStringLiteral("FlyHeadingAltitudeSpeed");
+         taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
+         taskType == QStringLiteral("AttackAir");
 }
 
 bool entityCanCarryMissiles(const Entity& entity) {
