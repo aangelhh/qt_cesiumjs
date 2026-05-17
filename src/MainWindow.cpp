@@ -4200,10 +4200,39 @@ void MainWindow::advanceEntityPlans() {
 
     if (entity->currentTask.status == QStringLiteral("Target unavailable") ||
         entity->currentTask.status == QStringLiteral("Failed")) {
-      this->failRunningPlan(
-          entityName,
-          plan,
-          QStringLiteral("Plan halted for %1 because the active step failed.").arg(entityName));
+      const QString failedLabel = this->planStepDisplayLabel(activeStep);
+      activeStep.status = QStringLiteral(kTaskStatusFailed);
+      ++plan.currentStepIndex;
+      plan.currentStableTicks = 0;
+
+      if (plan.currentStepIndex >= plan.steps.size()) {
+        this->completeRunningPlan(entityName, plan, failedLabel);
+        continue;
+      }
+
+      PlanStep& nextStepAfterFailure = plan.steps[plan.currentStepIndex];
+      QString nextInvalidReasonAfterFailure;
+      if (!this->validatePlanStepForExecution(nextStepAfterFailure, &nextInvalidReasonAfterFailure)) {
+        this->failRunningPlan(
+            entityName,
+            plan,
+            QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
+                .arg(entityName, this->planStepDisplayLabel(nextStepAfterFailure), nextInvalidReasonAfterFailure),
+            QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
+        continue;
+      }
+
+      const QString nextLabelAfterFailure = this->planStepDisplayLabel(nextStepAfterFailure);
+      if (!this->startPlanStepTask(entityName, plan)) {
+        this->appendLogMessage(
+            QStringLiteral("Plan halted for %1 while starting step %2.")
+                .arg(entityName, nextLabelAfterFailure));
+        continue;
+      }
+
+      this->appendLogMessage(
+          QStringLiteral("Plan continued for %1 after failed step %2; next step: %3")
+              .arg(entityName, failedLabel, nextLabelAfterFailure));
       continue;
     }
 
