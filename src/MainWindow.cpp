@@ -86,8 +86,8 @@ constexpr auto kTaskStatusCompleted = "Completed";
 constexpr auto kTaskStatusFailed = "Failed";
 
 bool attackTaskStatusIsTerminal(const QString& status) {
-  return status == QStringLiteral(kTaskStatusCompleted) ||
-         status == QStringLiteral(kTaskStatusFailed) ||
+  return status == QString::fromLatin1(kTaskStatusCompleted) ||
+         status == QString::fromLatin1(kTaskStatusFailed) ||
          status == QStringLiteral("Target unavailable");
 }
 
@@ -3996,11 +3996,11 @@ bool MainWindow::startEntityPlan(const QString& entityName) {
   }
 
   plan.running = true;
-  plan.status = QStringLiteral(kTaskStatusRunning);
+  plan.status = QString::fromLatin1(kTaskStatusRunning);
   plan.currentStepIndex = 0;
   plan.currentStableTicks = 0;
   for (PlanStep& step : plan.steps) {
-    step.status = QStringLiteral(kTaskStatusNotStarted);
+    step.status = QString::fromLatin1(kTaskStatusNotStarted);
   }
   if (!this->startPlanStepTask(entityName, plan)) {
     return false;
@@ -4022,8 +4022,8 @@ void MainWindow::stopEntityPlan(const QString& entityName, bool clearCurrentTask
   it->running = false;
   it->currentStepIndex = -1;
   it->currentStableTicks = 0;
-  if (it->status == QStringLiteral(kTaskStatusRunning)) {
-    it->status = QStringLiteral(kTaskStatusNotStarted);
+  if (it->status == QString::fromLatin1(kTaskStatusRunning)) {
+    it->status = QString::fromLatin1(kTaskStatusNotStarted);
   }
 
   if (clearCurrentTask) {
@@ -4037,11 +4037,11 @@ bool MainWindow::startPlanStepTask(const QString& entityName, EntityPlan& plan) 
     return false;
   }
   PlanStep& step = plan.steps[plan.currentStepIndex];
-  step.status = QStringLiteral(kTaskStatusRunning);
+  step.status = QString::fromLatin1(kTaskStatusRunning);
   if (!this->applyEntityTask(entityName, step.task, false)) {
-    step.status = QStringLiteral(kTaskStatusFailed);
+    step.status = QString::fromLatin1(kTaskStatusFailed);
     plan.running = false;
-    plan.status = QStringLiteral(kTaskStatusFailed);
+    plan.status = QString::fromLatin1(kTaskStatusFailed);
     plan.currentStepIndex = -1;
     plan.currentStableTicks = 0;
     return false;
@@ -4061,10 +4061,10 @@ void MainWindow::failRunningPlan(
     this->_ui->statusLabel->setText(statusMessage);
   }
   if (plan.currentStepIndex >= 0 && plan.currentStepIndex < plan.steps.size()) {
-    plan.steps[plan.currentStepIndex].status = QStringLiteral(kTaskStatusFailed);
+    plan.steps[plan.currentStepIndex].status = QString::fromLatin1(kTaskStatusFailed);
   }
   plan.running = false;
-  plan.status = QStringLiteral(kTaskStatusFailed);
+  plan.status = QString::fromLatin1(kTaskStatusFailed);
   plan.currentStepIndex = -1;
   plan.currentStableTicks = 0;
 }
@@ -4074,7 +4074,7 @@ void MainWindow::completeRunningPlan(
     EntityPlan& plan,
     const QString& completedLabel) {
   plan.running = false;
-  plan.status = QStringLiteral(kTaskStatusCompleted);
+  plan.status = QString::fromLatin1(kTaskStatusCompleted);
   plan.currentStepIndex = -1;
   this->appendLogMessage(
       QStringLiteral("Plan completed for %1 after %2.")
@@ -4176,7 +4176,7 @@ void MainWindow::advanceEntityPlans() {
     }
 
     PlanStep& activeStep = plan.steps[plan.currentStepIndex];
-    activeStep.status = QStringLiteral(kTaskStatusRunning);
+    activeStep.status = QString::fromLatin1(kTaskStatusRunning);
     QString invalidReason;
     if (!this->validatePlanStepForExecution(activeStep, &invalidReason)) {
       this->failRunningPlan(
@@ -4201,7 +4201,7 @@ void MainWindow::advanceEntityPlans() {
     if (entity->currentTask.status == QStringLiteral("Target unavailable") ||
         entity->currentTask.status == QStringLiteral("Failed")) {
       const QString failedLabel = this->planStepDisplayLabel(activeStep);
-      activeStep.status = QStringLiteral(kTaskStatusFailed);
+      activeStep.status = QString::fromLatin1(kTaskStatusFailed);
       ++plan.currentStepIndex;
       plan.currentStableTicks = 0;
 
@@ -4241,7 +4241,7 @@ void MainWindow::advanceEntityPlans() {
     }
 
     const QString completedLabel = this->planStepDisplayLabel(activeStep);
-    activeStep.status = QStringLiteral(kTaskStatusCompleted);
+    activeStep.status = QString::fromLatin1(kTaskStatusCompleted);
     ++plan.currentStepIndex;
     plan.currentStableTicks = 0;
 
