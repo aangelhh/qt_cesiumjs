@@ -234,6 +234,13 @@ private:
   void stopEntityPlan(const QString& entityName, bool clearCurrentTask);
   void advanceEntityPlans();
   bool activePlanStepCompleted(const class Entity& entity, EntityPlan& plan) const;
+  bool startPlanStepTask(const QString& entityName, EntityPlan& plan);
+  void failRunningPlan(
+      const QString& entityName,
+      EntityPlan& plan,
+      const QString& logMessage = QString(),
+      const QString& statusMessage = QString());
+  void completeRunningPlan(const QString& entityName, EntityPlan& plan, const QString& completedLabel);
   bool applyEntityTask(
       const QString& entityName,
       const EntityTask& task,

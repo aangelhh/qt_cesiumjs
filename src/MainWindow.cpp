@@ -80,10 +80,14 @@ constexpr double kAttackAirTimeoutSeconds = 120.0;
 constexpr double kAttackAirMissileCooldownSeconds = 8.0;
 constexpr double kAttackAirMinimumPursuitSpeedKnots = 320.0;
 constexpr double kAttackAirTargetSpeedMarginKnots = 60.0;
+constexpr auto kTaskStatusNotStarted = "NotStarted";
+constexpr auto kTaskStatusRunning = "Running";
+constexpr auto kTaskStatusCompleted = "Completed";
+constexpr auto kTaskStatusFailed = "Failed";
 
 bool attackTaskStatusIsTerminal(const QString& status) {
-  return status == QStringLiteral("Completed") ||
-         status == QStringLiteral("Failed") ||
+  return status == QStringLiteral(kTaskStatusCompleted) ||
+         status == QStringLiteral(kTaskStatusFailed) ||
          status == QStringLiteral("Target unavailable");
 }
 
@@ -3992,19 +3996,13 @@ bool MainWindow::startEntityPlan(const QString& entityName) {
   }
 
   plan.running = true;
-  plan.status = QStringLiteral("Running");
+  plan.status = QStringLiteral(kTaskStatusRunning);
   plan.currentStepIndex = 0;
   plan.currentStableTicks = 0;
   for (PlanStep& step : plan.steps) {
-    step.status = QStringLiteral("NotStarted");
+    step.status = QStringLiteral(kTaskStatusNotStarted);
   }
-  plan.steps[plan.currentStepIndex].status = QStringLiteral("Running");
-
-  if (!this->applyEntityTask(entityName, plan.steps.at(plan.currentStepIndex).task, false)) {
-    plan.running = false;
-    plan.status = QStringLiteral("Failed");
-    plan.steps[plan.currentStepIndex].status = QStringLiteral("Failed");
-    plan.currentStepIndex = -1;
+  if (!this->startPlanStepTask(entityName, plan)) {
     return false;
   }
 
@@ -4024,14 +4022,65 @@ void MainWindow::stopEntityPlan(const QString& entityName, bool clearCurrentTask
   it->running = false;
   it->currentStepIndex = -1;
   it->currentStableTicks = 0;
-  if (it->status == QStringLiteral("Running")) {
-    it->status = QStringLiteral("NotStarted");
+  if (it->status == QStringLiteral(kTaskStatusRunning)) {
+    it->status = QStringLiteral(kTaskStatusNotStarted);
   }
 
   if (clearCurrentTask) {
     this->_scenarioState->clearTask(entityName);
     this->syncScenarioStateToUi();
   }
+}
+
+bool MainWindow::startPlanStepTask(const QString& entityName, EntityPlan& plan) {
+  if (plan.currentStepIndex < 0 || plan.currentStepIndex >= plan.steps.size()) {
+    return false;
+  }
+  PlanStep& step = plan.steps[plan.currentStepIndex];
+  step.status = QStringLiteral(kTaskStatusRunning);
+  if (!this->applyEntityTask(entityName, step.task, false)) {
+    step.status = QStringLiteral(kTaskStatusFailed);
+    plan.running = false;
+    plan.status = QStringLiteral(kTaskStatusFailed);
+    plan.currentStepIndex = -1;
+    plan.currentStableTicks = 0;
+    return false;
+  }
+  return true;
+}
+
+void MainWindow::failRunningPlan(
+    const QString& entityName,
+    EntityPlan& plan,
+    const QString& logMessage,
+    const QString& statusMessage) {
+  if (!logMessage.isEmpty()) {
+    this->appendLogMessage(logMessage);
+  }
+  if (!statusMessage.isEmpty()) {
+    this->_ui->statusLabel->setText(statusMessage);
+  }
+  if (plan.currentStepIndex >= 0 && plan.currentStepIndex < plan.steps.size()) {
+    plan.steps[plan.currentStepIndex].status = QStringLiteral(kTaskStatusFailed);
+  }
+  plan.running = false;
+  plan.status = QStringLiteral(kTaskStatusFailed);
+  plan.currentStepIndex = -1;
+  plan.currentStableTicks = 0;
+}
+
+void MainWindow::completeRunningPlan(
+    const QString& entityName,
+    EntityPlan& plan,
+    const QString& completedLabel) {
+  plan.running = false;
+  plan.status = QStringLiteral(kTaskStatusCompleted);
+  plan.currentStepIndex = -1;
+  this->appendLogMessage(
+      QStringLiteral("Plan completed for %1 after %2.")
+          .arg(entityName, completedLabel));
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Plan completado para %1.").arg(entityName));
 }
 
 bool MainWindow::activePlanStepCompleted(const Entity& entity, EntityPlan& plan) const {
@@ -4117,64 +4166,44 @@ void MainWindow::advanceEntityPlans() {
 
     const Entity* entity = this->findEntityByName(entityName);
     if (!entity || entity->destroyed) {
-      plan.running = false;
-      plan.status = QStringLiteral("Failed");
-      if (plan.currentStepIndex >= 0 && plan.currentStepIndex < plan.steps.size()) {
-        plan.steps[plan.currentStepIndex].status = QStringLiteral("Failed");
-      }
-      plan.currentStepIndex = -1;
-      plan.currentStableTicks = 0;
+      this->failRunningPlan(entityName, plan);
       continue;
     }
 
     if (plan.currentStepIndex < 0 || plan.currentStepIndex >= plan.steps.size()) {
-      plan.running = false;
-      plan.status = QStringLiteral("Failed");
-      plan.currentStepIndex = -1;
-      plan.currentStableTicks = 0;
+      this->failRunningPlan(entityName, plan);
       continue;
     }
 
     PlanStep& activeStep = plan.steps[plan.currentStepIndex];
-    activeStep.status = QStringLiteral("Running");
+    activeStep.status = QStringLiteral(kTaskStatusRunning);
     QString invalidReason;
     if (!this->validatePlanStepForExecution(activeStep, &invalidReason)) {
-      this->appendLogMessage(
+      this->failRunningPlan(
+          entityName,
+          plan,
           QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
-              .arg(entityName, this->planStepDisplayLabel(activeStep), invalidReason));
-      this->_ui->statusLabel->setText(
+              .arg(entityName, this->planStepDisplayLabel(activeStep), invalidReason),
           QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
-      plan.running = false;
-      plan.status = QStringLiteral("Failed");
-      activeStep.status = QStringLiteral("Failed");
-      plan.currentStepIndex = -1;
-      plan.currentStableTicks = 0;
       continue;
     }
 
     if (!entity->currentTask.enabled ||
         !this->activeTaskMatchesPlanStep(*entity, activeStep)) {
-      this->appendLogMessage(
-          QStringLiteral("Plan stopped for %1 after task override.").arg(entityName));
-      this->_ui->statusLabel->setText(
+      this->failRunningPlan(
+          entityName,
+          plan,
+          QStringLiteral("Plan stopped for %1 after task override.").arg(entityName),
           QStringLiteral("Plan detenido para %1: task modificada manualmente.").arg(entityName));
-      plan.running = false;
-      plan.status = QStringLiteral("Failed");
-      activeStep.status = QStringLiteral("Failed");
-      plan.currentStepIndex = -1;
-      plan.currentStableTicks = 0;
       continue;
     }
 
     if (entity->currentTask.status == QStringLiteral("Target unavailable") ||
         entity->currentTask.status == QStringLiteral("Failed")) {
-      this->appendLogMessage(
+      this->failRunningPlan(
+          entityName,
+          plan,
           QStringLiteral("Plan halted for %1 because the active step failed.").arg(entityName));
-      plan.running = false;
-      plan.status = QStringLiteral("Failed");
-      activeStep.status = QStringLiteral("Failed");
-      plan.currentStepIndex = -1;
-      plan.currentStableTicks = 0;
       continue;
     }
 
@@ -4183,45 +4212,29 @@ void MainWindow::advanceEntityPlans() {
     }
 
     const QString completedLabel = this->planStepDisplayLabel(activeStep);
-    activeStep.status = QStringLiteral("Completed");
+    activeStep.status = QStringLiteral(kTaskStatusCompleted);
     ++plan.currentStepIndex;
     plan.currentStableTicks = 0;
 
     if (plan.currentStepIndex >= plan.steps.size()) {
-      plan.running = false;
-      plan.status = QStringLiteral("Completed");
-      plan.currentStepIndex = -1;
-      this->appendLogMessage(
-          QStringLiteral("Plan completed for %1 after %2.")
-              .arg(entityName, completedLabel));
-      this->_ui->statusLabel->setText(
-          QStringLiteral("Plan completado para %1.").arg(entityName));
+      this->completeRunningPlan(entityName, plan, completedLabel);
       continue;
     }
 
     PlanStep& nextStep = plan.steps[plan.currentStepIndex];
-    nextStep.status = QStringLiteral("Running");
     QString nextInvalidReason;
     if (!this->validatePlanStepForExecution(nextStep, &nextInvalidReason)) {
-      this->appendLogMessage(
+      this->failRunningPlan(
+          entityName,
+          plan,
           QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
-              .arg(entityName, this->planStepDisplayLabel(nextStep), nextInvalidReason));
-      this->_ui->statusLabel->setText(
+              .arg(entityName, this->planStepDisplayLabel(nextStep), nextInvalidReason),
           QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
-      plan.running = false;
-      plan.status = QStringLiteral("Failed");
-      nextStep.status = QStringLiteral("Failed");
-      plan.currentStepIndex = -1;
-      plan.currentStableTicks = 0;
       continue;
     }
 
     const QString nextLabel = this->planStepDisplayLabel(nextStep);
-    if (!this->applyEntityTask(entityName, nextStep.task, false)) {
-      plan.running = false;
-      plan.status = QStringLiteral("Failed");
-      nextStep.status = QStringLiteral("Failed");
-      plan.currentStepIndex = -1;
+    if (!this->startPlanStepTask(entityName, plan)) {
       this->appendLogMessage(
           QStringLiteral("Plan halted for %1 while starting step %2.")
               .arg(entityName, nextLabel));
