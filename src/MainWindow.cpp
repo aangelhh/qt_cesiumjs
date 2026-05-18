@@ -4238,18 +4238,10 @@ void MainWindow::advanceEntityPlans() {
       continue;
     }
 
-    if (!entity->currentTask.enabled ||
-        !this->activeTaskMatchesPlanStep(*entity, activeStep)) {
-      this->failRunningPlan(
-          entityName,
-          plan,
-          QStringLiteral("Plan stopped for %1 after task override.").arg(entityName),
-          QStringLiteral("Plan detenido para %1: task modificada manualmente.").arg(entityName));
-      continue;
-    }
-
-    if (entity->currentTask.status == QStringLiteral("Target unavailable") ||
-        entity->currentTask.status == QStringLiteral("Failed")) {
+    const bool taskFailedForStep =
+        entity->currentTask.status == QStringLiteral("Target unavailable") ||
+        entity->currentTask.status == QStringLiteral("Failed");
+    if (taskFailedForStep) {
       const QString failedLabel = this->planStepDisplayLabel(activeStep);
       activeStep.status = QString(kTaskStatusFailed);
       ++plan.currentStepIndex;
@@ -4287,6 +4279,16 @@ void MainWindow::advanceEntityPlans() {
       this->appendLogMessage(
           QStringLiteral("Plan continued for %1 after failed step %2; next step: %3")
               .arg(entityName, failedLabel, nextLabelAfterFailure));
+      continue;
+    }
+
+    if (!entity->currentTask.enabled ||
+        !this->activeTaskMatchesPlanStep(*entity, activeStep)) {
+      this->failRunningPlan(
+          entityName,
+          plan,
+          QStringLiteral("Plan stopped for %1 after task override.").arg(entityName),
+          QStringLiteral("Plan detenido para %1: task modificada manualmente.").arg(entityName));
       continue;
     }
 
