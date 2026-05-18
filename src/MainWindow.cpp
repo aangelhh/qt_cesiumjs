@@ -1423,7 +1423,12 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
       activePlan->running &&
       activePlan->currentStepIndex >= 0 &&
       activePlan->currentStepIndex < activePlan->steps.size()) {
-    currentPlanStep = this->planStepDisplayLabel(activePlan->steps.at(activePlan->currentStepIndex));
+    const PlanStep& step = activePlan->steps.at(activePlan->currentStepIndex);
+    const QString stepStatus = step.status.trimmed().isEmpty()
+        ? QString(kTaskStatusNotStarted)
+        : step.status.trimmed();
+    currentPlanStep = QStringLiteral("%1 [%2]")
+        .arg(this->planStepDisplayLabel(step), stepStatus);
   }
 
   QStringList lines;
@@ -4112,12 +4117,19 @@ void MainWindow::completeRunningPlan(
   }
   plan.status = QStringLiteral(hasFailedSteps ? kTaskStatusCompletedWithFailures : kTaskStatusCompleted);
   plan.currentStepIndex = -1;
-  this->appendLogMessage(
-      QStringLiteral("Plan completed for %1 after %2.")
-          .arg(entityName, completedLabel));
-  this->_ui->statusLabel->setText(hasFailedSteps
-      ? QStringLiteral("Plan completado con fallas para %1.").arg(entityName)
-      : QStringLiteral("Plan completado para %1.").arg(entityName));
+  if (hasFailedSteps) {
+    this->appendLogMessage(
+        QStringLiteral("Plan completed with failures for %1 after %2.")
+            .arg(entityName, completedLabel));
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Plan completado con fallas para %1.").arg(entityName));
+  } else {
+    this->appendLogMessage(
+        QStringLiteral("Plan completed for %1 after %2.")
+            .arg(entityName, completedLabel));
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Plan completado para %1.").arg(entityName));
+  }
 }
 
 bool MainWindow::activePlanStepCompleted(const Entity& entity, EntityPlan& plan) const {
@@ -4261,10 +4273,11 @@ void MainWindow::advanceEntityPlans() {
 
       const QString nextLabelAfterFailure = this->planStepDisplayLabel(nextStepAfterFailure);
       if (!this->startPlanStepTask(entityName, plan)) {
-        this->appendLogMessage(
+        this->failRunningPlan(
+            entityName,
+            plan,
             QStringLiteral("Plan halted for %1 while starting step %2.")
-                .arg(entityName, nextLabelAfterFailure));
-        this->_ui->statusLabel->setText(
+                .arg(entityName, nextLabelAfterFailure),
             QStringLiteral("Plan fallido para %1: no se pudo arrancar step %2.")
                 .arg(entityName, nextLabelAfterFailure));
         continue;
@@ -4304,10 +4317,11 @@ void MainWindow::advanceEntityPlans() {
 
     const QString nextLabel = this->planStepDisplayLabel(nextStep);
     if (!this->startPlanStepTask(entityName, plan)) {
-      this->appendLogMessage(
+      this->failRunningPlan(
+          entityName,
+          plan,
           QStringLiteral("Plan halted for %1 while starting step %2.")
-              .arg(entityName, nextLabel));
-      this->_ui->statusLabel->setText(
+              .arg(entityName, nextLabel),
           QStringLiteral("Plan fallido para %1: no se pudo arrancar step %2.")
               .arg(entityName, nextLabel));
       continue;
