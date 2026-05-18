@@ -80,10 +80,18 @@ constexpr double kAttackAirTimeoutSeconds = 120.0;
 constexpr double kAttackAirMissileCooldownSeconds = 8.0;
 constexpr double kAttackAirMinimumPursuitSpeedKnots = 320.0;
 constexpr double kAttackAirTargetSpeedMarginKnots = 60.0;
-constexpr auto kTaskStatusNotStarted = "NotStarted";
-constexpr auto kTaskStatusRunning = "Running";
-constexpr auto kTaskStatusCompleted = "Completed";
-constexpr auto kTaskStatusFailed = "Failed";
+constexpr QLatin1StringView kTaskStatusNotStarted = "NotStarted";
+constexpr QLatin1StringView kTaskStatusRunning = "Running";
+constexpr QLatin1StringView kTaskStatusCompleted = "Completed";
+constexpr QLatin1StringView kTaskStatusFailed = "Failed";
+constexpr QLatin1StringView kTaskStatusCompletedWithFailures = "CompletedWithFailures";
+
+QString planStatusDisplayLabel(const QString& status) {
+  if (status == QStringLiteral(kTaskStatusCompletedWithFailures)) {
+    return QStringLiteral("Completed (with failures)");
+  }
+  return status;
+}
 
 bool attackTaskStatusIsTerminal(const QString& status) {
   return status == QStringLiteral(kTaskStatusCompleted) ||
@@ -1404,6 +1412,19 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
   const bool cancelBombAvailable =
       this->_pendingBombRelease.pending &&
       this->_pendingBombRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0;
+  const EntityPlan* activePlan = this->_entityPlans.contains(entityName)
+      ? &this->_entityPlans[entityName]
+      : nullptr;
+  const QString planStatus = (!activePlan || activePlan->status.trimmed().isEmpty())
+      ? QString(kTaskStatusNotStarted)
+      : planStatusDisplayLabel(activePlan->status.trimmed());
+  QString currentPlanStep = QStringLiteral("-");
+  if (activePlan &&
+      activePlan->running &&
+      activePlan->currentStepIndex >= 0 &&
+      activePlan->currentStepIndex < activePlan->steps.size()) {
+    currentPlanStep = this->planStepDisplayLabel(activePlan->steps.at(activePlan->currentStepIndex));
+  }
 
   QStringList lines;
   lines << QStringLiteral("[ENTITY]")
@@ -1440,6 +1461,11 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
         << fieldLine(QStringLiteral("Pending Release"), bombReleaseState)
         << fieldLine(QStringLiteral("Bomb Target"), bombTargetText)
         << fieldLine(QStringLiteral("Distance"), bombDistanceText)
+        << QStringLiteral("")
+        << QStringLiteral("")
+        << QStringLiteral("[PLAN]")
+        << fieldLine(QStringLiteral("Status"), planStatus)
+        << fieldLine(QStringLiteral("Current Step"), currentPlanStep)
         << QStringLiteral("")
         << QStringLiteral("")
         << QStringLiteral("[ACTIONS]")
@@ -3981,18 +4007,21 @@ bool MainWindow::startEntityPlan(const QString& entityName) {
     return false;
   }
 
-  QString invalidReason;
-  if (!this->validatePlanStepForExecution(plan.steps.front(), &invalidReason)) {
-    plan.running = false;
-    plan.currentStepIndex = -1;
-    plan.currentStableTicks = 0;
-    const QString stepLabel = this->planStepDisplayLabel(plan.steps.front());
-    this->appendLogMessage(
-        QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
-            .arg(entityName, stepLabel, invalidReason));
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
-    return false;
+  for (int index = 0; index < plan.steps.size(); ++index) {
+    QString invalidReason;
+    if (!this->validatePlanStepForExecution(plan.steps.at(index), &invalidReason)) {
+      plan.running = false;
+      plan.currentStepIndex = -1;
+      plan.currentStableTicks = 0;
+      const QString stepLabel = this->planStepDisplayLabel(plan.steps.at(index));
+      this->appendLogMessage(
+          QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
+              .arg(entityName, stepLabel, invalidReason));
+      this->_ui->statusLabel->setText(
+          QStringLiteral("Plan detenido para %1: step invalido (%2).")
+              .arg(entityName, stepLabel));
+      return false;
+    }
   }
 
   plan.running = true;
@@ -4074,13 +4103,21 @@ void MainWindow::completeRunningPlan(
     EntityPlan& plan,
     const QString& completedLabel) {
   plan.running = false;
-  plan.status = QStringLiteral(kTaskStatusCompleted);
+  bool hasFailedSteps = false;
+  for (const PlanStep& step : plan.steps) {
+    if (step.status == QStringLiteral(kTaskStatusFailed)) {
+      hasFailedSteps = true;
+      break;
+    }
+  }
+  plan.status = QStringLiteral(hasFailedSteps ? kTaskStatusCompletedWithFailures : kTaskStatusCompleted);
   plan.currentStepIndex = -1;
   this->appendLogMessage(
       QStringLiteral("Plan completed for %1 after %2.")
           .arg(entityName, completedLabel));
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Plan completado para %1.").arg(entityName));
+  this->_ui->statusLabel->setText(hasFailedSteps
+      ? QStringLiteral("Plan completado con fallas para %1.").arg(entityName)
+      : QStringLiteral("Plan completado para %1.").arg(entityName));
 }
 
 bool MainWindow::activePlanStepCompleted(const Entity& entity, EntityPlan& plan) const {
@@ -4227,6 +4264,9 @@ void MainWindow::advanceEntityPlans() {
         this->appendLogMessage(
             QStringLiteral("Plan halted for %1 while starting step %2.")
                 .arg(entityName, nextLabelAfterFailure));
+        this->_ui->statusLabel->setText(
+            QStringLiteral("Plan fallido para %1: no se pudo arrancar step %2.")
+                .arg(entityName, nextLabelAfterFailure));
         continue;
       }
 
@@ -4266,6 +4306,9 @@ void MainWindow::advanceEntityPlans() {
     if (!this->startPlanStepTask(entityName, plan)) {
       this->appendLogMessage(
           QStringLiteral("Plan halted for %1 while starting step %2.")
+              .arg(entityName, nextLabel));
+      this->_ui->statusLabel->setText(
+          QStringLiteral("Plan fallido para %1: no se pudo arrancar step %2.")
               .arg(entityName, nextLabel));
       continue;
     }
@@ -5078,7 +5121,7 @@ void MainWindow::openEntityPlanDialog() {
     planStatusLabel->setText(
         QStringLiteral("Plan Status: %1").arg(plan.status.trimmed().isEmpty()
             ? QStringLiteral("NotStarted")
-            : plan.status.trimmed()));
+            : planStatusDisplayLabel(plan.status.trimmed())));
     for (int index = 0; index < plan.steps.size(); ++index) {
       const QString prefix =
           (plan.running && index == plan.currentStepIndex) ? QStringLiteral(">> ") : QString();
@@ -5129,6 +5172,8 @@ void MainWindow::openEntityPlanDialog() {
 
   QObject::connect(addButton, &QPushButton::clicked, &dialog, [this, &dialog, planForEntity, entityName, stepsList, refreshList, refreshButtons, addButton]() {
     if (planForEntity().running) {
+      this->_ui->statusLabel->setText(
+          QStringLiteral("No puedes editar steps mientras el plan esta en ejecucion."));
       refreshButtons();
       return;
     }
@@ -5179,9 +5224,13 @@ void MainWindow::openEntityPlanDialog() {
     refreshButtons();
   });
 
-  QObject::connect(removeButton, &QPushButton::clicked, &dialog, [planForEntity, stepsList, refreshList, refreshButtons]() {
+  QObject::connect(removeButton, &QPushButton::clicked, &dialog, [this, planForEntity, stepsList, refreshList, refreshButtons]() {
     EntityPlan& plan = planForEntity();
     if (plan.running) {
+      if (this->_ui && this->_ui->statusLabel) {
+        this->_ui->statusLabel->setText(
+            QStringLiteral("No puedes editar steps mientras el plan esta en ejecucion."));
+      }
       refreshButtons();
       return;
     }
@@ -5195,9 +5244,13 @@ void MainWindow::openEntityPlanDialog() {
     refreshButtons();
   });
 
-  QObject::connect(upButton, &QPushButton::clicked, &dialog, [planForEntity, stepsList, refreshList, refreshButtons]() {
+  QObject::connect(upButton, &QPushButton::clicked, &dialog, [this, planForEntity, stepsList, refreshList, refreshButtons]() {
     EntityPlan& plan = planForEntity();
     if (plan.running) {
+      if (this->_ui && this->_ui->statusLabel) {
+        this->_ui->statusLabel->setText(
+            QStringLiteral("No puedes editar steps mientras el plan esta en ejecucion."));
+      }
       refreshButtons();
       return;
     }
@@ -5212,9 +5265,13 @@ void MainWindow::openEntityPlanDialog() {
     refreshButtons();
   });
 
-  QObject::connect(downButton, &QPushButton::clicked, &dialog, [planForEntity, stepsList, refreshList, refreshButtons]() {
+  QObject::connect(downButton, &QPushButton::clicked, &dialog, [this, planForEntity, stepsList, refreshList, refreshButtons]() {
     EntityPlan& plan = planForEntity();
     if (plan.running) {
+      if (this->_ui && this->_ui->statusLabel) {
+        this->_ui->statusLabel->setText(
+            QStringLiteral("No puedes editar steps mientras el plan esta en ejecucion."));
+      }
       refreshButtons();
       return;
     }
@@ -6454,3 +6511,9 @@ void MainWindow::updateSimulationControls() {
           ? QStringLiteral("Simulation Running")
           : QStringLiteral("Simulation Paused"));
 }
+  const auto planIt = this->_entityPlans.constFind(entityName);
+  if (planIt != this->_entityPlans.constEnd() && planIt->running) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No puedes editar la task mientras el plan esta en ejecucion."));
+    return;
+  }
