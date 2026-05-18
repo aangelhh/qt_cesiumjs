@@ -6151,6 +6151,13 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
     return;
   }
 
+  const auto planIt = this->_entityPlans.constFind(entityName);
+  if (planIt != this->_entityPlans.constEnd() && planIt->running) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No puedes editar la task mientras el plan esta en ejecucion."));
+    return;
+  }
+
   const QVariantMap currentSummary =
       this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
   EntityTask currentTask;
@@ -6511,9 +6518,3 @@ void MainWindow::updateSimulationControls() {
           ? QStringLiteral("Simulation Running")
           : QStringLiteral("Simulation Paused"));
 }
-  const auto planIt = this->_entityPlans.constFind(entityName);
-  if (planIt != this->_entityPlans.constEnd() && planIt->running) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No puedes editar la task mientras el plan esta en ejecucion."));
-    return;
-  }
