@@ -80,22 +80,22 @@ constexpr double kAttackAirTimeoutSeconds = 120.0;
 constexpr double kAttackAirMissileCooldownSeconds = 8.0;
 constexpr double kAttackAirMinimumPursuitSpeedKnots = 320.0;
 constexpr double kAttackAirTargetSpeedMarginKnots = 60.0;
-constexpr QLatin1StringView kTaskStatusNotStarted = "NotStarted";
-constexpr QLatin1StringView kTaskStatusRunning = "Running";
-constexpr QLatin1StringView kTaskStatusCompleted = "Completed";
-constexpr QLatin1StringView kTaskStatusFailed = "Failed";
-constexpr QLatin1StringView kTaskStatusCompletedWithFailures = "CompletedWithFailures";
+constexpr QLatin1StringView kTaskStatusNotStarted("NotStarted");
+constexpr QLatin1StringView kTaskStatusRunning("Running");
+constexpr QLatin1StringView kTaskStatusCompleted("Completed");
+constexpr QLatin1StringView kTaskStatusFailed("Failed");
+constexpr QLatin1StringView kTaskStatusCompletedWithFailures("CompletedWithFailures");
 
 QString planStatusDisplayLabel(const QString& status) {
-  if (status == QStringLiteral(kTaskStatusCompletedWithFailures)) {
+  if (status == kTaskStatusCompletedWithFailures) {
     return QStringLiteral("Completed (with failures)");
   }
   return status;
 }
 
 bool attackTaskStatusIsTerminal(const QString& status) {
-  return status == QStringLiteral(kTaskStatusCompleted) ||
-         status == QStringLiteral(kTaskStatusFailed) ||
+  return status == kTaskStatusCompleted ||
+         status == kTaskStatusFailed ||
          status == QStringLiteral("Target unavailable");
 }
 
@@ -1412,8 +1412,9 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
   const bool cancelBombAvailable =
       this->_pendingBombRelease.pending &&
       this->_pendingBombRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0;
-  const EntityPlan* activePlan = this->_entityPlans.contains(entityName)
-      ? &this->_entityPlans[entityName]
+  const auto activePlanIt = this->_entityPlans.constFind(entityName);
+  const EntityPlan* activePlan = (activePlanIt != this->_entityPlans.constEnd())
+      ? &activePlanIt.value()
       : nullptr;
   const QString planStatus = (!activePlan || activePlan->status.trimmed().isEmpty())
       ? QString(kTaskStatusNotStarted)
@@ -4030,11 +4031,11 @@ bool MainWindow::startEntityPlan(const QString& entityName) {
   }
 
   plan.running = true;
-  plan.status = QStringLiteral(kTaskStatusRunning);
+  plan.status = QString(kTaskStatusRunning);
   plan.currentStepIndex = 0;
   plan.currentStableTicks = 0;
   for (PlanStep& step : plan.steps) {
-    step.status = QStringLiteral(kTaskStatusNotStarted);
+    step.status = QString(kTaskStatusNotStarted);
   }
   if (!this->startPlanStepTask(entityName, plan)) {
     return false;
@@ -4056,8 +4057,8 @@ void MainWindow::stopEntityPlan(const QString& entityName, bool clearCurrentTask
   it->running = false;
   it->currentStepIndex = -1;
   it->currentStableTicks = 0;
-  if (it->status == QStringLiteral(kTaskStatusRunning)) {
-    it->status = QStringLiteral(kTaskStatusNotStarted);
+  if (it->status == QString(kTaskStatusRunning)) {
+    it->status = QString(kTaskStatusNotStarted);
   }
 
   if (clearCurrentTask) {
@@ -4071,11 +4072,11 @@ bool MainWindow::startPlanStepTask(const QString& entityName, EntityPlan& plan) 
     return false;
   }
   PlanStep& step = plan.steps[plan.currentStepIndex];
-  step.status = QStringLiteral(kTaskStatusRunning);
+  step.status = QString(kTaskStatusRunning);
   if (!this->applyEntityTask(entityName, step.task, false)) {
-    step.status = QStringLiteral(kTaskStatusFailed);
+    step.status = QString(kTaskStatusFailed);
     plan.running = false;
-    plan.status = QStringLiteral(kTaskStatusFailed);
+    plan.status = QString(kTaskStatusFailed);
     plan.currentStepIndex = -1;
     plan.currentStableTicks = 0;
     return false;
@@ -4095,10 +4096,10 @@ void MainWindow::failRunningPlan(
     this->_ui->statusLabel->setText(statusMessage);
   }
   if (plan.currentStepIndex >= 0 && plan.currentStepIndex < plan.steps.size()) {
-    plan.steps[plan.currentStepIndex].status = QStringLiteral(kTaskStatusFailed);
+    plan.steps[plan.currentStepIndex].status = QString(kTaskStatusFailed);
   }
   plan.running = false;
-  plan.status = QStringLiteral(kTaskStatusFailed);
+  plan.status = QString(kTaskStatusFailed);
   plan.currentStepIndex = -1;
   plan.currentStableTicks = 0;
 }
@@ -4110,12 +4111,12 @@ void MainWindow::completeRunningPlan(
   plan.running = false;
   bool hasFailedSteps = false;
   for (const PlanStep& step : plan.steps) {
-    if (step.status == QStringLiteral(kTaskStatusFailed)) {
+    if (step.status == kTaskStatusFailed) {
       hasFailedSteps = true;
       break;
     }
   }
-  plan.status = QStringLiteral(hasFailedSteps ? kTaskStatusCompletedWithFailures : kTaskStatusCompleted);
+  plan.status = (hasFailedSteps ? QString(kTaskStatusCompletedWithFailures) : QString(kTaskStatusCompleted));
   plan.currentStepIndex = -1;
   if (hasFailedSteps) {
     this->appendLogMessage(
@@ -4225,7 +4226,7 @@ void MainWindow::advanceEntityPlans() {
     }
 
     PlanStep& activeStep = plan.steps[plan.currentStepIndex];
-    activeStep.status = QStringLiteral(kTaskStatusRunning);
+    activeStep.status = QString(kTaskStatusRunning);
     QString invalidReason;
     if (!this->validatePlanStepForExecution(activeStep, &invalidReason)) {
       this->failRunningPlan(
@@ -4250,7 +4251,7 @@ void MainWindow::advanceEntityPlans() {
     if (entity->currentTask.status == QStringLiteral("Target unavailable") ||
         entity->currentTask.status == QStringLiteral("Failed")) {
       const QString failedLabel = this->planStepDisplayLabel(activeStep);
-      activeStep.status = QStringLiteral(kTaskStatusFailed);
+      activeStep.status = QString(kTaskStatusFailed);
       ++plan.currentStepIndex;
       plan.currentStableTicks = 0;
 
@@ -4294,7 +4295,7 @@ void MainWindow::advanceEntityPlans() {
     }
 
     const QString completedLabel = this->planStepDisplayLabel(activeStep);
-    activeStep.status = QStringLiteral(kTaskStatusCompleted);
+    activeStep.status = QString(kTaskStatusCompleted);
     ++plan.currentStepIndex;
     plan.currentStableTicks = 0;
 
