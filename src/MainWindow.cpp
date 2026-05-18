@@ -1204,13 +1204,20 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
   const QString taskType = value("taskType", QStringLiteral("No current tasks"));
   const QString taskStatus = value("taskStatus", QStringLiteral("-"));
   const QString status = value("status");
-  const QString operationalState =
+  QString operationalState =
       taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
           ? status
           : QStringLiteral("%1 (%2)").arg(taskType, taskStatus);
 
   if (!entity) {
     return operationalState;
+  }
+
+  const QString liveTaskType = entity->currentTask.taskType.trimmed();
+  const QString liveTaskStatus = entity->currentTask.status.trimmed();
+  if (entity->currentTask.enabled && !liveTaskType.isEmpty()) {
+    operationalState = QStringLiteral("%1 (%2)")
+        .arg(liveTaskType, liveTaskStatus.isEmpty() ? QStringLiteral("-") : liveTaskStatus);
   }
 
   const QString entityName = entity->name;
