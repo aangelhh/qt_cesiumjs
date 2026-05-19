@@ -70,6 +70,8 @@ qt_add_executable(qttest
     src/presentation/EntityVisualStateManager.cpp
     src/presentation/EntityVisualStateManager.h
     src/presentation/PlanTypes.h
+    src/presentation/TrackSummaryBuilder.cpp
+    src/presentation/TrackSummaryBuilder.h
 )
 
 target_link_libraries(qttest

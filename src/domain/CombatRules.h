@@ -19,6 +19,9 @@ int autoBehaviorDamageReactionLevel(const Entity& entity);
 /// Whether the entity is healthy enough to engage targets.
 bool autoBehaviorCanEngageByDamage(const Entity& entity);
 
+/// Human-readable label for a plan/attack task status string.
+QString planStatusDisplayLabel(const QString& status);
+
 /// Human-readable label for force identifier codes (1=Friendly, 2=Opposing, etc.)
 QString forceIdentifierLabel(int forceIdentifier);
 

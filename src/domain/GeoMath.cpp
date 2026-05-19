@@ -1,5 +1,6 @@
 #include "GeoMath.h"
 #include <cmath>
+#include <QString>
 
 namespace domain {
 
@@ -59,6 +60,16 @@ double bearingDegrees(
   const double x = std::cos(lat1) * std::sin(lat2) -
                    std::sin(lat1) * std::cos(lat2) * std::cos(deltaLon);
   return normalizeDegrees360(toDegrees(std::atan2(y, x)));
+}
+
+QString formatPosition(double latitude, double longitude) {
+  return QStringLiteral("%1, %2")
+      .arg(latitude, 0, 'f', 4)
+      .arg(longitude, 0, 'f', 4);
+}
+
+QString attackPointLabel(double latitude, double longitude) {
+  return formatPosition(latitude, longitude);
 }
 
 } // namespace domain

@@ -55,4 +55,11 @@ bool entityCanUseMissileActions(const Entity& entity) {
          entity.category.compare(QStringLiteral("Fighter"), Qt::CaseInsensitive) == 0;
 }
 
+QString planStatusDisplayLabel(const QString& status) {
+  if (status == QStringLiteral("CompletedWithFailures")) {
+    return QStringLiteral("Completed (with failures)");
+  }
+  return status;
+}
+
 } // namespace domain

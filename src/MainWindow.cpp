@@ -16,6 +16,7 @@
 #include "presentation/EntityTextFormatter.h"
 #include "presentation/EntityHomePositionTracker.h"
 #include "presentation/EntityVisualStateManager.h"
+#include "presentation/TrackSummaryBuilder.h"
 #include "ui_MainWindow.h"
 
 #include <QAbstractItemView>
@@ -88,12 +89,7 @@ constexpr QLatin1StringView kTaskStatusCompleted("Completed");
 constexpr QLatin1StringView kTaskStatusFailed("Failed");
 constexpr QLatin1StringView kTaskStatusCompletedWithFailures("CompletedWithFailures");
 
-QString planStatusDisplayLabel(const QString& status) {
-  if (status == kTaskStatusCompletedWithFailures) {
-    return QStringLiteral("Completed (with failures)");
-  }
-  return status;
-}
+// planStatusDisplayLabel moved to domain/CombatRules.h
 
 // attackTaskStatusIsTerminal, attackSurfaceCoordinatesAreUsable,
 // autoBehaviorDamageReactionLevel, autoBehaviorCanEngageByDamage
@@ -190,70 +186,9 @@ QIcon loadTaskQuickBarIcon(
   return makeTaskQuickFallbackIcon(fallbackGlyph, accent);
 }
 
-QVariantMap makeTrackSummary(
-    const QString& name,
-    const QString& type,
-    const QString& team,
-    const QString& altitudeText,
-    const QString& positionText,
-    const QString& status,
-    double latitude,
-    double longitude) {
-  return {
-      {QStringLiteral("name"), name},
-      {QStringLiteral("type"), type},
-      {QStringLiteral("team"), team},
-      {QStringLiteral("altitude"), altitudeText},
-      {QStringLiteral("position"), positionText},
-      {QStringLiteral("status"), status},
-      {QStringLiteral("latitude"), latitude},
-      {QStringLiteral("longitude"), longitude},
-      {QStringLiteral("callsign"), QString()},
-      {QStringLiteral("domain"), QString()},
-      {QStringLiteral("category"), QString()},
-      {QStringLiteral("forceIdentifier"), 0},
-      {QStringLiteral("entityKind"), 0},
-      {QStringLiteral("entityDomain"), 0},
-      {QStringLiteral("entityCountry"), 0},
-      {QStringLiteral("entityCategory"), 0},
-      {QStringLiteral("entitySubcategory"), 0},
-      {QStringLiteral("entitySpecific"), 0},
-      {QStringLiteral("entityExtra"), 0},
-      {QStringLiteral("entityTypeCode"), QString()},
-      {QStringLiteral("modelName"), QString()},
-      {QStringLiteral("modelUri"), QString()},
-      {QStringLiteral("munitionType"), QString()},
-      {QStringLiteral("effectType"), QString()},
-      {QStringLiteral("headingDegrees"), 0.0},
-      {QStringLiteral("pitchDegrees"), 0.0},
-      {QStringLiteral("rollDegrees"), 0.0},
-      {QStringLiteral("modelScale"), 1.0},
-      {QStringLiteral("pointSize"), 11},
-      {QStringLiteral("labelVisible"), true},
-      {QStringLiteral("flightDynamicsEnabled"), false},
-      {QStringLiteral("flightDynamicsMode"), QStringLiteral("kinematic")},
-      {QStringLiteral("jsbsimAircraftModel"), QString()},
-      {QStringLiteral("speedKnots"), 0.0},
-      {QStringLiteral("verticalSpeedMetersPerSecond"), 0.0},
-      {QStringLiteral("taskType"), QString()},
-      {QStringLiteral("taskEnabled"), false},
-      {QStringLiteral("taskStatus"), QStringLiteral("Idle")},
-      {QStringLiteral("taskTargetHeadingDegrees"), 0.0},
-      {QStringLiteral("taskTargetAltitudeMeters"), 0},
-      {QStringLiteral("taskTargetSpeedKnots"), 0.0},
-      {QStringLiteral("taskTargetLatitude"), 0.0},
-      {QStringLiteral("taskTargetLongitude"), 0.0},
-      {QStringLiteral("taskTargetEntityName"), QString()},
-      {QStringLiteral("taskTargetWaypointName"), QString()},
-      {QStringLiteral("taskTargetRouteName"), QString()},
-      {QStringLiteral("destroyed"), false},
-      {QStringLiteral("damagePercent"), 0.0},
-      {QStringLiteral("damageState"), QStringLiteral("Intact")},
-      {QStringLiteral("hidden"), false},
-      {QStringLiteral("radarCoverageVisible"), false},
-      {QStringLiteral("trackHistoryVisible"), false},
-  };
-}
+// makeTrackSummary, makeMunitionTrackSummary, makeTransientEffectTrackSummary,
+// makePendingBombTargetTrackSummary, makePendingBombTargetLineTrackSummary
+// moved to presentation/TrackSummaryBuilder.h
 
 // forceIdentifierLabel, entityCanUseMissileActions moved to domain/CombatRules.h
 
@@ -303,156 +238,18 @@ QVector<MissileTargetCandidate> detectedMissileTargetsInRange(
   return targets;
 }
 
-QString missileTargetDisplayLabel(const Entity& entity, double rangeMeters) {
-  return QStringLiteral("%1 (%2 / %3, %4 km)")
-      .arg(
-          entity.name,
-          domain::forceIdentifierLabel(entity.forceIdentifier),
-          entity.category,
-          QString::number(rangeMeters / 1000.0, 'f', 1));
-}
+// missileTargetDisplayLabel, formatPosition moved to presentation/TrackSummaryBuilder.h
+// and domain/GeoMath.h respectively
 
-QString formatPosition(double latitude, double longitude) {
-  return QStringLiteral("%1, %2")
-      .arg(latitude, 0, 'f', 4)
-      .arg(longitude, 0, 'f', 4);
-}
-
-QVariantMap makeMunitionTrackSummary(const ActiveMunition& munition) {
-  const double altitudeMeters = qMax(0.0, munition.altitudeMeters);
-  const double speedKnots = munition.speedMetersPerSecond / 0.514444;
-  const QString munitionType = munition.munitionType.trimmed();
-  const bool isBomb = munitionType.compare(QStringLiteral("Bomb"), Qt::CaseInsensitive) == 0;
-  QVariantMap summary = makeTrackSummary(
-      munition.id,
-      QStringLiteral("Munition"),
-      domain::forceIdentifierLabel(munition.forceIdentifier),
-      QStringLiteral("%1 m").arg(altitudeMeters, 0, 'f', 0),
-      formatPosition(munition.latitude, munition.longitude),
-      munition.status.trimmed().isEmpty() ? QStringLiteral("Flying") : munition.status,
-      munition.latitude,
-      munition.longitude);
-  summary.insert(QStringLiteral("category"), isBomb ? QStringLiteral("Bomb") : QStringLiteral("Missile"));
-  summary.insert(QStringLiteral("munitionType"), munition.munitionType);
-  summary.insert(QStringLiteral("forceIdentifier"), munition.forceIdentifier);
-  summary.insert(QStringLiteral("modelName"), isBomb ? QStringLiteral("Bomb") : QStringLiteral("Missile"));
-  summary.insert(QStringLiteral("modelUri"), munition.modelUri);
-  summary.insert(QStringLiteral("headingDegrees"), munition.headingDegrees);
-  summary.insert(QStringLiteral("pitchDegrees"), munition.pitchDegrees);
-  summary.insert(QStringLiteral("rollDegrees"), munition.rollDegrees);
-  summary.insert(QStringLiteral("speedKnots"), speedKnots);
-  summary.insert(QStringLiteral("modelScale"), isBomb ? 0.5 : 0.35);
-  summary.insert(QStringLiteral("labelVisible"), false);
-  return summary;
-}
-
-QVariantMap makeTransientEffectTrackSummary(const TransientEffect& effect) {
-  const double altitudeMeters = qMax(0.0, effect.altitudeMeters);
-  const QString effectType = effect.effectType.trimmed().toCaseFolded();
-  int pointSize = 10;
-  if (effectType == QStringLiteral("impactflash")) {
-    pointSize = 18;
-  } else if (effectType == QStringLiteral("bombsmoketrail")) {
-    pointSize = 8;
-  } else if (effectType == QStringLiteral("bombimpactflash")) {
-    pointSize = 16;
-  } else if (effectType == QStringLiteral("bombsmoke")) {
-    pointSize = 20;
-  }
-  QVariantMap summary = makeTrackSummary(
-      effect.id,
-      QStringLiteral("Effect"),
-      domain::forceIdentifierLabel(effect.forceIdentifier),
-      QStringLiteral("%1 m").arg(altitudeMeters, 0, 'f', 0),
-      formatPosition(effect.latitude, effect.longitude),
-      effect.effectType,
-      effect.latitude,
-      effect.longitude);
-  summary.insert(QStringLiteral("category"), QStringLiteral("Effect"));
-  summary.insert(QStringLiteral("effectType"), effect.effectType);
-  summary.insert(QStringLiteral("forceIdentifier"), effect.forceIdentifier);
-  summary.insert(QStringLiteral("labelVisible"), false);
-  summary.insert(QStringLiteral("pointSize"), pointSize);
-  return summary;
-}
-
-QVariantMap makePendingBombTargetTrackSummary(
-    const QString& targetLabel,
-    double latitude,
-    double longitude,
-    double targetAltitudeMeters,
-    const QString& teamLabel,
-    const QString& releaseStateLabel,
-    double distanceMetersToTarget) {
-  const QString distanceText = distanceMetersToTarget >= 0.0
-      ? QStringLiteral("%1 km").arg(distanceMetersToTarget / 1000.0, 0, 'f', 1)
-      : QString();
-  QVariantMap summary = makeTrackSummary(
-      QStringLiteral("Bomb Target"),
-      QStringLiteral("PendingBombTarget"),
-      teamLabel.trimmed().isEmpty() ? QStringLiteral("Friendly") : teamLabel,
-      QStringLiteral("%1 m").arg(qMax(0.0, targetAltitudeMeters), 0, 'f', 0),
-      formatPosition(latitude, longitude),
-      distanceText.trimmed().isEmpty()
-          ? (releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel)
-          : QStringLiteral("%1 | %2")
-                .arg(
-                    releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel,
-                    distanceText),
-      latitude,
-      longitude);
-  summary.insert(QStringLiteral("category"), QStringLiteral("PendingBombTarget"));
-  summary.insert(QStringLiteral("pointSize"), 16);
-  summary.insert(QStringLiteral("labelVisible"), true);
-  summary.insert(QStringLiteral("pendingBombReleaseState"), releaseStateLabel);
-  summary.insert(QStringLiteral("pendingBombTargetLabel"), targetLabel);
-  summary.insert(QStringLiteral("pendingBombTargetDistanceMeters"), distanceMetersToTarget);
-  return summary;
-}
-
-QVariantMap makePendingBombTargetLineTrackSummary(
-    const Entity& launcher,
-    double targetLatitude,
-    double targetLongitude,
-    double targetAltitudeMeters,
-    const QString& teamLabel,
-    const QString& releaseStateLabel) {
-  QVariantMap summary = makeTrackSummary(
-      QStringLiteral("Bomb Target Line"),
-      QStringLiteral("PendingBombTargetLine"),
-      teamLabel.trimmed().isEmpty() ? QStringLiteral("Friendly") : teamLabel,
-      QStringLiteral("%1 m").arg(qMax(0, launcher.altitude)),
-      formatPosition(launcher.latitude, launcher.longitude),
-      releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel,
-      launcher.latitude,
-      launcher.longitude);
-  summary.insert(QStringLiteral("category"), QStringLiteral("PendingBombTargetLine"));
-  summary.insert(QStringLiteral("labelVisible"), false);
-  summary.insert(QStringLiteral("pendingBombReleaseState"), releaseStateLabel);
-  QVariantList routePoints;
-  routePoints.push_back(QVariantMap{
-      {QStringLiteral("longitude"), launcher.longitude},
-      {QStringLiteral("latitude"), launcher.latitude},
-      {QStringLiteral("altitudeMeters"), static_cast<double>(launcher.altitude)},
-  });
-  routePoints.push_back(QVariantMap{
-      {QStringLiteral("longitude"), targetLongitude},
-      {QStringLiteral("latitude"), targetLatitude},
-      {QStringLiteral("altitudeMeters"), targetAltitudeMeters},
-  });
-  summary.insert(QStringLiteral("routePoints"), routePoints);
-  return summary;
-}
+// makeMunitionTrackSummary, makeTransientEffectTrackSummary,
+// makePendingBombTargetTrackSummary, makePendingBombTargetLineTrackSummary
+// moved to presentation/TrackSummaryBuilder.h
 
 // domain::BombReleaseGateEvaluation, distanceMeters, normalizeDegrees360,
 // shortestSignedAngle, bearingDegrees, evaluateBombReleaseGate
 // moved to domain/GeoMath.h and domain/BombReleaseGate.h
 
-QString attackPointLabel(double latitude, double longitude) {
-  return QStringLiteral("%1, %2")
-      .arg(latitude, 0, 'f', 4)
-      .arg(longitude, 0, 'f', 4);
-}
+// attackPointLabel moved to domain/GeoMath.h
 
 int entityAltitudeMeters(const ScenarioState* scenarioState, const QString& entityName) {
   if (!scenarioState || entityName.trimmed().isEmpty()) {
@@ -523,10 +320,7 @@ const Entity* bestDetectedSurfaceBombTarget(
   return selectedTarget;
 }
 
-QString bombTargetDisplayLabel(const Entity& entity) {
-  return QStringLiteral("%1 (%2 / %3)")
-      .arg(entity.name, domain::forceIdentifierLabel(entity.forceIdentifier), entity.domain);
-}
+// bombTargetDisplayLabel moved to presentation/TrackSummaryBuilder.h
 
 void setTrackData(QStandardItem* item, const QVariantMap& summary) {
   item->setData(summary, kTrackSummaryRole);
@@ -1179,7 +973,7 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
         this->_pendingBombRelease.targetAltitudeMeters);
     bombReleaseState = evaluation.stateLabel();
     bombTargetText = this->_pendingBombRelease.targetLabel.trimmed().isEmpty()
-        ? attackPointLabel(
+        ? domain::attackPointLabel(
               this->_pendingBombRelease.targetLatitude,
               this->_pendingBombRelease.targetLongitude)
         : this->_pendingBombRelease.targetLabel.trimmed();
@@ -1276,7 +1070,7 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
       : nullptr;
   const QString planStatus = (!activePlan || activePlan->status.trimmed().isEmpty())
       ? QString(kTaskStatusNotStarted)
-      : planStatusDisplayLabel(activePlan->status.trimmed());
+      : domain::planStatusDisplayLabel(activePlan->status.trimmed());
   QString currentPlanStep = QStringLiteral("-");
   if (activePlan &&
       activePlan->running &&
@@ -1361,7 +1155,7 @@ void MainWindow::initializeModels() {
   this->_tacticalGraphicsRootItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Graphic")));
   setTrackData(
       this->_friendlyRootItem,
-      makeTrackSummary(
+      presentation::makeTrackSummary(
           QStringLiteral("Friendly"),
           QStringLiteral("Side"),
           QStringLiteral("Friendly"),
@@ -1372,7 +1166,7 @@ void MainWindow::initializeModels() {
           0.0));
   setTrackData(
       this->_opposingRootItem,
-      makeTrackSummary(
+      presentation::makeTrackSummary(
           QStringLiteral("Opposing"),
           QStringLiteral("Side"),
           QStringLiteral("Opposing"),
@@ -1383,7 +1177,7 @@ void MainWindow::initializeModels() {
           0.0));
   setTrackData(
       this->_neutralRootItem,
-      makeTrackSummary(
+      presentation::makeTrackSummary(
           QStringLiteral("Neutral"),
           QStringLiteral("Side"),
           QStringLiteral("Neutral"),
@@ -1394,7 +1188,7 @@ void MainWindow::initializeModels() {
           0.0));
   setTrackData(
       this->_tacticalGraphicsRootItem,
-      makeTrackSummary(
+      presentation::makeTrackSummary(
           QStringLiteral("Tactical Graphics"),
           QStringLiteral("Graphic"),
           QStringLiteral("Overlay"),
@@ -1482,7 +1276,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
   QStandardItem* categoryItem = this->ensureGroupItem(
       rootItem,
       category,
-      makeTrackSummary(
+      presentation::makeTrackSummary(
           category,
           QStringLiteral("Category"),
           domain::forceIdentifierLabel(entity.forceIdentifier),
@@ -1510,12 +1304,12 @@ QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
       this->_entityVisualStateManager->stateFor(entity.name);
   const QString damageState = entity.damageStateLabel();
 
-  QVariantMap summary = makeTrackSummary(
+  QVariantMap summary = presentation::makeTrackSummary(
       entity.name,
       entity.type,
       domain::forceIdentifierLabel(entity.forceIdentifier),
       QStringLiteral("%1 m").arg(entity.altitude),
-      formatPosition(entity.latitude, entity.longitude),
+      domain::formatPosition(entity.latitude, entity.longitude),
       damageState,
       entity.latitude,
       entity.longitude);
@@ -1979,12 +1773,12 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
       handledGraphic = true;
       this->syncScenarioStateToUi();
     } else {
-      QVariantMap draftSummary = makeTrackSummary(
+      QVariantMap draftSummary = presentation::makeTrackSummary(
           _pendingGraphicName + QStringLiteral(" (draft)"),
           QStringLiteral("Route"),
           QStringLiteral("Graphic"),
           QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
-          formatPosition(latitude, longitude),
+          domain::formatPosition(latitude, longitude),
           QStringLiteral("Route draft"),
           latitude,
           longitude);
@@ -2064,12 +1858,12 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
         this->syncScenarioStateToUi();
       } else {
         _pendingAreaPoints.push_back(capturedPoint);
-        QVariantMap draftSummary = makeTrackSummary(
+        QVariantMap draftSummary = presentation::makeTrackSummary(
             _pendingGraphicName + QStringLiteral(" (draft)"),
             QStringLiteral("Area"),
             QStringLiteral("Graphic"),
             QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
-            formatPosition(latitude, longitude),
+            domain::formatPosition(latitude, longitude),
             QStringLiteral("Polygon draft"),
             latitude,
             longitude);
@@ -2093,12 +1887,12 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
       }
     } else {
       _pendingAreaPoints.push_back(capturedPoint);
-      QVariantMap draftSummary = makeTrackSummary(
+      QVariantMap draftSummary = presentation::makeTrackSummary(
           _pendingGraphicName + QStringLiteral(" (draft)"),
           QStringLiteral("Area"),
           QStringLiteral("Graphic"),
           QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
-          formatPosition(latitude, longitude),
+          domain::formatPosition(latitude, longitude),
           QStringLiteral("Polygon draft"),
           latitude,
           longitude);
@@ -2142,7 +1936,7 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
         latitude,
         longitude,
         0.0,
-        attackPointLabel(latitude, longitude),
+        domain::attackPointLabel(latitude, longitude),
         QStringLiteral("Pick on map"));
     return;
   }
@@ -2700,7 +2494,7 @@ void MainWindow::syncScenarioStateToUi() {
   QSet<QString> currentMunitionTrackNames;
   for (const ActiveMunition& munition : this->_scenarioState->activeMunitions()) {
     currentMunitionTrackNames.insert(munition.id);
-    this->sendTrackToMap(makeMunitionTrackSummary(munition), false);
+    this->sendTrackToMap(presentation::makeMunitionTrackSummary(munition), false);
   }
 
   for (const QString& previousName : this->_activeMunitionTrackNames) {
@@ -2713,7 +2507,7 @@ void MainWindow::syncScenarioStateToUi() {
   QSet<QString> currentEffectTrackNames;
   for (const TransientEffect& effect : this->_scenarioState->transientEffects()) {
     currentEffectTrackNames.insert(effect.id);
-    this->sendTrackToMap(makeTransientEffectTrackSummary(effect), false);
+    this->sendTrackToMap(presentation::makeTransientEffectTrackSummary(effect), false);
   }
 
   for (const QString& previousName : this->_activeEffectTrackNames) {
@@ -2744,7 +2538,7 @@ void MainWindow::syncScenarioStateToUi() {
           this->_pendingBombRelease.targetAltitudeMeters);
       releaseStateLabel = evaluation.stateLabel();
       this->sendTrackToMap(
-          makePendingBombTargetLineTrackSummary(
+          presentation::makePendingBombTargetLineTrackSummary(
               *launcher,
               this->_pendingBombRelease.targetLatitude,
               this->_pendingBombRelease.targetLongitude,
@@ -2756,7 +2550,7 @@ void MainWindow::syncScenarioStateToUi() {
       this->removeTrackFromMap(pendingBombTargetLineTrackName);
     }
     this->sendTrackToMap(
-        makePendingBombTargetTrackSummary(
+        presentation::makePendingBombTargetTrackSummary(
             this->_pendingBombRelease.targetLabel,
             this->_pendingBombRelease.targetLatitude,
             this->_pendingBombRelease.targetLongitude,
@@ -3598,7 +3392,7 @@ bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind,
       const QString targetName = step.task.targetEntityName.trimmed();
       step.label = targetName.isEmpty()
           ? QStringLiteral("Attack Surface: %1")
-                .arg(attackPointLabel(step.task.targetLatitude, step.task.targetLongitude))
+                .arg(domain::attackPointLabel(step.task.targetLatitude, step.task.targetLongitude))
           : QStringLiteral("Attack Surface: %1").arg(targetName);
       return true;
     }
@@ -4557,7 +4351,7 @@ void MainWindow::launchMissileAtSelectedEntity() {
       continue;
     }
     const QString option =
-        missileTargetDisplayLabel(*candidate.entity, candidate.rangeMeters);
+        presentation::missileTargetDisplayLabel(*candidate.entity, candidate.rangeMeters);
     options.push_back(option);
     targetNameByOption.insert(option, candidate.entity->name);
   }
@@ -4889,7 +4683,7 @@ void MainWindow::openEntityPlanDialog() {
     planStatusLabel->setText(
         QStringLiteral("Plan Status: %1").arg(plan.status.trimmed().isEmpty()
             ? QStringLiteral("NotStarted")
-            : planStatusDisplayLabel(plan.status.trimmed())));
+            : domain::planStatusDisplayLabel(plan.status.trimmed())));
     for (int index = 0; index < plan.steps.size(); ++index) {
       const QString prefix =
           (plan.running && index == plan.currentStepIndex) ? QStringLiteral(">> ") : QString();
@@ -5598,7 +5392,7 @@ bool MainWindow::processAttackSurfaceTask(const QString& entityName) {
     if (!domain::attackSurfaceCoordinatesAreUsable(targetLatitude, targetLongitude)) {
       return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
     }
-    targetLabel = attackPointLabel(targetLatitude, targetLongitude);
+    targetLabel = domain::attackPointLabel(targetLatitude, targetLongitude);
   }
 
   this->queuePendingBombRelease(
@@ -5840,7 +5634,7 @@ void MainWindow::releaseBombAtSurfaceEntity() {
     if (!target) {
       continue;
     }
-    const QString option = bombTargetDisplayLabel(*target);
+    const QString option = presentation::bombTargetDisplayLabel(*target);
     options.push_back(option);
     targetNameByOption.insert(option, target->name);
   }
@@ -6030,12 +5824,12 @@ void MainWindow::rebuildTacticalGraphicsTree() {
   this->_tacticalGraphicsRootItem->removeRows(0, this->_tacticalGraphicsRootItem->rowCount());
 
   for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
-    QVariantMap waypointSummary = makeTrackSummary(
+    QVariantMap waypointSummary = presentation::makeTrackSummary(
         waypoint.name,
         QStringLiteral("Waypoint"),
         QStringLiteral("Graphic"),
         QStringLiteral("%1 m").arg(waypoint.altitudeMeters, 0, 'f', 0),
-        formatPosition(waypoint.latitude, waypoint.longitude),
+        domain::formatPosition(waypoint.latitude, waypoint.longitude),
         QStringLiteral("Ready"),
         waypoint.latitude,
         waypoint.longitude);
@@ -6056,12 +5850,12 @@ void MainWindow::rebuildTacticalGraphicsTree() {
       });
     }
     const RoutePoint firstPoint = route.points.isEmpty() ? RoutePoint{} : route.points.first();
-    QVariantMap routeSummary = makeTrackSummary(
+    QVariantMap routeSummary = presentation::makeTrackSummary(
         route.name,
         QStringLiteral("Route"),
         QStringLiteral("Graphic"),
         QStringLiteral("-"),
-        route.points.isEmpty() ? QStringLiteral("-") : formatPosition(firstPoint.latitude, firstPoint.longitude),
+        route.points.isEmpty() ? QStringLiteral("-") : domain::formatPosition(firstPoint.latitude, firstPoint.longitude),
         QStringLiteral("%1 points").arg(route.points.size()),
         firstPoint.latitude,
         firstPoint.longitude);
@@ -6074,12 +5868,12 @@ void MainWindow::rebuildTacticalGraphicsTree() {
   }
 
   for (const AreaDefinition& area : this->_scenarioState->areas()) {
-    QVariantMap areaSummary = makeTrackSummary(
+    QVariantMap areaSummary = presentation::makeTrackSummary(
         area.name,
         QStringLiteral("Area"),
         QStringLiteral("Graphic"),
         QStringLiteral("%1 m").arg(area.centerAltitudeMeters, 0, 'f', 0),
-        formatPosition(area.centerLatitude, area.centerLongitude),
+        domain::formatPosition(area.centerLatitude, area.centerLongitude),
         QStringLiteral("%1").arg(area.areaType),
         area.centerLatitude,
         area.centerLongitude);
