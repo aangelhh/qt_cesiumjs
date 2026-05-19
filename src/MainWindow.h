@@ -16,6 +16,7 @@
 #include "application/SimulationEngine.h"
 #include "presentation/BombReleaseController.h"
 #include "presentation/EntityPlanExecutor.h"
+#include "presentation/GraphicPickCoordinator.h"
 #include "presentation/PlanTypes.h"
 
 class QAction;
@@ -43,6 +44,7 @@ class BombReleaseController;
 class EntityHomePositionTracker;
 class EntityPlanExecutor;
 class EntityVisualStateManager;
+class GraphicPickCoordinator;
 }
 
 namespace Ui {
@@ -220,16 +222,6 @@ private:
   QTimer* _simulationTimer;
   bool _applyingMapSelection;
   bool _simulationRunning;
-  QString _pendingGraphicMode;
-  QString _pendingGraphicName;
-  QVector<QVariantMap> _pendingRoutePoints;
-  QString _pendingAreaType;
-  double _pendingAreaRadiusMeters;
-  double _pendingAreaAltitudeMeters;
-  double _pendingAreaSemiMajorMeters;
-  double _pendingAreaSemiMinorMeters;
-  double _pendingAreaRotationDegrees;
-  QVector<QVariantMap> _pendingAreaPoints;
   QList<QToolButton*> _taskQuickButtons;
   QSet<QString> _activeMunitionTrackNames;
   QSet<QString> _activeEffectTrackNames;
@@ -239,6 +231,7 @@ private:
   std::unique_ptr<presentation::EntityPlanExecutor> _planExecutor;
   std::unique_ptr<presentation::EntityVisualStateManager> _entityVisualStateManager;
   std::unique_ptr<presentation::EntityHomePositionTracker> _entityHomePositionTracker;
+  std::unique_ptr<presentation::GraphicPickCoordinator> _graphicPickCoordinator;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif

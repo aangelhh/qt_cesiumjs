@@ -77,8 +77,7 @@ namespace {
 constexpr int kTrackSummaryRole = Qt::UserRole + 1;
 constexpr int kDetectedContactObserverRole = Qt::UserRole + 2;
 constexpr int kDetectedContactTargetRole = Qt::UserRole + 3;
-constexpr double kGraphicAltitudeOffsetMeters = 15.0;
-constexpr double kPolygonCloseDistanceMeters = 50.0;
+// kGraphicAltitudeOffsetMeters and kPolygonCloseDistanceMeters moved to presentation/GraphicPickCoordinator.cpp
 constexpr int kTaskQuickBarMarginPixels = 14;
 constexpr int kTaskQuickBarButtonPixels = 30;
 constexpr int kTaskQuickBarIconPixels = 18;
@@ -181,14 +180,6 @@ MainWindow::MainWindow(QWidget* parent)
       _simulationTimer(new QTimer(this)),
       _applyingMapSelection(false),
       _simulationRunning(false),
-      _pendingGraphicMode(),
-      _pendingGraphicName(),
-      _pendingAreaType(QStringLiteral("Circle")),
-      _pendingAreaRadiusMeters(1000.0),
-      _pendingAreaAltitudeMeters(0.0),
-      _pendingAreaSemiMajorMeters(1000.0),
-      _pendingAreaSemiMinorMeters(600.0),
-      _pendingAreaRotationDegrees(0.0),
       m_simulationEngine(new application::SimulationEngine(_scenarioState, this)),
       _bombReleaseController(std::make_unique<presentation::BombReleaseController>(
           _scenarioState,
@@ -219,7 +210,14 @@ MainWindow::MainWindow(QWidget* parent)
           this)),
       _entityVisualStateManager(std::make_unique<presentation::EntityVisualStateManager>(
           QDir(projectRootPath()).absoluteFilePath(QStringLiteral("Data/entity_visual_state.json")))),
-      _entityHomePositionTracker(std::make_unique<presentation::EntityHomePositionTracker>())
+      _entityHomePositionTracker(std::make_unique<presentation::EntityHomePositionTracker>()),
+      _graphicPickCoordinator(std::make_unique<presentation::GraphicPickCoordinator>(
+          _scenarioState,
+          [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+          [this]() { this->syncScenarioStateToUi(); },
+          [this](const QVariantMap& draft) { this->sendDraftGraphicToMap(draft); },
+          [this](const QString& name) { this->clearDraftGraphicFromMap(name); },
+          [this]() { this->beginGraphicCoordinatePick(); }))
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
       , _webView(nullptr)
 #endif
@@ -1126,196 +1124,8 @@ void MainWindow::beginEntityCoordinatePick() {
 }
 
 void MainWindow::reportPickedCoordinate(double longitude, double latitude, double height) {
-  const double graphicAltitude = qMax(0.0, height + kGraphicAltitudeOffsetMeters);
-  bool handledGraphic = false;
-
-  if (_pendingGraphicMode == QStringLiteral("Waypoint")) {
-    Waypoint waypoint;
-    waypoint.name = _pendingGraphicName;
-    waypoint.longitude = longitude;
-    waypoint.latitude = latitude;
-    waypoint.altitudeMeters = graphicAltitude;
-    this->_scenarioState->addWaypoint(waypoint);
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Waypoint %1 creado en lat %2, lon %3, alt %4 m.")
-            .arg(_pendingGraphicName)
-            .arg(latitude, 0, 'f', 5)
-            .arg(longitude, 0, 'f', 5)
-            .arg(graphicAltitude, 0, 'f', 0));
-    _pendingGraphicMode.clear();
-    _pendingGraphicName.clear();
-    handledGraphic = true;
-    this->syncScenarioStateToUi();
-  } else if (_pendingGraphicMode == QStringLiteral("Route")) {
-    _pendingRoutePoints.push_back(QVariantMap{
-        {QStringLiteral("longitude"), longitude},
-        {QStringLiteral("latitude"), latitude},
-        {QStringLiteral("altitudeMeters"), graphicAltitude},
-    });
-    if (_pendingRoutePoints.size() >= 2) {
-      RouteGraphic route;
-      route.name = _pendingGraphicName;
-      for (const QVariantMap& pointSummary : _pendingRoutePoints) {
-        RoutePoint point;
-        point.longitude = pointSummary.value(QStringLiteral("longitude")).toDouble();
-        point.latitude = pointSummary.value(QStringLiteral("latitude")).toDouble();
-        point.altitudeMeters = pointSummary.value(QStringLiteral("altitudeMeters")).toDouble();
-        route.points.push_back(point);
-      }
-      this->_scenarioState->addRoute(route);
-      this->_ui->statusLabel->setText(
-          QStringLiteral("Route %1 creada con %2 puntos. Ajustada a +%3 m sobre el terreno.")
-              .arg(_pendingGraphicName)
-              .arg(route.points.size())
-              .arg(kGraphicAltitudeOffsetMeters, 0, 'f', 0));
-      this->clearDraftGraphicFromMap(_pendingGraphicName + QStringLiteral(" (draft)"));
-      _pendingGraphicMode.clear();
-      _pendingGraphicName.clear();
-      _pendingRoutePoints.clear();
-      handledGraphic = true;
-      this->syncScenarioStateToUi();
-    } else {
-      QVariantMap draftSummary = presentation::makeTrackSummary(
-          _pendingGraphicName + QStringLiteral(" (draft)"),
-          QStringLiteral("Route"),
-          QStringLiteral("Graphic"),
-          QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
-          domain::formatPosition(latitude, longitude),
-          QStringLiteral("Route draft"),
-          latitude,
-          longitude);
-      draftSummary.insert(QStringLiteral("type"), QStringLiteral("Route"));
-      QVariantList routePoints;
-      for (const QVariantMap& pointSummary : _pendingRoutePoints) {
-        routePoints.push_back(pointSummary);
-      }
-      draftSummary.insert(QStringLiteral("routePoints"), routePoints);
-      this->sendDraftGraphicToMap(draftSummary);
-      this->_ui->statusLabel->setText(
-          QStringLiteral("Primer punto de la ruta capturado. Selecciona ahora el segundo punto en el mapa."));
-      this->beginGraphicCoordinatePick();
-      return;
-    }
-  } else if (_pendingGraphicMode == QStringLiteral("Area")) {
-    AreaDefinition area;
-    area.id = _pendingGraphicName;
-    area.name = _pendingGraphicName;
-    area.areaType = _pendingAreaType;
-    area.centerLongitude = longitude;
-    area.centerLatitude = latitude;
-    area.centerAltitudeMeters = _pendingAreaAltitudeMeters;
-    area.radiusMeters = _pendingAreaRadiusMeters;
-    area.semiMajorAxisMeters = _pendingAreaSemiMajorMeters;
-    area.semiMinorAxisMeters = _pendingAreaSemiMinorMeters;
-    area.rotationDegrees = _pendingAreaRotationDegrees;
-    this->_scenarioState->addArea(area);
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Area %1 (%2) creada en lat %3, lon %4.")
-            .arg(_pendingGraphicName)
-            .arg(_pendingAreaType)
-            .arg(latitude, 0, 'f', 5)
-            .arg(longitude, 0, 'f', 5));
-    _pendingGraphicMode.clear();
-    _pendingGraphicName.clear();
-    handledGraphic = true;
-    this->syncScenarioStateToUi();
-  } else if (_pendingGraphicMode == QStringLiteral("AreaPolygon")) {
-    const QVariantMap capturedPoint = {
-        {QStringLiteral("longitude"), longitude},
-        {QStringLiteral("latitude"), latitude},
-        {QStringLiteral("altitudeMeters"), graphicAltitude},
-    };
-    if (_pendingAreaPoints.size() >= 3) {
-      const QVariantMap& firstPoint = _pendingAreaPoints.first();
-      const double closeDistanceMeters = domain::distanceMeters(
-          latitude,
-          longitude,
-          firstPoint.value(QStringLiteral("latitude")).toDouble(),
-          firstPoint.value(QStringLiteral("longitude")).toDouble());
-      if (closeDistanceMeters <= kPolygonCloseDistanceMeters) {
-        AreaDefinition area;
-        area.id = _pendingGraphicName;
-        area.name = _pendingGraphicName;
-        area.areaType = QStringLiteral("Polygon");
-        area.centerLongitude = firstPoint.value(QStringLiteral("longitude")).toDouble();
-        area.centerLatitude = firstPoint.value(QStringLiteral("latitude")).toDouble();
-        area.centerAltitudeMeters = firstPoint.value(QStringLiteral("altitudeMeters")).toDouble();
-        for (const QVariantMap& pointSummary : _pendingAreaPoints) {
-          RoutePoint point;
-          point.longitude = pointSummary.value(QStringLiteral("longitude")).toDouble();
-          point.latitude = pointSummary.value(QStringLiteral("latitude")).toDouble();
-          point.altitudeMeters = pointSummary.value(QStringLiteral("altitudeMeters")).toDouble();
-          area.points.push_back(point);
-        }
-        this->_scenarioState->addArea(area);
-        this->clearDraftGraphicFromMap(_pendingGraphicName + QStringLiteral(" (draft)"));
-        this->_ui->statusLabel->setText(
-            QStringLiteral("Polygon area %1 creada con %2 puntos.")
-                .arg(_pendingGraphicName)
-                .arg(area.points.size()));
-        _pendingGraphicMode.clear();
-        _pendingGraphicName.clear();
-        _pendingAreaPoints.clear();
-        handledGraphic = true;
-        this->syncScenarioStateToUi();
-      } else {
-        _pendingAreaPoints.push_back(capturedPoint);
-        QVariantMap draftSummary = presentation::makeTrackSummary(
-            _pendingGraphicName + QStringLiteral(" (draft)"),
-            QStringLiteral("Area"),
-            QStringLiteral("Graphic"),
-            QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
-            domain::formatPosition(latitude, longitude),
-            QStringLiteral("Polygon draft"),
-            latitude,
-            longitude);
-        draftSummary.insert(QStringLiteral("type"), QStringLiteral("Area"));
-        draftSummary.insert(QStringLiteral("areaType"), QStringLiteral("Polygon"));
-        draftSummary.insert(QStringLiteral("radiusMeters"), 0.0);
-        draftSummary.insert(QStringLiteral("semiMajorAxisMeters"), 0.0);
-        draftSummary.insert(QStringLiteral("semiMinorAxisMeters"), 0.0);
-        draftSummary.insert(QStringLiteral("rotationDegrees"), 0.0);
-        QVariantList areaPoints;
-        for (const QVariantMap& pointSummary : _pendingAreaPoints) {
-          areaPoints.push_back(pointSummary);
-        }
-        draftSummary.insert(QStringLiteral("areaPoints"), areaPoints);
-        this->sendDraftGraphicToMap(draftSummary);
-        this->_ui->statusLabel->setText(
-            QStringLiteral("Punto %1 del polygon capturado. Para cerrar, pincha cerca del primer punto.")
-                .arg(_pendingAreaPoints.size()));
-        this->beginGraphicCoordinatePick();
-        return;
-      }
-    } else {
-      _pendingAreaPoints.push_back(capturedPoint);
-      QVariantMap draftSummary = presentation::makeTrackSummary(
-          _pendingGraphicName + QStringLiteral(" (draft)"),
-          QStringLiteral("Area"),
-          QStringLiteral("Graphic"),
-          QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
-          domain::formatPosition(latitude, longitude),
-          QStringLiteral("Polygon draft"),
-          latitude,
-          longitude);
-      draftSummary.insert(QStringLiteral("type"), QStringLiteral("Area"));
-      draftSummary.insert(QStringLiteral("areaType"), QStringLiteral("Polygon"));
-      draftSummary.insert(QStringLiteral("radiusMeters"), 0.0);
-      draftSummary.insert(QStringLiteral("semiMajorAxisMeters"), 0.0);
-      draftSummary.insert(QStringLiteral("semiMinorAxisMeters"), 0.0);
-      draftSummary.insert(QStringLiteral("rotationDegrees"), 0.0);
-      QVariantList areaPoints;
-      for (const QVariantMap& pointSummary : _pendingAreaPoints) {
-        areaPoints.push_back(pointSummary);
-      }
-      draftSummary.insert(QStringLiteral("areaPoints"), areaPoints);
-      this->sendDraftGraphicToMap(draftSummary);
-      this->_ui->statusLabel->setText(
-          QStringLiteral("Punto %1 del polygon capturado. Sigue anadiendo puntos; para cerrar, pincha cerca del primero.")
-              .arg(_pendingAreaPoints.size()));
-      this->beginGraphicCoordinatePick();
-      return;
-    }
+  if (this->_graphicPickCoordinator->handleCoordinate(longitude, latitude, height)) {
+    return;
   }
 
   if (this->_bombReleaseController->isPickingMode()) {
@@ -1361,12 +1171,10 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
     });
   }
 
-  if (!handledGraphic) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
-            .arg(latitude, 0, 'f', 5)
-            .arg(longitude, 0, 'f', 5));
-  }
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
+          .arg(latitude,  0, 'f', 5)
+          .arg(longitude, 0, 'f', 5));
 }
 
 void MainWindow::openSelectedEntityDetails() {
@@ -4005,7 +3813,7 @@ void MainWindow::releaseBombAtCustomCoordinates() {
     return;
   }
 
-  if (!this->_pendingGraphicMode.trimmed().isEmpty()) {
+  if (this->_graphicPickCoordinator->isPending()) {
     this->_ui->statusLabel->setText(
         QStringLiteral("Termina antes la captura de coordenadas que ya esta activa."));
     return;
@@ -4252,12 +4060,7 @@ void MainWindow::openAddWaypointDialog() {
   if (!ok || name.isEmpty()) {
     return;
   }
-  _pendingGraphicMode = QStringLiteral("Waypoint");
-  _pendingGraphicName = name;
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Creando waypoint %1. Haz clic una vez en el mapa para fijar su posicion.")
-          .arg(name));
-  this->beginGraphicCoordinatePick();
+  this->_graphicPickCoordinator->beginWaypointPick(name);
 }
 
 void MainWindow::openAddRouteDialog() {
@@ -4272,14 +4075,7 @@ void MainWindow::openAddRouteDialog() {
   if (!ok || name.isEmpty()) {
     return;
   }
-  _pendingGraphicMode = QStringLiteral("Route");
-  _pendingGraphicName = name;
-  _pendingRoutePoints.clear();
-  this->clearDraftGraphicFromMap(name + QStringLiteral(" (draft)"));
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Creando route %1. Haz clic en el primer punto de la ruta en el mapa.")
-          .arg(name));
-  this->beginGraphicCoordinatePick();
+  this->_graphicPickCoordinator->beginRoutePick(name);
 }
 
 void MainWindow::openAddAreaDialog() {
@@ -4312,10 +4108,6 @@ void MainWindow::openAddAreaDialog() {
     return;
   }
 
-  _pendingAreaType = areaType;
-  _pendingGraphicName = name;
-  _pendingAreaPoints.clear();
-  this->clearDraftGraphicFromMap(name + QStringLiteral(" (draft)"));
   const double areaAltitudeMeters = QInputDialog::getDouble(
       this,
       QStringLiteral("Area Altitude"),
@@ -4328,7 +4120,7 @@ void MainWindow::openAddAreaDialog() {
   if (!ok) {
     return;
   }
-  _pendingAreaAltitudeMeters = areaAltitudeMeters;
+
   if (areaType == QStringLiteral("Circle")) {
     const double radiusMeters = QInputDialog::getDouble(
         this,
@@ -4342,12 +4134,8 @@ void MainWindow::openAddAreaDialog() {
     if (!ok) {
       return;
     }
-    _pendingGraphicMode = QStringLiteral("Area");
-    _pendingAreaRadiusMeters = radiusMeters;
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Creando area circular %1. Haz clic en el mapa para fijar el centro.")
-            .arg(name));
-    this->beginGraphicCoordinatePick();
+    this->_graphicPickCoordinator->beginAreaCirclePick(
+        name, {areaAltitudeMeters, radiusMeters});
     return;
   }
 
@@ -4388,22 +4176,12 @@ void MainWindow::openAddAreaDialog() {
     if (!ok) {
       return;
     }
-    _pendingGraphicMode = QStringLiteral("Area");
-    _pendingAreaSemiMajorMeters = semiMajorMeters;
-    _pendingAreaSemiMinorMeters = semiMinorMeters;
-    _pendingAreaRotationDegrees = rotationDegrees;
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Creando area eliptica %1. Haz clic en el mapa para fijar el centro.")
-            .arg(name));
-    this->beginGraphicCoordinatePick();
+    this->_graphicPickCoordinator->beginAreaEllipsePick(
+        name, {areaAltitudeMeters, semiMajorMeters, semiMinorMeters, rotationDegrees});
     return;
   }
 
-  _pendingGraphicMode = QStringLiteral("AreaPolygon");
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Creando polygon %1. Anade puntos en el mapa; para cerrar, pincha cerca del primer punto.")
-          .arg(name));
-  this->beginGraphicCoordinatePick();
+  this->_graphicPickCoordinator->beginAreaPolygonPick(name, areaAltitudeMeters);
 }
 
 void MainWindow::updateSimulationControls() {
