@@ -117,3 +117,12 @@ else()
         -Wno-unused-parameter
     )
 endif()
+
+# ---------------------------------------------------------------------------
+# Tests (opt-in)
+# ---------------------------------------------------------------------------
+option(QTTEST_BUILD_TESTS "Build qttest unit tests" ON)
+if(QTTEST_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
