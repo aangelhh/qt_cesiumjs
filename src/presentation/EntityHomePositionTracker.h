@@ -4,7 +4,7 @@
 #include <QSet>
 #include <QString>
 
-class Entity;
+struct Entity;
 
 namespace presentation {
 

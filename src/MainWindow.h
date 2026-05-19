@@ -142,7 +142,7 @@ private:
   };
 
   void initializeModels();
-  void appendEntityToUi(const class Entity& entity);
+  void appendEntityToUi(const struct Entity& entity);
   QStandardItem* rootItemForForceIdentifier(int forceIdentifier) const;
   QStandardItem* ensureGroupItem(QStandardItem* parent, const QString& label, const QVariantMap& summary);
   void rebuildTacticalGraphicsTree();
@@ -150,7 +150,7 @@ private:
   void setSelectedTrackDetails(const QVariantMap& summary);
   QString buildSelectedEntityOperationalStatus(
       const QVariantMap& summary,
-      const class Entity* entity) const;
+      const struct Entity* entity) const;
   void sendTrackToMap(const QVariantMap& summary, bool focus = false);
   void removeTrackFromMap(const QString& trackName);
   void sendDraftGraphicToMap(const QVariantMap& summary);
@@ -161,7 +161,7 @@ private:
   void syncScenarioStateToUi();
   void selectObjectByName(const QString& trackName, bool notifyMap);
   QStandardItem* findTrackItemByName(QStandardItem* parent, const QString& trackName) const;
-  const class Entity* findEntityByName(const QString& entityName) const;
+  const struct Entity* findEntityByName(const QString& entityName) const;
   QString selectedEntityName() const;
   QString selectedObjectName() const;
   bool currentSelectionIsEntity() const;
@@ -197,7 +197,7 @@ private:
   void updateTaskQuickBarState();
   void showTaskQuickPlaceholder(const QString& actionName);
   void populateEntityContextMenu(QMenu& menu);
-  QVariantMap makeEntityTrackSummary(const class Entity& entity) const;
+  QVariantMap makeEntityTrackSummary(const struct Entity& entity) const;
   const Waypoint* findWaypointByName(const QString& waypointName) const;
   const RouteGraphic* findRouteByName(const QString& routeName) const;
   const AreaDefinition* findAreaByNameOrId(const QString& areaNameOrId) const;
@@ -214,11 +214,11 @@ private:
       EntityTask& outTask);
   bool configurePlanStep(const QString& entityName, PlanStepKind kind, PlanStep& step);
   bool validatePlanStepForExecution(const PlanStep& step, QString* reason) const;
-  bool activeTaskMatchesPlanStep(const class Entity& entity, const PlanStep& step) const;
+  bool activeTaskMatchesPlanStep(const struct Entity& entity, const PlanStep& step) const;
   bool startEntityPlan(const QString& entityName);
   void stopEntityPlan(const QString& entityName, bool clearCurrentTask);
   void advanceEntityPlans();
-  bool activePlanStepCompleted(const class Entity& entity, EntityPlan& plan) const;
+  bool activePlanStepCompleted(const struct Entity& entity, EntityPlan& plan) const;
   bool startPlanStepTask(const QString& entityName, EntityPlan& plan);
   void failRunningPlan(
       const QString& entityName,
