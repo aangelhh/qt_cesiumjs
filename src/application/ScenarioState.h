@@ -8,11 +8,24 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
+#include <mutex>
 #include <unordered_map>
 
 class ScenarioState {
 public:
+  // Recursive so the scenario's own mutating methods can call helpers that
+  // also need to lock without self-deadlocking.
+  using Mutex = std::recursive_mutex;
+  using ScopedLock = std::unique_lock<Mutex>;
+
   ScenarioState();
+
+  // Callers that hold a reference returned by any of the const getters below
+  // (entities(), waypoints(), areas(), ...) must keep this lock alive for the
+  // entire time the reference is used; the simulation thread mutates the same
+  // containers in advanceSimulation(). For read-after-copy access it is enough
+  // to take this lock around the copy.
+  ScopedLock lock() const { return ScopedLock(_mutex); }
 
   void addEntity(const Entity& entity);
   const QVector<Entity>& entities() const;
@@ -51,6 +64,7 @@ public:
   QString storagePath() const;
 
 private:
+  mutable Mutex _mutex;
   QVector<Entity> _entities;
   QVector<ActiveMunition> _activeMunitions;
   QVector<TransientEffect> _transientEffects;

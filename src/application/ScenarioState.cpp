@@ -820,6 +820,7 @@ ScenarioState::ScenarioState() {
 }
 
 void ScenarioState::addEntity(const Entity& entity) {
+  ScopedLock lock(_mutex);
   Entity newEntity = entity; // Create a mutable copy
   normalizeGroundEntity(newEntity);
   newEntity.currentTask = EntityTask{}; // CRITICAL: Ensure new entity starts with clean task state
@@ -846,6 +847,7 @@ double ScenarioState::missileMaxRangeMeters() {
 }
 
 bool ScenarioState::removeEntity(const QString& entityName) {
+  ScopedLock lock(_mutex);
   for (qsizetype index = 0; index < _entities.size(); ++index) {
     if (_entities.at(index).name == entityName) {
       const QString removedEntityName = _entities.at(index).name;
@@ -875,6 +877,7 @@ bool ScenarioState::removeEntity(const QString& entityName) {
 }
 
 void ScenarioState::addWaypoint(const Waypoint& waypoint) {
+  ScopedLock lock(_mutex);
   for (Waypoint& existing : _waypoints) {
     if (existing.name == waypoint.name) {
       existing = waypoint;
@@ -891,6 +894,7 @@ const QVector<Waypoint>& ScenarioState::waypoints() const {
 }
 
 bool ScenarioState::removeWaypoint(const QString& waypointName) {
+  ScopedLock lock(_mutex);
   for (qsizetype index = 0; index < _waypoints.size(); ++index) {
     if (_waypoints.at(index).name == waypointName) {
       _waypoints.removeAt(index);
@@ -902,6 +906,7 @@ bool ScenarioState::removeWaypoint(const QString& waypointName) {
 }
 
 void ScenarioState::addRoute(const RouteGraphic& route) {
+  ScopedLock lock(_mutex);
   for (RouteGraphic& existing : _routes) {
     if (existing.name == route.name) {
       existing = route;
@@ -918,6 +923,7 @@ const QVector<RouteGraphic>& ScenarioState::routes() const {
 }
 
 bool ScenarioState::removeRoute(const QString& routeName) {
+  ScopedLock lock(_mutex);
   for (qsizetype index = 0; index < _routes.size(); ++index) {
     if (_routes.at(index).name == routeName) {
       _routes.removeAt(index);
@@ -929,6 +935,7 @@ bool ScenarioState::removeRoute(const QString& routeName) {
 }
 
 void ScenarioState::addArea(const AreaDefinition& area) {
+  ScopedLock lock(_mutex);
   for (AreaDefinition& existing : _areas) {
     if (existing.id == area.id || existing.name == area.name) {
       existing = area;
@@ -945,6 +952,7 @@ const QVector<AreaDefinition>& ScenarioState::areas() const {
 }
 
 bool ScenarioState::removeArea(const QString& areaName) {
+  ScopedLock lock(_mutex);
   for (qsizetype index = 0; index < _areas.size(); ++index) {
     if (_areas.at(index).name == areaName || _areas.at(index).id == areaName) {
       _areas.removeAt(index);
@@ -964,6 +972,7 @@ bool ScenarioState::removeArea(const QString& areaName) {
 }
 
 bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task) {
+  ScopedLock lock(_mutex);
   for (Entity& entity : _entities) {
     if (entity.name == entityName) {
       if (entity.destroyed) {
@@ -1067,6 +1076,7 @@ bool ScenarioState::clearTask(const QString& entityName) {
 }
 
 bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed) {
+  ScopedLock lock(_mutex);
   for (Entity& entity : _entities) {
     if (entity.name != entityName) {
       continue;
@@ -1109,6 +1119,7 @@ bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed
 bool ScenarioState::setEntityBehaviorMode(
     const QString& entityName,
     const QString& behaviorMode) {
+  ScopedLock lock(_mutex);
   const QString normalizedMode = normalizedBehaviorMode(behaviorMode);
   for (Entity& entity : _entities) {
     if (entity.name != entityName) {
@@ -1177,6 +1188,7 @@ void ScenarioState::applyDamageWithSource(
 void ScenarioState::applyMissileDamage(
     const QString& targetName,
     double damageAmount) {
+  ScopedLock lock(_mutex);
   this->applyDamageWithSource(
       targetName,
       damageAmount,
@@ -1233,6 +1245,7 @@ void ScenarioState::applyBombBlastDamage(const ActiveMunition& munition) {
 }
 
 bool ScenarioState::addMissileToEntity(const QString& entityName, int quantity) {
+  ScopedLock lock(_mutex);
   if (quantity <= 0) {
     return false;
   }
@@ -1262,6 +1275,7 @@ bool ScenarioState::addMissileToEntity(const QString& entityName, int quantity) 
 }
 
 bool ScenarioState::addBombToEntity(const QString& entityName, int quantity) {
+  ScopedLock lock(_mutex);
   if (quantity <= 0) {
     return false;
   }
@@ -1291,6 +1305,7 @@ bool ScenarioState::addBombToEntity(const QString& entityName, int quantity) {
 }
 
 bool ScenarioState::launchMissile(const QString& entityName) {
+  ScopedLock lock(_mutex);
   for (Entity& entity : _entities) {
     if (entity.name != entityName) {
       continue;
@@ -1326,6 +1341,7 @@ bool ScenarioState::launchMissile(const QString& entityName) {
 }
 
 bool ScenarioState::releaseBomb(const QString& entityName) {
+  ScopedLock lock(_mutex);
   for (Entity& entity : _entities) {
     if (entity.name != entityName) {
       continue;
@@ -1355,6 +1371,7 @@ bool ScenarioState::releaseBomb(const QString& entityName) {
 bool ScenarioState::launchMissileAt(
     const QString& launcherName,
     const QString& targetName) {
+  ScopedLock lock(_mutex);
   const QString trimmedLauncherName = launcherName.trimmed();
   const QString trimmedTargetName = targetName.trimmed();
   if (trimmedLauncherName.isEmpty() || trimmedTargetName.isEmpty()) {
@@ -1419,6 +1436,7 @@ bool ScenarioState::launchMissileAt(
 }
 
 QStringList ScenarioState::takePendingEventLogMessages() {
+  ScopedLock lock(_mutex);
   const QStringList messages = _pendingEventLogMessages;
   _pendingEventLogMessages.clear();
   return messages;
@@ -1768,6 +1786,7 @@ void ScenarioState::advanceBehaviors(double deltaSeconds) {
 }
 
 void ScenarioState::advanceSimulation(double deltaSeconds) {
+  ScopedLock lock(_mutex);
   FlightDynamicsEngine::advanceEntities(_entities, _taskStacks, deltaSeconds);
   this->advanceBehaviors(deltaSeconds);
   this->advanceActiveMunitions(deltaSeconds);
@@ -1776,6 +1795,7 @@ void ScenarioState::advanceSimulation(double deltaSeconds) {
 }
 
 void ScenarioState::stopMission() {
+  ScopedLock lock(_mutex);
   for (Entity& entity : _entities) {
     entity.currentTask = EntityTask{};
     entity.currentTask.status = QStringLiteral("Stopped");
@@ -1795,6 +1815,7 @@ void ScenarioState::stopMission() {
 }
 
 bool ScenarioState::save() const {
+  ScopedLock lock(_mutex);
   QJsonArray entities;
   for (const Entity& entity : _entities) {
     entities.append(toJson(entity));
@@ -1833,6 +1854,7 @@ bool ScenarioState::save() const {
 }
 
 bool ScenarioState::load() {
+  ScopedLock lock(_mutex);
   _entities.clear();
   _activeMunitions.clear();
   _transientEffects.clear();
@@ -1889,6 +1911,7 @@ bool ScenarioState::load() {
 }
 
 void ScenarioState::reset() {
+  ScopedLock lock(_mutex);
   _entities.clear();
   _activeMunitions.clear();
   _transientEffects.clear();

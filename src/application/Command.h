@@ -1,15 +1,22 @@
 #pragma once
 
+#include <QString>
+
+class ScenarioState;
+
 namespace application {
 
 /**
  * Base interface for all simulation commands.
  * Commands represent intentions that alter the simulation state.
+ *
+ * Each concrete command knows how to apply itself to ScenarioState, which
+ * removes the need for the dispatcher (SimulationEngine) to switch on the
+ * concrete type via dynamic_cast.
  */
 struct ICommand {
     virtual ~ICommand() = default;
-    
-    // In the future, we could add methods like virtual void Execute(...) = 0;
+    virtual void apply(ScenarioState& scenario) const = 0;
 };
 
 struct CmdCreateEntity : public ICommand {
@@ -24,6 +31,8 @@ struct CmdCreateEntity : public ICommand {
 
     CmdCreateEntity(int id, const QString& name, double lat, double lon, double alt, double heading, double speed, const QString& type = "Fighter")
         : id(id), name(name), lat(lat), lon(lon), alt(alt), heading(heading), speed(speed), type(type) {}
+
+    void apply(ScenarioState& scenario) const override;
 };
 
 struct CmdAssignMoveTask : public ICommand {
@@ -36,6 +45,8 @@ struct CmdAssignMoveTask : public ICommand {
 
     CmdAssignMoveTask(int id, const QString& name, double lat, double lon, double alt, double speed)
         : targetEntityId(id), targetEntityName(name), targetLat(lat), targetLon(lon), targetAlt(alt), targetSpeed(speed) {}
+
+    void apply(ScenarioState& scenario) const override;
 };
 
 struct CmdAssignFlyHeadingTask : public ICommand {
@@ -46,6 +57,8 @@ struct CmdAssignFlyHeadingTask : public ICommand {
 
     CmdAssignFlyHeadingTask(const QString& name, double heading, double alt, double speed)
         : targetEntityName(name), targetHeadingDegrees(heading), targetAltitudeMeters(alt), targetSpeedKnots(speed) {}
+
+    void apply(ScenarioState& scenario) const override;
 };
 
 struct CmdAssignFollowTask : public ICommand {
@@ -56,6 +69,8 @@ struct CmdAssignFollowTask : public ICommand {
 
     CmdAssignFollowTask(const QString& name, const QString& followName, double alt, double speed)
         : targetEntityName(name), followEntityName(followName), targetAltitudeMeters(alt), targetSpeedKnots(speed) {}
+
+    void apply(ScenarioState& scenario) const override;
 };
 
 struct CmdAssignOrbitTask : public ICommand {
@@ -70,6 +85,8 @@ struct CmdAssignOrbitTask : public ICommand {
 
     CmdAssignOrbitTask(const QString& name, const QString& areaName, double lat, double lon, double radius, double alt, double speed, bool patrol)
         : targetEntityName(name), targetAreaName(areaName), targetLatitude(lat), targetLongitude(lon), targetAreaRadiusMeters(radius), targetAltitudeMeters(alt), targetSpeedKnots(speed), isPatrol(patrol) {}
+
+    void apply(ScenarioState& scenario) const override;
 };
 
 } // namespace application
