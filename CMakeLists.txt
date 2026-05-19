@@ -73,6 +73,8 @@ qt_add_executable(qttest
     src/presentation/BombReleaseController.h
     src/presentation/GraphicPickCoordinator.cpp
     src/presentation/GraphicPickCoordinator.h
+    src/presentation/PlanStepConfigurator.cpp
+    src/presentation/PlanStepConfigurator.h
     src/presentation/EntityHomePositionTracker.cpp
     src/presentation/EntityHomePositionTracker.h
     src/presentation/EntityPlanExecutor.cpp

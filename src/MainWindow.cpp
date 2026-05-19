@@ -21,6 +21,7 @@
 #include "presentation/EntityHomePositionTracker.h"
 #include "presentation/EntityStatusFormatter.h"
 #include "presentation/EntityVisualStateManager.h"
+#include "presentation/PlanStepConfigurator.h"
 #include "presentation/TrackIconProvider.h"
 #include "presentation/TrackSummaryBuilder.h"
 #include "ui_MainWindow.h"
@@ -217,7 +218,25 @@ MainWindow::MainWindow(QWidget* parent)
           [this]() { this->syncScenarioStateToUi(); },
           [this](const QVariantMap& draft) { this->sendDraftGraphicToMap(draft); },
           [this](const QString& name) { this->clearDraftGraphicFromMap(name); },
-          [this]() { this->beginGraphicCoordinatePick(); }))
+          [this]() { this->beginGraphicCoordinatePick(); })),
+      _planStepConfigurator(std::make_unique<presentation::PlanStepConfigurator>(
+          [this](const QString& en, const EntityTask& it, const QString& itype, EntityTask& out) {
+            return this->captureTaskConfiguration(en, it, itype, out);
+          },
+          [this](const QString& nameOrId) -> const AreaDefinition* {
+            return this->findAreaByNameOrId(nameOrId);
+          },
+          [this](const QString& en) {
+            return this->_entityHomePositionTracker->positionFor(en);
+          },
+          [this](const QString& title, const QString& label,
+                 const QStringList& items, bool& ok) -> QString {
+            return QInputDialog::getItem(this, title, label, items, 0, false, &ok);
+          },
+          [this](const QString& title, const QString& label,
+                 double def, double mn, double mx, bool& ok) -> double {
+            return QInputDialog::getDouble(this, title, label, def, mn, mx, 1, &ok);
+          }))
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
       , _webView(nullptr)
 #endif
@@ -2221,253 +2240,8 @@ bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind,
         entity->domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0 ? 220.0 : 12.0;
   }
 
-  step = PlanStep{};
-  step.kind = kind;
-  step.task.enabled = true;
-  step.task.status = QStringLiteral("Queued");
-  step.status = QStringLiteral("NotStarted");
-
-  bool ok = false;
-  switch (kind) {
-    case PlanStepKind::MoveToLocation: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("MoveToLocation");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetLatitude = entity->latitude;
-      initialTask.targetLongitude = entity->longitude;
-      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
-      initialTask.targetSpeedKnots = defaultSpeedKnots;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("MoveToLocation"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.label = QStringLiteral("Move To %1, %2")
-                       .arg(step.task.targetLatitude, 0, 'f', 4)
-                       .arg(step.task.targetLongitude, 0, 'f', 4);
-      return true;
-    }
-
-    case PlanStepKind::MoveToWaypoint: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("MoveToWaypoint");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetWaypointName = summary.value(QStringLiteral("taskTargetWaypointName")).toString();
-      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
-      initialTask.targetSpeedKnots = defaultSpeedKnots;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("MoveToWaypoint"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.label = QStringLiteral("Move To Waypoint: %1").arg(step.task.targetWaypointName);
-      return true;
-    }
-
-    case PlanStepKind::MoveAlongRoute: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("MoveAlongRoute");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetRouteName = summary.value(QStringLiteral("taskTargetRouteName")).toString();
-      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
-      initialTask.targetSpeedKnots = defaultSpeedKnots;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("MoveAlongRoute"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.label = QStringLiteral("Move Along Route: %1").arg(step.task.targetRouteName);
-      return true;
-    }
-
-    case PlanStepKind::PatrolArea: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("PatrolArea");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetAreaName = summary.value(QStringLiteral("taskTargetAreaName")).toString();
-      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
-      initialTask.targetSpeedKnots = defaultSpeedKnots;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("PatrolArea"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      if (const AreaDefinition* area = this->findAreaByNameOrId(step.task.targetAreaName)) {
-        step.task.targetLatitude = area->centerLatitude;
-        step.task.targetLongitude = area->centerLongitude;
-        double radiusMeters = area->radiusMeters;
-        if (radiusMeters <= 0.0) {
-          if (area->areaType == QStringLiteral("Ellipse")) {
-            radiusMeters = qMax(area->semiMinorAxisMeters, 100.0);
-          } else if (!area->points.isEmpty()) {
-            radiusMeters = 250.0;
-          } else {
-            radiusMeters = 500.0;
-          }
-        }
-        step.task.targetAreaRadiusMeters = radiusMeters;
-      }
-      step.label = QStringLiteral("Patrol Area: %1").arg(step.task.targetAreaName);
-      return true;
-    }
-
-    case PlanStepKind::FlyHeadingAltitudeSpeed: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("FlyHeadingAltitudeSpeed");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetHeadingDegrees = defaultHeading;
-      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
-      initialTask.targetSpeedKnots = defaultSpeedKnots;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("FlyHeadingAltitudeSpeed"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.label = QStringLiteral("Fly H%1 A%2 S%3")
-                       .arg(step.task.targetHeadingDegrees, 0, 'f', 0)
-                       .arg(step.task.targetAltitudeMeters)
-                       .arg(step.task.targetSpeedKnots, 0, 'f', 0);
-      return true;
-    }
-
-    case PlanStepKind::OrbitHoldLocation: {
-      double centerLatitude = entity->latitude;
-      double centerLongitude = entity->longitude;
-      const QString centerMode = QInputDialog::getItem(
-          this,
-          QStringLiteral("Plan Step: Orbit / Hold (Location)"),
-          QStringLiteral("Center"),
-          QStringList{
-              QStringLiteral("Current Position"),
-              QStringLiteral("Custom Coordinates"),
-          },
-          0,
-          false,
-          &ok);
-      if (!ok) {
-        return false;
-      }
-
-      if (centerMode == QStringLiteral("Custom Coordinates")) {
-        centerLatitude = QInputDialog::getDouble(
-            this,
-            QStringLiteral("Plan Step: Orbit / Hold (Location)"),
-            QStringLiteral("Latitude"),
-            centerLatitude,
-            -90.0,
-            90.0,
-            6,
-            &ok);
-        if (!ok) {
-          return false;
-        }
-
-        centerLongitude = QInputDialog::getDouble(
-            this,
-            QStringLiteral("Plan Step: Orbit / Hold (Location)"),
-            QStringLiteral("Longitude"),
-            centerLongitude,
-            -180.0,
-            180.0,
-            6,
-            &ok);
-        if (!ok) {
-          return false;
-        }
-      }
-
-      step.task.taskType = QStringLiteral("OrbitArea");
-      step.task.targetLatitude = centerLatitude;
-      step.task.targetLongitude = centerLongitude;
-      step.task.targetAltitudeMeters = defaultAltitudeMeters;
-      step.task.targetSpeedKnots = defaultSpeedKnots;
-      step.task.targetAreaRadiusMeters = kOrbitHoldDefaultRadiusMeters;
-      step.label = QStringLiteral("Orbit / Hold at %1, %2")
-                       .arg(centerLatitude, 0, 'f', 4)
-                       .arg(centerLongitude, 0, 'f', 4);
-      return true;
-    }
-
-    case PlanStepKind::ReturnToBase: {
-      const presentation::EntityHomePosition homePosition = this->_entityHomePositionTracker->positionFor(entityName);
-      step.task.taskType = QStringLiteral("MoveToLocation");
-      step.task.targetLatitude = homePosition.valid ? homePosition.latitude : entity->latitude;
-      step.task.targetLongitude = homePosition.valid ? homePosition.longitude : entity->longitude;
-      step.task.targetAltitudeMeters =
-          homePosition.valid ? homePosition.altitudeMeters : defaultAltitudeMeters;
-      step.task.targetSpeedKnots = defaultSpeedKnots;
-      step.label = QStringLiteral("Return To Base");
-      return true;
-    }
-
-    case PlanStepKind::AttackAir: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("AttackAir");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("AttackAir"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.task.status = QStringLiteral("Queued");
-      step.label = QStringLiteral("Attack Air: %1")
-                       .arg(step.task.targetEntityName.trimmed().isEmpty()
-                                ? QStringLiteral("-")
-                                : step.task.targetEntityName.trimmed());
-      return true;
-    }
-
-    case PlanStepKind::AttackSurface: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("AttackSurface");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetLatitude = entity->latitude;
-      initialTask.targetLongitude = entity->longitude;
-      initialTask.targetAltitudeMeters = 0;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("AttackSurface"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.task.status = QStringLiteral("Queued");
-      const QString targetName = step.task.targetEntityName.trimmed();
-      step.label = targetName.isEmpty()
-          ? QStringLiteral("Attack Surface: %1")
-                .arg(domain::attackPointLabel(step.task.targetLatitude, step.task.targetLongitude))
-          : QStringLiteral("Attack Surface: %1").arg(targetName);
-      return true;
-    }
-  }
-
-  return false;
+  return this->_planStepConfigurator->configure(
+      *entity, defaultHeading, defaultAltitudeMeters, defaultSpeedKnots, kind, step);
 }
 
 bool MainWindow::startEntityPlan(const QString& entityName) {

@@ -17,6 +17,7 @@
 #include "presentation/BombReleaseController.h"
 #include "presentation/EntityPlanExecutor.h"
 #include "presentation/GraphicPickCoordinator.h"
+#include "presentation/PlanStepConfigurator.h"
 #include "presentation/PlanTypes.h"
 
 class QAction;
@@ -45,6 +46,7 @@ class EntityHomePositionTracker;
 class EntityPlanExecutor;
 class EntityVisualStateManager;
 class GraphicPickCoordinator;
+class PlanStepConfigurator;
 }
 
 namespace Ui {
@@ -232,6 +234,7 @@ private:
   std::unique_ptr<presentation::EntityVisualStateManager> _entityVisualStateManager;
   std::unique_ptr<presentation::EntityHomePositionTracker> _entityHomePositionTracker;
   std::unique_ptr<presentation::GraphicPickCoordinator> _graphicPickCoordinator;
+  std::unique_ptr<presentation::PlanStepConfigurator> _planStepConfigurator;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif
