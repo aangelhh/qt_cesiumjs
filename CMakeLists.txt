@@ -47,6 +47,8 @@ qt_add_executable(qttest
     src/application/ScenarioQueries.h
     src/application/AttackTaskProcessor.cpp
     src/application/AttackTaskProcessor.h
+    src/application/TaskApplicator.cpp
+    src/application/TaskApplicator.h
     src/application/Command.cpp
     src/application/Command.h
     src/application/Event.h

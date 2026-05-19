@@ -7,6 +7,7 @@
 #include "application/SimulationEngine.h"
 #include "application/Command.h"
 #include "application/ScenarioQueries.h"
+#include "application/TaskApplicator.h"
 #include "domain/BombReleaseGate.h"
 #include "presentation/BombReleaseController.h"
 #include "presentation/EntityPlanExecutor.h"
@@ -2376,154 +2377,14 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
 }
 
 bool MainWindow::applyEntityTask(const QString& entityName, const EntityTask& task, bool syncUi) {
-  if (entityName.isEmpty()) {
-    return false;
-  }
-
-  if (!this->_scenarioState->assignTask(entityName, task)) {
-    return false;
-  }
-
-  this->appendLogMessage(
-      QStringLiteral("Task %1 assigned to %2").arg(task.taskType, entityName));
-
-  Entity resolvedEntity;
-  bool foundEntity = false;
-  for (const Entity& entity : this->_scenarioState->entities()) {
-    if (entity.name != entityName) {
-      continue;
-    }
-    resolvedEntity = entity;
-    foundEntity = true;
-    break;
-  }
-  if (!foundEntity) {
-    return false;
-  }
-
-  if (domain::TaskStack* stack = this->_scenarioState->getTaskStack(entityName)) {
-    while (!stack->isEmpty()) {
-      stack->pop();
-    }
-    if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
-      double targetLat = resolvedEntity.currentTask.targetLatitude;
-      double targetLon = resolvedEntity.currentTask.targetLongitude;
-      double targetAlt = resolvedEntity.currentTask.targetAltitudeMeters;
-      double targetSpeed = resolvedEntity.currentTask.targetSpeedKnots;
-      if (task.taskType == "MoveToWaypoint" && !task.targetWaypointName.trimmed().isEmpty()) {
-        for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
-          if (waypoint.name == task.targetWaypointName) {
-            targetLat = waypoint.latitude;
-            targetLon = waypoint.longitude;
-            targetAlt = waypoint.altitudeMeters;
-            break;
-          }
-        }
-      }
-      stack->push(std::make_unique<domain::MoveToLocationTask>(
-          targetLat,
-          targetLon,
-          targetAlt,
-          targetSpeed));
-    } else if (task.taskType == "MoveAlongRoute") {
-      bool createdRouteTask = false;
-      for (const RouteGraphic& route : this->_scenarioState->routes()) {
-        if (route.name != resolvedEntity.currentTask.targetRouteName ||
-            route.points.isEmpty()) {
-          continue;
-        }
-        stack->push(std::make_unique<domain::RouteTask>(
-            route.points,
-            resolvedEntity.currentTask.targetSpeedKnots));
-        createdRouteTask = true;
-        break;
-      }
-      if (!createdRouteTask) {
-        stack->push(std::make_unique<domain::MoveToLocationTask>(
-            resolvedEntity.currentTask.targetLatitude,
-            resolvedEntity.currentTask.targetLongitude,
-            resolvedEntity.currentTask.targetAltitudeMeters,
-            resolvedEntity.currentTask.targetSpeedKnots));
-      }
-    } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
-      stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
-          task.targetHeadingDegrees,
-          static_cast<double>(task.targetAltitudeMeters),
-          task.targetSpeedKnots));
-    } else if (task.taskType == "FollowEntity") {
-      stack->push(std::make_unique<domain::FollowEntityTask>(
-          static_cast<double>(task.targetAltitudeMeters),
-          task.targetSpeedKnots));
-    } else if (task.taskType == "PatrolArea") {
-      for (const AreaDefinition& area : this->_scenarioState->areas()) {
-        if (area.name != resolvedEntity.currentTask.targetAreaName &&
-            area.id != resolvedEntity.currentTask.targetAreaName) {
-          continue;
-        }
-        stack->push(std::make_unique<domain::PatrolAreaTask>(
-            domain::buildPatrolRouteFromArea(area),
-            static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
-            resolvedEntity.currentTask.targetSpeedKnots));
-        break;
-      }
-      if (stack->isEmpty()) {
-        stack->push(std::make_unique<domain::OrbitAreaTask>(
-            resolvedEntity.currentTask.targetLatitude,
-            resolvedEntity.currentTask.targetLongitude,
-            resolvedEntity.currentTask.targetAreaRadiusMeters,
-            static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
-            resolvedEntity.currentTask.targetSpeedKnots,
-            true));
-      }
-    } else if (task.taskType == "OrbitArea") {
-      stack->push(std::make_unique<domain::OrbitAreaTask>(
-          resolvedEntity.currentTask.targetLatitude,
-          resolvedEntity.currentTask.targetLongitude,
-          resolvedEntity.currentTask.targetAreaRadiusMeters,
-          static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
-          resolvedEntity.currentTask.targetSpeedKnots,
-          false));
-    }
-  }
-
-  if (m_simulationEngine) {
-    if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
-      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignMoveTask>(
-          0,
-          entityName,
-          resolvedEntity.currentTask.targetLatitude,
-          resolvedEntity.currentTask.targetLongitude,
-          resolvedEntity.currentTask.targetAltitudeMeters,
-          resolvedEntity.currentTask.targetSpeedKnots));
-    } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
-      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignFlyHeadingTask>(
-          entityName,
-          task.targetHeadingDegrees,
-          task.targetAltitudeMeters,
-          task.targetSpeedKnots));
-    } else if (task.taskType == "FollowEntity") {
-      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignFollowTask>(
-          entityName,
-          task.targetEntityName,
-          task.targetAltitudeMeters,
-          task.targetSpeedKnots));
-    } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
-      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignOrbitTask>(
-          entityName,
-          resolvedEntity.currentTask.targetAreaName,
-          resolvedEntity.currentTask.targetLatitude,
-          resolvedEntity.currentTask.targetLongitude,
-          resolvedEntity.currentTask.targetAreaRadiusMeters,
-          resolvedEntity.currentTask.targetAltitudeMeters,
-          resolvedEntity.currentTask.targetSpeedKnots,
-          (task.taskType == "PatrolArea")));
-    }
-  }
-
-  if (syncUi) {
-    this->syncScenarioStateToUi();
-  }
-  return true;
+  return application::applyEntityTask(
+      entityName,
+      task,
+      syncUi,
+      this->_scenarioState,
+      this->m_simulationEngine,
+      [this](const QString& msg) { this->appendLogMessage(msg); },
+      [this]() { this->syncScenarioStateToUi(); });
 }
 
 bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind, PlanStep& step) {
