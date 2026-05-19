@@ -57,6 +57,8 @@ qt_add_executable(qttest
     src/domain/Sensor.h
     src/domain/Task.cpp
     src/domain/Task.h
+    src/presentation/EntityHomePositionTracker.cpp
+    src/presentation/EntityHomePositionTracker.h
     src/presentation/EntityTextFormatter.cpp
     src/presentation/EntityTextFormatter.h
     src/presentation/EntityVisualStateManager.cpp

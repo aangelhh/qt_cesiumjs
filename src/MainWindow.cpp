@@ -11,6 +11,7 @@
 #include "infrastructure/MapBridge.h"
 #include "infrastructure/ModelCatalog.h"
 #include "presentation/EntityTextFormatter.h"
+#include "presentation/EntityHomePositionTracker.h"
 #include "presentation/EntityVisualStateManager.h"
 #include "ui_MainWindow.h"
 
@@ -867,7 +868,8 @@ MainWindow::MainWindow(QWidget* parent)
       _pendingAreaRotationDegrees(0.0),
       m_simulationEngine(new application::SimulationEngine(_scenarioState, this)),
       _entityVisualStateManager(std::make_unique<presentation::EntityVisualStateManager>(
-          QDir(projectRootPath()).absoluteFilePath(QStringLiteral("Data/entity_visual_state.json"))))
+          QDir(projectRootPath()).absoluteFilePath(QStringLiteral("Data/entity_visual_state.json")))),
+      _entityHomePositionTracker(std::make_unique<presentation::EntityHomePositionTracker>())
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
       , _webView(nullptr)
 #endif
@@ -1626,7 +1628,7 @@ void MainWindow::initializeModels() {
 }
 
 void MainWindow::appendEntityToUi(const Entity& entity) {
-  this->rememberEntityHomePosition(entity);
+  this->_entityHomePositionTracker->remember(entity);
 
   QStandardItem* rootItem = this->rootItemForForceIdentifier(entity.forceIdentifier);
   if (!rootItem) {
@@ -1770,10 +1772,6 @@ QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
   return summary;
 }
 
-MainWindow::EntityHomePosition MainWindow::entityHomePositionFor(const QString& entityName) const {
-  return this->_entityHomePositions.value(entityName);
-}
-
 const Waypoint* MainWindow::findWaypointByName(const QString& waypointName) const {
   if (waypointName.trimmed().isEmpty()) {
     return nullptr;
@@ -1866,34 +1864,6 @@ QStringList MainWindow::availableAreaNames() const {
 
 MainWindow::EntityPlan& MainWindow::ensureEntityPlan(const QString& entityName) {
   return this->_entityPlans[entityName];
-}
-
-void MainWindow::rememberEntityHomePosition(const Entity& entity) {
-  if (entity.name.trimmed().isEmpty() || this->_entityHomePositions.contains(entity.name)) {
-    return;
-  }
-
-  this->_entityHomePositions.insert(entity.name, EntityHomePosition{
-      entity.latitude,
-      entity.longitude,
-      entity.altitude,
-      true,
-  });
-}
-
-void MainWindow::pruneEntityHomePositions() {
-  QSet<QString> validEntityNames;
-  for (const Entity& entity : this->_scenarioState->entities()) {
-    validEntityNames.insert(entity.name);
-  }
-
-  for (auto it = this->_entityHomePositions.begin(); it != this->_entityHomePositions.end();) {
-    if (!validEntityNames.contains(it.key())) {
-      it = this->_entityHomePositions.erase(it);
-      continue;
-    }
-    ++it;
-  }
 }
 
 void MainWindow::pruneEntityPlans() {
@@ -2866,11 +2836,11 @@ void MainWindow::syncScenarioStateToUi() {
   }
 
   this->_entityVisualStateManager->pruneAgainst(*this->_scenarioState);
-  this->pruneEntityHomePositions();
+  this->_entityHomePositionTracker->pruneAgainst(*this->_scenarioState);
   this->pruneEntityPlans();
 
   for (const Entity& entity : this->_scenarioState->entities()) {
-    this->rememberEntityHomePosition(entity);
+    this->_entityHomePositionTracker->remember(entity);
 
     QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entity.name);
     if (!item) {
@@ -3742,7 +3712,7 @@ bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind,
     }
 
     case PlanStepKind::ReturnToBase: {
-      const EntityHomePosition homePosition = this->entityHomePositionFor(entityName);
+      const presentation::EntityHomePosition homePosition = this->_entityHomePositionTracker->positionFor(entityName);
       step.task.taskType = QStringLiteral("MoveToLocation");
       step.task.targetLatitude = homePosition.valid ? homePosition.latitude : entity->latitude;
       step.task.targetLongitude = homePosition.valid ? homePosition.longitude : entity->longitude;
@@ -4848,7 +4818,7 @@ void MainWindow::assignReturnToBaseTask() {
   }
 
   const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  const EntityHomePosition homePosition = this->entityHomePositionFor(entityName);
+  const presentation::EntityHomePosition homePosition = this->_entityHomePositionTracker->positionFor(entityName);
 
   double headingDegrees = 0.0;
   int currentAltitudeMeters = 0;

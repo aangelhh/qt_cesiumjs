@@ -35,6 +35,7 @@ struct RouteGraphic;
 struct Waypoint;
 
 namespace presentation {
+class EntityHomePositionTracker;
 class EntityVisualStateManager;
 }
 
@@ -101,13 +102,6 @@ private slots:
   void stopSimulation();
 
 private:
-  struct EntityHomePosition {
-    double latitude = 0.0;
-    double longitude = 0.0;
-    int altitudeMeters = 0;
-    bool valid = false;
-  };
-
   struct PendingBombRelease {
     QString launcherEntityName;
     QString targetEntityName;
@@ -204,7 +198,6 @@ private:
   void showTaskQuickPlaceholder(const QString& actionName);
   void populateEntityContextMenu(QMenu& menu);
   QVariantMap makeEntityTrackSummary(const class Entity& entity) const;
-  EntityHomePosition entityHomePositionFor(const QString& entityName) const;
   const Waypoint* findWaypointByName(const QString& waypointName) const;
   const RouteGraphic* findRouteByName(const QString& routeName) const;
   const AreaDefinition* findAreaByNameOrId(const QString& areaNameOrId) const;
@@ -212,8 +205,6 @@ private:
   QStringList availableRouteNames(bool requirePoints) const;
   QStringList availableAreaNames() const;
   EntityPlan& ensureEntityPlan(const QString& entityName);
-  void rememberEntityHomePosition(const class Entity& entity);
-  void pruneEntityHomePositions();
   void pruneEntityPlans();
   QString planStepDisplayLabel(const PlanStep& step) const;
   bool captureTaskConfiguration(
@@ -288,7 +279,6 @@ private:
   QList<QToolButton*> _taskQuickButtons;
   QSet<QString> _activeMunitionTrackNames;
   QSet<QString> _activeEffectTrackNames;
-  QHash<QString, EntityHomePosition> _entityHomePositions;
   QHash<QString, double> _autoBombReleaseCooldownSeconds;
   QHash<QString, int> _autoBehaviorDamageReactionLevel;
   QHash<QString, double> _attackAirElapsedSeconds;
@@ -297,6 +287,7 @@ private:
   PendingBombRelease _pendingBombRelease;
   application::SimulationEngine* m_simulationEngine;
   std::unique_ptr<presentation::EntityVisualStateManager> _entityVisualStateManager;
+  std::unique_ptr<presentation::EntityHomePositionTracker> _entityHomePositionTracker;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif
