@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QObject>
 #include <QThread>
 #include <mutex>
 #include <queue>
@@ -10,7 +11,7 @@
 
 namespace application {
 
-class SimulationEngine : public QThread {
+class SimulationEngine : public QObject {
     Q_OBJECT
 
 public:
@@ -21,6 +22,7 @@ public:
     void enqueueCommand(std::unique_ptr<ICommand> command);
 
     // Stop the simulation loop cleanly
+    void start();
     void stop();
 
 signals:
@@ -30,12 +32,11 @@ signals:
     // Emitted to the MapBridge for UI updates
     void telemetryUpdated(const QVariantMap& trackData);
 
-protected:
-    void run() override;
-
 private:
+    void runLoop();
     std::mutex m_queueMutex;
     std::queue<std::unique_ptr<ICommand>> m_commandQueue;
+    QThread m_workerThread;
     
     // The registry and state owner for all entities (borrowed from MainWindow)
     ScenarioState* m_scenario;

@@ -9,6 +9,7 @@
 #include <QStringList>
 #include <QVariantMap>
 #include <QVector>
+#include <memory>
 
 #include "application/SimulationEngine.h"
 
@@ -264,7 +265,7 @@ private:
   QWidget* _contentWidget;
   QWidget* _taskQuickBar;
   MapBridge* _mapBridge;
-  ScenarioState* _scenarioState;
+  std::unique_ptr<ScenarioState> _scenarioState;
   QStandardItemModel* _objectsModel;
   QStandardItemModel* _detectedContactsModel;
   QStandardItem* _friendlyRootItem;

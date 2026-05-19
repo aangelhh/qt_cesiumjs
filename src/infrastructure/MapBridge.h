@@ -3,6 +3,8 @@
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
+#include <QtGlobal>
+#include <cmath>
 #include "application/EventBus.h"
 
 class MapBridge : public QObject {
@@ -10,6 +12,11 @@ class MapBridge : public QObject {
 
 public:
   explicit MapBridge(QObject* parent = nullptr) : QObject(parent) {
+      initializeEventSubscriptions();
+  }
+
+private:
+  void initializeEventSubscriptions() {
       // Subscribe to domain events and translate them into Qt UI signals
       application::EventBus::instance().subscribe<application::EventKinematicsUpdated>(
           [this](const application::EventKinematicsUpdated& ev) {
@@ -32,8 +39,18 @@ public:
       );
   }
 
+public:
 public slots:
   void reportPickedCoordinate(double longitude, double latitude, double height) {
+    if (!std::isfinite(longitude) || !std::isfinite(latitude) || !std::isfinite(height)) {
+      return;
+    }
+    if (latitude < -90.0 || latitude > 90.0) {
+      return;
+    }
+    if (longitude < -180.0 || longitude > 180.0) {
+      return;
+    }
     emit pickedCoordinate(longitude, latitude, height);
   }
 
@@ -42,10 +59,19 @@ public slots:
   }
 
   void reportSelectedTrack(const QString& trackName) {
+    if (trackName.size() > 256) {
+      return;
+    }
     emit selectedTrack(trackName);
   }
 
   void requestEntityContextMenu(const QString& trackName, int viewX, int viewY) {
+    if (trackName.isEmpty() || trackName.size() > 256) {
+      return;
+    }
+    if (viewX < 0 || viewY < 0) {
+      return;
+    }
     emit entityContextMenuRequested(trackName, viewX, viewY);
   }
 

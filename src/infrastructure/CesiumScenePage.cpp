@@ -3,6 +3,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -13,7 +16,16 @@ QString trimCopy(const QString& value) {
   return value.trimmed();
 }
 
+bool isValidConfigKey(const QString& key) {
+  static const QRegularExpression keyPattern(QStringLiteral("^[a-z_]+$"));
+  return keyPattern.match(key).hasMatch();
+}
+
 QString readConfigValueFromPath(const QString& path, const QString& key) {
+  if (!isValidConfigKey(key)) {
+    return {};
+  }
+
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
     return {};
@@ -66,10 +78,7 @@ QString CesiumScenePage::readConfigValue(const QString& key) {
 }
 
 QString CesiumScenePage::defaultAccessToken() {
-  return QStringLiteral(
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjNWNiODVhZi1lMjRkLTQx"
-      "MWEtOGUwOC00NzljMjJhMjkxZTYiLCJpZCI6MjQ2OTk4LCJpYXQiOjE3Mjg1MTI1MDd9."
-      "R24O2_Qcl0RbryxLDr2WS5r7jkoxJIpdKJmg34N-Z28");
+  return {};
 }
 
 QString CesiumScenePage::defaultAssetId() {
@@ -92,9 +101,10 @@ QUrl CesiumScenePage::cesiumSourceBaseUrl() {
 }
 
 QString CesiumScenePage::buildHtml(const QString& accessToken) {
-  QString escapedToken = accessToken;
-  escapedToken.replace("\\", "\\\\");
-  escapedToken.replace("'", "\\'");
+  const QJsonDocument tokenJsonDocument(QJsonArray{accessToken});
+  const QString tokenJson =
+      QString::fromUtf8(tokenJsonDocument.toJson(QJsonDocument::Compact));
+  const QString tokenJsLiteral = tokenJson.mid(1, tokenJson.size() - 2);
 
   const QUrl vendorBaseUrl = cesiumSourceBaseUrl();
   const QString vendorBaseHref = vendorBaseUrl.toString();
@@ -2628,7 +2638,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             }
           });
 
-          Cesium.Ion.defaultAccessToken = '%1';
+          Cesium.Ion.defaultAccessToken = %1;
 
           viewer = new Cesium.Viewer('cesiumContainer', {
             terrainProvider: await Cesium.createWorldTerrainAsync(),
@@ -2807,7 +2817,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
   </body>
 </html>
 )HTML")
-      .arg(escapedToken,
+      .arg(tokenJsLiteral,
            vendorBaseHref,
            cesiumBaseUrl,
            cssUrl,

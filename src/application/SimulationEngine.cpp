@@ -8,9 +8,13 @@
 namespace application {
 
 SimulationEngine::SimulationEngine(ScenarioState* scenarioState, QObject* parent)
-    : QThread(parent),
+    : QObject(parent),
       m_scenario(scenarioState)
 {
+    this->moveToThread(&m_workerThread);
+    QObject::connect(&m_workerThread, &QThread::started, this, [this]() {
+        this->runLoop();
+    });
     // Clear out any stale JSON state to start fresh
     if (m_scenario) {
         m_scenario->stopMission();
@@ -20,7 +24,8 @@ SimulationEngine::SimulationEngine(ScenarioState* scenarioState, QObject* parent
 SimulationEngine::~SimulationEngine()
 {
     stop();
-    wait(); // Wait for the thread to finish
+    m_workerThread.quit();
+    m_workerThread.wait();
 }
 
 void SimulationEngine::enqueueCommand(std::unique_ptr<ICommand> command)
@@ -31,7 +36,7 @@ void SimulationEngine::enqueueCommand(std::unique_ptr<ICommand> command)
 
 void SimulationEngine::stop()
 {
-    requestInterruption();
+    m_workerThread.requestInterruption();
 }
 
 void SimulationEngine::drainCommands()
@@ -49,168 +54,20 @@ void SimulationEngine::drainCommands()
         auto cmd = std::move(localQueue.front());
         localQueue.pop();
         
-        if (auto* createCmd = dynamic_cast<CmdCreateEntity*>(cmd.get())) {
-            Entity newEntity;
-            newEntity.name = createCmd->name;
-            newEntity.latitude = createCmd->lat;
-            newEntity.longitude = createCmd->lon;
-            newEntity.altitude = static_cast<int>(createCmd->alt);
-            newEntity.headingDegrees = createCmd->heading;
-            newEntity.speedKnots = 0.0;
-            newEntity.verticalSpeedMetersPerSecond = 0.0;
-            newEntity.type = createCmd->type;
-            newEntity.flightDynamicsEnabled = false;
-            newEntity.flightDynamicsMode = "kinematic";
-            // newEntity.id doesn't exist on Entity, we rely on name as key
-
-            
-            if (m_scenario) {
-                m_scenario->addEntity(newEntity);
-            }
-        }
-        else if (auto* moveCmd = dynamic_cast<CmdAssignMoveTask*>(cmd.get())) {
-            EntityTask task;
-            task.enabled = true;
-            task.taskType = "MoveToLocation";
-            task.targetLatitude = moveCmd->targetLat;
-            task.targetLongitude = moveCmd->targetLon;
-            task.targetAltitudeMeters = static_cast<int>(moveCmd->targetAlt);
-            task.targetSpeedKnots = moveCmd->targetSpeed;
-            task.status = "Running";
-            
-            QString targetName = moveCmd->targetEntityName.trimmed();
-            if (targetName.isEmpty() && moveCmd->targetEntityId == 1) {
-                targetName = "TestAircraft";
-            }
-            
-            if (!targetName.isEmpty() && m_scenario) {
-                m_scenario->assignTask(targetName, task);
-                
-                // Handle specific UI Task types by pushing onto the TaskStack
-                domain::TaskStack* stack = m_scenario->getTaskStack(targetName);
-                if (stack) {
-                    while (!stack->isEmpty()) {
-                        stack->pop();
-                    }
-                    
-                    stack->push(std::make_unique<domain::MoveToLocationTask>(
-                        task.targetLatitude, task.targetLongitude,
-                        task.targetAltitudeMeters, task.targetSpeedKnots
-                    ));
-                }
-            }
-        }
-        else if (auto* flyCmd = dynamic_cast<CmdAssignFlyHeadingTask*>(cmd.get())) {
-            QString targetName = flyCmd->targetEntityName.trimmed();
-            if (!targetName.isEmpty() && m_scenario) {
-                EntityTask task;
-                task.enabled = true;
-                task.taskType = "FlyHeadingAltitudeSpeed";
-                task.targetHeadingDegrees = flyCmd->targetHeadingDegrees;
-                task.targetAltitudeMeters = static_cast<int>(flyCmd->targetAltitudeMeters);
-                task.targetSpeedKnots = flyCmd->targetSpeedKnots;
-                task.status = "Running";
-                m_scenario->assignTask(targetName, task);
-
-                domain::TaskStack* stack = m_scenario->getTaskStack(targetName);
-                if (stack) {
-                    while (!stack->isEmpty()) {
-                        stack->pop();
-                    }
-                    stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
-                        task.targetHeadingDegrees,
-                        static_cast<double>(task.targetAltitudeMeters),
-                        task.targetSpeedKnots
-                    ));
-                }
-            }
-        }
-        else if (auto* followCmd = dynamic_cast<CmdAssignFollowTask*>(cmd.get())) {
-            QString targetName = followCmd->targetEntityName.trimmed();
-            if (!targetName.isEmpty() && m_scenario) {
-                EntityTask task;
-                task.enabled = true;
-                task.taskType = "FollowEntity";
-                task.targetEntityName = followCmd->followEntityName;
-                task.targetAltitudeMeters = static_cast<int>(followCmd->targetAltitudeMeters);
-                task.targetSpeedKnots = followCmd->targetSpeedKnots;
-                task.status = "Running";
-                m_scenario->assignTask(targetName, task);
-
-                domain::TaskStack* stack = m_scenario->getTaskStack(targetName);
-                if (stack) {
-                    while (!stack->isEmpty()) {
-                        stack->pop();
-                    }
-                    stack->push(std::make_unique<domain::FollowEntityTask>(
-                        static_cast<double>(task.targetAltitudeMeters),
-                        task.targetSpeedKnots
-                    ));
-                }
-            }
-        }
-        else if (auto* orbitCmd = dynamic_cast<CmdAssignOrbitTask*>(cmd.get())) {
-            QString targetName = orbitCmd->targetEntityName.trimmed();
-            if (!targetName.isEmpty() && m_scenario) {
-                EntityTask task;
-                task.enabled = true;
-                task.taskType = orbitCmd->isPatrol ? "PatrolArea" : "OrbitArea";
-                task.targetAreaName = orbitCmd->targetAreaName;
-                task.targetLatitude = orbitCmd->targetLatitude;
-                task.targetLongitude = orbitCmd->targetLongitude;
-                task.targetAreaRadiusMeters = orbitCmd->targetAreaRadiusMeters;
-                task.targetAltitudeMeters = static_cast<int>(orbitCmd->targetAltitudeMeters);
-                task.targetSpeedKnots = orbitCmd->targetSpeedKnots;
-                task.status = "Running";
-                m_scenario->assignTask(targetName, task);
-
-                domain::TaskStack* stack = m_scenario->getTaskStack(targetName);
-                if (stack) {
-                    while (!stack->isEmpty()) {
-                        stack->pop();
-                    }
-                    if (orbitCmd->isPatrol) {
-                        bool createdPatrolTask = false;
-                        for (const AreaDefinition& area : m_scenario->areas()) {
-                            if (area.name != task.targetAreaName &&
-                                area.id != task.targetAreaName) {
-                                continue;
-                            }
-                            stack->push(std::make_unique<domain::PatrolAreaTask>(
-                                domain::buildPatrolRouteFromArea(area),
-                                static_cast<double>(task.targetAltitudeMeters),
-                                task.targetSpeedKnots
-                            ));
-                            createdPatrolTask = true;
-                            break;
-                        }
-                        if (!createdPatrolTask) {
-                            stack->push(std::make_unique<domain::OrbitAreaTask>(
-                                task.targetLatitude,
-                                task.targetLongitude,
-                                task.targetAreaRadiusMeters,
-                                static_cast<double>(task.targetAltitudeMeters),
-                                task.targetSpeedKnots,
-                                true
-                            ));
-                        }
-                    } else {
-                        stack->push(std::make_unique<domain::OrbitAreaTask>(
-                            task.targetLatitude,
-                            task.targetLongitude,
-                            task.targetAreaRadiusMeters,
-                            static_cast<double>(task.targetAltitudeMeters),
-                            task.targetSpeedKnots,
-                            false
-                        ));
-                    }
-                }
-            }
+        if (m_scenario && cmd) {
+            cmd->execute(*m_scenario);
         }
     }
 }
 
-void SimulationEngine::run()
+void SimulationEngine::start()
+{
+    if (!m_workerThread.isRunning()) {
+        m_workerThread.start();
+    }
+}
+
+void SimulationEngine::runLoop()
 {
     using namespace std::chrono;
 
@@ -220,7 +77,7 @@ void SimulationEngine::run()
     auto lastTime = steady_clock::now();
     double timeSinceLastUiUpdate = 0.0;
 
-    while (!isInterruptionRequested()) {
+    while (!m_workerThread.isInterruptionRequested()) {
         auto currentTime = steady_clock::now();
         duration<double> actualDeltaTime = currentTime - lastTime;
         lastTime = currentTime;
@@ -243,7 +100,7 @@ void SimulationEngine::run()
         if (timeSinceLastUiUpdate >= 0.1) {
             // MVP: Broadcast state of all entities via EventBus instead of direct Qt signals
             if (m_scenario) {
-                for (const auto& e : m_scenario->entities()) {
+                for (const auto& e : m_scenario->entitiesSnapshot()) {
                     QString teamLabel;
                     switch(e.forceIdentifier) {
                         case 1: teamLabel = "Friendly"; break;

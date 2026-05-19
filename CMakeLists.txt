@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
+enable_testing()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebEngineCore WebChannel Positioning)
@@ -92,6 +93,12 @@ target_compile_definitions(qttest PRIVATE
     QTTEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
+if(MSVC)
+    target_compile_options(qttest PRIVATE /W4)
+else()
+    target_compile_options(qttest PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 set_target_properties(qttest PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
@@ -104,3 +111,27 @@ install(TARGETS qttest
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+include(FetchContent)
+FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+add_executable(domain_task_tests
+    test/domain/TaskTests.cpp
+    src/domain/Task.cpp
+)
+target_include_directories(domain_task_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(domain_task_tests PRIVATE
+    GTest::gtest_main
+    Qt6::Core
+)
+
+include(GoogleTest)
+gtest_discover_tests(domain_task_tests)

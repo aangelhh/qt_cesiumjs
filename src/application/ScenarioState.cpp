@@ -11,6 +11,7 @@
 #include <QJsonObject>
 #include <QUrl>
 #include <QtMath>
+#include <mutex>
 
 namespace {
 
@@ -820,16 +821,22 @@ ScenarioState::ScenarioState() {
 }
 
 void ScenarioState::addEntity(const Entity& entity) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   Entity newEntity = entity; // Create a mutable copy
   normalizeGroundEntity(newEntity);
   newEntity.currentTask = EntityTask{}; // CRITICAL: Ensure new entity starts with clean task state
   _entities.push_back(newEntity);
   _taskStacks[newEntity.name] = domain::TaskStack(); // CRITICAL: Initialize empty stack for new entity
-  this->refreshSensors();
-  this->save();
+  this->refreshSensorsUnlocked();
+  this->saveUnlocked();
 }
 
 const QVector<Entity>& ScenarioState::entities() const {
+  return _entities;
+}
+
+QVector<Entity> ScenarioState::entitiesSnapshot() const {
+  std::shared_lock<std::shared_mutex> lock(_stateMutex);
   return _entities;
 }
 
@@ -837,7 +844,17 @@ const QVector<ActiveMunition>& ScenarioState::activeMunitions() const {
   return _activeMunitions;
 }
 
+QVector<ActiveMunition> ScenarioState::activeMunitionsSnapshot() const {
+  std::shared_lock<std::shared_mutex> lock(_stateMutex);
+  return _activeMunitions;
+}
+
 const QVector<TransientEffect>& ScenarioState::transientEffects() const {
+  return _transientEffects;
+}
+
+QVector<TransientEffect> ScenarioState::transientEffectsSnapshot() const {
+  std::shared_lock<std::shared_mutex> lock(_stateMutex);
   return _transientEffects;
 }
 
@@ -846,6 +863,7 @@ double ScenarioState::missileMaxRangeMeters() {
 }
 
 bool ScenarioState::removeEntity(const QString& entityName) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (qsizetype index = 0; index < _entities.size(); ++index) {
     if (_entities.at(index).name == entityName) {
       const QString removedEntityName = _entities.at(index).name;
@@ -866,8 +884,8 @@ bool ScenarioState::removeEntity(const QString& entityName) {
                 .arg(entity.name, removedEntityName));
       }
 
-      this->refreshSensors();
-      this->save();
+      this->refreshSensorsUnlocked();
+      this->saveUnlocked();
       return true;
     }
   }
@@ -875,26 +893,33 @@ bool ScenarioState::removeEntity(const QString& entityName) {
 }
 
 void ScenarioState::addWaypoint(const Waypoint& waypoint) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (Waypoint& existing : _waypoints) {
     if (existing.name == waypoint.name) {
       existing = waypoint;
-      this->save();
+      this->saveUnlocked();
       return;
     }
   }
   _waypoints.push_back(waypoint);
-  this->save();
+  this->saveUnlocked();
 }
 
 const QVector<Waypoint>& ScenarioState::waypoints() const {
   return _waypoints;
 }
 
+QVector<Waypoint> ScenarioState::waypointsSnapshot() const {
+  std::shared_lock<std::shared_mutex> lock(_stateMutex);
+  return _waypoints;
+}
+
 bool ScenarioState::removeWaypoint(const QString& waypointName) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (qsizetype index = 0; index < _waypoints.size(); ++index) {
     if (_waypoints.at(index).name == waypointName) {
       _waypoints.removeAt(index);
-      this->save();
+      this->saveUnlocked();
       return true;
     }
   }
@@ -902,26 +927,33 @@ bool ScenarioState::removeWaypoint(const QString& waypointName) {
 }
 
 void ScenarioState::addRoute(const RouteGraphic& route) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (RouteGraphic& existing : _routes) {
     if (existing.name == route.name) {
       existing = route;
-      this->save();
+      this->saveUnlocked();
       return;
     }
   }
   _routes.push_back(route);
-  this->save();
+  this->saveUnlocked();
 }
 
 const QVector<RouteGraphic>& ScenarioState::routes() const {
   return _routes;
 }
 
+QVector<RouteGraphic> ScenarioState::routesSnapshot() const {
+  std::shared_lock<std::shared_mutex> lock(_stateMutex);
+  return _routes;
+}
+
 bool ScenarioState::removeRoute(const QString& routeName) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (qsizetype index = 0; index < _routes.size(); ++index) {
     if (_routes.at(index).name == routeName) {
       _routes.removeAt(index);
-      this->save();
+      this->saveUnlocked();
       return true;
     }
   }
@@ -929,22 +961,29 @@ bool ScenarioState::removeRoute(const QString& routeName) {
 }
 
 void ScenarioState::addArea(const AreaDefinition& area) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (AreaDefinition& existing : _areas) {
     if (existing.id == area.id || existing.name == area.name) {
       existing = area;
-      this->save();
+      this->saveUnlocked();
       return;
     }
   }
   _areas.push_back(area);
-  this->save();
+  this->saveUnlocked();
 }
 
 const QVector<AreaDefinition>& ScenarioState::areas() const {
   return _areas;
 }
 
+QVector<AreaDefinition> ScenarioState::areasSnapshot() const {
+  std::shared_lock<std::shared_mutex> lock(_stateMutex);
+  return _areas;
+}
+
 bool ScenarioState::removeArea(const QString& areaName) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (qsizetype index = 0; index < _areas.size(); ++index) {
     if (_areas.at(index).name == areaName || _areas.at(index).id == areaName) {
       _areas.removeAt(index);
@@ -956,7 +995,7 @@ bool ScenarioState::removeArea(const QString& areaName) {
           entity.currentTask.status = QStringLiteral("Idle");
         }
       }
-      this->save();
+      this->saveUnlocked();
       return true;
     }
   }
@@ -964,6 +1003,7 @@ bool ScenarioState::removeArea(const QString& areaName) {
 }
 
 bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (Entity& entity : _entities) {
     if (entity.name == entityName) {
       if (entity.destroyed) {
@@ -1047,13 +1087,13 @@ bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task
         }
       }
       if (!isMovementTaskType(entity.currentTask.taskType)) {
-        if (domain::TaskStack* stack = this->getTaskStack(entityName)) {
+        if (domain::TaskStack* stack = this->getTaskStackUnlocked(entityName)) {
           while (!stack->isEmpty()) {
             stack->pop();
           }
         }
       }
-      this->save();
+      this->saveUnlocked();
       return true;
     }
   }
@@ -1061,12 +1101,24 @@ bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task
 }
 
 bool ScenarioState::clearTask(const QString& entityName) {
-  EntityTask clearedTask;
-  clearedTask.status = QStringLiteral("Idle");
-  return this->assignTask(entityName, clearedTask);
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
+  for (Entity& entity : _entities) {
+    if (entity.name != entityName) {
+      continue;
+    }
+    if (entity.destroyed) {
+      return false;
+    }
+    entity.currentTask = EntityTask{};
+    entity.currentTask.status = QStringLiteral("Idle");
+    this->saveUnlocked();
+    return true;
+  }
+  return false;
 }
 
 bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (Entity& entity : _entities) {
     if (entity.name != entityName) {
       continue;
@@ -1093,14 +1145,14 @@ bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed
     entity.verticalSpeedMetersPerSecond = 0.0;
     entity.sensorContacts.clear();
 
-    if (domain::TaskStack* stack = this->getTaskStack(entityName)) {
+    if (domain::TaskStack* stack = this->getTaskStackUnlocked(entityName)) {
       while (!stack->isEmpty()) {
         stack->pop();
       }
     }
 
-    this->refreshSensors();
-    this->save();
+    this->refreshSensorsUnlocked();
+    this->saveUnlocked();
     return true;
   }
   return false;
@@ -1109,6 +1161,7 @@ bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed
 bool ScenarioState::setEntityBehaviorMode(
     const QString& entityName,
     const QString& behaviorMode) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   const QString normalizedMode = normalizedBehaviorMode(behaviorMode);
   for (Entity& entity : _entities) {
     if (entity.name != entityName) {
@@ -1126,7 +1179,7 @@ bool ScenarioState::setEntityBehaviorMode(
     _pendingEventLogMessages.push_back(
         QStringLiteral("%1 behavior mode set to %2")
             .arg(entity.name, entity.behaviorMode));
-    this->save();
+    this->saveUnlocked();
     return true;
   }
   return false;
@@ -1157,10 +1210,26 @@ void ScenarioState::applyDamageWithSource(
 
     if (entity.damagePercent >= 100.0) {
       entity.damagePercent = 100.0;
+      entity.destroyed = true;
+      entity.currentTask = EntityTask{};
+      entity.currentTask.status = QStringLiteral("Destroyed");
+      entity.behaviorTargetEntityName.clear();
+      _behaviorMissileCooldownSeconds.erase(entity.name);
+      entity.flightDynamicsEnabled = false;
+      entity.speedKnots = 0.0;
+      entity.verticalSpeedMetersPerSecond = 0.0;
+      entity.sensorContacts.clear();
+
+      if (domain::TaskStack* stack = this->getTaskStackUnlocked(entity.name)) {
+        while (!stack->isEmpty()) {
+          stack->pop();
+        }
+      }
+
       _pendingEventLogMessages.push_back(
           QStringLiteral("%1 hit %2: Destroyed")
               .arg(trimmedSourceLabel, entity.name));
-      this->setEntityDestroyed(entity.name, true);
+      this->saveUnlocked();
       return;
     }
 
@@ -1169,7 +1238,7 @@ void ScenarioState::applyDamageWithSource(
             .arg(trimmedSourceLabel, entity.name)
             .arg(entity.damageStateLabel())
             .arg(qRound(entity.damagePercent)));
-    this->save();
+    this->saveUnlocked();
     return;
   }
 }
@@ -1233,6 +1302,7 @@ void ScenarioState::applyBombBlastDamage(const ActiveMunition& munition) {
 }
 
 bool ScenarioState::addMissileToEntity(const QString& entityName, int quantity) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   if (quantity <= 0) {
     return false;
   }
@@ -1254,7 +1324,7 @@ bool ScenarioState::addMissileToEntity(const QString& entityName, int quantity) 
       item->quantity += quantity;
     }
 
-    this->save();
+    this->saveUnlocked();
     return true;
   }
 
@@ -1262,6 +1332,7 @@ bool ScenarioState::addMissileToEntity(const QString& entityName, int quantity) 
 }
 
 bool ScenarioState::addBombToEntity(const QString& entityName, int quantity) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   if (quantity <= 0) {
     return false;
   }
@@ -1283,7 +1354,7 @@ bool ScenarioState::addBombToEntity(const QString& entityName, int quantity) {
       item->quantity += quantity;
     }
 
-    this->save();
+    this->saveUnlocked();
     return true;
   }
 
@@ -1291,6 +1362,7 @@ bool ScenarioState::addBombToEntity(const QString& entityName, int quantity) {
 }
 
 bool ScenarioState::launchMissile(const QString& entityName) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (Entity& entity : _entities) {
     if (entity.name != entityName) {
       continue;
@@ -1318,7 +1390,7 @@ bool ScenarioState::launchMissile(const QString& entityName) {
         munition.altitudeMeters,
         kLaunchFlashTtlSeconds));
 
-    this->save();
+    this->saveUnlocked();
     return true;
   }
 
@@ -1326,6 +1398,7 @@ bool ScenarioState::launchMissile(const QString& entityName) {
 }
 
 bool ScenarioState::releaseBomb(const QString& entityName) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (Entity& entity : _entities) {
     if (entity.name != entityName) {
       continue;
@@ -1345,7 +1418,7 @@ bool ScenarioState::releaseBomb(const QString& entityName) {
     ActiveMunition munition = makeBombMunition(entity, _nextMunitionSerial++);
     _activeMunitions.push_back(munition);
 
-    this->save();
+    this->saveUnlocked();
     return true;
   }
 
@@ -1355,6 +1428,7 @@ bool ScenarioState::releaseBomb(const QString& entityName) {
 bool ScenarioState::launchMissileAt(
     const QString& launcherName,
     const QString& targetName) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   const QString trimmedLauncherName = launcherName.trimmed();
   const QString trimmedTargetName = targetName.trimmed();
   if (trimmedLauncherName.isEmpty() || trimmedTargetName.isEmpty()) {
@@ -1411,7 +1485,7 @@ bool ScenarioState::launchMissileAt(
         munition.altitudeMeters,
         kLaunchFlashTtlSeconds));
 
-    this->save();
+    this->saveUnlocked();
     return true;
   }
 
@@ -1419,16 +1493,27 @@ bool ScenarioState::launchMissileAt(
 }
 
 QStringList ScenarioState::takePendingEventLogMessages() {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   const QStringList messages = _pendingEventLogMessages;
   _pendingEventLogMessages.clear();
   return messages;
 }
 
 domain::TaskStack* ScenarioState::getTaskStack(const QString& entityName) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
+  return this->getTaskStackUnlocked(entityName);
+}
+
+domain::TaskStack* ScenarioState::getTaskStackUnlocked(const QString& entityName) {
   return &_taskStacks[entityName];
 }
 
 void ScenarioState::refreshSensors() {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
+  this->refreshSensorsUnlocked();
+}
+
+void ScenarioState::refreshSensorsUnlocked() {
   SensorEngine::updateEntityContacts(_entities);
 }
 
@@ -1768,14 +1853,16 @@ void ScenarioState::advanceBehaviors(double deltaSeconds) {
 }
 
 void ScenarioState::advanceSimulation(double deltaSeconds) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   FlightDynamicsEngine::advanceEntities(_entities, _taskStacks, deltaSeconds);
   this->advanceBehaviors(deltaSeconds);
   this->advanceActiveMunitions(deltaSeconds);
   this->advanceTransientEffects(deltaSeconds);
-  this->refreshSensors();
+  SensorEngine::updateEntityContacts(_entities);
 }
 
 void ScenarioState::stopMission() {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   for (Entity& entity : _entities) {
     entity.currentTask = EntityTask{};
     entity.currentTask.status = QStringLiteral("Stopped");
@@ -1790,11 +1877,16 @@ void ScenarioState::stopMission() {
   _taskStacks.clear();
   _behaviorMissileCooldownSeconds.clear();
   _behaviorDamageReactionLevel.clear();
-  this->refreshSensors();
-  this->save();
+  this->refreshSensorsUnlocked();
+  this->saveUnlocked();
 }
 
 bool ScenarioState::save() const {
+  std::shared_lock<std::shared_mutex> lock(_stateMutex);
+  return this->saveUnlocked();
+}
+
+bool ScenarioState::saveUnlocked() const {
   QJsonArray entities;
   for (const Entity& entity : _entities) {
     entities.append(toJson(entity));
@@ -1833,6 +1925,7 @@ bool ScenarioState::save() const {
 }
 
 bool ScenarioState::load() {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   _entities.clear();
   _activeMunitions.clear();
   _transientEffects.clear();
@@ -1884,11 +1977,12 @@ bool ScenarioState::load() {
     _areas.push_back(areaFromJson(value.toObject()));
   }
 
-  this->refreshSensors();
+  this->refreshSensorsUnlocked();
   return true;
 }
 
 void ScenarioState::reset() {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
   _entities.clear();
   _activeMunitions.clear();
   _transientEffects.clear();
@@ -1900,9 +1994,51 @@ void ScenarioState::reset() {
   _behaviorMissileCooldownSeconds.clear();
   _behaviorDamageReactionLevel.clear();
   _nextMunitionSerial = 1;
-  this->save();
+  this->saveUnlocked();
 }
 
 QString ScenarioState::storagePath() const {
   return QDir(projectRoot()).absoluteFilePath(QStringLiteral("Data/scenario_state.json"));
+}
+
+bool ScenarioState::updateEntityTaskStatus(
+    const QString& entityName,
+    const QString& status) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
+  for (Entity& entity : _entities) {
+    if (entity.name != entityName) {
+      continue;
+    }
+    if (entity.currentTask.status == status) {
+      return true;
+    }
+    entity.currentTask.status = status;
+    this->saveUnlocked();
+    return true;
+  }
+  return false;
+}
+
+bool ScenarioState::updateEntityAttackTarget(
+    const QString& entityName,
+    double targetLatitude,
+    double targetLongitude,
+    int targetAltitudeMeters,
+    double targetHeadingDegrees,
+    double targetSpeedKnots,
+    const QString& status) {
+  std::unique_lock<std::shared_mutex> lock(_stateMutex);
+  for (Entity& entity : _entities) {
+    if (entity.name != entityName) {
+      continue;
+    }
+    entity.currentTask.targetLatitude = targetLatitude;
+    entity.currentTask.targetLongitude = targetLongitude;
+    entity.currentTask.targetAltitudeMeters = targetAltitudeMeters;
+    entity.currentTask.targetHeadingDegrees = targetHeadingDegrees;
+    entity.currentTask.targetSpeedKnots = targetSpeedKnots;
+    entity.currentTask.status = status;
+    return true;
+  }
+  return false;
 }

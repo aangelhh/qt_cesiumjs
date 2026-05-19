@@ -38,6 +38,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QProcessEnvironment>
 #include <QPushButton>
 #include <QStandardItemModel>
 #include <QTimer>
@@ -55,6 +56,8 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <memory>
+#include <optional>
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
 #include <QWebChannel>
 #include <QWebEngineSettings>
@@ -117,7 +120,7 @@ bool activeMissileInFlightForTarget(
     return false;
   }
 
-  for (const ActiveMunition& munition : scenarioState->activeMunitions()) {
+  for (const ActiveMunition& munition : scenarioState->activeMunitionsSnapshot()) {
     if (!munition.active ||
         munition.munitionType.compare(QStringLiteral("Missile"), Qt::CaseInsensitive) != 0) {
       continue;
@@ -308,7 +311,7 @@ int weaponQuantity(const Entity& entity, const QString& weaponType) {
 }
 
 struct MissileTargetCandidate {
-  const Entity* entity = nullptr;
+  Entity entity;
   double rangeMeters = -1.0;
 };
 
@@ -322,6 +325,7 @@ QVector<MissileTargetCandidate> detectedMissileTargetsInRange(
 
   const double maxRangeMeters = ScenarioState::missileMaxRangeMeters();
   QSet<QString> addedTargetNames;
+  const QVector<Entity> entities = scenarioState->entitiesSnapshot();
   for (const SensorContact& contact : launcher.sensorContacts) {
     if (!contact.detected || contact.rangeMeters <= 0.0 ||
         contact.rangeMeters > maxRangeMeters) {
@@ -334,7 +338,7 @@ QVector<MissileTargetCandidate> detectedMissileTargetsInRange(
       continue;
     }
 
-    for (const Entity& candidate : scenarioState->entities()) {
+    for (const Entity& candidate : entities) {
       if (candidate.name.compare(targetName, Qt::CaseInsensitive) != 0 ||
           candidate.name == launcher.name ||
           candidate.destroyed ||
@@ -342,7 +346,7 @@ QVector<MissileTargetCandidate> detectedMissileTargetsInRange(
           candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
         continue;
       }
-      targets.push_back({&candidate, contact.rangeMeters});
+      targets.push_back({candidate, contact.rangeMeters});
       addedTargetNames.insert(targetKey);
       break;
     }
@@ -635,7 +639,8 @@ int entityAltitudeMeters(const ScenarioState* scenarioState, const QString& enti
     return 0;
   }
 
-  for (const Entity& entity : scenarioState->entities()) {
+  const QVector<Entity> entities = scenarioState->entitiesSnapshot();
+  for (const Entity& entity : entities) {
     if (entity.name == entityName) {
       return entity.altitude;
     }
@@ -643,42 +648,44 @@ int entityAltitudeMeters(const ScenarioState* scenarioState, const QString& enti
   return 0;
 }
 
-QVector<const Entity*> validBombReleaseTargets(
+QVector<Entity> validBombReleaseTargets(
     const ScenarioState* scenarioState,
     const Entity& launcher) {
-  QVector<const Entity*> targets;
+  QVector<Entity> targets;
   if (!scenarioState) {
     return targets;
   }
 
-  for (const Entity& candidate : scenarioState->entities()) {
+  const QVector<Entity> entities = scenarioState->entitiesSnapshot();
+  for (const Entity& candidate : entities) {
     if (candidate.name == launcher.name ||
         candidate.destroyed ||
         candidate.forceIdentifier == launcher.forceIdentifier ||
         candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
       continue;
     }
-    targets.push_back(&candidate);
+    targets.push_back(candidate);
   }
   return targets;
 }
 
-const Entity* bestDetectedSurfaceBombTarget(
+std::optional<Entity> bestDetectedSurfaceBombTarget(
     const ScenarioState* scenarioState,
     const Entity& launcher) {
   if (!scenarioState) {
-    return nullptr;
+    return std::nullopt;
   }
 
-  const Entity* selectedTarget = nullptr;
+  std::optional<Entity> selectedTarget = std::nullopt;
   double selectedRangeMeters = -1.0;
+  const QVector<Entity> entities = scenarioState->entitiesSnapshot();
   for (const SensorContact& contact : launcher.sensorContacts) {
     if (!contact.detected || contact.targetEntityName.trimmed().isEmpty()) {
       continue;
     }
 
     const QString targetName = contact.targetEntityName.trimmed();
-    for (const Entity& candidate : scenarioState->entities()) {
+    for (const Entity& candidate : entities) {
       if (candidate.name.compare(targetName, Qt::CaseInsensitive) != 0 ||
           candidate.name == launcher.name ||
           candidate.destroyed ||
@@ -689,7 +696,7 @@ const Entity* bestDetectedSurfaceBombTarget(
 
       if (selectedRangeMeters < 0.0 ||
           contact.rangeMeters < selectedRangeMeters) {
-        selectedTarget = &candidate;
+        selectedTarget = candidate;
         selectedRangeMeters = contact.rangeMeters;
       }
       break;
@@ -839,7 +846,7 @@ MainWindow::MainWindow(QWidget* parent)
       _contentWidget(nullptr),
       _taskQuickBar(nullptr),
       _mapBridge(new MapBridge(this)),
-      _scenarioState(new ScenarioState()),
+      _scenarioState(std::make_unique<ScenarioState>()),
       _objectsModel(new QStandardItemModel(this)),
       _detectedContactsModel(new QStandardItemModel(this)),
       _friendlyRootItem(nullptr),
@@ -864,7 +871,7 @@ MainWindow::MainWindow(QWidget* parent)
       _pendingAreaSemiMajorMeters(1000.0),
       _pendingAreaSemiMinorMeters(600.0),
       _pendingAreaRotationDegrees(0.0),
-      m_simulationEngine(new application::SimulationEngine(_scenarioState, this))
+      m_simulationEngine(new application::SimulationEngine(_scenarioState.get(), this))
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
       , _webView(nullptr)
 #endif
@@ -877,13 +884,15 @@ MainWindow::MainWindow(QWidget* parent)
   this->populateTaskCommands();
   this->loadEntityVisualStates();
   this->pruneEntityVisualStates();
-  for (const Entity& entity : this->_scenarioState->entities()) {
+  for (const Entity& entity : this->_scenarioState->entitiesSnapshot()) {
     this->appendEntityToUi(entity);
   }
   this->syncDetectedContactsToUi();
   _simulationTimer->setInterval(33);
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
-    this->_scenarioState->advanceSimulation(0.033);
+    if (!this->_simulationRunning) {
+      return;
+    }
     this->advanceEntityPlans();
     this->processAttackTasks(0.033);
     this->processAutoBombingBehaviors(0.033);
@@ -1007,6 +1016,12 @@ MainWindow::MainWindow(QWidget* parent)
       });
 
   const QString accessToken = []() {
+    const QString tokenFromEnvironment = QProcessEnvironment::systemEnvironment()
+                                             .value(QStringLiteral("CESIUM_ION_TOKEN"))
+                                             .trimmed();
+    if (!tokenFromEnvironment.isEmpty()) {
+      return tokenFromEnvironment;
+    }
     const QString configured =
         CesiumScenePage::readConfigValue(QStringLiteral("ion_access_token"));
     return configured.isEmpty() ? CesiumScenePage::defaultAccessToken()
@@ -1155,7 +1170,6 @@ MainWindow::MainWindow(QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
-  delete this->_scenarioState;
   delete this->_ui;
 }
 
@@ -1361,7 +1375,7 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
             'f',
             1);
   } else {
-    for (const ActiveMunition& munition : this->_scenarioState->activeMunitions()) {
+    for (const ActiveMunition& munition : this->_scenarioState->activeMunitionsSnapshot()) {
       if (munition.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0 &&
           munition.munitionType.compare(QStringLiteral("Bomb"), Qt::CaseInsensitive) == 0) {
         bombReleaseState = QStringLiteral("Released");
@@ -1377,7 +1391,7 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
   bool hasDetectedAirTarget = false;
   bool hasMissileTargetInRange = false;
   const double missileMaxRangeMeters = ScenarioState::missileMaxRangeMeters();
-  for (const Entity& candidate : this->_scenarioState->entities()) {
+  for (const Entity& candidate : this->_scenarioState->entitiesSnapshot()) {
     if (candidate.name == entityName ||
         candidate.destroyed ||
         candidate.forceIdentifier == entity->forceIdentifier ||
@@ -1783,7 +1797,7 @@ const Waypoint* MainWindow::findWaypointByName(const QString& waypointName) cons
     return nullptr;
   }
 
-  for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
+  for (const Waypoint& waypoint : this->_scenarioState->waypointsSnapshot()) {
     if (waypoint.name == waypointName) {
       return &waypoint;
     }
@@ -1797,7 +1811,7 @@ const RouteGraphic* MainWindow::findRouteByName(const QString& routeName) const 
     return nullptr;
   }
 
-  for (const RouteGraphic& route : this->_scenarioState->routes()) {
+  for (const RouteGraphic& route : this->_scenarioState->routesSnapshot()) {
     if (route.name == routeName) {
       return &route;
     }
@@ -1811,7 +1825,7 @@ const AreaDefinition* MainWindow::findAreaByNameOrId(const QString& areaNameOrId
     return nullptr;
   }
 
-  for (const AreaDefinition& area : this->_scenarioState->areas()) {
+  for (const AreaDefinition& area : this->_scenarioState->areasSnapshot()) {
     if (area.name == areaNameOrId || area.id == areaNameOrId) {
       return &area;
     }
@@ -1823,7 +1837,7 @@ const AreaDefinition* MainWindow::findAreaByNameOrId(const QString& areaNameOrId
 QStringList MainWindow::availableWaypointNames() const {
   QStringList names;
   QSet<QString> seen;
-  for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
+  for (const Waypoint& waypoint : this->_scenarioState->waypointsSnapshot()) {
     const QString name = waypoint.name.trimmed();
     if (name.isEmpty() || seen.contains(name)) {
       continue;
@@ -1837,7 +1851,7 @@ QStringList MainWindow::availableWaypointNames() const {
 QStringList MainWindow::availableRouteNames(bool requirePoints) const {
   QStringList names;
   QSet<QString> seen;
-  for (const RouteGraphic& route : this->_scenarioState->routes()) {
+  for (const RouteGraphic& route : this->_scenarioState->routesSnapshot()) {
     const QString name = route.name.trimmed();
     if (name.isEmpty() || seen.contains(name)) {
       continue;
@@ -1854,7 +1868,7 @@ QStringList MainWindow::availableRouteNames(bool requirePoints) const {
 QStringList MainWindow::availableAreaNames() const {
   QStringList names;
   QSet<QString> seen;
-  for (const AreaDefinition& area : this->_scenarioState->areas()) {
+  for (const AreaDefinition& area : this->_scenarioState->areasSnapshot()) {
     QString name = area.name.trimmed();
     if (name.isEmpty()) {
       name = area.id.trimmed();
@@ -1942,7 +1956,7 @@ void MainWindow::saveEntityVisualStates() const {
 
 void MainWindow::pruneEntityVisualStates() {
   QSet<QString> validEntityNames;
-  for (const Entity& entity : this->_scenarioState->entities()) {
+  for (const Entity& entity : this->_scenarioState->entitiesSnapshot()) {
     validEntityNames.insert(entity.name);
   }
 
@@ -1963,7 +1977,7 @@ void MainWindow::pruneEntityVisualStates() {
 
 void MainWindow::pruneEntityHomePositions() {
   QSet<QString> validEntityNames;
-  for (const Entity& entity : this->_scenarioState->entities()) {
+  for (const Entity& entity : this->_scenarioState->entitiesSnapshot()) {
     validEntityNames.insert(entity.name);
   }
 
@@ -1978,7 +1992,7 @@ void MainWindow::pruneEntityHomePositions() {
 
 void MainWindow::pruneEntityPlans() {
   QSet<QString> validEntityNames;
-  for (const Entity& entity : this->_scenarioState->entities()) {
+  for (const Entity& entity : this->_scenarioState->entitiesSnapshot()) {
     validEntityNames.insert(entity.name);
   }
 
@@ -2031,7 +2045,7 @@ bool MainWindow::captureTaskConfiguration(
   }
 
   QStringList availableTargets;
-  for (const Entity& entity : this->_scenarioState->entities()) {
+  for (const Entity& entity : this->_scenarioState->entitiesSnapshot()) {
     if (entity.name != entityName) {
       availableTargets.append(entity.name);
     }
@@ -2484,6 +2498,9 @@ void MainWindow::startSimulation() {
   }
 
   this->_simulationRunning = true;
+  if (m_simulationEngine) {
+    m_simulationEngine->start();
+  }
   this->_simulationTimer->start();
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   if (this->_webView) {
@@ -2502,6 +2519,9 @@ void MainWindow::pauseSimulation() {
   }
 
   this->_simulationRunning = false;
+  if (m_simulationEngine) {
+    m_simulationEngine->stop();
+  }
   this->_simulationTimer->stop();
   this->syncScenarioStateToUi();
   this->_ui->statusLabel->setText(QStringLiteral("Simulacion en pausa."));
@@ -2511,6 +2531,9 @@ void MainWindow::pauseSimulation() {
 
 void MainWindow::stopSimulation() {
   this->_simulationRunning = false;
+  if (m_simulationEngine) {
+    m_simulationEngine->stop();
+  }
   this->_simulationTimer->stop();
   this->_isPickingBombTarget = false;
   this->_bombTargetPickLauncherName.clear();
@@ -2797,7 +2820,7 @@ void MainWindow::syncDetectedContactsToUi() {
 
   this->_detectedContactsModel->removeRows(0, this->_detectedContactsModel->rowCount());
 
-  const QVector<Entity>& entities = this->_scenarioState->entities();
+  const QVector<Entity> entities = this->_scenarioState->entitiesSnapshot();
   const auto findEntityByName = [&entities](const QString& name) -> const Entity* {
     for (const Entity& entity : entities) {
       if (entity.name == name) {
@@ -2911,7 +2934,7 @@ void MainWindow::syncScenarioStateToUi() {
 
       const QString name = child->data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
       bool exists = false;
-      for (const Entity& entity : this->_scenarioState->entities()) {
+      for (const Entity& entity : this->_scenarioState->entitiesSnapshot()) {
         if (entity.name == name) {
           exists = true;
           break;
@@ -2948,7 +2971,7 @@ void MainWindow::syncScenarioStateToUi() {
   this->pruneEntityHomePositions();
   this->pruneEntityPlans();
 
-  for (const Entity& entity : this->_scenarioState->entities()) {
+  for (const Entity& entity : this->_scenarioState->entitiesSnapshot()) {
     this->rememberEntityHomePosition(entity);
 
     QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entity.name);
@@ -2973,7 +2996,7 @@ void MainWindow::syncScenarioStateToUi() {
   }
 
   QSet<QString> currentMunitionTrackNames;
-  for (const ActiveMunition& munition : this->_scenarioState->activeMunitions()) {
+  for (const ActiveMunition& munition : this->_scenarioState->activeMunitionsSnapshot()) {
     currentMunitionTrackNames.insert(munition.id);
     this->sendTrackToMap(makeMunitionTrackSummary(munition), false);
   }
@@ -2986,7 +3009,7 @@ void MainWindow::syncScenarioStateToUi() {
   this->_activeMunitionTrackNames = currentMunitionTrackNames;
 
   QSet<QString> currentEffectTrackNames;
-  for (const TransientEffect& effect : this->_scenarioState->transientEffects()) {
+  for (const TransientEffect& effect : this->_scenarioState->transientEffectsSnapshot()) {
     currentEffectTrackNames.insert(effect.id);
     this->sendTrackToMap(makeTransientEffectTrackSummary(effect), false);
   }
@@ -3240,7 +3263,7 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   const int bombCount =
       entity ? weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
   const int detectedMissileTargetCount =
-      entity ? detectedMissileTargetsInRange(this->_scenarioState, *entity).size() : 0;
+      entity ? detectedMissileTargetsInRange(this->_scenarioState.get(), *entity).size() : 0;
   QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
   QMenu* movementMenu = taskMenu->addMenu(QStringLiteral("Movement"));
   movementMenu->addAction(
@@ -3470,7 +3493,7 @@ bool MainWindow::applyEntityTask(const QString& entityName, const EntityTask& ta
 
   Entity resolvedEntity;
   bool foundEntity = false;
-  for (const Entity& entity : this->_scenarioState->entities()) {
+  for (const Entity& entity : this->_scenarioState->entitiesSnapshot()) {
     if (entity.name != entityName) {
       continue;
     }
@@ -3492,7 +3515,7 @@ bool MainWindow::applyEntityTask(const QString& entityName, const EntityTask& ta
       double targetAlt = resolvedEntity.currentTask.targetAltitudeMeters;
       double targetSpeed = resolvedEntity.currentTask.targetSpeedKnots;
       if (task.taskType == "MoveToWaypoint" && !task.targetWaypointName.trimmed().isEmpty()) {
-        for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
+        for (const Waypoint& waypoint : this->_scenarioState->waypointsSnapshot()) {
           if (waypoint.name == task.targetWaypointName) {
             targetLat = waypoint.latitude;
             targetLon = waypoint.longitude;
@@ -3508,7 +3531,7 @@ bool MainWindow::applyEntityTask(const QString& entityName, const EntityTask& ta
           targetSpeed));
     } else if (task.taskType == "MoveAlongRoute") {
       bool createdRouteTask = false;
-      for (const RouteGraphic& route : this->_scenarioState->routes()) {
+      for (const RouteGraphic& route : this->_scenarioState->routesSnapshot()) {
         if (route.name != resolvedEntity.currentTask.targetRouteName ||
             route.points.isEmpty()) {
           continue;
@@ -3536,7 +3559,7 @@ bool MainWindow::applyEntityTask(const QString& entityName, const EntityTask& ta
           static_cast<double>(task.targetAltitudeMeters),
           task.targetSpeedKnots));
     } else if (task.taskType == "PatrolArea") {
-      for (const AreaDefinition& area : this->_scenarioState->areas()) {
+      for (const AreaDefinition& area : this->_scenarioState->areasSnapshot()) {
         if (area.name != resolvedEntity.currentTask.targetAreaName &&
             area.id != resolvedEntity.currentTask.targetAreaName) {
           continue;
@@ -4110,7 +4133,7 @@ bool MainWindow::startPlanStepTask(const QString& entityName, EntityPlan& plan) 
 }
 
 void MainWindow::failRunningPlan(
-    const QString& entityName,
+    const QString&,
     EntityPlan& plan,
     const QString& logMessage,
     const QString& statusMessage) {
@@ -4380,7 +4403,7 @@ bool MainWindow::resolveSelectedEntityFlyTargets(
       !summary.value(QStringLiteral("taskType")).toString().trimmed().isEmpty();
 
   const int currentEntityAltitudeMeters = entityAltitudeMeters(
-      this->_scenarioState,
+      this->_scenarioState.get(),
       summary.value(QStringLiteral("name")).toString());
 
   headingDegrees = hasRunningTaskTargets
@@ -4817,7 +4840,7 @@ void MainWindow::launchMissileAtSelectedEntity() {
   }
 
   const QVector<MissileTargetCandidate> targets =
-      detectedMissileTargetsInRange(this->_scenarioState, *launcher);
+      detectedMissileTargetsInRange(this->_scenarioState.get(), *launcher);
   if (targets.isEmpty()) {
     this->_ui->statusLabel->setText(
         QStringLiteral("No detected air targets in missile range for %1.")
@@ -4828,13 +4851,10 @@ void MainWindow::launchMissileAtSelectedEntity() {
   QStringList options;
   QHash<QString, QString> targetNameByOption;
   for (const MissileTargetCandidate& candidate : targets) {
-    if (!candidate.entity) {
-      continue;
-    }
     const QString option =
-        missileTargetDisplayLabel(*candidate.entity, candidate.rangeMeters);
+        missileTargetDisplayLabel(candidate.entity, candidate.rangeMeters);
     options.push_back(option);
-    targetNameByOption.insert(option, candidate.entity->name);
+    targetNameByOption.insert(option, candidate.entity.name);
   }
 
   bool ok = false;
@@ -5478,7 +5498,7 @@ QStandardItem* MainWindow::findTrackItemByName(QStandardItem* parent, const QStr
 }
 
 const Entity* MainWindow::findEntityByName(const QString& entityName) const {
-  for (const Entity& entity : this->_scenarioState->entities()) {
+  for (const Entity& entity : this->_scenarioState->entitiesSnapshot()) {
     if (entity.name == entityName) {
       return &entity;
     }
@@ -5666,7 +5686,7 @@ void MainWindow::processAttackTasks(double deltaSeconds) {
   }
 
   QStringList taskEntityNames;
-  for (const Entity& entity : this->_scenarioState->entities()) {
+  for (const Entity& entity : this->_scenarioState->entitiesSnapshot()) {
     const QString taskType = entity.currentTask.taskType.trimmed();
     const QString taskStatus = entity.currentTask.status.trimmed();
     if (entity.destroyed) {
@@ -5755,17 +5775,6 @@ bool MainWindow::processAttackAirTask(const QString& entityName, double deltaSec
     return true;
   }
 
-  Entity* mutableLauncher = nullptr;
-  for (Entity& entity : this->_scenarioState->entitiesMutable()) {
-    if (entity.name == entityName) {
-      mutableLauncher = &entity;
-      break;
-    }
-  }
-  if (!mutableLauncher) {
-    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-  }
-
   const double desiredHeadingDegrees = bearingDegrees(
       launcher->latitude,
       launcher->longitude,
@@ -5774,15 +5783,19 @@ bool MainWindow::processAttackAirTask(const QString& entityName, double deltaSec
   const double desiredSpeedKnots = qMax(
       kAttackAirMinimumPursuitSpeedKnots,
       target->speedKnots + kAttackAirTargetSpeedMarginKnots);
-  mutableLauncher->currentTask.targetLatitude = target->latitude;
-  mutableLauncher->currentTask.targetLongitude = target->longitude;
-  mutableLauncher->currentTask.targetAltitudeMeters = target->altitude;
-  mutableLauncher->currentTask.targetHeadingDegrees = desiredHeadingDegrees;
-  mutableLauncher->currentTask.targetSpeedKnots = desiredSpeedKnots;
-  mutableLauncher->currentTask.status = QStringLiteral("Running");
+  if (!this->_scenarioState->updateEntityAttackTarget(
+          entityName,
+          target->latitude,
+          target->longitude,
+          target->altitude,
+          desiredHeadingDegrees,
+          desiredSpeedKnots,
+          QStringLiteral("Running"))) {
+    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
 
   const bool activeMissile =
-      activeMissileInFlightForTarget(this->_scenarioState, entityName, targetName);
+      activeMissileInFlightForTarget(this->_scenarioState.get(), entityName, targetName);
   if (weaponQuantity(*launcher, QStringLiteral("Missile")) <= 0) {
     if (!activeMissile) {
       this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -5896,18 +5909,7 @@ bool MainWindow::processAttackSurfaceTask(const QString& entityName) {
 }
 
 bool MainWindow::setEntityTaskStatus(const QString& entityName, const QString& status) {
-  for (Entity& entity : this->_scenarioState->entitiesMutable()) {
-    if (entity.name != entityName) {
-      continue;
-    }
-    if (entity.currentTask.status == status) {
-      return true;
-    }
-    entity.currentTask.status = status;
-    this->_scenarioState->save();
-    return true;
-  }
-  return false;
+  return this->_scenarioState->updateEntityTaskStatus(entityName, status);
 }
 
 void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
@@ -5927,7 +5929,7 @@ void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
     return;
   }
 
-  for (const Entity& launcher : this->_scenarioState->entities()) {
+  for (const Entity& launcher : this->_scenarioState->entitiesSnapshot()) {
     const QString taskType = launcher.currentTask.taskType.trimmed();
     if (launcher.currentTask.enabled &&
         (taskType == QStringLiteral("AttackAir") ||
@@ -5979,9 +5981,9 @@ void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
       continue;
     }
 
-    const Entity* target =
-        bestDetectedSurfaceBombTarget(this->_scenarioState, launcher);
-    if (!target) {
+    const std::optional<Entity> target =
+        bestDetectedSurfaceBombTarget(this->_scenarioState.get(), launcher);
+    if (!target.has_value()) {
       continue;
     }
 
@@ -6100,8 +6102,8 @@ void MainWindow::releaseBombAtSurfaceEntity() {
     return;
   }
 
-  const QVector<const Entity*> targets =
-      validBombReleaseTargets(this->_scenarioState, *launcher);
+  const QVector<Entity> targets =
+      validBombReleaseTargets(this->_scenarioState.get(), *launcher);
   if (targets.isEmpty()) {
     this->_ui->statusLabel->setText(
         QStringLiteral("No hay surface targets validos para %1.")
@@ -6111,13 +6113,10 @@ void MainWindow::releaseBombAtSurfaceEntity() {
 
   QStringList options;
   QHash<QString, QString> targetNameByOption;
-  for (const Entity* target : targets) {
-    if (!target) {
-      continue;
-    }
-    const QString option = bombTargetDisplayLabel(*target);
+  for (const Entity& target : targets) {
+    const QString option = bombTargetDisplayLabel(target);
     options.push_back(option);
-    targetNameByOption.insert(option, target->name);
+    targetNameByOption.insert(option, target.name);
   }
 
   bool ok = false;
@@ -6304,7 +6303,7 @@ void MainWindow::rebuildTacticalGraphicsTree() {
 
   this->_tacticalGraphicsRootItem->removeRows(0, this->_tacticalGraphicsRootItem->rowCount());
 
-  for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
+  for (const Waypoint& waypoint : this->_scenarioState->waypointsSnapshot()) {
     QVariantMap waypointSummary = makeTrackSummary(
         waypoint.name,
         QStringLiteral("Waypoint"),
@@ -6321,7 +6320,7 @@ void MainWindow::rebuildTacticalGraphicsTree() {
     this->_tacticalGraphicsRootItem->appendRow(waypointItem);
   }
 
-  for (const RouteGraphic& route : this->_scenarioState->routes()) {
+  for (const RouteGraphic& route : this->_scenarioState->routesSnapshot()) {
     QVariantList points;
     for (const RoutePoint& point : route.points) {
       points.push_back(QVariantMap{
@@ -6348,7 +6347,7 @@ void MainWindow::rebuildTacticalGraphicsTree() {
     this->_tacticalGraphicsRootItem->appendRow(routeItem);
   }
 
-  for (const AreaDefinition& area : this->_scenarioState->areas()) {
+  for (const AreaDefinition& area : this->_scenarioState->areasSnapshot()) {
     QVariantMap areaSummary = makeTrackSummary(
         area.name,
         QStringLiteral("Area"),
@@ -6420,7 +6419,7 @@ void MainWindow::openAddWaypointDialog() {
       QStringLiteral("Add Waypoint"),
       QStringLiteral("Waypoint name"),
       QLineEdit::Normal,
-      QStringLiteral("Waypoint %1").arg(this->_scenarioState->waypoints().size() + 1),
+      QStringLiteral("Waypoint %1").arg(this->_scenarioState->waypointsSnapshot().size() + 1),
       &ok).trimmed();
   if (!ok || name.isEmpty()) {
     return;
@@ -6440,7 +6439,7 @@ void MainWindow::openAddRouteDialog() {
       QStringLiteral("Add Route"),
       QStringLiteral("Route name"),
       QLineEdit::Normal,
-      QStringLiteral("Route %1").arg(this->_scenarioState->routes().size() + 1),
+      QStringLiteral("Route %1").arg(this->_scenarioState->routesSnapshot().size() + 1),
       &ok).trimmed();
   if (!ok || name.isEmpty()) {
     return;
@@ -6462,7 +6461,7 @@ void MainWindow::openAddAreaDialog() {
       QStringLiteral("Add Area"),
       QStringLiteral("Area name"),
       QLineEdit::Normal,
-      QStringLiteral("Area %1").arg(this->_scenarioState->areas().size() + 1),
+      QStringLiteral("Area %1").arg(this->_scenarioState->areasSnapshot().size() + 1),
       &ok).trimmed();
   if (!ok || name.isEmpty()) {
     return;
@@ -6582,7 +6581,7 @@ void MainWindow::openAddAreaDialog() {
 void MainWindow::updateSimulationControls() {
   this->_ui->actionStartSimulation->setEnabled(!this->_simulationRunning);
   this->_ui->actionPauseSimulation->setEnabled(this->_simulationRunning);
-  this->_ui->actionStopSimulation->setEnabled(this->_simulationRunning || !this->_scenarioState->entities().isEmpty());
+  this->_ui->actionStopSimulation->setEnabled(this->_simulationRunning || !this->_scenarioState->entitiesSnapshot().isEmpty());
   this->_ui->modeBadgeLabel->setText(
       this->_simulationRunning
           ? QStringLiteral("Simulation Running")
