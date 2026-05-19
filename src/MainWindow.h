@@ -12,6 +12,7 @@
 
 #include <memory>
 
+#include "application/AttackTaskProcessor.h"
 #include "application/SimulationEngine.h"
 #include "presentation/BombReleaseController.h"
 #include "presentation/EntityPlanExecutor.h"
@@ -151,9 +152,6 @@ private:
   QString cleanupRuntimeReferencesForRemovedEntity(const QString& entityName);
   void validatePendingBombRelease();
   void processAttackTasks(double deltaSeconds);
-  bool processAttackAirTask(const QString& entityName, double deltaSeconds);
-  bool processAttackSurfaceTask(const QString& entityName);
-  bool setEntityTaskStatus(const QString& entityName, const QString& status);
   void processAutoBombingBehaviors(double deltaSeconds);
   void processPendingBombRelease();
   void openAssignTaskDialog(const QString& initialTaskType);
@@ -235,12 +233,9 @@ private:
   QList<QToolButton*> _taskQuickButtons;
   QSet<QString> _activeMunitionTrackNames;
   QSet<QString> _activeEffectTrackNames;
-  QHash<QString, double> _autoBombReleaseCooldownSeconds;
-  QHash<QString, int> _autoBehaviorDamageReactionLevel;
-  QHash<QString, double> _attackAirElapsedSeconds;
-  QHash<QString, double> _attackAirMissileCooldownSeconds;
   application::SimulationEngine* m_simulationEngine;
   std::unique_ptr<presentation::BombReleaseController> _bombReleaseController;
+  std::unique_ptr<application::AttackTaskProcessor> _attackTaskProcessor;
   std::unique_ptr<presentation::EntityPlanExecutor> _planExecutor;
   std::unique_ptr<presentation::EntityVisualStateManager> _entityVisualStateManager;
   std::unique_ptr<presentation::EntityHomePositionTracker> _entityHomePositionTracker;
