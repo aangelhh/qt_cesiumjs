@@ -43,6 +43,8 @@ qt_add_executable(qttest
     src/infrastructure/ModelCatalog.h
     src/application/ScenarioState.cpp
     src/application/ScenarioState.h
+    src/application/ScenarioQueries.cpp
+    src/application/ScenarioQueries.h
     src/application/Command.cpp
     src/application/Command.h
     src/application/Event.h

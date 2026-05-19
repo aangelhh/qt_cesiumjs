@@ -6,6 +6,7 @@
 #include "application/ScenarioState.h"
 #include "application/SimulationEngine.h"
 #include "application/Command.h"
+#include "application/ScenarioQueries.h"
 #include "domain/BombReleaseGate.h"
 #include "domain/CombatRules.h"
 #include "domain/Entity.h"
@@ -96,26 +97,8 @@ constexpr QLatin1StringView kTaskStatusCompletedWithFailures("CompletedWithFailu
 // autoBehaviorDamageReactionLevel, autoBehaviorCanEngageByDamage
 // moved to domain/CombatRules.h
 
-bool activeMissileInFlightForTarget(
-    const ScenarioState* scenarioState,
-    const QString& launcherName,
-    const QString& targetName) {
-  if (!scenarioState) {
-    return false;
-  }
 
-  for (const ActiveMunition& munition : scenarioState->activeMunitions()) {
-    if (!munition.active ||
-        munition.munitionType.compare(QStringLiteral("Missile"), Qt::CaseInsensitive) != 0) {
-      continue;
-    }
-    if (munition.launcherEntityName.compare(launcherName, Qt::CaseInsensitive) == 0 &&
-        munition.targetEntityName.compare(targetName, Qt::CaseInsensitive) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
+// activeMissileInFlightForTarget moved to application/ScenarioQueries.h
 
 
 // autoBehaviorDamageReactionLevel, autoBehaviorCanEngageByDamage
@@ -164,131 +147,9 @@ void clearQtTrackSelectionInMap(QWebEngineView* webView) {
 
 // weaponQuantity moved to domain/BombReleaseGate.h
 
-struct MissileTargetCandidate {
-  const Entity* entity = nullptr;
-  double rangeMeters = -1.0;
-};
-
-QVector<MissileTargetCandidate> detectedMissileTargetsInRange(
-    const ScenarioState* scenarioState,
-    const Entity& launcher) {
-  QVector<MissileTargetCandidate> targets;
-  if (!scenarioState) {
-    return targets;
-  }
-
-  const double maxRangeMeters = ScenarioState::missileMaxRangeMeters();
-  QSet<QString> addedTargetNames;
-  for (const SensorContact& contact : launcher.sensorContacts) {
-    if (!contact.detected || contact.rangeMeters <= 0.0 ||
-        contact.rangeMeters > maxRangeMeters) {
-      continue;
-    }
-
-    const QString targetName = contact.targetEntityName.trimmed();
-    const QString targetKey = targetName.toCaseFolded();
-    if (targetName.isEmpty() || addedTargetNames.contains(targetKey)) {
-      continue;
-    }
-
-    for (const Entity& candidate : scenarioState->entities()) {
-      if (candidate.name.compare(targetName, Qt::CaseInsensitive) != 0 ||
-          candidate.name == launcher.name ||
-          candidate.destroyed ||
-          candidate.forceIdentifier == launcher.forceIdentifier ||
-          candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
-        continue;
-      }
-      targets.push_back({&candidate, contact.rangeMeters});
-      addedTargetNames.insert(targetKey);
-      break;
-    }
-  }
-
-  return targets;
-}
-
-// missileTargetDisplayLabel, formatPosition moved to presentation/TrackSummaryBuilder.h
-// and domain/GeoMath.h respectively
-
-// makeMunitionTrackSummary, makeTransientEffectTrackSummary,
-// makePendingBombTargetTrackSummary, makePendingBombTargetLineTrackSummary
-// moved to presentation/TrackSummaryBuilder.h
-
-// domain::BombReleaseGateEvaluation, distanceMeters, normalizeDegrees360,
-// shortestSignedAngle, bearingDegrees, evaluateBombReleaseGate
-// moved to domain/GeoMath.h and domain/BombReleaseGate.h
-
-// attackPointLabel moved to domain/GeoMath.h
-
-int entityAltitudeMeters(const ScenarioState* scenarioState, const QString& entityName) {
-  if (!scenarioState || entityName.trimmed().isEmpty()) {
-    return 0;
-  }
-
-  for (const Entity& entity : scenarioState->entities()) {
-    if (entity.name == entityName) {
-      return entity.altitude;
-    }
-  }
-  return 0;
-}
-
-QVector<const Entity*> validBombReleaseTargets(
-    const ScenarioState* scenarioState,
-    const Entity& launcher) {
-  QVector<const Entity*> targets;
-  if (!scenarioState) {
-    return targets;
-  }
-
-  for (const Entity& candidate : scenarioState->entities()) {
-    if (candidate.name == launcher.name ||
-        candidate.destroyed ||
-        candidate.forceIdentifier == launcher.forceIdentifier ||
-        candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
-      continue;
-    }
-    targets.push_back(&candidate);
-  }
-  return targets;
-}
-
-const Entity* bestDetectedSurfaceBombTarget(
-    const ScenarioState* scenarioState,
-    const Entity& launcher) {
-  if (!scenarioState) {
-    return nullptr;
-  }
-
-  const Entity* selectedTarget = nullptr;
-  double selectedRangeMeters = -1.0;
-  for (const SensorContact& contact : launcher.sensorContacts) {
-    if (!contact.detected || contact.targetEntityName.trimmed().isEmpty()) {
-      continue;
-    }
-
-    const QString targetName = contact.targetEntityName.trimmed();
-    for (const Entity& candidate : scenarioState->entities()) {
-      if (candidate.name.compare(targetName, Qt::CaseInsensitive) != 0 ||
-          candidate.name == launcher.name ||
-          candidate.destroyed ||
-          candidate.forceIdentifier == launcher.forceIdentifier ||
-          candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
-        continue;
-      }
-
-      if (selectedRangeMeters < 0.0 ||
-          contact.rangeMeters < selectedRangeMeters) {
-        selectedTarget = &candidate;
-        selectedRangeMeters = contact.rangeMeters;
-      }
-      break;
-    }
-  }
-
-  return selectedTarget;
-}
+// MissileTargetCandidate, detectedMissileTargetsInRange, activeMissileInFlightForTarget,
+// entityAltitudeMeters, validBombReleaseTargets, bestDetectedSurfaceBombTarget
+// moved to application/ScenarioQueries.h
 
 // bombTargetDisplayLabel moved to presentation/TrackSummaryBuilder.h
 
@@ -2613,7 +2474,7 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   const int bombCount =
       entity ? domain::weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
   const int detectedMissileTargetCount =
-      entity ? detectedMissileTargetsInRange(this->_scenarioState, *entity).size() : 0;
+      entity ? application::detectedMissileTargetsInRange(this->_scenarioState, *entity).size() : 0;
   QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
   QMenu* movementMenu = taskMenu->addMenu(QStringLiteral("Movement"));
   movementMenu->addAction(
@@ -3752,7 +3613,7 @@ bool MainWindow::resolveSelectedEntityFlyTargets(
       summary.value(QStringLiteral("taskStatus")).toString() == QStringLiteral("Running") &&
       !summary.value(QStringLiteral("taskType")).toString().trimmed().isEmpty();
 
-  const int currentEntityAltitudeMeters = entityAltitudeMeters(
+  const int currentEntityAltitudeMeters = application::entityAltitudeMeters(
       this->_scenarioState,
       summary.value(QStringLiteral("name")).toString());
 
@@ -4189,8 +4050,8 @@ void MainWindow::launchMissileAtSelectedEntity() {
     return;
   }
 
-  const QVector<MissileTargetCandidate> targets =
-      detectedMissileTargetsInRange(this->_scenarioState, *launcher);
+  const QVector<application::MissileTargetCandidate> targets =
+      application::detectedMissileTargetsInRange(this->_scenarioState, *launcher);
   if (targets.isEmpty()) {
     this->_ui->statusLabel->setText(
         QStringLiteral("No detected air targets in missile range for %1.")
@@ -4200,7 +4061,7 @@ void MainWindow::launchMissileAtSelectedEntity() {
 
   QStringList options;
   QHash<QString, QString> targetNameByOption;
-  for (const MissileTargetCandidate& candidate : targets) {
+  for (const application::MissileTargetCandidate& candidate : targets) {
     if (!candidate.entity) {
       continue;
     }
@@ -5155,7 +5016,7 @@ bool MainWindow::processAttackAirTask(const QString& entityName, double deltaSec
   mutableLauncher->currentTask.status = QStringLiteral("Running");
 
   const bool activeMissile =
-      activeMissileInFlightForTarget(this->_scenarioState, entityName, targetName);
+      application::activeMissileInFlightForTarget(this->_scenarioState, entityName, targetName);
   if (domain::weaponQuantity(*launcher, QStringLiteral("Missile")) <= 0) {
     if (!activeMissile) {
       this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -5353,7 +5214,7 @@ void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
     }
 
     const Entity* target =
-        bestDetectedSurfaceBombTarget(this->_scenarioState, launcher);
+        application::bestDetectedSurfaceBombTarget(this->_scenarioState, launcher);
     if (!target) {
       continue;
     }
@@ -5474,7 +5335,7 @@ void MainWindow::releaseBombAtSurfaceEntity() {
   }
 
   const QVector<const Entity*> targets =
-      validBombReleaseTargets(this->_scenarioState, *launcher);
+      application::validBombReleaseTargets(this->_scenarioState, *launcher);
   if (targets.isEmpty()) {
     this->_ui->statusLabel->setText(
         QStringLiteral("No hay surface targets validos para %1.")
