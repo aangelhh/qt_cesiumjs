@@ -13,6 +13,8 @@
 #include <memory>
 
 #include "application/SimulationEngine.h"
+#include "presentation/BombReleaseController.h"
+#include "presentation/EntityPlanExecutor.h"
 #include "presentation/PlanTypes.h"
 
 class QAction;
@@ -36,7 +38,9 @@ struct RouteGraphic;
 struct Waypoint;
 
 namespace presentation {
+class BombReleaseController;
 class EntityHomePositionTracker;
+class EntityPlanExecutor;
 class EntityVisualStateManager;
 }
 
@@ -171,26 +175,15 @@ private:
   QStringList availableAreaNames() const;
   EntityPlan& ensureEntityPlan(const QString& entityName);
   void pruneEntityPlans();
-  QString planStepDisplayLabel(const PlanStep& step) const;
   bool captureTaskConfiguration(
       const QString& entityName,
       const EntityTask& initialTask,
       const QString& initialTaskType,
       EntityTask& outTask);
   bool configurePlanStep(const QString& entityName, PlanStepKind kind, PlanStep& step);
-  bool validatePlanStepForExecution(const PlanStep& step, QString* reason) const;
-  bool activeTaskMatchesPlanStep(const struct Entity& entity, const PlanStep& step) const;
   bool startEntityPlan(const QString& entityName);
   void stopEntityPlan(const QString& entityName, bool clearCurrentTask);
   void advanceEntityPlans();
-  bool activePlanStepCompleted(const struct Entity& entity, EntityPlan& plan) const;
-  bool startPlanStepTask(const QString& entityName, EntityPlan& plan);
-  void failRunningPlan(
-      const QString& entityName,
-      EntityPlan& plan,
-      const QString& logMessage = QString(),
-      const QString& statusMessage = QString());
-  void completeRunningPlan(const QString& entityName, EntityPlan& plan, const QString& completedLabel);
   bool applyEntityTask(
       const QString& entityName,
       const EntityTask& task,
@@ -229,10 +222,8 @@ private:
   QTimer* _simulationTimer;
   bool _applyingMapSelection;
   bool _simulationRunning;
-  bool _isPickingBombTarget;
   QString _pendingGraphicMode;
   QString _pendingGraphicName;
-  QString _bombTargetPickLauncherName;
   QVector<QVariantMap> _pendingRoutePoints;
   QString _pendingAreaType;
   double _pendingAreaRadiusMeters;
@@ -248,9 +239,9 @@ private:
   QHash<QString, int> _autoBehaviorDamageReactionLevel;
   QHash<QString, double> _attackAirElapsedSeconds;
   QHash<QString, double> _attackAirMissileCooldownSeconds;
-  QHash<QString, EntityPlan> _entityPlans;
-  PendingBombRelease _pendingBombRelease;
   application::SimulationEngine* m_simulationEngine;
+  std::unique_ptr<presentation::BombReleaseController> _bombReleaseController;
+  std::unique_ptr<presentation::EntityPlanExecutor> _planExecutor;
   std::unique_ptr<presentation::EntityVisualStateManager> _entityVisualStateManager;
   std::unique_ptr<presentation::EntityHomePositionTracker> _entityHomePositionTracker;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)

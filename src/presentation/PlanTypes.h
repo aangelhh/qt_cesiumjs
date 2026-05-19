@@ -4,6 +4,15 @@
 #include <QString>
 #include <QVector>
 
+// Task / plan status string constants (shared by plan types and executor logic)
+namespace plan_status {
+inline constexpr QLatin1StringView NotStarted("NotStarted");
+inline constexpr QLatin1StringView Running("Running");
+inline constexpr QLatin1StringView Completed("Completed");
+inline constexpr QLatin1StringView Failed("Failed");
+inline constexpr QLatin1StringView CompletedWithFailures("CompletedWithFailures");
+} // namespace plan_status
+
 /// Represents a pending bomb release targeting a specific location.
 struct PendingBombRelease {
   QString launcherEntityName;
