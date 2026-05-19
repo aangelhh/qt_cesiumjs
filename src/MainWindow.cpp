@@ -6,7 +6,9 @@
 #include "application/ScenarioState.h"
 #include "application/SimulationEngine.h"
 #include "application/Command.h"
+#include "domain/BombReleaseGate.h"
 #include "domain/Entity.h"
+#include "domain/GeoMath.h"
 #include "infrastructure/CesiumScenePage.h"
 #include "infrastructure/MapBridge.h"
 #include "infrastructure/ModelCatalog.h"
@@ -73,10 +75,7 @@ constexpr int kTaskQuickBarMarginPixels = 14;
 constexpr int kTaskQuickBarButtonPixels = 30;
 constexpr int kTaskQuickBarIconPixels = 18;
 constexpr double kOrbitHoldDefaultRadiusMeters = 1500.0;
-constexpr double kKnotsToMetersPerSecond = 0.514444;
-constexpr double kBombReleaseGravityMetersPerSecondSquared = 9.81;
-constexpr double kBombReleaseHeadingConeDegrees = 35.0;
-constexpr double kBombReleaseDistanceToleranceMeters = 150.0;
+// Bomb release constants now in domain/BombReleaseGate.h
 constexpr double kAutoBombReleaseCooldownSeconds = 20.0;
 constexpr double kAttackAirTimeoutSeconds = 120.0;
 constexpr double kAttackAirMissileCooldownSeconds = 8.0;
@@ -300,14 +299,7 @@ bool entityCanUseMissileActions(const Entity& entity) {
          entity.category.compare(QStringLiteral("Fighter"), Qt::CaseInsensitive) == 0;
 }
 
-int weaponQuantity(const Entity& entity, const QString& weaponType) {
-  for (const WeaponInventoryItem& item : entity.weapons) {
-    if (item.weaponType.compare(weaponType, Qt::CaseInsensitive) == 0) {
-      return item.quantity;
-    }
-  }
-  return 0;
-}
+// weaponQuantity moved to domain/BombReleaseGate.h
 
 struct MissileTargetCandidate {
   const Entity* entity = nullptr;
@@ -494,137 +486,9 @@ QVariantMap makePendingBombTargetLineTrackSummary(
   return summary;
 }
 
-struct BombReleaseGateEvaluation {
-  bool valid = false;
-  bool targetAhead = false;
-  bool withinHeadingCone = false;
-  bool withinReleaseWindow = false;
-
-  bool readyToRelease() const {
-    return valid && targetAhead && withinHeadingCone && withinReleaseWindow;
-  }
-
-  QString stateLabel() const {
-    return readyToRelease()
-        ? QStringLiteral("In Release Window")
-        : QStringLiteral("Armed");
-  }
-};
-
-double distanceMeters(
-    double latitude1,
-    double longitude1,
-    double latitude2,
-    double longitude2) {
-  constexpr double earthRadiusMeters = 6371000.0;
-  const double lat1 = qDegreesToRadians(latitude1);
-  const double lon1 = qDegreesToRadians(longitude1);
-  const double lat2 = qDegreesToRadians(latitude2);
-  const double lon2 = qDegreesToRadians(longitude2);
-  const double deltaLat = lat2 - lat1;
-  const double deltaLon = lon2 - lon1;
-  const double a = qPow(qSin(deltaLat / 2.0), 2.0) +
-                   qCos(lat1) * qCos(lat2) * qPow(qSin(deltaLon / 2.0), 2.0);
-  const double c = 2.0 * qAtan2(qSqrt(a), qSqrt(1.0 - a));
-  return earthRadiusMeters * c;
-}
-
-double normalizeDegrees360(double degrees) {
-  while (degrees < 0.0) {
-    degrees += 360.0;
-  }
-  while (degrees >= 360.0) {
-    degrees -= 360.0;
-  }
-  return degrees;
-}
-
-double shortestSignedAngle(double currentHeading, double targetHeading) {
-  double delta = normalizeDegrees360(targetHeading) - normalizeDegrees360(currentHeading);
-  while (delta > 180.0) {
-    delta -= 360.0;
-  }
-  while (delta < -180.0) {
-    delta += 360.0;
-  }
-  return delta;
-}
-
-double bearingDegrees(
-    double latitude1,
-    double longitude1,
-    double latitude2,
-    double longitude2) {
-  const double lat1 = qDegreesToRadians(latitude1);
-  const double lon1 = qDegreesToRadians(longitude1);
-  const double lat2 = qDegreesToRadians(latitude2);
-  const double lon2 = qDegreesToRadians(longitude2);
-  const double deltaLon = lon2 - lon1;
-
-  const double y = qSin(deltaLon) * qCos(lat2);
-  const double x = qCos(lat1) * qSin(lat2) -
-                   qSin(lat1) * qCos(lat2) * qCos(deltaLon);
-  return normalizeDegrees360(qRadiansToDegrees(qAtan2(y, x)));
-}
-
-BombReleaseGateEvaluation evaluateBombReleaseGate(
-    const Entity& launcher,
-    double targetLatitude,
-    double targetLongitude,
-    double targetAltitudeMeters) {
-  BombReleaseGateEvaluation evaluation;
-  const double relativeAltitudeMeters = qMax(
-      0.0,
-      static_cast<double>(launcher.altitude) - targetAltitudeMeters);
-  const double horizontalSpeedMetersPerSecond = qMax(
-      0.0,
-      launcher.speedKnots * kKnotsToMetersPerSecond *
-          qCos(qDegreesToRadians(launcher.pitchDegrees)));
-  if (relativeAltitudeMeters <= 0.0 || horizontalSpeedMetersPerSecond <= 1.0) {
-    return evaluation;
-  }
-
-  const double verticalSpeedMetersPerSecond =
-      launcher.verticalSpeedMetersPerSecond;
-  const double discriminant =
-      qPow(verticalSpeedMetersPerSecond, 2.0) +
-      2.0 * kBombReleaseGravityMetersPerSecondSquared * relativeAltitudeMeters;
-  if (discriminant < 0.0) {
-    return evaluation;
-  }
-
-  const double timeToImpactSeconds =
-      (verticalSpeedMetersPerSecond + qSqrt(discriminant)) /
-      kBombReleaseGravityMetersPerSecondSquared;
-  if (timeToImpactSeconds <= 0.0) {
-    return evaluation;
-  }
-
-  const double releaseDistanceMeters =
-      horizontalSpeedMetersPerSecond * timeToImpactSeconds;
-  const double distanceToTargetMeters = distanceMeters(
-      launcher.latitude,
-      launcher.longitude,
-      targetLatitude,
-      targetLongitude);
-  const double desiredHeadingDegrees = bearingDegrees(
-      launcher.latitude,
-      launcher.longitude,
-      targetLatitude,
-      targetLongitude);
-  const double headingErrorDegrees = qAbs(shortestSignedAngle(
-      launcher.headingDegrees,
-      desiredHeadingDegrees));
-
-  evaluation.valid = true;
-  evaluation.targetAhead = headingErrorDegrees <= 90.0;
-  evaluation.withinHeadingCone =
-      headingErrorDegrees <= kBombReleaseHeadingConeDegrees;
-  evaluation.withinReleaseWindow = qAbs(
-      distanceToTargetMeters - releaseDistanceMeters) <=
-      kBombReleaseDistanceToleranceMeters;
-  return evaluation;
-}
+// domain::BombReleaseGateEvaluation, distanceMeters, normalizeDegrees360,
+// shortestSignedAngle, bearingDegrees, evaluateBombReleaseGate
+// moved to domain/GeoMath.h and domain/BombReleaseGate.h
 
 QString attackPointLabel(double latitude, double longitude) {
   return QStringLiteral("%1, %2")
@@ -1250,8 +1114,8 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
   }
 
   const QString entityName = entity->name;
-  const int missileCount = weaponQuantity(*entity, QStringLiteral("Missile"));
-  const int bombCount = weaponQuantity(*entity, QStringLiteral("Bomb"));
+  const int missileCount = domain::weaponQuantity(*entity, QStringLiteral("Missile"));
+  const int bombCount = domain::weaponQuantity(*entity, QStringLiteral("Bomb"));
   const QString behaviorMode = entity->behaviorMode.trimmed().isEmpty()
       ? QStringLiteral("Manual")
       : entity->behaviorMode.trimmed();
@@ -1350,7 +1214,7 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
   QString bombDistanceText = QStringLiteral("-");
   if (this->_pendingBombRelease.pending &&
       this->_pendingBombRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0) {
-    const BombReleaseGateEvaluation evaluation = evaluateBombReleaseGate(
+    const domain::BombReleaseGateEvaluation evaluation = domain::evaluateBombReleaseGate(
         *entity,
         this->_pendingBombRelease.targetLatitude,
         this->_pendingBombRelease.targetLongitude,
@@ -1363,7 +1227,7 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
         : this->_pendingBombRelease.targetLabel.trimmed();
     bombDistanceText = QStringLiteral("%1 km")
         .arg(
-            distanceMeters(
+            domain::distanceMeters(
                 entity->latitude,
                 entity->longitude,
                 this->_pendingBombRelease.targetLatitude,
@@ -2209,7 +2073,7 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
     };
     if (_pendingAreaPoints.size() >= 3) {
       const QVariantMap& firstPoint = _pendingAreaPoints.first();
-      const double closeDistanceMeters = distanceMeters(
+      const double closeDistanceMeters = domain::distanceMeters(
           latitude,
           longitude,
           firstPoint.value(QStringLiteral("latitude")).toDouble(),
@@ -2307,7 +2171,7 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
 
     const Entity* launcher = this->findEntityByName(launcherName);
     const int bombCount =
-        launcher ? weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
+        launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
     if (!launcher || launcher->destroyed || bombCount <= 0) {
       this->_ui->statusLabel->setText(
           QStringLiteral("No se pudo programar el release de bomba para %1.")
@@ -2910,12 +2774,12 @@ void MainWindow::syncScenarioStateToUi() {
     if (const Entity* launcher =
             this->findEntityByName(this->_pendingBombRelease.launcherEntityName)) {
       teamLabel = forceIdentifierLabel(launcher->forceIdentifier);
-      distanceToBombTargetMeters = distanceMeters(
+      distanceToBombTargetMeters = domain::distanceMeters(
           launcher->latitude,
           launcher->longitude,
           this->_pendingBombRelease.targetLatitude,
           this->_pendingBombRelease.targetLongitude);
-      const BombReleaseGateEvaluation evaluation = evaluateBombReleaseGate(
+      const domain::BombReleaseGateEvaluation evaluation = domain::evaluateBombReleaseGate(
           *launcher,
           this->_pendingBombRelease.targetLatitude,
           this->_pendingBombRelease.targetLongitude,
@@ -3139,9 +3003,9 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   const Entity* entity = this->findEntityByName(entityName);
   const bool canUseWeapons = entity && entityCanUseMissileActions(*entity);
   const int missileCount =
-      entity ? weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
+      entity ? domain::weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
   const int bombCount =
-      entity ? weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
+      entity ? domain::weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
   const int detectedMissileTargetCount =
       entity ? detectedMissileTargetsInRange(this->_scenarioState, *entity).size() : 0;
   QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
@@ -4076,7 +3940,7 @@ bool MainWindow::activePlanStepCompleted(const Entity& entity, EntityPlan& plan)
       return entity.currentTask.status == QStringLiteral("On target");
 
     case PlanStepKind::PatrolArea: {
-      const double distanceToCenterMeters = distanceMeters(
+      const double distanceToCenterMeters = domain::distanceMeters(
           entity.latitude,
           entity.longitude,
           step.task.targetLatitude,
@@ -4093,7 +3957,7 @@ bool MainWindow::activePlanStepCompleted(const Entity& entity, EntityPlan& plan)
     }
 
     case PlanStepKind::FlyHeadingAltitudeSpeed: {
-      const double headingErrorDegrees = qAbs(shortestSignedAngle(
+      const double headingErrorDegrees = qAbs(domain::shortestSignedAngle(
           entity.headingDegrees,
           step.task.targetHeadingDegrees));
       const int altitudeErrorMeters = qAbs(entity.altitude - step.task.targetAltitudeMeters);
@@ -4109,7 +3973,7 @@ bool MainWindow::activePlanStepCompleted(const Entity& entity, EntityPlan& plan)
     }
 
     case PlanStepKind::OrbitHoldLocation: {
-      const double distanceToCenterMeters = distanceMeters(
+      const double distanceToCenterMeters = domain::distanceMeters(
           entity.latitude,
           entity.longitude,
           step.task.targetLatitude,
@@ -4634,7 +4498,7 @@ void MainWindow::launchMissileFromSelectedEntity() {
 
   const Entity* entity = this->findEntityByName(entityName);
   const int missileCount =
-      entity ? weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
+      entity ? domain::weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
 
   if (missileCount <= 0) {
     this->_ui->statusLabel->setText(
@@ -4670,7 +4534,7 @@ void MainWindow::releaseBombFromSelectedEntity() {
 
   const Entity* entity = this->findEntityByName(entityName);
   const int bombCount =
-      entity ? weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
+      entity ? domain::weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
 
   if (bombCount <= 0) {
     this->_ui->statusLabel->setText(
@@ -4706,7 +4570,7 @@ void MainWindow::launchMissileAtSelectedEntity() {
 
   const Entity* launcher = this->findEntityByName(launcherName);
   const int missileCount =
-      launcher ? weaponQuantity(*launcher, QStringLiteral("Missile")) : 0;
+      launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Missile")) : 0;
   if (!launcher || missileCount <= 0) {
     this->_ui->statusLabel->setText(
         QStringLiteral("No hay misiles disponibles en %1.").arg(launcherName));
@@ -5669,7 +5533,7 @@ bool MainWindow::processAttackAirTask(const QString& entityName, double deltaSec
     return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
   }
 
-  const double desiredHeadingDegrees = bearingDegrees(
+  const double desiredHeadingDegrees = domain::bearingDegrees(
       launcher->latitude,
       launcher->longitude,
       target->latitude,
@@ -5686,7 +5550,7 @@ bool MainWindow::processAttackAirTask(const QString& entityName, double deltaSec
 
   const bool activeMissile =
       activeMissileInFlightForTarget(this->_scenarioState, entityName, targetName);
-  if (weaponQuantity(*launcher, QStringLiteral("Missile")) <= 0) {
+  if (domain::weaponQuantity(*launcher, QStringLiteral("Missile")) <= 0) {
     if (!activeMissile) {
       this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
       this->_attackAirElapsedSeconds.remove(entityName);
@@ -5728,7 +5592,7 @@ bool MainWindow::processAttackSurfaceTask(const QString& entityName) {
     return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
   }
 
-  if (weaponQuantity(*launcher, QStringLiteral("Bomb")) <= 0) {
+  if (domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) <= 0) {
     return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
   }
 
@@ -5844,7 +5708,7 @@ void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
     if (behaviorMode.compare(QStringLiteral("Aggressive"), Qt::CaseInsensitive) != 0 ||
         launcher.destroyed ||
         launcher.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0 ||
-        weaponQuantity(launcher, QStringLiteral("Bomb")) <= 0) {
+        domain::weaponQuantity(launcher, QStringLiteral("Bomb")) <= 0) {
       this->_autoBehaviorDamageReactionLevel.remove(launcher.name);
       continue;
     }
@@ -5923,7 +5787,7 @@ void MainWindow::processPendingBombRelease() {
     return;
   }
 
-  const int bombCount = weaponQuantity(*launcher, QStringLiteral("Bomb"));
+  const int bombCount = domain::weaponQuantity(*launcher, QStringLiteral("Bomb"));
   if (bombCount <= 0) {
     const QString launcherName = this->_pendingBombRelease.launcherEntityName;
     this->clearPendingBombRelease();
@@ -5933,7 +5797,7 @@ void MainWindow::processPendingBombRelease() {
     return;
   }
 
-  const BombReleaseGateEvaluation evaluation = evaluateBombReleaseGate(
+  const domain::BombReleaseGateEvaluation evaluation = domain::evaluateBombReleaseGate(
       *launcher,
       this->_pendingBombRelease.targetLatitude,
       this->_pendingBombRelease.targetLongitude,
@@ -5990,7 +5854,7 @@ void MainWindow::releaseBombAtSurfaceEntity() {
 
   const Entity* launcher = this->findEntityByName(launcherName);
   const int bombCount =
-      launcher ? weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
+      launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
   if (!launcher || bombCount <= 0) {
     this->_ui->statusLabel->setText(
         QStringLiteral("No hay bombas disponibles en %1.").arg(launcherName));
@@ -6066,7 +5930,7 @@ void MainWindow::releaseBombAtCustomCoordinates() {
 
   const Entity* launcher = this->findEntityByName(launcherName);
   const int bombCount =
-      launcher ? weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
+      launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
   if (!launcher || bombCount <= 0) {
     this->_ui->statusLabel->setText(
         QStringLiteral("No hay bombas disponibles en %1.").arg(launcherName));

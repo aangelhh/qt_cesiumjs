@@ -53,7 +53,11 @@ qt_add_executable(qttest
     src/application/FlightDynamicsEngine.h
     src/application/SensorEngine.cpp
     src/application/SensorEngine.h
+    src/domain/BombReleaseGate.cpp
+    src/domain/BombReleaseGate.h
     src/domain/Entity.h
+    src/domain/GeoMath.cpp
+    src/domain/GeoMath.h
     src/domain/Sensor.h
     src/domain/Task.cpp
     src/domain/Task.h
