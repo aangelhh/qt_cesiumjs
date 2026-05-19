@@ -16,6 +16,7 @@
 #include "presentation/EntityTextFormatter.h"
 #include "presentation/EntityHomePositionTracker.h"
 #include "presentation/EntityVisualStateManager.h"
+#include "presentation/TrackIconProvider.h"
 #include "presentation/TrackSummaryBuilder.h"
 #include "ui_MainWindow.h"
 
@@ -153,38 +154,7 @@ void clearQtTrackSelectionInMap(QWebEngineView* webView) {
 }
 #endif
 
-QIcon makeTaskQuickFallbackIcon(const QString& glyph, const QColor& accent) {
-  QPixmap pixmap(kTaskQuickBarIconPixels, kTaskQuickBarIconPixels);
-  pixmap.fill(Qt::transparent);
-
-  QPainter painter(&pixmap);
-  painter.setRenderHint(QPainter::Antialiasing, true);
-  painter.setPen(Qt::NoPen);
-  painter.setBrush(QColor(22, 30, 40, 220));
-  painter.drawRoundedRect(pixmap.rect().adjusted(1, 1, -1, -1), 4, 4);
-
-  QFont font = painter.font();
-  font.setBold(true);
-  font.setPixelSize(10);
-  painter.setFont(font);
-  painter.setPen(accent);
-  painter.drawText(pixmap.rect(), Qt::AlignCenter, glyph.left(2).toUpper());
-  return QIcon(pixmap);
-}
-
-QIcon loadTaskQuickBarIcon(
-    const QString& fileName,
-    const QString& fallbackGlyph,
-    const QColor& accent) {
-  const QString path = taskQuickBarIconPath(fileName);
-  if (QFileInfo::exists(path)) {
-    const QIcon icon(path);
-    if (!icon.isNull()) {
-      return icon;
-    }
-  }
-  return makeTaskQuickFallbackIcon(fallbackGlyph, accent);
-}
+// makeTaskQuickFallbackIcon, loadTaskQuickBarIcon moved to presentation/TrackIconProvider.h
 
 // makeTrackSummary, makeMunitionTrackSummary, makeTransientEffectTrackSummary,
 // makePendingBombTargetTrackSummary, makePendingBombTargetLineTrackSummary
@@ -329,125 +299,8 @@ void setTrackData(QStandardItem* item, const QVariantMap& summary) {
 QJsonObject mapToJsonObject(const QVariantMap& map) {
   return QJsonObject::fromVariantMap(map);
 }
-QColor forceColorFromLabel(const QString& team) {
-  const QString normalized = team.trimmed().toLower();
-  if (normalized.contains(QStringLiteral("opposing"))) {
-    return QColor(QStringLiteral("#ff3b30"));
-  }
-  if (normalized.contains(QStringLiteral("neutral"))) {
-    return QColor(QStringLiteral("#35c759"));
-  }
-  if (normalized.contains(QStringLiteral("unknown"))) {
-    return QColor(QStringLiteral("#ffd60a"));
-  }
-  return QColor(QStringLiteral("#55d3ff"));
-}
-
-QString categoryGlyph(const QString& category) {
-  const QString normalized = category.trimmed().toLower();
-  const QString compact = QString(normalized)
-      .remove(QChar(' '))
-      .remove(QChar('_'))
-      .remove(QChar('-'));
-  if (normalized == QStringLiteral("fighter")) {
-    return QStringLiteral("F");
-  }
-  if (normalized == QStringLiteral("bomber")) {
-    return QStringLiteral("B");
-  }
-  if (normalized == QStringLiteral("helicopter")) {
-    return QStringLiteral("H");
-  }
-  if (normalized == QStringLiteral("transport")) {
-    return QStringLiteral("T");
-  }
-  if (normalized == QStringLiteral("tank")) {
-    return QStringLiteral("K");
-  }
-  if (normalized == QStringLiteral("truck")) {
-    return QStringLiteral("R");
-  }
-  if (compact == QStringLiteral("armoredvehicle") ||
-      compact == QStringLiteral("armouredvehicle")) {
-    return QStringLiteral("V");
-  }
-  if (normalized == QStringLiteral("radar")) {
-    return QStringLiteral("D");
-  }
-  if (compact == QStringLiteral("samlauncher")) {
-    return QStringLiteral("A");
-  }
-  if (normalized == QStringLiteral("other")) {
-    return QStringLiteral("O");
-  }
-  if (normalized == QStringLiteral("side")) {
-    return QStringLiteral("S");
-  }
-  return QStringLiteral("E");
-}
-
-QIcon makeTacticalGraphicIcon(const QString& graphicType) {
-  QPixmap pixmap(18, 18);
-  pixmap.fill(Qt::transparent);
-
-  QPainter painter(&pixmap);
-  painter.setRenderHint(QPainter::Antialiasing, true);
-
-  const QString normalized = graphicType.trimmed().toLower();
-  if (normalized == QStringLiteral("route")) {
-    QPen pen(QColor(QStringLiteral("#ff6c52")));
-    pen.setWidth(2);
-    pen.setStyle(Qt::DashLine);
-    painter.setPen(pen);
-    painter.drawLine(3, 15, 15, 3);
-  } else if (normalized == QStringLiteral("waypoint")) {
-    QPen pen(QColor(QStringLiteral("#b6f4b2")));
-    pen.setWidth(1);
-    painter.setPen(pen);
-    painter.setBrush(QColor(QStringLiteral("#dff9da")));
-    painter.drawRect(5, 3, 8, 10);
-  } else if (normalized == QStringLiteral("engagement area")) {
-    QPen pen(QColor(QStringLiteral("#ff5656")));
-    pen.setWidth(2);
-    painter.setPen(pen);
-    painter.setBrush(Qt::NoBrush);
-    painter.drawRect(4, 4, 10, 10);
-  } else {
-    QPen pen(QColor(QStringLiteral("#ffd85e")));
-    pen.setWidth(2);
-    painter.setPen(pen);
-    painter.drawEllipse(4, 4, 10, 10);
-  }
-
-  return QIcon(pixmap);
-}
-
-QIcon makeTrackIcon(const QString& team, const QString& category, bool isGroup) {
-  QPixmap pixmap(18, 18);
-  pixmap.fill(Qt::transparent);
-
-  QPainter painter(&pixmap);
-  painter.setRenderHint(QPainter::Antialiasing, true);
-
-  const QColor accent = forceColorFromLabel(team);
-  const QRect outerRect(1, 1, 16, 16);
-  const QRect innerRect(3, 3, 12, 12);
-
-  QPen pen(accent);
-  pen.setWidth(isGroup ? 2 : 1);
-  painter.setPen(pen);
-  painter.setBrush(QColor(7, 17, 29, isGroup ? 220 : 245));
-  painter.drawRoundedRect(outerRect, 4, 4);
-
-  QFont font = painter.font();
-  font.setBold(true);
-  font.setPixelSize(isGroup ? 10 : 9);
-  painter.setFont(font);
-  painter.setPen(accent);
-  painter.drawText(innerRect, Qt::AlignCenter, categoryGlyph(category));
-
-  return QIcon(pixmap);
-}
+// forceColorFromLabel, categoryGlyph, makeTacticalGraphicIcon, makeTrackIcon
+// moved to presentation/TrackIconProvider.h
 
 } // namespace
 
@@ -1146,13 +999,13 @@ void MainWindow::initializeModels() {
   this->_objectsModel->setHorizontalHeaderLabels({QStringLiteral("Name")});
 
   this->_friendlyRootItem = new QStandardItem(QStringLiteral("Friendly"));
-  this->_friendlyRootItem->setIcon(makeTrackIcon(QStringLiteral("Friendly"), QStringLiteral("Side"), true));
+  this->_friendlyRootItem->setIcon(presentation::makeTrackIcon(QStringLiteral("Friendly"), QStringLiteral("Side"), true));
   this->_opposingRootItem = new QStandardItem(QStringLiteral("Opposing"));
-  this->_opposingRootItem->setIcon(makeTrackIcon(QStringLiteral("Opposing"), QStringLiteral("Side"), true));
+  this->_opposingRootItem->setIcon(presentation::makeTrackIcon(QStringLiteral("Opposing"), QStringLiteral("Side"), true));
   this->_neutralRootItem = new QStandardItem(QStringLiteral("Neutral"));
-  this->_neutralRootItem->setIcon(makeTrackIcon(QStringLiteral("Neutral"), QStringLiteral("Side"), true));
+  this->_neutralRootItem->setIcon(presentation::makeTrackIcon(QStringLiteral("Neutral"), QStringLiteral("Side"), true));
   this->_tacticalGraphicsRootItem = new QStandardItem(QStringLiteral("Tactical Graphics"));
-  this->_tacticalGraphicsRootItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Graphic")));
+  this->_tacticalGraphicsRootItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Graphic")));
   setTrackData(
       this->_friendlyRootItem,
       presentation::makeTrackSummary(
@@ -1287,7 +1140,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
           0.0));
 
   auto* item = new QStandardItem(entity.name);
-  item->setIcon(makeTrackIcon(domain::forceIdentifierLabel(entity.forceIdentifier), category, false));
+  item->setIcon(presentation::makeTrackIcon(domain::forceIdentifierLabel(entity.forceIdentifier), category, false));
   setTrackData(item, summary);
   categoryItem->appendRow(item);
   this->_ui->objectsTreeView->expand(rootItem->index());
@@ -1639,7 +1492,7 @@ QStandardItem* MainWindow::ensureGroupItem(
   }
 
   auto* item = new QStandardItem(label);
-  item->setIcon(makeTrackIcon(summary.value(QStringLiteral("team")).toString(), label, true));
+  item->setIcon(presentation::makeTrackIcon(summary.value(QStringLiteral("team")).toString(), label, true));
   setTrackData(item, summary);
   parent->appendRow(item);
   return item;
@@ -2630,7 +2483,8 @@ void MainWindow::createTaskQuickBar() {
     button->setAutoRaise(false);
     button->setFixedSize(kTaskQuickBarButtonPixels, kTaskQuickBarButtonPixels);
     button->setIconSize(QSize(kTaskQuickBarIconPixels, kTaskQuickBarIconPixels));
-    button->setIcon(loadTaskQuickBarIcon(iconFileName, fallbackGlyph, accent));
+    button->setIcon(presentation::loadTaskQuickBarIcon(
+        taskQuickBarIconPath(iconFileName), fallbackGlyph, accent));
     button->setToolTip(tooltip);
     layout->addWidget(button);
     this->_taskQuickButtons.append(button);
@@ -5835,7 +5689,7 @@ void MainWindow::rebuildTacticalGraphicsTree() {
         waypoint.longitude);
     waypointSummary.insert(QStringLiteral("type"), QStringLiteral("Waypoint"));
     auto* waypointItem = new QStandardItem(waypoint.name);
-    waypointItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Waypoint")));
+    waypointItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Waypoint")));
     setTrackData(waypointItem, waypointSummary);
     this->_tacticalGraphicsRootItem->appendRow(waypointItem);
   }
@@ -5862,7 +5716,7 @@ void MainWindow::rebuildTacticalGraphicsTree() {
     routeSummary.insert(QStringLiteral("type"), QStringLiteral("Route"));
     routeSummary.insert(QStringLiteral("routePoints"), points);
     auto* routeItem = new QStandardItem(route.name);
-    routeItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Route")));
+    routeItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Route")));
     setTrackData(routeItem, routeSummary);
     this->_tacticalGraphicsRootItem->appendRow(routeItem);
   }
@@ -5895,7 +5749,7 @@ void MainWindow::rebuildTacticalGraphicsTree() {
     areaSummary.insert(QStringLiteral("minAltitudeMeters"), area.minAltitudeMeters);
     areaSummary.insert(QStringLiteral("maxAltitudeMeters"), area.maxAltitudeMeters);
     auto* areaItem = new QStandardItem(area.name);
-    areaItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Engagement Area")));
+    areaItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Engagement Area")));
     setTrackData(areaItem, areaSummary);
     this->_tacticalGraphicsRootItem->appendRow(areaItem);
   }
