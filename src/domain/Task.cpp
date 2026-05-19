@@ -1,33 +1,43 @@
 #include "Task.h"
-#include <QtMath>
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 namespace {
     constexpr double kEarthRadiusMeters = 6371000.0;
     constexpr double kPatrolArrivalThresholdMeters = 200.0;
     constexpr int kGeneratedPatrolPointCount = 6;
 
+    constexpr double toRadians(double degrees) { return degrees * M_PI / 180.0; }
+    constexpr double toDegrees(double radians) { return radians * 180.0 / M_PI; }
+
     double bearingDegrees(double latitude1, double longitude1, double latitude2, double longitude2) {
-        const double lat1 = qDegreesToRadians(latitude1);
-        const double lat2 = qDegreesToRadians(latitude2);
-        const double deltaLongitude = qDegreesToRadians(longitude2 - longitude1);
-        const double y = qSin(deltaLongitude) * qCos(lat2);
-        const double x = qCos(lat1) * qSin(lat2) - qSin(lat1) * qCos(lat2) * qCos(deltaLongitude);
-        double degrees = qRadiansToDegrees(qAtan2(y, x));
+        const double lat1 = toRadians(latitude1);
+        const double lat2 = toRadians(latitude2);
+        const double deltaLongitude = toRadians(longitude2 - longitude1);
+        const double y = std::sin(deltaLongitude) * std::cos(lat2);
+        const double x = std::cos(lat1) * std::sin(lat2) - std::sin(lat1) * std::cos(lat2) * std::cos(deltaLongitude);
+        double degrees = toDegrees(std::atan2(y, x));
         while (degrees < 0.0) { degrees += 360.0; }
         return degrees;
     }
 
     double distanceMeters(double latitude1, double longitude1, double latitude2, double longitude2) {
-        const double lat1 = qDegreesToRadians(latitude1);
-        const double lon1 = qDegreesToRadians(longitude1);
-        const double lat2 = qDegreesToRadians(latitude2);
-        const double lon2 = qDegreesToRadians(longitude2);
+        const double lat1 = toRadians(latitude1);
+        const double lon1 = toRadians(longitude1);
+        const double lat2 = toRadians(latitude2);
+        const double lon2 = toRadians(longitude2);
         const double deltaLat = lat2 - lat1;
         const double deltaLon = lon2 - lon1;
-        const double a = qPow(qSin(deltaLat / 2.0), 2.0) + qCos(lat1) * qCos(lat2) * qPow(qSin(deltaLon / 2.0), 2.0);
-        const double c = 2.0 * qAtan2(qSqrt(a), qSqrt(1.0 - a));
+        const double sinHalfLat = std::sin(deltaLat / 2.0);
+        const double sinHalfLon = std::sin(deltaLon / 2.0);
+        const double a = sinHalfLat * sinHalfLat + std::cos(lat1) * std::cos(lat2) * sinHalfLon * sinHalfLon;
+        const double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
         return kEarthRadiusMeters * c;
     }
 
@@ -37,15 +47,15 @@ namespace {
         double northMeters,
         double eastMeters,
         double altitudeMeters) {
-        const double latitudeRadians = qDegreesToRadians(centerLatitude);
+        const double latitudeRadians = toRadians(centerLatitude);
         const double deltaLatitudeRadians = northMeters / kEarthRadiusMeters;
-        const double cosLatitude = qMax(0.000001, qCos(latitudeRadians));
+        const double cosLatitude = std::max(0.000001, std::cos(latitudeRadians));
         const double deltaLongitudeRadians =
             eastMeters / (kEarthRadiusMeters * cosLatitude);
 
         RoutePoint point;
-        point.latitude = centerLatitude + qRadiansToDegrees(deltaLatitudeRadians);
-        point.longitude = centerLongitude + qRadiansToDegrees(deltaLongitudeRadians);
+        point.latitude = centerLatitude + toDegrees(deltaLatitudeRadians);
+        point.longitude = centerLongitude + toDegrees(deltaLongitudeRadians);
         point.altitudeMeters = altitudeMeters;
         return point;
     }
@@ -102,7 +112,7 @@ DesiredState RouteTask::evaluate(
     double currentHeading,
     double dt)
 {
-    Q_UNUSED(dt);
+    (void)dt;
 
     if (m_points.isEmpty()) {
         m_state = State::Failed;
@@ -195,7 +205,7 @@ DesiredState FollowEntityTask::evaluate(double currentLat, double currentLon, do
     double targetHeading = bearingDegrees(currentLat, currentLon, m_targetLat, m_targetLon);
     double dist = distanceMeters(currentLat, currentLon, m_targetLat, m_targetLon);
     
-    double targetSpeed = qMax(m_targetSpeed, m_fallbackSpeed);
+    double targetSpeed = std::max(m_targetSpeed, m_fallbackSpeed);
     double assignedSpeed = (dist > 1500.0) ? targetSpeed + 40.0 : targetSpeed;
     double assignedAlt = (m_fallbackAlt > 0) ? m_fallbackAlt : m_targetAlt;
     
@@ -219,8 +229,8 @@ DesiredState OrbitAreaTask::evaluate(double currentLat, double currentLon, doubl
     m_state = State::Running;
     
     double distToCenter = distanceMeters(currentLat, currentLon, m_centerLat, m_centerLon);
-    double areaRadius = qMax(100.0, m_radiusMeters);
-    double orbitRadius = m_isPatrol ? qMax(200.0, areaRadius * 0.55) : qMax(150.0, areaRadius * 0.75);
+    double areaRadius = std::max(100.0, m_radiusMeters);
+    double orbitRadius = m_isPatrol ? std::max(200.0, areaRadius * 0.55) : std::max(150.0, areaRadius * 0.75);
     double approachRadius = orbitRadius * 1.15;
     
     double assignedHeading = currentHeading;
@@ -235,14 +245,14 @@ DesiredState OrbitAreaTask::evaluate(double currentLat, double currentLon, doubl
         
         // Approximate the target coordinate on the circle
         double angularDistance = orbitRadius / kEarthRadiusMeters;
-        double bearing = qDegreesToRadians(bearingFromCenter + lookAhead);
-        double lat1 = qDegreesToRadians(m_centerLat);
-        double lon1 = qDegreesToRadians(m_centerLon);
+        double bearing = toRadians(bearingFromCenter + lookAhead);
+        double lat1 = toRadians(m_centerLat);
+        double lon1 = toRadians(m_centerLon);
         
-        double lat2 = qAsin(qSin(lat1) * qCos(angularDistance) + qCos(lat1) * qSin(angularDistance) * qCos(bearing));
-        double lon2 = lon1 + qAtan2(qSin(bearing) * qSin(angularDistance) * qCos(lat1), qCos(angularDistance) - qSin(lat1) * qSin(lat2));
+        double lat2 = std::asin(std::sin(lat1) * std::cos(angularDistance) + std::cos(lat1) * std::sin(angularDistance) * std::cos(bearing));
+        double lon2 = lon1 + std::atan2(std::sin(bearing) * std::sin(angularDistance) * std::cos(lat1), std::cos(angularDistance) - std::sin(lat1) * std::sin(lat2));
         
-        assignedHeading = bearingDegrees(currentLat, currentLon, qRadiansToDegrees(lat2), qRadiansToDegrees(lon2));
+        assignedHeading = bearingDegrees(currentLat, currentLon, toDegrees(lat2), toDegrees(lon2));
     }
     
     return {assignedHeading, m_targetAlt, m_targetSpeed};
@@ -272,7 +282,7 @@ DesiredState PatrolAreaTask::evaluate(
     double currentHeading,
     double dt)
 {
-    Q_UNUSED(dt);
+    (void)dt;
 
     if (m_patrolPoints.isEmpty()) {
         m_state = State::Failed;
@@ -331,20 +341,20 @@ QVector<RoutePoint> buildPatrolRouteFromArea(const AreaDefinition& area)
 
     const double altitudeMeters = area.centerAltitudeMeters;
     const double semiMajorMeters =
-        qMax(area.areaType == QStringLiteral("Circle") ? area.radiusMeters : area.semiMajorAxisMeters, 100.0);
+        std::max(area.areaType == QStringLiteral("Circle") ? area.radiusMeters : area.semiMajorAxisMeters, 100.0);
     const double semiMinorMeters =
-        qMax(area.areaType == QStringLiteral("Circle") ? area.radiusMeters : area.semiMinorAxisMeters, 100.0);
-    const double rotationRadians = qDegreesToRadians(area.rotationDegrees);
+        std::max(area.areaType == QStringLiteral("Circle") ? area.radiusMeters : area.semiMinorAxisMeters, 100.0);
+    const double rotationRadians = toRadians(area.rotationDegrees);
 
     for (int index = 0; index < kGeneratedPatrolPointCount; ++index) {
         const double angle = (2.0 * M_PI * static_cast<double>(index)) /
                              static_cast<double>(kGeneratedPatrolPointCount);
-        const double localEast = qCos(angle) * semiMajorMeters;
-        const double localNorth = qSin(angle) * semiMinorMeters;
+        const double localEast = std::cos(angle) * semiMajorMeters;
+        const double localNorth = std::sin(angle) * semiMinorMeters;
         const double rotatedEast =
-            localEast * qCos(rotationRadians) - localNorth * qSin(rotationRadians);
+            localEast * std::cos(rotationRadians) - localNorth * std::sin(rotationRadians);
         const double rotatedNorth =
-            localEast * qSin(rotationRadians) + localNorth * qCos(rotationRadians);
+            localEast * std::sin(rotationRadians) + localNorth * std::cos(rotationRadians);
         route.push_back(offsetPointMeters(
             area.centerLatitude,
             area.centerLongitude,
