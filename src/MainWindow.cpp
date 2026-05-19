@@ -881,7 +881,13 @@ MainWindow::MainWindow(QWidget* parent)
   this->initializeModels();
   this->populateTaskCommands();
   this->_entityVisualStateManager->load();
-  this->_entityVisualStateManager->pruneAgainst(*this->_scenarioState);
+  {
+    QSet<QString> validNames;
+    for (const Entity& entity : this->_scenarioState->entities()) {
+      validNames.insert(entity.name);
+    }
+    this->_entityVisualStateManager->pruneTo(validNames);
+  }
   for (const Entity& entity : this->_scenarioState->entities()) {
     this->appendEntityToUi(entity);
   }
@@ -2835,8 +2841,14 @@ void MainWindow::syncScenarioStateToUi() {
     this->_ui->statusLabel->setText(QStringLiteral("No hay entidad seleccionada."));
   }
 
-  this->_entityVisualStateManager->pruneAgainst(*this->_scenarioState);
-  this->_entityHomePositionTracker->pruneAgainst(*this->_scenarioState);
+  {
+    QSet<QString> validNames;
+    for (const Entity& entity : this->_scenarioState->entities()) {
+      validNames.insert(entity.name);
+    }
+    this->_entityVisualStateManager->pruneTo(validNames);
+    this->_entityHomePositionTracker->pruneTo(validNames);
+  }
   this->pruneEntityPlans();
 
   for (const Entity& entity : this->_scenarioState->entities()) {

@@ -22,11 +22,15 @@ FetchContent_MakeAvailable(googletest)
 add_executable(qttest_unit_tests
     domain/TaskTest.cpp
     application/EventBusTest.cpp
+    presentation/EntityVisualStateManagerTest.cpp
+    presentation/EntityHomePositionTrackerTest.cpp
     # Sources under test. We re-compile them here rather than link against the
     # qttest executable target (which is a Qt application bundle). When the
     # core code is moved into a static library this list will collapse into a
     # single target_link_libraries() call.
     ${CMAKE_SOURCE_DIR}/src/domain/Task.cpp
+    ${CMAKE_SOURCE_DIR}/src/presentation/EntityVisualStateManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/presentation/EntityHomePositionTracker.cpp
 )
 
 target_include_directories(qttest_unit_tests PRIVATE

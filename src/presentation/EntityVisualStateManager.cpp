@@ -1,14 +1,10 @@
 #include "presentation/EntityVisualStateManager.h"
 
-#include "application/ScenarioState.h"
-#include "domain/Entity.h"
-
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QSet>
 
 namespace presentation {
 
@@ -88,12 +84,7 @@ void EntityVisualStateManager::save() const {
     file.write(document.toJson(QJsonDocument::Indented));
 }
 
-void EntityVisualStateManager::pruneAgainst(const ScenarioState& scenario) {
-    QSet<QString> validEntityNames;
-    for (const Entity& entity : scenario.entities()) {
-        validEntityNames.insert(entity.name);
-    }
-
+void EntityVisualStateManager::pruneTo(const QSet<QString>& validEntityNames) {
     bool removed = false;
     for (auto it = m_states.begin(); it != m_states.end();) {
         if (!validEntityNames.contains(it.key())) {

@@ -1,10 +1,10 @@
 #pragma once
 
 #include <QHash>
+#include <QSet>
 #include <QString>
 
 class Entity;
-class ScenarioState;
 
 namespace presentation {
 
@@ -31,8 +31,8 @@ public:
     // remembered.
     EntityHomePosition positionFor(const QString& entityName) const;
 
-    // Drop any record whose entity no longer exists in the supplied scenario.
-    void pruneAgainst(const ScenarioState& scenario);
+    // Drop any record whose entity name is not in the supplied set.
+    void pruneTo(const QSet<QString>& validEntityNames);
 
 private:
     QHash<QString, EntityHomePosition> m_positions;

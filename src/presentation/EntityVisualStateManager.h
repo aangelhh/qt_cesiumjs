@@ -1,9 +1,8 @@
 #pragma once
 
 #include <QHash>
+#include <QSet>
 #include <QString>
-
-class ScenarioState;
 
 namespace presentation {
 
@@ -17,7 +16,8 @@ struct EntityVisualState {
 
 // Owns the in-memory map of EntityVisualState records and the JSON file they
 // are persisted to. Extracted from MainWindow as part of the controller-split
-// refactor. Pure value semantics — no Qt widgets involved.
+// refactor. Pure value semantics — no Qt widgets involved, no dependency on
+// the scenario or application layer.
 class EntityVisualStateManager {
 public:
     // jsonFilePath is the absolute path to the persistence file
@@ -42,9 +42,9 @@ public:
     // Persist the current map atomically (truncates and rewrites the file).
     void save() const;
 
-    // Drop any record whose entity no longer exists in the supplied scenario.
-    // Auto-saves only when something was actually removed.
-    void pruneAgainst(const ScenarioState& scenario);
+    // Drop any record whose entity name is not in the supplied set. Auto-saves
+    // only when something was actually removed.
+    void pruneTo(const QSet<QString>& validEntityNames);
 
 private:
     QString m_jsonFilePath;
