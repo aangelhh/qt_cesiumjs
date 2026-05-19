@@ -67,6 +67,7 @@ qt_add_executable(qttest
     src/presentation/EntityTextFormatter.h
     src/presentation/EntityVisualStateManager.cpp
     src/presentation/EntityVisualStateManager.h
+    src/presentation/PlanTypes.h
 )
 
 target_link_libraries(qttest

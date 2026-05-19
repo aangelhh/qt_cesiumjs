@@ -13,6 +13,7 @@
 #include <memory>
 
 #include "application/SimulationEngine.h"
+#include "presentation/PlanTypes.h"
 
 class QAction;
 class AddEntityDialog;
@@ -102,44 +103,8 @@ private slots:
   void stopSimulation();
 
 private:
-  struct PendingBombRelease {
-    QString launcherEntityName;
-    QString targetEntityName;
-    double targetLatitude = 0.0;
-    double targetLongitude = 0.0;
-    double targetAltitudeMeters = 0.0;
-    QString targetLabel;
-    QString sourceDescription;
-    bool pending = false;
-    bool releaseCommandIssued = false;
-  };
-
-  enum class PlanStepKind {
-    MoveToLocation,
-    MoveToWaypoint,
-    MoveAlongRoute,
-    PatrolArea,
-    FlyHeadingAltitudeSpeed,
-    OrbitHoldLocation,
-    ReturnToBase,
-    AttackAir,
-    AttackSurface,
-  };
-
-  struct PlanStep {
-    PlanStepKind kind = PlanStepKind::MoveToLocation;
-    EntityTask task;
-    QString label;
-    QString status = QStringLiteral("NotStarted");
-  };
-
-  struct EntityPlan {
-    QVector<PlanStep> steps;
-    int currentStepIndex = -1;
-    bool running = false;
-    int currentStableTicks = 0;
-    QString status = QStringLiteral("NotStarted");
-  };
+  // PendingBombRelease, PlanStepKind, PlanStep, EntityPlan now in
+  // presentation/PlanTypes.h
 
   void initializeModels();
   void appendEntityToUi(const struct Entity& entity);

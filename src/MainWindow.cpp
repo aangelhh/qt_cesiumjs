@@ -1732,7 +1732,7 @@ QStringList MainWindow::availableAreaNames() const {
   return names;
 }
 
-MainWindow::EntityPlan& MainWindow::ensureEntityPlan(const QString& entityName) {
+EntityPlan& MainWindow::ensureEntityPlan(const QString& entityName) {
   return this->_entityPlans[entityName];
 }
 
