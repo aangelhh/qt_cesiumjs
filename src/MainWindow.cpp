@@ -11,6 +11,7 @@
 #include "infrastructure/MapBridge.h"
 #include "infrastructure/ModelCatalog.h"
 #include "presentation/EntityTextFormatter.h"
+#include "presentation/EntityVisualStateManager.h"
 #include "ui_MainWindow.h"
 
 #include <QAbstractItemView>
@@ -864,7 +865,9 @@ MainWindow::MainWindow(QWidget* parent)
       _pendingAreaSemiMajorMeters(1000.0),
       _pendingAreaSemiMinorMeters(600.0),
       _pendingAreaRotationDegrees(0.0),
-      m_simulationEngine(new application::SimulationEngine(_scenarioState, this))
+      m_simulationEngine(new application::SimulationEngine(_scenarioState, this)),
+      _entityVisualStateManager(std::make_unique<presentation::EntityVisualStateManager>(
+          QDir(projectRootPath()).absoluteFilePath(QStringLiteral("Data/entity_visual_state.json"))))
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
       , _webView(nullptr)
 #endif
@@ -875,8 +878,8 @@ MainWindow::MainWindow(QWidget* parent)
 
   this->initializeModels();
   this->populateTaskCommands();
-  this->loadEntityVisualStates();
-  this->pruneEntityVisualStates();
+  this->_entityVisualStateManager->load();
+  this->_entityVisualStateManager->pruneAgainst(*this->_scenarioState);
   for (const Entity& entity : this->_scenarioState->entities()) {
     this->appendEntityToUi(entity);
   }
@@ -1673,7 +1676,8 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
 }
 
 QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
-  const EntityVisualState visualState = this->entityVisualStateFor(entity.name);
+  const presentation::EntityVisualState visualState =
+      this->_entityVisualStateManager->stateFor(entity.name);
   const QString damageState = entity.damageStateLabel();
 
   QVariantMap summary = makeTrackSummary(
@@ -1764,14 +1768,6 @@ QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
   }
   summary.insert(QStringLiteral("sensorContacts"), contacts);
   return summary;
-}
-
-MainWindow::EntityVisualState MainWindow::entityVisualStateFor(const QString& entityName) const {
-  return this->_entityVisualStates.value(entityName);
-}
-
-MainWindow::EntityVisualState& MainWindow::ensureEntityVisualState(const QString& entityName) {
-  return this->_entityVisualStates[entityName];
 }
 
 MainWindow::EntityHomePosition MainWindow::entityHomePositionFor(const QString& entityName) const {
@@ -1883,82 +1879,6 @@ void MainWindow::rememberEntityHomePosition(const Entity& entity) {
       entity.altitude,
       true,
   });
-}
-
-QString MainWindow::entityVisualStatePath() const {
-  return QDir(projectRootPath()).absoluteFilePath(QStringLiteral("Data/entity_visual_state.json"));
-}
-
-void MainWindow::loadEntityVisualStates() {
-  this->_entityVisualStates.clear();
-
-  QFile file(this->entityVisualStatePath());
-  if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
-    return;
-  }
-
-  const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
-  if (!document.isObject()) {
-    return;
-  }
-
-  const QJsonObject entitiesObject = document.object().value(QStringLiteral("entities")).toObject();
-  for (auto it = entitiesObject.begin(); it != entitiesObject.end(); ++it) {
-    const QJsonObject stateObject = it.value().toObject();
-    EntityVisualState visualState;
-    visualState.hidden = stateObject.value(QStringLiteral("hidden")).toBool(false);
-    visualState.radarCoverageVisible =
-        stateObject.value(QStringLiteral("radarCoverageVisible")).toBool(false);
-    visualState.trackHistoryVisible =
-        stateObject.value(QStringLiteral("trackHistoryVisible")).toBool(false);
-    this->_entityVisualStates.insert(it.key(), visualState);
-  }
-}
-
-void MainWindow::saveEntityVisualStates() const {
-  QJsonObject entitiesObject;
-  for (auto it = this->_entityVisualStates.constBegin(); it != this->_entityVisualStates.constEnd(); ++it) {
-    entitiesObject.insert(it.key(), QJsonObject{
-                                      {QStringLiteral("hidden"), it.value().hidden},
-                                      {QStringLiteral("radarCoverageVisible"),
-                                       it.value().radarCoverageVisible},
-                                      {QStringLiteral("trackHistoryVisible"),
-                                       it.value().trackHistoryVisible},
-                                  });
-  }
-
-  QFile file(this->entityVisualStatePath());
-  const QFileInfo info(file);
-  QDir().mkpath(info.absolutePath());
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-    return;
-  }
-
-  const QJsonDocument document(QJsonObject{
-      {QStringLiteral("entities"), entitiesObject},
-  });
-  file.write(document.toJson(QJsonDocument::Indented));
-}
-
-void MainWindow::pruneEntityVisualStates() {
-  QSet<QString> validEntityNames;
-  for (const Entity& entity : this->_scenarioState->entities()) {
-    validEntityNames.insert(entity.name);
-  }
-
-  bool removed = false;
-  for (auto it = this->_entityVisualStates.begin(); it != this->_entityVisualStates.end();) {
-    if (!validEntityNames.contains(it.key())) {
-      it = this->_entityVisualStates.erase(it);
-      removed = true;
-      continue;
-    }
-    ++it;
-  }
-
-  if (removed) {
-    this->saveEntityVisualStates();
-  }
 }
 
 void MainWindow::pruneEntityHomePositions() {
@@ -2168,11 +2088,12 @@ void MainWindow::openAddEntityDialog() {
               return sensor.sensorType.compare(QStringLiteral("radar"), Qt::CaseInsensitive) == 0;
             });
         if (hasRadarSensor && !entity.name.trimmed().isEmpty() &&
-            !this->_entityVisualStates.contains(entity.name)) {
-          EntityVisualState& visualState = this->ensureEntityVisualState(entity.name);
+            !this->_entityVisualStateManager->contains(entity.name)) {
+          presentation::EntityVisualState& visualState =
+              this->_entityVisualStateManager->ensureState(entity.name);
           visualState.radarCoverageVisible = true;
           visualState.trackHistoryVisible = false;
-          this->saveEntityVisualStates();
+          this->_entityVisualStateManager->save();
         }
         this->_scenarioState->addEntity(entity);
         this->appendEntityToUi(entity);
@@ -2944,7 +2865,7 @@ void MainWindow::syncScenarioStateToUi() {
     this->_ui->statusLabel->setText(QStringLiteral("No hay entidad seleccionada."));
   }
 
-  this->pruneEntityVisualStates();
+  this->_entityVisualStateManager->pruneAgainst(*this->_scenarioState);
   this->pruneEntityHomePositions();
   this->pruneEntityPlans();
 
@@ -4589,7 +4510,7 @@ void MainWindow::setSelectedEntityHidden(bool hidden) {
     return;
   }
 
-  EntityVisualState visualState = this->entityVisualStateFor(entityName);
+  presentation::EntityVisualState visualState = this->_entityVisualStateManager->stateFor(entityName);
   if (visualState.hidden == hidden) {
     return;
   }
@@ -4598,11 +4519,11 @@ void MainWindow::setSelectedEntityHidden(bool hidden) {
   if (!visualState.hidden &&
       !visualState.radarCoverageVisible &&
       !visualState.trackHistoryVisible) {
-    this->_entityVisualStates.remove(entityName);
+    this->_entityVisualStateManager->remove(entityName);
   } else {
-    this->ensureEntityVisualState(entityName) = visualState;
+    this->_entityVisualStateManager->ensureState(entityName) = visualState;
   }
-  this->saveEntityVisualStates();
+  this->_entityVisualStateManager->save();
 
   this->appendLogMessage(
       QStringLiteral("Entity %1 %2")
@@ -4621,7 +4542,7 @@ void MainWindow::setSelectedEntityRadarCoverageVisible(bool visible) {
     return;
   }
 
-  EntityVisualState visualState = this->entityVisualStateFor(entityName);
+  presentation::EntityVisualState visualState = this->_entityVisualStateManager->stateFor(entityName);
   if (visualState.radarCoverageVisible == visible) {
     return;
   }
@@ -4630,11 +4551,11 @@ void MainWindow::setSelectedEntityRadarCoverageVisible(bool visible) {
   if (!visualState.hidden &&
       !visualState.radarCoverageVisible &&
       !visualState.trackHistoryVisible) {
-    this->_entityVisualStates.remove(entityName);
+    this->_entityVisualStateManager->remove(entityName);
   } else {
-    this->ensureEntityVisualState(entityName) = visualState;
+    this->_entityVisualStateManager->ensureState(entityName) = visualState;
   }
-  this->saveEntityVisualStates();
+  this->_entityVisualStateManager->save();
 
   this->appendLogMessage(
       QStringLiteral("Radar coverage %1 for %2")
@@ -4653,7 +4574,7 @@ void MainWindow::setSelectedEntityTrackHistoryVisible(bool visible) {
     return;
   }
 
-  EntityVisualState visualState = this->entityVisualStateFor(entityName);
+  presentation::EntityVisualState visualState = this->_entityVisualStateManager->stateFor(entityName);
   if (visualState.trackHistoryVisible == visible) {
     return;
   }
@@ -4662,11 +4583,11 @@ void MainWindow::setSelectedEntityTrackHistoryVisible(bool visible) {
   if (!visualState.hidden &&
       !visualState.radarCoverageVisible &&
       !visualState.trackHistoryVisible) {
-    this->_entityVisualStates.remove(entityName);
+    this->_entityVisualStateManager->remove(entityName);
   } else {
-    this->ensureEntityVisualState(entityName) = visualState;
+    this->_entityVisualStateManager->ensureState(entityName) = visualState;
   }
-  this->saveEntityVisualStates();
+  this->_entityVisualStateManager->save();
 
   this->appendLogMessage(
       QStringLiteral("Track history %1 for %2")

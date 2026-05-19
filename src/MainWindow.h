@@ -10,6 +10,8 @@
 #include <QVariantMap>
 #include <QVector>
 
+#include <memory>
+
 #include "application/SimulationEngine.h"
 
 class QAction;
@@ -31,6 +33,10 @@ class QWebEngineView;
 struct AreaDefinition;
 struct RouteGraphic;
 struct Waypoint;
+
+namespace presentation {
+class EntityVisualStateManager;
+}
 
 namespace Ui {
 class MainWindow;
@@ -95,12 +101,6 @@ private slots:
   void stopSimulation();
 
 private:
-  struct EntityVisualState {
-    bool hidden = false;
-    bool radarCoverageVisible = false;
-    bool trackHistoryVisible = false;
-  };
-
   struct EntityHomePosition {
     double latitude = 0.0;
     double longitude = 0.0;
@@ -204,8 +204,6 @@ private:
   void showTaskQuickPlaceholder(const QString& actionName);
   void populateEntityContextMenu(QMenu& menu);
   QVariantMap makeEntityTrackSummary(const class Entity& entity) const;
-  EntityVisualState entityVisualStateFor(const QString& entityName) const;
-  EntityVisualState& ensureEntityVisualState(const QString& entityName);
   EntityHomePosition entityHomePositionFor(const QString& entityName) const;
   const Waypoint* findWaypointByName(const QString& waypointName) const;
   const RouteGraphic* findRouteByName(const QString& routeName) const;
@@ -215,10 +213,6 @@ private:
   QStringList availableAreaNames() const;
   EntityPlan& ensureEntityPlan(const QString& entityName);
   void rememberEntityHomePosition(const class Entity& entity);
-  QString entityVisualStatePath() const;
-  void loadEntityVisualStates();
-  void saveEntityVisualStates() const;
-  void pruneEntityVisualStates();
   void pruneEntityHomePositions();
   void pruneEntityPlans();
   QString planStepDisplayLabel(const PlanStep& step) const;
@@ -294,7 +288,6 @@ private:
   QList<QToolButton*> _taskQuickButtons;
   QSet<QString> _activeMunitionTrackNames;
   QSet<QString> _activeEffectTrackNames;
-  QHash<QString, EntityVisualState> _entityVisualStates;
   QHash<QString, EntityHomePosition> _entityHomePositions;
   QHash<QString, double> _autoBombReleaseCooldownSeconds;
   QHash<QString, int> _autoBehaviorDamageReactionLevel;
@@ -303,6 +296,7 @@ private:
   QHash<QString, EntityPlan> _entityPlans;
   PendingBombRelease _pendingBombRelease;
   application::SimulationEngine* m_simulationEngine;
+  std::unique_ptr<presentation::EntityVisualStateManager> _entityVisualStateManager;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif

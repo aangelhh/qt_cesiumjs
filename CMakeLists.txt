@@ -59,6 +59,8 @@ qt_add_executable(qttest
     src/domain/Task.h
     src/presentation/EntityTextFormatter.cpp
     src/presentation/EntityTextFormatter.h
+    src/presentation/EntityVisualStateManager.cpp
+    src/presentation/EntityVisualStateManager.h
 )
 
 target_link_libraries(qttest
