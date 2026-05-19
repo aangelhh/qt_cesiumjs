@@ -7,6 +7,7 @@
 #include "application/SimulationEngine.h"
 #include "application/Command.h"
 #include "domain/BombReleaseGate.h"
+#include "domain/CombatRules.h"
 #include "domain/Entity.h"
 #include "domain/GeoMath.h"
 #include "infrastructure/CesiumScenePage.h"
@@ -94,21 +95,9 @@ QString planStatusDisplayLabel(const QString& status) {
   return status;
 }
 
-bool attackTaskStatusIsTerminal(const QString& status) {
-  return status == kTaskStatusCompleted ||
-         status == kTaskStatusFailed ||
-         status == QStringLiteral("Target unavailable");
-}
-
-bool attackSurfaceCoordinatesAreUsable(double latitude, double longitude) {
-  if (!std::isfinite(latitude) || !std::isfinite(longitude)) {
-    return false;
-  }
-  if (latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0) {
-    return false;
-  }
-  return !(qFuzzyIsNull(latitude) && qFuzzyIsNull(longitude));
-}
+// attackTaskStatusIsTerminal, attackSurfaceCoordinatesAreUsable,
+// autoBehaviorDamageReactionLevel, autoBehaviorCanEngageByDamage
+// moved to domain/CombatRules.h
 
 bool activeMissileInFlightForTarget(
     const ScenarioState* scenarioState,
@@ -132,22 +121,8 @@ bool activeMissileInFlightForTarget(
 }
 
 
-int autoBehaviorDamageReactionLevel(const Entity& entity) {
-  if (entity.destroyed) {
-    return 3;
-  }
-  if (entity.damagePercent >= 80.0) {
-    return 2;
-  }
-  if (entity.damagePercent >= 50.0) {
-    return 1;
-  }
-  return 0;
-}
-
-bool autoBehaviorCanEngageByDamage(const Entity& entity) {
-  return autoBehaviorDamageReactionLevel(entity) == 0;
-}
+// autoBehaviorDamageReactionLevel, autoBehaviorCanEngageByDamage
+// moved to domain/CombatRules.h
 
 QStringList behaviorModeOptions() {
   return {
@@ -3724,7 +3699,7 @@ bool MainWindow::validatePlanStepForExecution(const PlanStep& step, QString* rea
         }
         return true;
       }
-      if (!attackSurfaceCoordinatesAreUsable(
+      if (!domain::attackSurfaceCoordinatesAreUsable(
               step.task.targetLatitude,
               step.task.targetLongitude)) {
         return setReason(QStringLiteral("surface target coordinates are not set"));
@@ -5440,7 +5415,7 @@ void MainWindow::processAttackTasks(double deltaSeconds) {
       this->_attackAirElapsedSeconds.remove(entity.name);
       this->_attackAirMissileCooldownSeconds.remove(entity.name);
     }
-    if (taskType == QStringLiteral("AttackAir") && attackTaskStatusIsTerminal(taskStatus)) {
+    if (taskType == QStringLiteral("AttackAir") && domain::attackTaskStatusIsTerminal(taskStatus)) {
       this->_attackAirElapsedSeconds.remove(entity.name);
       this->_attackAirMissileCooldownSeconds.remove(entity.name);
     }
@@ -5448,7 +5423,7 @@ void MainWindow::processAttackTasks(double deltaSeconds) {
         entity.destroyed ||
         (taskType != QStringLiteral("AttackAir") &&
          taskType != QStringLiteral("AttackSurface")) ||
-        attackTaskStatusIsTerminal(taskStatus)) {
+        domain::attackTaskStatusIsTerminal(taskStatus)) {
       continue;
     }
     taskEntityNames.push_back(entity.name);
@@ -5637,7 +5612,7 @@ bool MainWindow::processAttackSurfaceTask(const QString& entityName) {
     targetLabel = target->name;
     targetEntityName = target->name;
   } else {
-    if (!attackSurfaceCoordinatesAreUsable(targetLatitude, targetLongitude)) {
+    if (!domain::attackSurfaceCoordinatesAreUsable(targetLatitude, targetLongitude)) {
       return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
     }
     targetLabel = attackPointLabel(targetLatitude, targetLongitude);
@@ -5713,7 +5688,7 @@ void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
       continue;
     }
 
-    const int damageReactionLevel = autoBehaviorDamageReactionLevel(launcher);
+    const int damageReactionLevel = domain::autoBehaviorDamageReactionLevel(launcher);
     const int previousReactionLevel =
         this->_autoBehaviorDamageReactionLevel.value(launcher.name, -1);
     if (damageReactionLevel != previousReactionLevel) {
@@ -5735,7 +5710,7 @@ void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
                 .arg(launcher.damagePercent, 0, 'f', 0));
       }
     }
-    if (!autoBehaviorCanEngageByDamage(launcher)) {
+    if (!domain::autoBehaviorCanEngageByDamage(launcher)) {
       continue;
     }
 

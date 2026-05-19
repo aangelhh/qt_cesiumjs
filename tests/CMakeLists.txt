@@ -23,6 +23,7 @@ add_executable(qttest_unit_tests
     domain/TaskTest.cpp
     domain/GeoMathTest.cpp
     domain/BombReleaseGateTest.cpp
+    domain/CombatRulesTest.cpp
     application/EventBusTest.cpp
     presentation/EntityVisualStateManagerTest.cpp
     presentation/EntityHomePositionTrackerTest.cpp
@@ -33,6 +34,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/domain/Task.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/GeoMath.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/BombReleaseGate.cpp
+    ${CMAKE_SOURCE_DIR}/src/domain/CombatRules.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/EntityVisualStateManager.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/EntityHomePositionTracker.cpp
 )

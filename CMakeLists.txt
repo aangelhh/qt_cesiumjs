@@ -55,6 +55,8 @@ qt_add_executable(qttest
     src/application/SensorEngine.h
     src/domain/BombReleaseGate.cpp
     src/domain/BombReleaseGate.h
+    src/domain/CombatRules.cpp
+    src/domain/CombatRules.h
     src/domain/Entity.h
     src/domain/GeoMath.cpp
     src/domain/GeoMath.h
