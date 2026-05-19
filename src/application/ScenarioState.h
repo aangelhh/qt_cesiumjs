@@ -57,6 +57,7 @@ private:
   QStringList _pendingEventLogMessages;
   std::unordered_map<QString, domain::TaskStack> _taskStacks;
   std::unordered_map<QString, double> _behaviorMissileCooldownSeconds;
+  std::unordered_map<QString, int> _behaviorDamageReactionLevel;
   QVector<Waypoint> _waypoints;
   QVector<RouteGraphic> _routes;
   QVector<AreaDefinition> _areas;

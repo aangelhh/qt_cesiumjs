@@ -130,6 +130,24 @@ bool activeMissileInFlightForTarget(
   return false;
 }
 
+
+int autoBehaviorDamageReactionLevel(const Entity& entity) {
+  if (entity.destroyed) {
+    return 3;
+  }
+  if (entity.damagePercent >= 80.0) {
+    return 2;
+  }
+  if (entity.damagePercent >= 50.0) {
+    return 1;
+  }
+  return 0;
+}
+
+bool autoBehaviorCanEngageByDamage(const Entity& entity) {
+  return autoBehaviorDamageReactionLevel(entity) == 0;
+}
+
 QStringList behaviorModeOptions() {
   return {
       QStringLiteral("Manual"),
@@ -5924,6 +5942,33 @@ void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
         launcher.destroyed ||
         launcher.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0 ||
         weaponQuantity(launcher, QStringLiteral("Bomb")) <= 0) {
+      this->_autoBehaviorDamageReactionLevel.remove(launcher.name);
+      continue;
+    }
+
+    const int damageReactionLevel = autoBehaviorDamageReactionLevel(launcher);
+    const int previousReactionLevel =
+        this->_autoBehaviorDamageReactionLevel.value(launcher.name, -1);
+    if (damageReactionLevel != previousReactionLevel) {
+      this->_autoBehaviorDamageReactionLevel.insert(launcher.name, damageReactionLevel);
+      if (damageReactionLevel >= 2) {
+        this->appendLogMessage(
+            QStringLiteral("%1 auto bombing blocked: critical damage (%2%).")
+                .arg(launcher.name)
+                .arg(launcher.damagePercent, 0, 'f', 0));
+      } else if (damageReactionLevel >= 1) {
+        this->appendLogMessage(
+            QStringLiteral("%1 auto bombing blocked: damage threshold reached (%2%).")
+                .arg(launcher.name)
+                .arg(launcher.damagePercent, 0, 'f', 0));
+      } else {
+        this->appendLogMessage(
+            QStringLiteral("%1 auto bombing re-enabled by damage state (%2%).")
+                .arg(launcher.name)
+                .arg(launcher.damagePercent, 0, 'f', 0));
+      }
+    }
+    if (!autoBehaviorCanEngageByDamage(launcher)) {
       continue;
     }
 
