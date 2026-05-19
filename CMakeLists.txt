@@ -104,3 +104,15 @@ install(TARGETS qttest
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+# ---------------------------------------------------------------------------
+# Warning flags
+# ---------------------------------------------------------------------------
+if(MSVC)
+    target_compile_options(qttest PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(qttest PRIVATE
+        -Wall -Wextra -Wpedantic
+        -Wno-unused-parameter
+    )
+endif()

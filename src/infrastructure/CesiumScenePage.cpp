@@ -1,8 +1,13 @@
 #include "infrastructure/CesiumScenePage.h"
 
+#include <QByteArray>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonValue>
+#include <QProcessEnvironment>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -11,6 +16,28 @@ namespace {
 
 QString trimCopy(const QString& value) {
   return value.trimmed();
+}
+
+// Serialise a string as a safe JavaScript string literal (including surrounding
+// single quotes). Using QJsonDocument guarantees correct escaping of quotes,
+// backslashes, control characters and unicode; this prevents JS/HTML injection
+// when the value is interpolated into the embedded Cesium HTML page.
+QString jsStringLiteral(const QString& value) {
+  const QByteArray jsonEncoded =
+      QJsonDocument::fromVariant(QVariant(value)).toJson(QJsonDocument::Compact);
+  // toJson on a string variant produces `"the\nvalue"` (double-quoted). The
+  // template uses single quotes, so unwrap and re-quote with single quotes,
+  // escaping any embedded single quote and backslash.
+  QString s = QString::fromUtf8(jsonEncoded);
+  if (s.size() >= 2 && s.startsWith('"') && s.endsWith('"')) {
+    s = s.mid(1, s.size() - 2);
+  }
+  s.replace(QStringLiteral("\\\""), QStringLiteral("\""));
+  s.replace(QStringLiteral("\\"), QStringLiteral("\\\\"));
+  s.replace(QStringLiteral("'"), QStringLiteral("\\'"));
+  // Belt-and-suspenders: forbid </script> sequences breaking out of the tag.
+  s.replace(QStringLiteral("</"), QStringLiteral("<\\/"));
+  return QStringLiteral("'") + s + QStringLiteral("'");
 }
 
 QString readConfigValueFromPath(const QString& path, const QString& key) {
@@ -52,6 +79,13 @@ QString readConfigValueFromPath(const QString& path, const QString& key) {
 } // namespace
 
 QString CesiumScenePage::readConfigValue(const QString& key) {
+  // Restrict keys to alphanumerics and underscore to avoid abuse if the key
+  // ever flows from an untrusted source (defence in depth).
+  static const QRegularExpression validKey(QStringLiteral("^[A-Za-z_][A-Za-z0-9_]*$"));
+  if (!validKey.match(key).hasMatch()) {
+    return {};
+  }
+
 #ifdef QTTEST_SOURCE_DIR
   const QString sourceConfigPath =
       QDir(QString::fromUtf8(QTTEST_SOURCE_DIR)).absoluteFilePath(
@@ -66,10 +100,33 @@ QString CesiumScenePage::readConfigValue(const QString& key) {
 }
 
 QString CesiumScenePage::defaultAccessToken() {
-  return QStringLiteral(
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjNWNiODVhZi1lMjRkLTQx"
-      "MWEtOGUwOC00NzljMjJhMjkxZTYiLCJpZCI6MjQ2OTk4LCJpYXQiOjE3Mjg1MTI1MDd9."
-      "R24O2_Qcl0RbryxLDr2WS5r7jkoxJIpdKJmg34N-Z28");
+  // Highest priority: environment variable (suitable for CI / per-user setup
+  // without committing secrets).
+  const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+  const QString envToken = env.value(QStringLiteral("CESIUM_ION_TOKEN"));
+  if (!envToken.isEmpty()) {
+    return envToken;
+  }
+
+  // Next, an optional local file outside source control.
+#ifdef QTTEST_SOURCE_DIR
+  const QString sourceTokenPath =
+      QDir(QString::fromUtf8(QTTEST_SOURCE_DIR)).absoluteFilePath(
+          QStringLiteral(".cesium.token"));
+  QFile tokenFile(sourceTokenPath);
+  if (tokenFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    const QString fileToken =
+        QString::fromUtf8(tokenFile.readAll()).trimmed();
+    if (!fileToken.isEmpty()) {
+      return fileToken;
+    }
+  }
+#endif
+
+  // No baked-in default: callers must provide a token via env var,
+  // .cesium.token, or cesium.conf. Returning an empty string causes the page
+  // to surface a clear error instead of using a leaked credential.
+  return {};
 }
 
 QString CesiumScenePage::defaultAssetId() {
@@ -92,9 +149,7 @@ QUrl CesiumScenePage::cesiumSourceBaseUrl() {
 }
 
 QString CesiumScenePage::buildHtml(const QString& accessToken) {
-  QString escapedToken = accessToken;
-  escapedToken.replace("\\", "\\\\");
-  escapedToken.replace("'", "\\'");
+  const QString escapedToken = jsStringLiteral(accessToken);
 
   const QUrl vendorBaseUrl = cesiumSourceBaseUrl();
   const QString vendorBaseHref = vendorBaseUrl.toString();
@@ -2628,7 +2683,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             }
           });
 
-          Cesium.Ion.defaultAccessToken = '%1';
+          Cesium.Ion.defaultAccessToken = %1;
 
           viewer = new Cesium.Viewer('cesiumContainer', {
             terrainProvider: await Cesium.createWorldTerrainAsync(),
