@@ -83,11 +83,6 @@ constexpr int kTaskQuickBarIconPixels = 18;
 constexpr double kOrbitHoldDefaultRadiusMeters = 1500.0;
 // Bomb release constants now in domain/BombReleaseGate.h
 // Attack timing constants now in application/AttackTaskProcessor.h
-constexpr QLatin1StringView kTaskStatusNotStarted("NotStarted");
-constexpr QLatin1StringView kTaskStatusRunning("Running");
-constexpr QLatin1StringView kTaskStatusCompleted("Completed");
-constexpr QLatin1StringView kTaskStatusFailed("Failed");
-constexpr QLatin1StringView kTaskStatusCompletedWithFailures("CompletedWithFailures");
 
 // planStatusDisplayLabel moved to domain/CombatRules.h
 

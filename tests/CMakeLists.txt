@@ -25,6 +25,7 @@ add_executable(qttest_unit_tests
     domain/BombReleaseGateTest.cpp
     domain/CombatRulesTest.cpp
     application/EventBusTest.cpp
+    application/AttackTaskProcessorTest.cpp
     presentation/EntityVisualStateManagerTest.cpp
     presentation/EntityHomePositionTrackerTest.cpp
     presentation/TrackIconProviderTest.cpp
@@ -36,6 +37,12 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/domain/GeoMath.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/BombReleaseGate.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/CombatRules.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/ScenarioState.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/ScenarioQueries.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/AttackTaskProcessor.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/SensorEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/FlightDynamicsEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/presentation/BombReleaseController.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/EntityVisualStateManager.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/EntityHomePositionTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/TrackIconProvider.cpp
