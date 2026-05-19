@@ -62,3 +62,29 @@ TEST(CombatRules, CanEngageByDamage) {
   e.damagePercent = 50.0;
   EXPECT_FALSE(autoBehaviorCanEngageByDamage(e));
 }
+
+TEST(CombatRules, ForceIdentifierLabels) {
+  EXPECT_EQ(domain::forceIdentifierLabel(1), QStringLiteral("Friendly"));
+  EXPECT_EQ(domain::forceIdentifierLabel(2), QStringLiteral("Opposing"));
+  EXPECT_EQ(domain::forceIdentifierLabel(3), QStringLiteral("Neutral"));
+  EXPECT_EQ(domain::forceIdentifierLabel(99), QStringLiteral("Unknown"));
+}
+
+TEST(CombatRules, EntityCanUseMissileActions) {
+  Entity e;
+  e.destroyed = false;
+  e.domain = QStringLiteral("Air");
+  e.category = QStringLiteral("Fighter");
+  EXPECT_TRUE(domain::entityCanUseMissileActions(e));
+
+  e.destroyed = true;
+  EXPECT_FALSE(domain::entityCanUseMissileActions(e));
+
+  e.destroyed = false;
+  e.domain = QStringLiteral("Surface");
+  EXPECT_FALSE(domain::entityCanUseMissileActions(e));
+
+  e.domain = QStringLiteral("Air");
+  e.category = QStringLiteral("Transport");
+  EXPECT_FALSE(domain::entityCanUseMissileActions(e));
+}

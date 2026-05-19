@@ -40,4 +40,19 @@ bool autoBehaviorCanEngageByDamage(const Entity& entity) {
   return autoBehaviorDamageReactionLevel(entity) == 0;
 }
 
+QString forceIdentifierLabel(int forceIdentifier) {
+  switch (forceIdentifier) {
+    case 1: return QStringLiteral("Friendly");
+    case 2: return QStringLiteral("Opposing");
+    case 3: return QStringLiteral("Neutral");
+    default: return QStringLiteral("Unknown");
+  }
+}
+
+bool entityCanUseMissileActions(const Entity& entity) {
+  return !entity.destroyed &&
+         entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0 &&
+         entity.category.compare(QStringLiteral("Fighter"), Qt::CaseInsensitive) == 0;
+}
+
 } // namespace domain

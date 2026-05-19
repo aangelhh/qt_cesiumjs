@@ -255,24 +255,7 @@ QVariantMap makeTrackSummary(
   };
 }
 
-QString forceIdentifierLabel(int forceIdentifier) {
-  switch (forceIdentifier) {
-    case 1:
-      return QStringLiteral("Friendly");
-    case 2:
-      return QStringLiteral("Opposing");
-    case 3:
-      return QStringLiteral("Neutral");
-    default:
-      return QStringLiteral("Unknown");
-  }
-}
-
-bool entityCanUseMissileActions(const Entity& entity) {
-  return !entity.destroyed &&
-         entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0 &&
-         entity.category.compare(QStringLiteral("Fighter"), Qt::CaseInsensitive) == 0;
-}
+// forceIdentifierLabel, entityCanUseMissileActions moved to domain/CombatRules.h
 
 // weaponQuantity moved to domain/BombReleaseGate.h
 
@@ -324,7 +307,7 @@ QString missileTargetDisplayLabel(const Entity& entity, double rangeMeters) {
   return QStringLiteral("%1 (%2 / %3, %4 km)")
       .arg(
           entity.name,
-          forceIdentifierLabel(entity.forceIdentifier),
+          domain::forceIdentifierLabel(entity.forceIdentifier),
           entity.category,
           QString::number(rangeMeters / 1000.0, 'f', 1));
 }
@@ -343,7 +326,7 @@ QVariantMap makeMunitionTrackSummary(const ActiveMunition& munition) {
   QVariantMap summary = makeTrackSummary(
       munition.id,
       QStringLiteral("Munition"),
-      forceIdentifierLabel(munition.forceIdentifier),
+      domain::forceIdentifierLabel(munition.forceIdentifier),
       QStringLiteral("%1 m").arg(altitudeMeters, 0, 'f', 0),
       formatPosition(munition.latitude, munition.longitude),
       munition.status.trimmed().isEmpty() ? QStringLiteral("Flying") : munition.status,
@@ -379,7 +362,7 @@ QVariantMap makeTransientEffectTrackSummary(const TransientEffect& effect) {
   QVariantMap summary = makeTrackSummary(
       effect.id,
       QStringLiteral("Effect"),
-      forceIdentifierLabel(effect.forceIdentifier),
+      domain::forceIdentifierLabel(effect.forceIdentifier),
       QStringLiteral("%1 m").arg(altitudeMeters, 0, 'f', 0),
       formatPosition(effect.latitude, effect.longitude),
       effect.effectType,
@@ -542,7 +525,7 @@ const Entity* bestDetectedSurfaceBombTarget(
 
 QString bombTargetDisplayLabel(const Entity& entity) {
   return QStringLiteral("%1 (%2 / %3)")
-      .arg(entity.name, forceIdentifierLabel(entity.forceIdentifier), entity.domain);
+      .arg(entity.name, domain::forceIdentifierLabel(entity.forceIdentifier), entity.domain);
 }
 
 void setTrackData(QStandardItem* item, const QVariantMap& summary) {
@@ -1221,7 +1204,7 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
     }
   }
 
-  const bool canUseWeapons = entityCanUseMissileActions(*entity);
+  const bool canUseWeapons = domain::entityCanUseMissileActions(*entity);
 
   bool hasAirTarget = false;
   bool hasDetectedAirTarget = false;
@@ -1502,7 +1485,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
       makeTrackSummary(
           category,
           QStringLiteral("Category"),
-          forceIdentifierLabel(entity.forceIdentifier),
+          domain::forceIdentifierLabel(entity.forceIdentifier),
           QStringLiteral("-"),
           QStringLiteral("Multiple tracks"),
           QStringLiteral("Category"),
@@ -1510,7 +1493,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
           0.0));
 
   auto* item = new QStandardItem(entity.name);
-  item->setIcon(makeTrackIcon(forceIdentifierLabel(entity.forceIdentifier), category, false));
+  item->setIcon(makeTrackIcon(domain::forceIdentifierLabel(entity.forceIdentifier), category, false));
   setTrackData(item, summary);
   categoryItem->appendRow(item);
   this->_ui->objectsTreeView->expand(rootItem->index());
@@ -1530,7 +1513,7 @@ QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
   QVariantMap summary = makeTrackSummary(
       entity.name,
       entity.type,
-      forceIdentifierLabel(entity.forceIdentifier),
+      domain::forceIdentifierLabel(entity.forceIdentifier),
       QStringLiteral("%1 m").arg(entity.altitude),
       formatPosition(entity.latitude, entity.longitude),
       damageState,
@@ -2574,7 +2557,7 @@ void MainWindow::syncDetectedContactsToUi() {
       QList<QStandardItem*> rowItems{
           observerItem,
           new QStandardItem(target->name),
-          new QStandardItem(forceIdentifierLabel(target->forceIdentifier)),
+          new QStandardItem(domain::forceIdentifierLabel(target->forceIdentifier)),
           new QStandardItem(target->type.trimmed().isEmpty() ? target->category : target->type),
           new QStandardItem(
               QStringLiteral("%1 km").arg(contact.rangeMeters / 1000.0, 0, 'f', 1)),
@@ -2748,7 +2731,7 @@ void MainWindow::syncScenarioStateToUi() {
     double distanceToBombTargetMeters = -1.0;
     if (const Entity* launcher =
             this->findEntityByName(this->_pendingBombRelease.launcherEntityName)) {
-      teamLabel = forceIdentifierLabel(launcher->forceIdentifier);
+      teamLabel = domain::forceIdentifierLabel(launcher->forceIdentifier);
       distanceToBombTargetMeters = domain::distanceMeters(
           launcher->latitude,
           launcher->longitude,
@@ -2976,7 +2959,7 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   const bool entityDestroyed = this->selectedEntityIsDestroyed();
   const QString entityName = this->selectedEntityName();
   const Entity* entity = this->findEntityByName(entityName);
-  const bool canUseWeapons = entity && entityCanUseMissileActions(*entity);
+  const bool canUseWeapons = entity && domain::entityCanUseMissileActions(*entity);
   const int missileCount =
       entity ? domain::weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
   const int bombCount =
