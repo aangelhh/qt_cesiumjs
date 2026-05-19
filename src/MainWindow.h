@@ -297,6 +297,7 @@ private:
   QHash<QString, EntityVisualState> _entityVisualStates;
   QHash<QString, EntityHomePosition> _entityHomePositions;
   QHash<QString, double> _autoBombReleaseCooldownSeconds;
+  QHash<QString, int> _autoBehaviorDamageReactionLevel;
   QHash<QString, double> _attackAirElapsedSeconds;
   QHash<QString, double> _attackAirMissileCooldownSeconds;
   QHash<QString, EntityPlan> _entityPlans;

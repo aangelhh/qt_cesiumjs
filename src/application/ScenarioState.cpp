@@ -221,6 +221,40 @@ QString selectBestBehaviorTargetName(
   return selectedTargetName;
 }
 
+
+int behaviorDamageReactionLevel(const Entity& entity) {
+  if (entity.destroyed) {
+    return 3;
+  }
+  if (entity.damagePercent >= 80.0) {
+    return 2;
+  }
+  if (entity.damagePercent >= 50.0) {
+    return 1;
+  }
+  return 0;
+}
+
+bool canAutoEngageBasedOnDamage(const Entity& entity) {
+  return behaviorDamageReactionLevel(entity) == 0;
+}
+
+QString behaviorDamageReactionMessage(const Entity& entity, int level) {
+  if (level == 2) {
+    return QStringLiteral("%1 behavior auto-engagement blocked: critical damage (%2%).")
+        .arg(entity.name)
+        .arg(entity.damagePercent, 0, 'f', 0);
+  }
+  if (level == 1) {
+    return QStringLiteral("%1 behavior auto-engagement reduced: damaged (%2%).")
+        .arg(entity.name)
+        .arg(entity.damagePercent, 0, 'f', 0);
+  }
+  return QStringLiteral("%1 behavior auto-engagement restored (%2%).")
+      .arg(entity.name)
+      .arg(entity.damagePercent, 0, 'f', 0);
+}
+
 bool entityPassesAutoMissileQuickValidation(
     const Entity& launcher,
     const Entity& target) {
@@ -1648,6 +1682,8 @@ void ScenarioState::advanceBehaviors(double deltaSeconds) {
   for (Entity& entity : _entities) {
     if (entity.destroyed) {
       entity.behaviorTargetEntityName.clear();
+      _behaviorMissileCooldownSeconds.erase(entity.name);
+      _behaviorDamageReactionLevel.erase(entity.name);
       continue;
     }
 
@@ -1680,13 +1716,28 @@ void ScenarioState::advanceBehaviors(double deltaSeconds) {
 
     if (behaviorMode != QStringLiteral("Aggressive") ||
         entity.behaviorTargetEntityName.trimmed().isEmpty()) {
+      _behaviorDamageReactionLevel.erase(entity.name);
       continue;
+    }
+
+    const int damageReactionLevel = behaviorDamageReactionLevel(entity);
+    const auto reactionIt = _behaviorDamageReactionLevel.find(entity.name);
+    const int previousReactionLevel =
+        reactionIt == _behaviorDamageReactionLevel.end() ? -1 : reactionIt->second;
+    if (damageReactionLevel != previousReactionLevel) {
+      _pendingEventLogMessages.push_back(
+          behaviorDamageReactionMessage(entity, damageReactionLevel));
+      _behaviorDamageReactionLevel[entity.name] = damageReactionLevel;
     }
 
     const QString taskType = entity.currentTask.taskType.trimmed();
     if (entity.currentTask.enabled &&
         (taskType == QStringLiteral("AttackAir") ||
          taskType == QStringLiteral("AttackSurface"))) {
+      continue;
+    }
+
+    if (!canAutoEngageBasedOnDamage(entity)) {
       continue;
     }
 
@@ -1738,6 +1789,7 @@ void ScenarioState::stopMission() {
   _pendingEventLogMessages.clear();
   _taskStacks.clear();
   _behaviorMissileCooldownSeconds.clear();
+  _behaviorDamageReactionLevel.clear();
   this->refreshSensors();
   this->save();
 }
@@ -1790,6 +1842,7 @@ bool ScenarioState::load() {
   _areas.clear();
   _taskStacks.clear(); // Clear all stacks before loading new scenario
   _behaviorMissileCooldownSeconds.clear();
+  _behaviorDamageReactionLevel.clear();
   _nextMunitionSerial = 1;
 
   QFile file(this->storagePath());
@@ -1845,6 +1898,7 @@ void ScenarioState::reset() {
   _areas.clear();
   _taskStacks.clear(); // Clear all stacks before reset
   _behaviorMissileCooldownSeconds.clear();
+  _behaviorDamageReactionLevel.clear();
   _nextMunitionSerial = 1;
   this->save();
 }
