@@ -73,6 +73,8 @@ qt_add_executable(qttest
     src/presentation/EntityHomePositionTracker.h
     src/presentation/EntityPlanExecutor.cpp
     src/presentation/EntityPlanExecutor.h
+    src/presentation/EntityStatusFormatter.cpp
+    src/presentation/EntityStatusFormatter.h
     src/presentation/EntityTextFormatter.cpp
     src/presentation/EntityTextFormatter.h
     src/presentation/EntityVisualStateManager.cpp
