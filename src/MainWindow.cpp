@@ -809,51 +809,15 @@ const AreaDefinition* MainWindow::findAreaByNameOrId(const QString& areaNameOrId
 }
 
 QStringList MainWindow::availableWaypointNames() const {
-  QStringList names;
-  QSet<QString> seen;
-  for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
-    const QString name = waypoint.name.trimmed();
-    if (name.isEmpty() || seen.contains(name)) {
-      continue;
-    }
-    seen.insert(name);
-    names.append(name);
-  }
-  return names;
+  return application::availableWaypointNames(this->_scenarioState);
 }
 
 QStringList MainWindow::availableRouteNames(bool requirePoints) const {
-  QStringList names;
-  QSet<QString> seen;
-  for (const RouteGraphic& route : this->_scenarioState->routes()) {
-    const QString name = route.name.trimmed();
-    if (name.isEmpty() || seen.contains(name)) {
-      continue;
-    }
-    if (requirePoints && route.points.isEmpty()) {
-      continue;
-    }
-    seen.insert(name);
-    names.append(name);
-  }
-  return names;
+  return application::availableRouteNames(this->_scenarioState, requirePoints);
 }
 
 QStringList MainWindow::availableAreaNames() const {
-  QStringList names;
-  QSet<QString> seen;
-  for (const AreaDefinition& area : this->_scenarioState->areas()) {
-    QString name = area.name.trimmed();
-    if (name.isEmpty()) {
-      name = area.id.trimmed();
-    }
-    if (name.isEmpty() || seen.contains(name)) {
-      continue;
-    }
-    seen.insert(name);
-    names.append(name);
-  }
-  return names;
+  return application::availableAreaNames(this->_scenarioState);
 }
 
 EntityPlan& MainWindow::ensureEntityPlan(const QString& entityName) {

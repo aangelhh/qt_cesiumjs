@@ -2,8 +2,10 @@
 #include "application/ScenarioState.h"
 #include "domain/Entity.h"
 #include "domain/Munition.h"
+#include "domain/TacticalGraphic.h"
 #include <QSet>
 #include <QString>
+#include <QStringList>
 
 namespace application {
 
@@ -135,6 +137,63 @@ const Entity* bestDetectedSurfaceBombTarget(
   }
 
   return selectedTarget;
+}
+
+QStringList availableWaypointNames(const ScenarioState* scenarioState) {
+  if (!scenarioState) {
+    return {};
+  }
+  QStringList names;
+  QSet<QString> seen;
+  for (const Waypoint& waypoint : scenarioState->waypoints()) {
+    const QString name = waypoint.name.trimmed();
+    if (name.isEmpty() || seen.contains(name)) {
+      continue;
+    }
+    seen.insert(name);
+    names.append(name);
+  }
+  return names;
+}
+
+QStringList availableRouteNames(const ScenarioState* scenarioState, bool requirePoints) {
+  if (!scenarioState) {
+    return {};
+  }
+  QStringList names;
+  QSet<QString> seen;
+  for (const RouteGraphic& route : scenarioState->routes()) {
+    const QString name = route.name.trimmed();
+    if (name.isEmpty() || seen.contains(name)) {
+      continue;
+    }
+    if (requirePoints && route.points.isEmpty()) {
+      continue;
+    }
+    seen.insert(name);
+    names.append(name);
+  }
+  return names;
+}
+
+QStringList availableAreaNames(const ScenarioState* scenarioState) {
+  if (!scenarioState) {
+    return {};
+  }
+  QStringList names;
+  QSet<QString> seen;
+  for (const AreaDefinition& area : scenarioState->areas()) {
+    QString name = area.name.trimmed();
+    if (name.isEmpty()) {
+      name = area.id.trimmed();
+    }
+    if (name.isEmpty() || seen.contains(name)) {
+      continue;
+    }
+    seen.insert(name);
+    names.append(name);
+  }
+  return names;
 }
 
 } // namespace application

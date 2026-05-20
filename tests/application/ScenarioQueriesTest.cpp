@@ -3,6 +3,7 @@
 #include "application/ScenarioState.h"
 #include "domain/Entity.h"
 #include "domain/Munition.h"
+#include "domain/TacticalGraphic.h"
 
 using namespace application;
 
@@ -199,4 +200,99 @@ TEST(ScenarioQueriesTest, BestBombTarget_ReturnsNearestDetectedSurface) {
   const Entity* result = bestDetectedSurfaceBombTarget(state.get(), launcher);
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->name, QStringLiteral("E1"));
+}
+
+// ── availableWaypointNames ────────────────────────────────────────────────────
+
+TEST(ScenarioQueriesTest, WaypointNames_ReturnsEmptyWhenNoWaypoints) {
+  auto state = std::make_unique<ScenarioState>();
+  EXPECT_TRUE(availableWaypointNames(state.get()).isEmpty());
+}
+
+TEST(ScenarioQueriesTest, WaypointNames_ReturnsNames) {
+  auto state = std::make_unique<ScenarioState>();
+  Waypoint wp;
+  wp.name = QStringLiteral("WP1");
+  wp.latitude = 40.0;
+  wp.longitude = -3.0;
+  wp.altitudeMeters = 0.0;
+  state->addWaypoint(wp);
+  const QStringList names = availableWaypointNames(state.get());
+  ASSERT_EQ(names.size(), 1);
+  EXPECT_EQ(names.first(), QStringLiteral("WP1"));
+}
+
+TEST(ScenarioQueriesTest, WaypointNames_DeduplicatesNames) {
+  auto state = std::make_unique<ScenarioState>();
+  Waypoint wp1;
+  wp1.name = QStringLiteral("WP1");
+  wp1.latitude = 40.0; wp1.longitude = -3.0;
+  Waypoint wp2;
+  wp2.name = QStringLiteral("WP1");
+  wp2.latitude = 41.0; wp2.longitude = -4.0;
+  state->addWaypoint(wp1);
+  state->addWaypoint(wp2);
+  EXPECT_EQ(availableWaypointNames(state.get()).size(), 1);
+}
+
+TEST(ScenarioQueriesTest, WaypointNames_SkipsEmptyNames) {
+  auto state = std::make_unique<ScenarioState>();
+  Waypoint wp;
+  wp.name = QStringLiteral("   ");
+  wp.latitude = 40.0; wp.longitude = -3.0;
+  state->addWaypoint(wp);
+  EXPECT_TRUE(availableWaypointNames(state.get()).isEmpty());
+}
+
+// ── availableRouteNames ───────────────────────────────────────────────────────
+
+TEST(ScenarioQueriesTest, RouteNames_ReturnsRouteNames) {
+  auto state = std::make_unique<ScenarioState>();
+  RouteGraphic route;
+  route.name = QStringLiteral("Route1");
+  RoutePoint pt; pt.latitude = 40.0; pt.longitude = -3.0; pt.altitudeMeters = 0.0;
+  route.points.push_back(pt);
+  state->addRoute(route);
+  const QStringList names = availableRouteNames(state.get());
+  ASSERT_EQ(names.size(), 1);
+  EXPECT_EQ(names.first(), QStringLiteral("Route1"));
+}
+
+TEST(ScenarioQueriesTest, RouteNames_RequirePointsFiltersEmpty) {
+  auto state = std::make_unique<ScenarioState>();
+  RouteGraphic route;
+  route.name = QStringLiteral("Empty");
+  state->addRoute(route);
+  EXPECT_EQ(availableRouteNames(state.get(), false).size(), 1);
+  EXPECT_EQ(availableRouteNames(state.get(), true).size(), 0);
+}
+
+// ── availableAreaNames ────────────────────────────────────────────────────────
+
+TEST(ScenarioQueriesTest, AreaNames_ReturnsAreaName) {
+  auto state = std::make_unique<ScenarioState>();
+  AreaDefinition area;
+  area.id = QStringLiteral("a1");
+  area.name = QStringLiteral("Area1");
+  area.areaType = QStringLiteral("Circle");
+  state->addArea(area);
+  const QStringList names = availableAreaNames(state.get());
+  ASSERT_EQ(names.size(), 1);
+  EXPECT_EQ(names.first(), QStringLiteral("Area1"));
+}
+
+TEST(ScenarioQueriesTest, AreaNames_FallsBackToIdWhenNameEmpty) {
+  auto state = std::make_unique<ScenarioState>();
+  AreaDefinition area;
+  area.id = QStringLiteral("zone-alpha");
+  area.name = QStringLiteral("");
+  area.areaType = QStringLiteral("Circle");
+  state->addArea(area);
+  const QStringList names = availableAreaNames(state.get());
+  ASSERT_EQ(names.size(), 1);
+  EXPECT_EQ(names.first(), QStringLiteral("zone-alpha"));
+}
+
+TEST(ScenarioQueriesTest, AreaNames_ReturnsNullStateEmpty) {
+  EXPECT_TRUE(availableAreaNames(nullptr).isEmpty());
 }
