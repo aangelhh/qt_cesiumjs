@@ -2584,51 +2584,11 @@ void MainWindow::assignOrbitHoldLocationTask() {
   }
 
   const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  double centerLatitude = summary.value(QStringLiteral("latitude")).toDouble();
+  double centerLatitude  = summary.value(QStringLiteral("latitude")).toDouble();
   double centerLongitude = summary.value(QStringLiteral("longitude")).toDouble();
 
-  bool ok = false;
-  const QString centerMode = QInputDialog::getItem(
-      this,
-      QStringLiteral("Orbit / Hold (Location)"),
-      QStringLiteral("Center"),
-      QStringList{
-          QStringLiteral("Current Position"),
-          QStringLiteral("Custom Coordinates"),
-      },
-      0,
-      false,
-      &ok);
-  if (!ok) {
+  if (!this->resolveOrbitCenter(centerLatitude, centerLongitude)) {
     return;
-  }
-
-  if (centerMode == QStringLiteral("Custom Coordinates")) {
-    centerLatitude = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Orbit / Hold (Location)"),
-        QStringLiteral("Latitude"),
-        centerLatitude,
-        -90.0,
-        90.0,
-        6,
-        &ok);
-    if (!ok) {
-      return;
-    }
-
-    centerLongitude = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Orbit / Hold (Location)"),
-        QStringLiteral("Longitude"),
-        centerLongitude,
-        -180.0,
-        180.0,
-        6,
-        &ok);
-    if (!ok) {
-      return;
-    }
   }
 
   double headingDegrees = 0.0;
@@ -2653,8 +2613,48 @@ void MainWindow::assignOrbitHoldLocationTask() {
   this->_ui->statusLabel->setText(
       QStringLiteral("Orbit / Hold asignado a %1 alrededor de %2, %3.")
           .arg(entityName)
-          .arg(centerLatitude, 0, 'f', 4)
+          .arg(centerLatitude,  0, 'f', 4)
           .arg(centerLongitude, 0, 'f', 4));
+}
+
+bool MainWindow::resolveOrbitCenter(double& outLatitude, double& outLongitude) {
+  bool ok = false;
+  const QString centerMode = QInputDialog::getItem(
+      this,
+      QStringLiteral("Orbit / Hold (Location)"),
+      QStringLiteral("Center"),
+      QStringList{
+          QStringLiteral("Current Position"),
+          QStringLiteral("Custom Coordinates"),
+      },
+      0,
+      false,
+      &ok);
+  if (!ok) {
+    return false;
+  }
+
+  if (centerMode != QStringLiteral("Custom Coordinates")) {
+    return true;
+  }
+
+  outLatitude = QInputDialog::getDouble(
+      this,
+      QStringLiteral("Orbit / Hold (Location)"),
+      QStringLiteral("Latitude"),
+      outLatitude,
+      -90.0, 90.0, 6, &ok);
+  if (!ok) {
+    return false;
+  }
+
+  outLongitude = QInputDialog::getDouble(
+      this,
+      QStringLiteral("Orbit / Hold (Location)"),
+      QStringLiteral("Longitude"),
+      outLongitude,
+      -180.0, 180.0, 6, &ok);
+  return ok;
 }
 
 void MainWindow::assignPatrolAreaTask() {
@@ -3086,45 +3086,24 @@ void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
 void MainWindow::populateTaskCommands() {
   this->_ui->tasksListWidget->clear();
 
-  auto* flyItem = new QListWidgetItem(QStringLiteral("Movement: Fly Heading / Altitude / Speed..."));
-  flyItem->setData(Qt::UserRole, QStringLiteral("FlyHeadingAltitudeSpeed"));
-  this->_ui->tasksListWidget->addItem(flyItem);
+  static const struct { const char* label; const char* type; } kTaskEntries[] = {
+      { "Movement: Fly Heading / Altitude / Speed...", "FlyHeadingAltitudeSpeed" },
+      { "Movement: Move To Location...",               "MoveToLocation"          },
+      { "Movement: Move To Waypoint...",               "MoveToWaypoint"          },
+      { "Movement: Move Along Route...",               "MoveAlongRoute"          },
+      { "Movement: Patrol Area...",                    "PatrolArea"              },
+      { "Movement: Orbit Area...",                     "OrbitArea"               },
+      { "Movement: Follow Entity...",                  "FollowEntity"            },
+      { "Attack: Attack Air...",                       "AttackAir"               },
+      { "Attack: Attack Surface...",                   "AttackSurface"           },
+      { "Other: Clear Current Task",                   "ClearTask"               },
+  };
 
-  auto* moveItem = new QListWidgetItem(QStringLiteral("Movement: Move To Location..."));
-  moveItem->setData(Qt::UserRole, QStringLiteral("MoveToLocation"));
-  this->_ui->tasksListWidget->addItem(moveItem);
-
-  auto* waypointItem = new QListWidgetItem(QStringLiteral("Movement: Move To Waypoint..."));
-  waypointItem->setData(Qt::UserRole, QStringLiteral("MoveToWaypoint"));
-  this->_ui->tasksListWidget->addItem(waypointItem);
-
-  auto* routeItem = new QListWidgetItem(QStringLiteral("Movement: Move Along Route..."));
-  routeItem->setData(Qt::UserRole, QStringLiteral("MoveAlongRoute"));
-  this->_ui->tasksListWidget->addItem(routeItem);
-
-  auto* patrolAreaItem = new QListWidgetItem(QStringLiteral("Movement: Patrol Area..."));
-  patrolAreaItem->setData(Qt::UserRole, QStringLiteral("PatrolArea"));
-  this->_ui->tasksListWidget->addItem(patrolAreaItem);
-
-  auto* orbitAreaItem = new QListWidgetItem(QStringLiteral("Movement: Orbit Area..."));
-  orbitAreaItem->setData(Qt::UserRole, QStringLiteral("OrbitArea"));
-  this->_ui->tasksListWidget->addItem(orbitAreaItem);
-
-  auto* followItem = new QListWidgetItem(QStringLiteral("Movement: Follow Entity..."));
-  followItem->setData(Qt::UserRole, QStringLiteral("FollowEntity"));
-  this->_ui->tasksListWidget->addItem(followItem);
-
-  auto* attackAirItem = new QListWidgetItem(QStringLiteral("Attack: Attack Air..."));
-  attackAirItem->setData(Qt::UserRole, QStringLiteral("AttackAir"));
-  this->_ui->tasksListWidget->addItem(attackAirItem);
-
-  auto* attackSurfaceItem = new QListWidgetItem(QStringLiteral("Attack: Attack Surface..."));
-  attackSurfaceItem->setData(Qt::UserRole, QStringLiteral("AttackSurface"));
-  this->_ui->tasksListWidget->addItem(attackSurfaceItem);
-
-  auto* clearItem = new QListWidgetItem(QStringLiteral("Other: Clear Current Task"));
-  clearItem->setData(Qt::UserRole, QStringLiteral("ClearTask"));
-  this->_ui->tasksListWidget->addItem(clearItem);
+  for (const auto& entry : kTaskEntries) {
+    auto* item = new QListWidgetItem(QString::fromLatin1(entry.label));
+    item->setData(Qt::UserRole, QString::fromLatin1(entry.type));
+    this->_ui->tasksListWidget->addItem(item);
+  }
 }
 
 void MainWindow::rebuildTacticalGraphicsTree() {

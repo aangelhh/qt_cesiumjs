@@ -88,6 +88,7 @@ private slots:
   void assignReturnToBaseTask();
   void assignPatrolRouteTask();
   void assignOrbitHoldLocationTask();
+  bool resolveOrbitCenter(double& outLatitude, double& outLongitude);
   void assignFollowEntityTask();
   void assignAttackAirTask();
   void assignAttackSurfaceTask();
