@@ -10,6 +10,8 @@ struct PendingBombRelease;
 
 namespace presentation {
 
+struct EntityVisualState;
+
 /// Creates a QVariantMap with all track fields pre-populated with defaults.
 QVariantMap makeTrackSummary(
     const QString& name,
@@ -20,6 +22,12 @@ QVariantMap makeTrackSummary(
     const QString& status,
     double latitude,
     double longitude);
+
+/// Full entity track summary including all task, sensor, and visual fields.
+/// Pure function — depends only on entity data and visual state.
+QVariantMap makeEntityTrackSummary(
+    const Entity& entity,
+    const EntityVisualState& visualState);
 
 /// Track summary for an active munition (missile or bomb).
 QVariantMap makeMunitionTrackSummary(const ActiveMunition& munition);

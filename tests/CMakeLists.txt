@@ -34,6 +34,7 @@ add_executable(qttest_unit_tests
     presentation/PlanStepConfiguratorTest.cpp
     presentation/GraphicPickCoordinatorTest.cpp
     presentation/EntityStatusFormatterTest.cpp
+    presentation/EntityTrackSummaryTest.cpp
     # Sources under test. We re-compile them here rather than link against the
     # qttest executable target (which is a Qt application bundle). When the
     # core code is moved into a static library this list will collapse into a
