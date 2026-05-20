@@ -11,6 +11,7 @@
 #include "domain/BombReleaseGate.h"
 #include "presentation/BombReleaseController.h"
 #include "presentation/EntityPlanExecutor.h"
+#include "presentation/EntityContextMenuBuilder.h"
 #include "presentation/EntityPlanDialog.h"
 #include "domain/CombatRules.h"
 #include "domain/Entity.h"
@@ -1989,219 +1990,68 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
       entity ? domain::weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
   const int detectedMissileTargetCount =
       entity ? application::detectedMissileTargetsInRange(this->_scenarioState, *entity).size() : 0;
-  QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
-  QMenu* movementMenu = taskMenu->addMenu(QStringLiteral("Movement"));
-  movementMenu->addAction(
-      QStringLiteral("Fly Heading / Altitude / Speed..."),
-      this,
-      &MainWindow::assignFlyHeadingAltitudeSpeedTask);
-  movementMenu->addAction(
-      QStringLiteral("Move To Location..."),
-      this,
-      &MainWindow::assignMoveToLocationTask);
-  movementMenu->addAction(
-      QStringLiteral("Move To Waypoint..."),
-      this,
-      &MainWindow::assignMoveToWaypointTask);
-  movementMenu->addAction(
-      QStringLiteral("Move Along Route..."),
-      this,
-      &MainWindow::assignMoveAlongRouteTask);
-  movementMenu->addAction(
-      QStringLiteral("Patrol Route..."),
-      this,
-      &MainWindow::assignPatrolRouteTask);
-  movementMenu->addAction(
-      QStringLiteral("Orbit / Hold (Location)..."),
-      this,
-      &MainWindow::assignOrbitHoldLocationTask);
-  movementMenu->addAction(
-      QStringLiteral("Return To Base"),
-      this,
-      &MainWindow::assignReturnToBaseTask);
-  movementMenu->addAction(
-      QStringLiteral("Patrol Area..."),
-      this,
-      &MainWindow::assignPatrolAreaTask);
-  movementMenu->addAction(
-      QStringLiteral("Orbit Area..."),
-      this,
-      &MainWindow::assignOrbitAreaTask);
-  movementMenu->addAction(
-      QStringLiteral("Follow Entity..."),
-      this,
-      &MainWindow::assignFollowEntityTask);
-  QMenu* attackTaskMenu = taskMenu->addMenu(QStringLiteral("Attack"));
-  attackTaskMenu->addAction(
-      QStringLiteral("Attack Air..."),
-      this,
-      &MainWindow::assignAttackAirTask);
-  attackTaskMenu->addAction(
-      QStringLiteral("Attack Surface..."),
-      this,
-      &MainWindow::assignAttackSurfaceTask);
-  taskMenu->addSeparator();
-  taskMenu->addAction(QStringLiteral("Clear Current Task"), this, &MainWindow::clearSelectedTask);
-  taskMenu->setEnabled(!entityDestroyed);
 
-  QMenu* setMenu = menu.addMenu(QStringLiteral("Set"));
-  setMenu->addAction(QStringLiteral("Heading..."), this, &MainWindow::setSelectedEntityHeading);
-  setMenu->addAction(QStringLiteral("Altitude..."), this, &MainWindow::setSelectedEntityAltitude);
-  setMenu->addAction(QStringLiteral("Speed..."), this, &MainWindow::setSelectedEntitySpeed);
-  setMenu->setEnabled(!entityDestroyed);
+  const QVariantMap summaryMap =
+      this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
 
-  QMenu* behaviorMenu = menu.addMenu(QStringLiteral("Behavior"));
-  QActionGroup* behaviorGroup = new QActionGroup(behaviorMenu);
-  behaviorGroup->setExclusive(true);
-  const QString currentBehaviorMode = entity && !entity->behaviorMode.trimmed().isEmpty()
-      ? entity->behaviorMode.trimmed()
-      : QStringLiteral("Manual");
-  for (const QString& behaviorMode : behaviorModeOptions()) {
-    QAction* behaviorAction = behaviorMenu->addAction(behaviorMode);
-    behaviorAction->setCheckable(true);
-    behaviorAction->setChecked(
-        behaviorMode.compare(currentBehaviorMode, Qt::CaseInsensitive) == 0);
-    behaviorGroup->addAction(behaviorAction);
-    QObject::connect(
-        behaviorAction,
-        &QAction::triggered,
-        this,
-        [this, behaviorMode]() {
-          this->setSelectedEntityBehaviorMode(behaviorMode);
-        });
-  }
-  behaviorMenu->setEnabled(entity && !entityDestroyed);
-
-  QAction* planAction = menu.addAction(QStringLiteral("Plan..."), this, &MainWindow::openEntityPlanDialog);
-  planAction->setEnabled(!entityDestroyed);
-
-  QMenu* weaponsMenu = menu.addMenu(QStringLiteral("Weapons"));
-  QAction* addMissileAction = weaponsMenu->addAction(
-      QStringLiteral("Add Missile"),
-      this,
-      &MainWindow::addMissileToSelectedEntity);
-  QAction* addBombAction = weaponsMenu->addAction(
-      QStringLiteral("Add Bomb"),
-      this,
-      &MainWindow::addBombToSelectedEntity);
-  QAction* launchMissileAction = weaponsMenu->addAction(
-      QStringLiteral("Launch Missile (%1)").arg(missileCount),
-      this,
-      &MainWindow::launchMissileFromSelectedEntity);
-  QAction* launchMissileAtAction = weaponsMenu->addAction(
-      QStringLiteral("Launch Missile At..."),
-      this,
-      &MainWindow::launchMissileAtSelectedEntity);
-  QAction* releaseBombAction = weaponsMenu->addAction(
-      QStringLiteral("Release Bomb (%1)").arg(bombCount),
-      this,
-      &MainWindow::releaseBombFromSelectedEntity);
-  QMenu* releaseBombAtMenu = weaponsMenu->addMenu(QStringLiteral("Release Bomb At..."));
-  QAction* releaseBombAtSurfaceAction = releaseBombAtMenu->addAction(
-      QStringLiteral("Surface Entity..."),
-      this,
-      &MainWindow::releaseBombAtSurfaceEntity);
-  QAction* releaseBombAtCustomAction = releaseBombAtMenu->addAction(
-      QStringLiteral("Custom Coordinates..."),
-      this,
-      &MainWindow::releaseBombAtCustomCoordinates);
-  QAction* cancelBombReleaseAction = weaponsMenu->addAction(
-      QStringLiteral("Cancel Bomb Release"),
-      this,
-      &MainWindow::cancelPendingBombRelease);
-  addMissileAction->setEnabled(canUseWeapons);
-  addBombAction->setEnabled(canUseWeapons);
-  launchMissileAction->setEnabled(
-      canUseWeapons && missileCount > 0 && this->_simulationRunning);
-  launchMissileAtAction->setEnabled(
-      canUseWeapons &&
-      missileCount > 0 &&
-      this->_simulationRunning &&
-      detectedMissileTargetCount > 0);
-  releaseBombAction->setEnabled(
-      canUseWeapons && bombCount > 0 && this->_simulationRunning);
-  releaseBombAtMenu->setEnabled(
-      canUseWeapons && bombCount > 0 && this->_simulationRunning);
-  releaseBombAtSurfaceAction->setEnabled(
-      canUseWeapons && bombCount > 0 && this->_simulationRunning);
-  releaseBombAtCustomAction->setEnabled(
-      canUseWeapons && bombCount > 0 && this->_simulationRunning);
-  cancelBombReleaseAction->setEnabled(
+  presentation::EntityContextMenuState state;
+  state.entityDestroyed   = entityDestroyed;
+  state.canUseWeapons     = canUseWeapons;
+  state.missileCount      = missileCount;
+  state.bombCount         = bombCount;
+  state.detectedMissileTargetCount = detectedMissileTargetCount;
+  state.simulationRunning = this->_simulationRunning;
+  state.bombReleasePendingForThisEntity =
       this->_bombReleaseController->pendingRelease().pending &&
       entity &&
-      this->_bombReleaseController->pendingRelease().launcherEntityName.compare(entity->name, Qt::CaseInsensitive) == 0);
-  if (canUseWeapons && missileCount > 0 && this->_simulationRunning &&
-      detectedMissileTargetCount <= 0) {
-    const QString message =
-        QStringLiteral("No detected air targets in missile range for %1.")
-            .arg(entityName);
-    launchMissileAtAction->setToolTip(message);
-    launchMissileAtAction->setStatusTip(message);
-  }
+      this->_bombReleaseController->pendingRelease().launcherEntityName
+          .compare(entity->name, Qt::CaseInsensitive) == 0;
+  state.entityName        = entityName;
+  state.currentBehaviorMode = entity && !entity->behaviorMode.trimmed().isEmpty()
+      ? entity->behaviorMode.trimmed()
+      : QStringLiteral("Manual");
+  state.behaviorModeOptions = behaviorModeOptions();
+  state.hidden              = summaryMap.value(QStringLiteral("hidden")).toBool();
+  state.radarCoverageVisible= summaryMap.value(QStringLiteral("radarCoverageVisible")).toBool();
+  state.trackHistoryVisible = summaryMap.value(QStringLiteral("trackHistoryVisible")).toBool();
 
-  menu.addSeparator();
-  menu.addAction(QStringLiteral("Information..."), this, &MainWindow::openSelectedEntityDetails);
-  menu.addAction(QStringLiteral("Focus / Track Camera"), this, &MainWindow::focusSelectedEntityInMap);
-  menu.addSeparator();
+  presentation::EntityContextMenuSlots actions;
+  actions.assignFlyHeadingAltitudeSpeedTask = [this]() { this->assignFlyHeadingAltitudeSpeedTask(); };
+  actions.assignMoveToLocationTask          = [this]() { this->assignMoveToLocationTask(); };
+  actions.assignMoveToWaypointTask          = [this]() { this->assignMoveToWaypointTask(); };
+  actions.assignMoveAlongRouteTask          = [this]() { this->assignMoveAlongRouteTask(); };
+  actions.assignPatrolRouteTask             = [this]() { this->assignPatrolRouteTask(); };
+  actions.assignOrbitHoldLocationTask       = [this]() { this->assignOrbitHoldLocationTask(); };
+  actions.assignReturnToBaseTask            = [this]() { this->assignReturnToBaseTask(); };
+  actions.assignPatrolAreaTask              = [this]() { this->assignPatrolAreaTask(); };
+  actions.assignOrbitAreaTask               = [this]() { this->assignOrbitAreaTask(); };
+  actions.assignFollowEntityTask            = [this]() { this->assignFollowEntityTask(); };
+  actions.assignAttackAirTask               = [this]() { this->assignAttackAirTask(); };
+  actions.assignAttackSurfaceTask           = [this]() { this->assignAttackSurfaceTask(); };
+  actions.clearSelectedTask                 = [this]() { this->clearSelectedTask(); };
+  actions.setSelectedEntityHeading          = [this]() { this->setSelectedEntityHeading(); };
+  actions.setSelectedEntityAltitude         = [this]() { this->setSelectedEntityAltitude(); };
+  actions.setSelectedEntitySpeed            = [this]() { this->setSelectedEntitySpeed(); };
+  actions.setSelectedEntityBehaviorMode     = [this](const QString& m) { this->setSelectedEntityBehaviorMode(m); };
+  actions.openEntityPlanDialog              = [this]() { this->openEntityPlanDialog(); };
+  actions.addMissileToSelectedEntity        = [this]() { this->addMissileToSelectedEntity(); };
+  actions.addBombToSelectedEntity           = [this]() { this->addBombToSelectedEntity(); };
+  actions.launchMissileFromSelectedEntity   = [this]() { this->launchMissileFromSelectedEntity(); };
+  actions.launchMissileAtSelectedEntity     = [this]() { this->launchMissileAtSelectedEntity(); };
+  actions.releaseBombFromSelectedEntity     = [this]() { this->releaseBombFromSelectedEntity(); };
+  actions.releaseBombAtSurfaceEntity        = [this]() { this->releaseBombAtSurfaceEntity(); };
+  actions.releaseBombAtCustomCoordinates    = [this]() { this->releaseBombAtCustomCoordinates(); };
+  actions.cancelPendingBombRelease          = [this]() { this->cancelPendingBombRelease(); };
+  actions.openSelectedEntityDetails         = [this]() { this->openSelectedEntityDetails(); };
+  actions.focusSelectedEntityInMap          = [this]() { this->focusSelectedEntityInMap(); };
+  actions.deleteSelectedEntity              = [this]() { this->deleteSelectedEntity(); };
+  actions.restoreSelectedEntity             = [this]() { this->restoreSelectedEntity(); };
+  actions.destroySelectedEntity             = [this]() { this->destroySelectedEntity(); };
+  actions.setSelectedEntityHidden           = [this](bool h) { this->setSelectedEntityHidden(h); };
+  actions.setSelectedEntityRadarCoverageVisible = [this](bool v) { this->setSelectedEntityRadarCoverageVisible(v); };
+  actions.setSelectedEntityTrackHistoryVisible  = [this](bool v) { this->setSelectedEntityTrackHistoryVisible(v); };
 
-  QAction* editAction = menu.addAction(QStringLiteral("Edit..."));
-  QObject::connect(
-      editAction,
-      &QAction::triggered,
-      this,
-      [this]() { this->showContextMenuPlaceholder(QStringLiteral("Edit")); });
-
-  menu.addAction(QStringLiteral("Delete"), this, &MainWindow::deleteSelectedEntity);
-
-  QAction* hideAction = menu.addAction(QStringLiteral("Hide"));
-  hideAction->setCheckable(true);
-  hideAction->setChecked(
-      this->_ui->objectsTreeView->currentIndex()
-          .data(kTrackSummaryRole)
-          .toMap()
-          .value(QStringLiteral("hidden"))
-          .toBool());
-  QObject::connect(
-      hideAction,
-      &QAction::toggled,
-      this,
-      [this](bool hidden) { this->setSelectedEntityHidden(hidden); });
-
-  if (entityDestroyed) {
-    menu.addAction(QStringLiteral("Restore"), this, &MainWindow::restoreSelectedEntity);
-  } else {
-    menu.addAction(QStringLiteral("Destroyed"), this, &MainWindow::destroySelectedEntity);
-  }
-
-  menu.addSeparator();
-
-  QAction* radarCoverageAction = menu.addAction(QStringLiteral("Show Radar Coverage"));
-  radarCoverageAction->setCheckable(true);
-  radarCoverageAction->setChecked(
-      this->_ui->objectsTreeView->currentIndex()
-          .data(kTrackSummaryRole)
-          .toMap()
-          .value(QStringLiteral("radarCoverageVisible"))
-          .toBool());
-  QObject::connect(
-      radarCoverageAction,
-      &QAction::toggled,
-      this,
-      [this](bool visible) { this->setSelectedEntityRadarCoverageVisible(visible); });
-
-  QAction* trackHistoryAction = menu.addAction(QStringLiteral("Show Track History"));
-  trackHistoryAction->setCheckable(true);
-  trackHistoryAction->setChecked(
-      this->_ui->objectsTreeView->currentIndex()
-          .data(kTrackSummaryRole)
-          .toMap()
-          .value(QStringLiteral("trackHistoryVisible"))
-          .toBool());
-  QObject::connect(
-      trackHistoryAction,
-      &QAction::toggled,
-      this,
-      [this](bool visible) { this->setSelectedEntityTrackHistoryVisible(visible); });
+  presentation::populateEntityContextMenu(menu, state, actions);
 }
 
 bool MainWindow::applyEntityTask(const QString& entityName, const EntityTask& task, bool syncUi) {

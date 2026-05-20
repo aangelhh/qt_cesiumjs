@@ -75,6 +75,8 @@ qt_add_executable(qttest
     src/presentation/GraphicPickCoordinator.h
     src/presentation/PlanStepConfigurator.cpp
     src/presentation/PlanStepConfigurator.h
+    src/presentation/EntityContextMenuBuilder.cpp
+    src/presentation/EntityContextMenuBuilder.h
     src/presentation/EntityPlanDialog.cpp
     src/presentation/EntityPlanDialog.h
     src/presentation/EntityHomePositionTracker.cpp
