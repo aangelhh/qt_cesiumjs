@@ -2037,36 +2037,7 @@ void MainWindow::applyFlyHeadingAltitudeSpeedTask(
   task.targetAltitudeMeters = altitudeMeters;
   task.targetSpeedKnots = speedKnots;
 
-  if (!this->_scenarioState->assignTask(entityName, task)) {
-    return;
-  }
-
-  if (domain::TaskStack* stack = this->_scenarioState->getTaskStack(entityName)) {
-    while (!stack->isEmpty()) {
-      stack->pop();
-    }
-    stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
-        headingDegrees,
-        static_cast<double>(altitudeMeters),
-        speedKnots));
-  }
-
-  if (m_simulationEngine) {
-    m_simulationEngine->enqueueCommand(
-        std::make_unique<application::CmdAssignFlyHeadingTask>(
-            entityName,
-            headingDegrees,
-            static_cast<double>(altitudeMeters),
-            speedKnots));
-  }
-
-  this->appendLogMessage(
-      QStringLiteral("Set FlyHeadingAltitudeSpeed applied to %1 (hdg %2 deg, alt %3 m, spd %4 kts)")
-          .arg(entityName)
-          .arg(headingDegrees, 0, 'f', 1)
-          .arg(altitudeMeters)
-          .arg(speedKnots, 0, 'f', 1));
-  this->syncScenarioStateToUi();
+  this->applyEntityTask(entityName, task, /*syncUi=*/true);
 }
 
 void MainWindow::setSelectedEntityHeading() {
