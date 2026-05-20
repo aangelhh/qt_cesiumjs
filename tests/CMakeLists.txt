@@ -46,6 +46,7 @@ add_executable(qttest_unit_tests
     presentation/TacticalGraphicsEditorControllerTest.cpp
     presentation/BombReleaseActionsControllerTest.cpp
     presentation/ScenarioObjectEditorControllerTest.cpp
+    presentation/SimulationLifecycleControllerTest.cpp
     # Sources under test. We re-compile them here rather than link against the
     # qttest executable target (which is a Qt application bundle). When the
     # core code is moved into a static library this list will collapse into a
@@ -73,6 +74,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/presentation/TacticalGraphicsEditorController.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/BombReleaseActionsController.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/ScenarioObjectEditorController.cpp
+    ${CMAKE_SOURCE_DIR}/src/presentation/SimulationLifecycleController.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/EntityVisualStateManager.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/EntityHomePositionTracker.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/TrackIconProvider.cpp

@@ -388,6 +388,31 @@ MainWindow::MainWindow(QWidget* parent)
           [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
           [this]() { this->syncScenarioStateToUi(); },
           this);
+  _simulationLifecycleController =
+      std::make_unique<presentation::SimulationLifecycleController>(
+          this->_scenarioState,
+          [this]() { return this->_simulationRunning; },
+          [this](bool v) { this->_simulationRunning = v; },
+          [this]() { this->_simulationTimer->start(); },
+          [this]() { this->_simulationTimer->stop(); },
+          [this]() {
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+            if (this->_webView) {
+              this->_webView->page()->runJavaScript(
+                  QStringLiteral("window.refreshQtTrackedEntity && window.refreshQtTrackedEntity();"));
+            }
+#endif
+          },
+          [this]() { this->_bombReleaseController->cancelPickMode(); },
+          [this]() {
+            this->_attackTaskProcessor->autoBombReleaseCooldownSeconds().clear();
+          },
+          [this]() { this->clearPendingBombRelease(); },
+          [this]() { this->syncScenarioStateToUi(); },
+          [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+          [this](const QString& msg) { this->appendLogMessage(msg); },
+          [this]() { this->updateSimulationControls(); },
+          this);
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
@@ -1234,47 +1259,15 @@ void MainWindow::reportMapStatus(const QString& message) {
 }
 
 void MainWindow::startSimulation() {
-  if (this->_simulationRunning) {
-    return;
-  }
-
-  this->_simulationRunning = true;
-  this->_simulationTimer->start();
-#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-  if (this->_webView) {
-    this->_webView->page()->runJavaScript(
-        QStringLiteral("window.refreshQtTrackedEntity && window.refreshQtTrackedEntity();"));
-  }
-#endif
-  this->_ui->statusLabel->setText(QStringLiteral("Simulacion en marcha."));
-  this->appendLogMessage(QStringLiteral("Simulation started."));
-  this->updateSimulationControls();
+  this->_simulationLifecycleController->start();
 }
 
 void MainWindow::pauseSimulation() {
-  if (!this->_simulationRunning) {
-    return;
-  }
-
-  this->_simulationRunning = false;
-  this->_simulationTimer->stop();
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(QStringLiteral("Simulacion en pausa."));
-  this->appendLogMessage(QStringLiteral("Simulation paused."));
-  this->updateSimulationControls();
+  this->_simulationLifecycleController->pause();
 }
 
 void MainWindow::stopSimulation() {
-  this->_simulationRunning = false;
-  this->_simulationTimer->stop();
-  this->_bombReleaseController->cancelPickMode();
-  this->_attackTaskProcessor->autoBombReleaseCooldownSeconds().clear();
-  this->clearPendingBombRelease();
-  this->_scenarioState->stopMission();
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(QStringLiteral("Mision detenida. Todas las tasks han terminado."));
-  this->appendLogMessage(QStringLiteral("Simulation stopped. Mission state cleared."));
-  this->updateSimulationControls();
+  this->_simulationLifecycleController->stop();
 }
 
 void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex&) {

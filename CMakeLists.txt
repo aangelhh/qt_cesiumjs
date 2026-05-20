@@ -85,6 +85,8 @@ qt_add_executable(qttest
     src/presentation/EntityStateActionsController.h
     src/presentation/ScenarioObjectEditorController.cpp
     src/presentation/ScenarioObjectEditorController.h
+    src/presentation/SimulationLifecycleController.cpp
+    src/presentation/SimulationLifecycleController.h
     src/presentation/TacticalGraphicsEditorController.cpp
     src/presentation/TacticalGraphicsEditorController.h
     src/presentation/TaskAssignmentController.cpp
