@@ -2250,25 +2250,17 @@ void MainWindow::setSelectedEntityHidden(bool hidden) {
     return;
   }
 
-  presentation::EntityVisualState visualState = this->_entityVisualStateManager->stateFor(entityName);
-  if (visualState.hidden == hidden) {
+  if (!this->_entityVisualStateManager->setFlag(
+          entityName,
+          presentation::EntityVisualStateManager::Flag::Hidden,
+          hidden)) {
     return;
-  }
-
-  visualState.hidden = hidden;
-  if (!visualState.hidden &&
-      !visualState.radarCoverageVisible &&
-      !visualState.trackHistoryVisible) {
-    this->_entityVisualStateManager->remove(entityName);
-  } else {
-    this->_entityVisualStateManager->ensureState(entityName) = visualState;
   }
   this->_entityVisualStateManager->save();
 
   this->appendLogMessage(
       QStringLiteral("Entity %1 %2")
-          .arg(entityName, hidden ? QStringLiteral("hidden")
-                                  : QStringLiteral("shown")));
+          .arg(entityName, hidden ? QStringLiteral("hidden") : QStringLiteral("shown")));
   this->syncScenarioStateToUi();
   this->_ui->statusLabel->setText(
       hidden
@@ -2282,18 +2274,11 @@ void MainWindow::setSelectedEntityRadarCoverageVisible(bool visible) {
     return;
   }
 
-  presentation::EntityVisualState visualState = this->_entityVisualStateManager->stateFor(entityName);
-  if (visualState.radarCoverageVisible == visible) {
+  if (!this->_entityVisualStateManager->setFlag(
+          entityName,
+          presentation::EntityVisualStateManager::Flag::RadarCoverageVisible,
+          visible)) {
     return;
-  }
-
-  visualState.radarCoverageVisible = visible;
-  if (!visualState.hidden &&
-      !visualState.radarCoverageVisible &&
-      !visualState.trackHistoryVisible) {
-    this->_entityVisualStateManager->remove(entityName);
-  } else {
-    this->_entityVisualStateManager->ensureState(entityName) = visualState;
   }
   this->_entityVisualStateManager->save();
 
@@ -2314,18 +2299,11 @@ void MainWindow::setSelectedEntityTrackHistoryVisible(bool visible) {
     return;
   }
 
-  presentation::EntityVisualState visualState = this->_entityVisualStateManager->stateFor(entityName);
-  if (visualState.trackHistoryVisible == visible) {
+  if (!this->_entityVisualStateManager->setFlag(
+          entityName,
+          presentation::EntityVisualStateManager::Flag::TrackHistoryVisible,
+          visible)) {
     return;
-  }
-
-  visualState.trackHistoryVisible = visible;
-  if (!visualState.hidden &&
-      !visualState.radarCoverageVisible &&
-      !visualState.trackHistoryVisible) {
-    this->_entityVisualStateManager->remove(entityName);
-  } else {
-    this->_entityVisualStateManager->ensureState(entityName) = visualState;
   }
   this->_entityVisualStateManager->save();
 

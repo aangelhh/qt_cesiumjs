@@ -100,4 +100,26 @@ void EntityVisualStateManager::pruneTo(const QSet<QString>& validEntityNames) {
     }
 }
 
+bool EntityVisualStateManager::setFlag(const QString& entityName, Flag flag, bool value) {
+    EntityVisualState current = stateFor(entityName);
+
+    bool& field = (flag == Flag::Hidden)
+        ? current.hidden
+        : (flag == Flag::RadarCoverageVisible)
+            ? current.radarCoverageVisible
+            : current.trackHistoryVisible;
+
+    if (field == value) {
+        return false;
+    }
+    field = value;
+
+    if (!current.hidden && !current.radarCoverageVisible && !current.trackHistoryVisible) {
+        remove(entityName);
+    } else {
+        ensureState(entityName) = current;
+    }
+    return true;
+}
+
 } // namespace presentation

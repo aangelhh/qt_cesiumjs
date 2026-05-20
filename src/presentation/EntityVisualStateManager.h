@@ -35,6 +35,12 @@ public:
 
     bool contains(const QString& entityName) const;
 
+    /// Convenience: set one visual flag for an entity and auto-remove
+    /// the record if all flags become false (so the map stays compact).
+    /// Returns true if the value actually changed.
+    enum class Flag { Hidden, RadarCoverageVisible, TrackHistoryVisible };
+    bool setFlag(const QString& entityName, Flag flag, bool value);
+
     // Replace the entire backing map by reloading from disk. Silently no-ops
     // if the file is missing or malformed (matches the legacy behaviour).
     void load();
