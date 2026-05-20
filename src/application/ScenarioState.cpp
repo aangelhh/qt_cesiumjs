@@ -1,6 +1,7 @@
 #include "application/ScenarioState.h"
 
 #include "application/FlightDynamicsEngine.h"
+#include "application/MunitionSimulator.h"
 #include "application/SensorEngine.h"
 
 #include <QDir>
@@ -15,29 +16,8 @@
 namespace {
 
 constexpr double kEarthRadiusMeters = 6371000.0;
-constexpr double kKnotsToMetersPerSecond = 0.514444;
-constexpr double kDefaultMissileBoostMetersPerSecond = 250.0;
-constexpr double kDefaultMissileTtlSeconds = 12.0;
-constexpr double kDefaultMissileDamagePercent = 25.0;
 constexpr double kDefaultMissileMaxRangeMeters = 60000.0;
-constexpr double kDefaultMissileHitRadiusMeters = 120.0;
-constexpr double kDefaultMissileTurnRateDegreesPerSecond = 45.0;
-constexpr double kDefaultMissilePitchRateDegreesPerSecond = 30.0;
-constexpr double kDefaultMissileMaxPitchDegrees = 60.0;
-constexpr double kGravityMetersPerSecondSquared = 9.81;
-constexpr double kDefaultBombTtlSeconds = 45.0;
-constexpr double kDefaultBombHitRadiusMeters = 120.0;
-constexpr double kDefaultBombBlastRadiusMeters = 200.0;
-constexpr double kDefaultBombBaseDamage = 100.0;
-constexpr double kDefaultBombForwardOffsetMeters = 25.0;
-constexpr double kDefaultBombDownOffsetMeters = 5.0;
-constexpr double kMinimumMunitionAltitudeMeters = 1.0;
 constexpr double kLaunchFlashTtlSeconds = 0.25;
-constexpr double kImpactFlashTtlSeconds = 0.45;
-constexpr double kBombSmokeTrailIntervalSeconds = 0.25;
-constexpr double kBombSmokeTrailTtlSeconds = 1.0;
-constexpr double kBombImpactFlashTtlSeconds = 0.35;
-constexpr double kBombSmokeTtlSeconds = 3.0;
 constexpr double kBehaviorAutoMissileCooldownSeconds = 12.0;
 
 QString projectRoot() {
@@ -48,17 +28,6 @@ QString projectRoot() {
 #endif
 }
 
-QString defaultMissileModelUri() {
-  const QString path =
-      QDir(projectRoot()).absoluteFilePath(QStringLiteral("models/missile/missile.glb"));
-  return QUrl::fromLocalFile(path).toString();
-}
-
-QString defaultBombModelUri() {
-  const QString path =
-      QDir(projectRoot()).absoluteFilePath(QStringLiteral("models/bomb/bomb.glb"));
-  return QUrl::fromLocalFile(path).toString();
-}
 
 QStringList supportedBehaviorModes() {
   return {
@@ -267,80 +236,6 @@ bool entityPassesAutoMissileQuickValidation(
          weaponQuantity(launcher, QStringLiteral("Missile")) > 0;
 }
 
-double normalizeDegrees360(double degrees) {
-  while (degrees < 0.0) {
-    degrees += 360.0;
-  }
-  while (degrees >= 360.0) {
-    degrees -= 360.0;
-  }
-  return degrees;
-}
-
-double shortestSignedAngle(double currentDegrees, double targetDegrees) {
-  double delta =
-      normalizeDegrees360(targetDegrees) - normalizeDegrees360(currentDegrees);
-  while (delta > 180.0) {
-    delta -= 360.0;
-  }
-  while (delta < -180.0) {
-    delta += 360.0;
-  }
-  return delta;
-}
-
-double clampStep(double currentValue, double targetValue, double maxStep) {
-  if (maxStep <= 0.0) {
-    return currentValue;
-  }
-  if (targetValue > currentValue) {
-    return qMin(targetValue, currentValue + maxStep);
-  }
-  return qMax(targetValue, currentValue - maxStep);
-}
-
-double bearingDegrees(
-    double latitude1,
-    double longitude1,
-    double latitude2,
-    double longitude2) {
-  const double lat1 = qDegreesToRadians(latitude1);
-  const double lon1 = qDegreesToRadians(longitude1);
-  const double lat2 = qDegreesToRadians(latitude2);
-  const double lon2 = qDegreesToRadians(longitude2);
-  const double deltaLon = lon2 - lon1;
-
-  const double y = qSin(deltaLon) * qCos(lat2);
-  const double x = qCos(lat1) * qSin(lat2) -
-                   qSin(lat1) * qCos(lat2) * qCos(deltaLon);
-  return normalizeDegrees360(qRadiansToDegrees(qAtan2(y, x)));
-}
-
-QPair<double, double> destinationPoint(
-    double latitude,
-    double longitude,
-    double bearingDegreesValue,
-    double distanceMetersValue) {
-  const double angularDistance = distanceMetersValue / kEarthRadiusMeters;
-  const double bearing = qDegreesToRadians(bearingDegreesValue);
-  const double lat1 = qDegreesToRadians(latitude);
-  const double lon1 = qDegreesToRadians(longitude);
-
-  const double sinLat1 = qSin(lat1);
-  const double cosLat1 = qCos(lat1);
-  const double sinAngular = qSin(angularDistance);
-  const double cosAngular = qCos(angularDistance);
-
-  const double lat2 = qAsin(
-      sinLat1 * cosAngular +
-      cosLat1 * sinAngular * qCos(bearing));
-  const double lon2 = lon1 + qAtan2(
-      qSin(bearing) * sinAngular * cosLat1,
-      cosAngular - sinLat1 * qSin(lat2));
-
-  return {qRadiansToDegrees(lat2), qRadiansToDegrees(lon2)};
-}
-
 double distanceMeters(
     double latitude1,
     double longitude1,
@@ -356,71 +251,6 @@ double distanceMeters(
                    qCos(lat1) * qCos(lat2) * qPow(qSin(deltaLon / 2.0), 2.0);
   const double c = 2.0 * qAtan2(qSqrt(a), qSqrt(1.0 - a));
   return kEarthRadiusMeters * c;
-}
-
-ActiveMunition makeMissileMunition(const Entity& entity, int serial) {
-  ActiveMunition munition;
-  munition.id = QStringLiteral("%1-missile-%2")
-                    .arg(entity.name)
-                    .arg(serial);
-  munition.launcherEntityName = entity.name;
-  munition.forceIdentifier = entity.forceIdentifier;
-  munition.munitionType = QStringLiteral("Missile");
-  munition.modelUri = defaultMissileModelUri();
-  munition.latitude = entity.latitude;
-  munition.longitude = entity.longitude;
-  munition.altitudeMeters = static_cast<double>(entity.altitude);
-  munition.headingDegrees = normalizeDegrees360(entity.headingDegrees);
-  munition.pitchDegrees = entity.pitchDegrees;
-  munition.rollDegrees = 0.0;
-  munition.speedMetersPerSecond =
-      qMax(0.0, entity.speedKnots * kKnotsToMetersPerSecond) +
-      kDefaultMissileBoostMetersPerSecond;
-  munition.verticalSpeedMetersPerSecond = 0.0;
-  munition.ttlSeconds = kDefaultMissileTtlSeconds;
-  munition.hitRadiusMeters = kDefaultMissileHitRadiusMeters;
-  return munition;
-}
-
-ActiveMunition makeBombMunition(const Entity& entity, int serial) {
-  ActiveMunition munition;
-  munition.id = QStringLiteral("%1-bomb-%2")
-                    .arg(entity.name)
-                    .arg(serial);
-  munition.launcherEntityName = entity.name;
-  munition.forceIdentifier = entity.forceIdentifier;
-  munition.munitionType = QStringLiteral("Bomb");
-  munition.modelUri = defaultBombModelUri();
-  munition.status = QStringLiteral("Falling");
-  munition.headingDegrees = normalizeDegrees360(entity.headingDegrees);
-  munition.pitchDegrees = entity.pitchDegrees;
-  munition.rollDegrees = 0.0;
-  const double pitchRadians = qDegreesToRadians(entity.pitchDegrees);
-  const double baseSpeedMetersPerSecond =
-      qMax(0.0, entity.speedKnots * kKnotsToMetersPerSecond);
-  munition.speedMetersPerSecond =
-      qMax(0.0, baseSpeedMetersPerSecond * qCos(pitchRadians));
-  munition.verticalSpeedMetersPerSecond = entity.verticalSpeedMetersPerSecond;
-  munition.ttlSeconds = kDefaultBombTtlSeconds;
-  munition.hitRadiusMeters = kDefaultBombHitRadiusMeters;
-  munition.blastRadiusMeters = kDefaultBombBlastRadiusMeters;
-  munition.baseDamage = kDefaultBombBaseDamage;
-
-  const auto [offsetLatitude, offsetLongitude] = destinationPoint(
-      entity.latitude,
-      entity.longitude,
-      munition.headingDegrees,
-      kDefaultBombForwardOffsetMeters);
-  munition.latitude = offsetLatitude;
-  munition.longitude = offsetLongitude;
-  munition.altitudeMeters = qMax(
-      kMinimumMunitionAltitudeMeters,
-      static_cast<double>(entity.altitude) - kDefaultBombDownOffsetMeters);
-  return munition;
-}
-
-bool munitionIsBomb(const ActiveMunition& munition) {
-  return munition.munitionType.compare(QStringLiteral("Bomb"), Qt::CaseInsensitive) == 0;
 }
 
 TransientEffect makeTransientEffect(
@@ -440,41 +270,6 @@ TransientEffect makeTransientEffect(
   effect.altitudeMeters = altitudeMeters;
   effect.ttlSeconds = ttlSeconds;
   return effect;
-}
-
-void appendBombSmokeTrailEffect(
-    QVector<TransientEffect>& effects,
-    const ActiveMunition& munition,
-    int trailIndex) {
-  effects.push_back(makeTransientEffect(
-      QStringLiteral("%1-bombtrail-%2").arg(munition.id).arg(trailIndex),
-      QStringLiteral("BombSmokeTrail"),
-      munition.forceIdentifier,
-      munition.latitude,
-      munition.longitude,
-      munition.altitudeMeters,
-      kBombSmokeTrailTtlSeconds));
-}
-
-void appendBombImpactEffects(
-    QVector<TransientEffect>& effects,
-    const ActiveMunition& munition) {
-  effects.push_back(makeTransientEffect(
-      munition.id + QStringLiteral("-bombimpactflash"),
-      QStringLiteral("BombImpactFlash"),
-      munition.forceIdentifier,
-      munition.latitude,
-      munition.longitude,
-      munition.altitudeMeters,
-      kBombImpactFlashTtlSeconds));
-  effects.push_back(makeTransientEffect(
-      munition.id + QStringLiteral("-bombsmoke"),
-      QStringLiteral("BombSmoke"),
-      munition.forceIdentifier,
-      munition.latitude,
-      munition.longitude,
-      munition.altitudeMeters,
-      kBombSmokeTtlSeconds));
 }
 
 QJsonObject toJson(const WeaponInventoryItem& weapon) {
@@ -1196,7 +991,7 @@ void ScenarioState::applyMissileDamage(
 }
 
 void ScenarioState::applyBombBlastDamage(const ActiveMunition& munition) {
-  if (!munitionIsBomb(munition) ||
+  if (!application::munitionIsBomb(munition) ||
       munition.blastRadiusMeters <= 0.0 ||
       munition.baseDamage <= 0.0) {
     return;
@@ -1322,7 +1117,7 @@ bool ScenarioState::launchMissile(const QString& entityName) {
 
     --item->quantity;
 
-    ActiveMunition munition = makeMissileMunition(entity, _nextMunitionSerial++);
+    ActiveMunition munition = application::makeMissileMunition(entity, _nextMunitionSerial++);
     _activeMunitions.push_back(munition);
     _transientEffects.push_back(makeTransientEffect(
         munition.id + QStringLiteral("-launch"),
@@ -1358,7 +1153,7 @@ bool ScenarioState::releaseBomb(const QString& entityName) {
 
     --item->quantity;
 
-    ActiveMunition munition = makeBombMunition(entity, _nextMunitionSerial++);
+    ActiveMunition munition = application::makeBombMunition(entity, _nextMunitionSerial++);
     _activeMunitions.push_back(munition);
 
     this->save();
@@ -1414,7 +1209,7 @@ bool ScenarioState::launchMissileAt(
 
     --item->quantity;
 
-    ActiveMunition munition = makeMissileMunition(launcher, _nextMunitionSerial++);
+    ActiveMunition munition = application::makeMissileMunition(launcher, _nextMunitionSerial++);
     munition.targetEntityName = validatedTarget->name;
     munition.guidanceActive = true;
     munition.status = QStringLiteral("Tracking");
@@ -1451,211 +1246,17 @@ void ScenarioState::refreshSensors() {
 }
 
 void ScenarioState::advanceActiveMunitions(double deltaSeconds) {
-  if (deltaSeconds <= 0.0 || _activeMunitions.isEmpty()) {
-    return;
-  }
-
-  const double maxTurnStepDegrees =
-      kDefaultMissileTurnRateDegreesPerSecond * deltaSeconds;
-  const double maxPitchStepDegrees =
-      kDefaultMissilePitchRateDegreesPerSecond * deltaSeconds;
-
-  for (ActiveMunition& munition : _activeMunitions) {
-    if (!munition.active) {
-      continue;
-    }
-
-    const double previousAgeSeconds = munition.ageSeconds;
-    const bool isBomb = munitionIsBomb(munition);
-    const bool hasGuidedTarget =
-        !isBomb && !munition.targetEntityName.trimmed().isEmpty();
-    const Entity* trackedTarget = nullptr;
-    if (hasGuidedTarget && munition.guidanceActive) {
-      trackedTarget = findEntityByName(_entities, munition.targetEntityName);
-      if (trackedTarget && !trackedTarget->destroyed) {
-        const double desiredHeadingDegrees = bearingDegrees(
-            munition.latitude,
-            munition.longitude,
-            trackedTarget->latitude,
-            trackedTarget->longitude);
-        const double headingDeltaDegrees = shortestSignedAngle(
-            munition.headingDegrees,
-            desiredHeadingDegrees);
-        munition.headingDegrees = normalizeDegrees360(
-            munition.headingDegrees +
-            clampStep(0.0, headingDeltaDegrees, maxTurnStepDegrees));
-
-        const double horizontalDistanceToTargetMeters = distanceMeters(
-            munition.latitude,
-            munition.longitude,
-            trackedTarget->latitude,
-            trackedTarget->longitude);
-        const double altitudeDeltaMeters =
-            static_cast<double>(trackedTarget->altitude) - munition.altitudeMeters;
-        const double desiredPitchDegrees = qBound(
-            -kDefaultMissileMaxPitchDegrees,
-            qRadiansToDegrees(qAtan2(
-                altitudeDeltaMeters,
-                qMax(1.0, horizontalDistanceToTargetMeters))),
-            kDefaultMissileMaxPitchDegrees);
-        munition.pitchDegrees = qBound(
-            -kDefaultMissileMaxPitchDegrees,
-            clampStep(
-                munition.pitchDegrees,
-                desiredPitchDegrees,
-                maxPitchStepDegrees),
-            kDefaultMissileMaxPitchDegrees);
-        munition.status = QStringLiteral("Tracking");
-      } else {
-        munition.guidanceActive = false;
-        munition.status = QStringLiteral("Lost Target");
-        trackedTarget = nullptr;
-      }
-    }
-
-    double horizontalDistanceMeters = 0.0;
-    double verticalDistanceMeters = 0.0;
-    if (isBomb) {
-      munition.verticalSpeedMetersPerSecond -=
-          kGravityMetersPerSecondSquared * deltaSeconds;
-      horizontalDistanceMeters =
-          qMax(0.0, munition.speedMetersPerSecond * deltaSeconds);
-      verticalDistanceMeters =
-          munition.verticalSpeedMetersPerSecond * deltaSeconds;
-      munition.pitchDegrees = qRadiansToDegrees(qAtan2(
-          munition.verticalSpeedMetersPerSecond,
-          qMax(1.0, munition.speedMetersPerSecond)));
-      munition.status = QStringLiteral("Falling");
-    } else {
-      const double pitchRadians = qDegreesToRadians(munition.pitchDegrees);
-      const double totalDistanceMeters = munition.speedMetersPerSecond * deltaSeconds;
-      horizontalDistanceMeters =
-          qMax(0.0, totalDistanceMeters * qCos(pitchRadians));
-      verticalDistanceMeters = totalDistanceMeters * qSin(pitchRadians);
-    }
-
-    const auto [nextLatitude, nextLongitude] = destinationPoint(
-        munition.latitude,
-        munition.longitude,
-        munition.headingDegrees,
-        horizontalDistanceMeters);
-
-    munition.latitude = nextLatitude;
-    munition.longitude = nextLongitude;
-    munition.altitudeMeters += verticalDistanceMeters;
-    munition.ageSeconds += deltaSeconds;
-
-    if (isBomb) {
-      const int previousTrailIndex = qFloor(previousAgeSeconds / kBombSmokeTrailIntervalSeconds);
-      const int currentTrailIndex = qFloor(munition.ageSeconds / kBombSmokeTrailIntervalSeconds);
-      for (int trailIndex = previousTrailIndex + 1; trailIndex <= currentTrailIndex; ++trailIndex) {
-        appendBombSmokeTrailEffect(_transientEffects, munition, trailIndex);
-      }
-    }
-
-    if (hasGuidedTarget) {
-      if (munition.guidanceActive && trackedTarget && !trackedTarget->destroyed) {
-        const double horizontalDistanceToTargetMeters = distanceMeters(
-            munition.latitude,
-            munition.longitude,
-            trackedTarget->latitude,
-            trackedTarget->longitude);
-        const double verticalSeparationMeters = qAbs(
-            munition.altitudeMeters - static_cast<double>(trackedTarget->altitude));
-        const double slantRangeMeters = qSqrt(
-            qPow(horizontalDistanceToTargetMeters, 2.0) +
-            qPow(verticalSeparationMeters, 2.0));
-        if (slantRangeMeters <= munition.hitRadiusMeters) {
-          this->applyMissileDamage(
-              trackedTarget->name,
-              kDefaultMissileDamagePercent);
-          if (isBomb) {
-            appendBombImpactEffects(_transientEffects, munition);
-          } else {
-            _transientEffects.push_back(makeTransientEffect(
-                munition.id + QStringLiteral("-impact"),
-                QStringLiteral("ImpactFlash"),
-                munition.forceIdentifier,
-                munition.latitude,
-                munition.longitude,
-                munition.altitudeMeters,
-                kImpactFlashTtlSeconds));
-          }
-          munition.active = false;
-          continue;
-        }
-      }
-    } else {
-      QString impactedEntityName;
-      double bestImpactRangeMeters = munition.hitRadiusMeters;
-      for (const Entity& entity : _entities) {
-        if (entity.destroyed ||
-            entity.name == munition.launcherEntityName ||
-            entity.forceIdentifier == munition.forceIdentifier) {
-          continue;
-        }
-
-        const double horizontalDistanceMeters = distanceMeters(
-            munition.latitude,
-            munition.longitude,
-            entity.latitude,
-            entity.longitude);
-        const double verticalSeparationMeters = qAbs(
-            munition.altitudeMeters - static_cast<double>(entity.altitude));
-        const double slantRangeMeters = qSqrt(
-            qPow(horizontalDistanceMeters, 2.0) +
-            qPow(verticalSeparationMeters, 2.0));
-        if (slantRangeMeters <= bestImpactRangeMeters) {
-          bestImpactRangeMeters = slantRangeMeters;
-          impactedEntityName = entity.name;
-        }
-      }
-
-      if (!impactedEntityName.isEmpty()) {
-        if (isBomb) {
-          this->applyBombBlastDamage(munition);
-          appendBombImpactEffects(_transientEffects, munition);
-        } else {
-          this->applyMissileDamage(
-              impactedEntityName,
-              kDefaultMissileDamagePercent);
-          _transientEffects.push_back(makeTransientEffect(
-              munition.id + QStringLiteral("-impact"),
-              QStringLiteral("ImpactFlash"),
-              munition.forceIdentifier,
-              munition.latitude,
-              munition.longitude,
-              munition.altitudeMeters,
-              kImpactFlashTtlSeconds));
-        }
-        munition.active = false;
-        continue;
-      }
-    }
-
-    if (munition.altitudeMeters <= kMinimumMunitionAltitudeMeters) {
-      if (isBomb) {
+  application::advanceActiveMunitions(
+      _activeMunitions,
+      _transientEffects,
+      _entities,
+      [this](const QString& targetName, double damagePercent) {
+        this->applyMissileDamage(targetName, damagePercent);
+      },
+      [this](const ActiveMunition& munition) {
         this->applyBombBlastDamage(munition);
-        appendBombImpactEffects(_transientEffects, munition);
-      }
-      munition.active = false;
-      continue;
-    }
-
-    if (munition.ageSeconds >= munition.ttlSeconds) {
-      munition.active = false;
-    }
-  }
-
-  for (qsizetype index = _activeMunitions.size() - 1; index >= 0; --index) {
-    if (_activeMunitions.at(index).active) {
-      continue;
-    }
-    _activeMunitions.removeAt(index);
-    if (index == 0) {
-      break;
-    }
-  }
+      },
+      deltaSeconds);
 }
 
 void ScenarioState::advanceTransientEffects(double deltaSeconds) {
