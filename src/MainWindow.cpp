@@ -10,6 +10,7 @@
 #include "application/TaskApplicator.h"
 #include "domain/BombReleaseGate.h"
 #include "presentation/BombReleaseController.h"
+#include "presentation/DetectedContactsPresenter.h"
 #include "presentation/EntityPlanExecutor.h"
 #include "presentation/EntityContextMenuBuilder.h"
 #include "presentation/EntityPlanDialog.h"
@@ -1414,69 +1415,40 @@ void MainWindow::syncDetectedContactsToUi() {
 
   this->_detectedContactsModel->removeRows(0, this->_detectedContactsModel->rowCount());
 
-  const QVector<Entity>& entities = this->_scenarioState->entities();
-  const auto findEntityByName = [&entities](const QString& name) -> const Entity* {
-    for (const Entity& entity : entities) {
-      if (entity.name == name) {
-        return &entity;
-      }
-    }
-    return nullptr;
-  };
-
   const QString lastSeenText =
       QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
-  QSet<QString> insertedPairs;
   int restoredRow = -1;
 
-  for (const Entity& observer : entities) {
-    for (const SensorContact& contact : observer.sensorContacts) {
-      if (!contact.detected) {
-        continue;
+  const QVector<presentation::DetectedContactRow> rows =
+      presentation::buildDetectedContactRows(this->_scenarioState->entities());
+
+  for (const presentation::DetectedContactRow& row : rows) {
+    auto* observerItem = new QStandardItem(row.observerName);
+    observerItem->setData(row.observerName, kDetectedContactObserverRole);
+    observerItem->setData(row.targetName, kDetectedContactTargetRole);
+
+    QList<QStandardItem*> rowItems{
+        observerItem,
+        new QStandardItem(row.targetName),
+        new QStandardItem(row.forceLabel),
+        new QStandardItem(row.typeLabel),
+        new QStandardItem(row.rangeText),
+        new QStandardItem(row.bearingText),
+        new QStandardItem(row.altitudeText),
+        new QStandardItem(lastSeenText),
+    };
+
+    for (QStandardItem* item : rowItems) {
+      if (item) {
+        item->setEditable(false);
       }
+    }
 
-      const QString pairKey =
-          observer.name + QStringLiteral("::") + contact.targetEntityName;
-      if (insertedPairs.contains(pairKey)) {
-        continue;
-      }
+    this->_detectedContactsModel->appendRow(rowItems);
 
-      const Entity* target = findEntityByName(contact.targetEntityName);
-      if (!target) {
-        continue;
-      }
-
-      insertedPairs.insert(pairKey);
-
-      auto* observerItem = new QStandardItem(observer.name);
-      observerItem->setData(observer.name, kDetectedContactObserverRole);
-      observerItem->setData(contact.targetEntityName, kDetectedContactTargetRole);
-
-      QList<QStandardItem*> rowItems{
-          observerItem,
-          new QStandardItem(target->name),
-          new QStandardItem(domain::forceIdentifierLabel(target->forceIdentifier)),
-          new QStandardItem(target->type.trimmed().isEmpty() ? target->category : target->type),
-          new QStandardItem(
-              QStringLiteral("%1 km").arg(contact.rangeMeters / 1000.0, 0, 'f', 1)),
-          new QStandardItem(
-              QStringLiteral("%1 deg").arg(contact.bearingDegrees, 0, 'f', 1)),
-          new QStandardItem(QStringLiteral("%1 m").arg(target->altitude)),
-          new QStandardItem(lastSeenText),
-      };
-
-      for (QStandardItem* item : rowItems) {
-        if (item) {
-          item->setEditable(false);
-        }
-      }
-
-      this->_detectedContactsModel->appendRow(rowItems);
-
-      if (observer.name == selectedObserverName &&
-          contact.targetEntityName == selectedContactName) {
-        restoredRow = this->_detectedContactsModel->rowCount() - 1;
-      }
+    if (row.observerName == selectedObserverName &&
+        row.targetName == selectedContactName) {
+      restoredRow = this->_detectedContactsModel->rowCount() - 1;
     }
   }
 
