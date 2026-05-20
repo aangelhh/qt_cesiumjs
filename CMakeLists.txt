@@ -107,6 +107,9 @@ qt_add_executable(qttest
     src/presentation/DetectedContactsPresenter.h
     src/presentation/EntityContextMenuBuilder.cpp
     src/presentation/EntityContextMenuBuilder.h
+    src/presentation/EntityContextMenuStateBuilder.cpp
+    src/presentation/EntityContextMenuStateBuilder.h
+    src/presentation/TrackSetSyncer.h
     src/presentation/EntityPlanDialog.cpp
     src/presentation/EntityPlanDialog.h
     src/presentation/EntityHomePositionTracker.cpp

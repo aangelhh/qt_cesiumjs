@@ -15,6 +15,8 @@
 #include "presentation/EntityPlanExecutor.h"
 #include "presentation/MapBridgeScripts.h"
 #include "presentation/EntityContextMenuBuilder.h"
+#include "presentation/EntityContextMenuStateBuilder.h"
+#include "presentation/TrackSetSyncer.h"
 #include "presentation/EntityPlanDialog.h"
 #include "domain/CombatRules.h"
 #include "domain/Entity.h"
@@ -103,14 +105,7 @@ constexpr int kTaskQuickBarIconPixels = 18;
 // autoBehaviorDamageReactionLevel, autoBehaviorCanEngageByDamage
 // moved to domain/CombatRules.h
 
-QStringList behaviorModeOptions() {
-  return {
-      QStringLiteral("Manual"),
-      QStringLiteral("Aggressive"),
-      QStringLiteral("Defensive"),
-      QStringLiteral("Patrol"),
-  };
-}
+// behaviorModeOptions moved to presentation/EntityContextMenuStateBuilder.h
 
 QString projectRootPath() {
 #ifdef QTTEST_SOURCE_DIR
@@ -1712,31 +1707,23 @@ bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync)
 }
 
 void MainWindow::syncActiveMunitionTracksToMap() {
-  QSet<QString> currentMunitionTrackNames;
-  for (const ActiveMunition& munition : this->_scenarioState->activeMunitions()) {
-    currentMunitionTrackNames.insert(munition.id);
-    this->sendTrackToMap(presentation::makeMunitionTrackSummary(munition), false);
-  }
-  for (const QString& previousName : this->_activeMunitionTrackNames) {
-    if (!currentMunitionTrackNames.contains(previousName)) {
-      this->removeTrackFromMap(previousName);
-    }
-  }
-  this->_activeMunitionTrackNames = currentMunitionTrackNames;
+  this->_activeMunitionTrackNames = presentation::syncCollectionToMap<ActiveMunition>(
+      this->_scenarioState->activeMunitions(),
+      [](const ActiveMunition& m) { return m.id; },
+      [](const ActiveMunition& m) { return presentation::makeMunitionTrackSummary(m); },
+      this->_activeMunitionTrackNames,
+      [this](const QVariantMap& s, bool sel) { this->sendTrackToMap(s, sel); },
+      [this](const QString& id) { this->removeTrackFromMap(id); });
 }
 
 void MainWindow::syncTransientEffectsToMap() {
-  QSet<QString> currentEffectTrackNames;
-  for (const TransientEffect& effect : this->_scenarioState->transientEffects()) {
-    currentEffectTrackNames.insert(effect.id);
-    this->sendTrackToMap(presentation::makeTransientEffectTrackSummary(effect), false);
-  }
-  for (const QString& previousName : this->_activeEffectTrackNames) {
-    if (!currentEffectTrackNames.contains(previousName)) {
-      this->removeTrackFromMap(previousName);
-    }
-  }
-  this->_activeEffectTrackNames = currentEffectTrackNames;
+  this->_activeEffectTrackNames = presentation::syncCollectionToMap<TransientEffect>(
+      this->_scenarioState->transientEffects(),
+      [](const TransientEffect& e) { return e.id; },
+      [](const TransientEffect& e) { return presentation::makeTransientEffectTrackSummary(e); },
+      this->_activeEffectTrackNames,
+      [this](const QVariantMap& s, bool sel) { this->sendTrackToMap(s, sel); },
+      [this](const QString& id) { this->removeTrackFromMap(id); });
 }
 
 void MainWindow::syncPendingBombTargetToMap() {
@@ -1970,37 +1957,18 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   const bool entityDestroyed = this->selectedEntityIsDestroyed();
   const QString entityName = this->selectedEntityName();
   const Entity* entity = this->findEntityByName(entityName);
-  const bool canUseWeapons = entity && domain::entityCanUseMissileActions(*entity);
-  const int missileCount =
-      entity ? domain::weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
-  const int bombCount =
-      entity ? domain::weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
-  const int detectedMissileTargetCount =
-      entity ? application::detectedMissileTargetsInRange(this->_scenarioState, *entity).size() : 0;
 
   const QVariantMap summaryMap =
       this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
 
-  presentation::EntityContextMenuState state;
-  state.entityDestroyed   = entityDestroyed;
-  state.canUseWeapons     = canUseWeapons;
-  state.missileCount      = missileCount;
-  state.bombCount         = bombCount;
-  state.detectedMissileTargetCount = detectedMissileTargetCount;
-  state.simulationRunning = this->_simulationRunning;
-  state.bombReleasePendingForThisEntity =
-      this->_bombReleaseController->pendingRelease().pending &&
-      entity &&
-      this->_bombReleaseController->pendingRelease().launcherEntityName
-          .compare(entity->name, Qt::CaseInsensitive) == 0;
-  state.entityName        = entityName;
-  state.currentBehaviorMode = entity && !entity->behaviorMode.trimmed().isEmpty()
-      ? entity->behaviorMode.trimmed()
-      : QStringLiteral("Manual");
-  state.behaviorModeOptions = behaviorModeOptions();
-  state.hidden              = summaryMap.value(QStringLiteral("hidden")).toBool();
-  state.radarCoverageVisible= summaryMap.value(QStringLiteral("radarCoverageVisible")).toBool();
-  state.trackHistoryVisible = summaryMap.value(QStringLiteral("trackHistoryVisible")).toBool();
+  presentation::EntityContextMenuState state =
+      presentation::buildEntityContextMenuState(
+          entity,
+          this->_scenarioState,
+          this->_bombReleaseController->pendingRelease(),
+          this->_simulationRunning,
+          entityDestroyed,
+          summaryMap);
 
   presentation::EntityContextMenuSlots actions;
   actions.assignFlyHeadingAltitudeSpeedTask = [this]() { this->assignFlyHeadingAltitudeSpeedTask(); };
