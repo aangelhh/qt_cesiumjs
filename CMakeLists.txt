@@ -85,6 +85,8 @@ qt_add_executable(qttest
     src/presentation/BombReleaseActionsController.h
     src/presentation/EntityDefaultsResolver.cpp
     src/presentation/EntityDefaultsResolver.h
+    src/presentation/MapBridgeScripts.cpp
+    src/presentation/MapBridgeScripts.h
     src/presentation/EntityStateActionsController.cpp
     src/presentation/EntityStateActionsController.h
     src/presentation/ScenarioObjectEditorController.cpp

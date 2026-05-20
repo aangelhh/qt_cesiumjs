@@ -13,6 +13,7 @@
 #include "presentation/DetectedContactsPresenter.h"
 #include "presentation/EntityDefaultsResolver.h"
 #include "presentation/EntityPlanExecutor.h"
+#include "presentation/MapBridgeScripts.h"
 #include "presentation/EntityContextMenuBuilder.h"
 #include "presentation/EntityPlanDialog.h"
 #include "domain/CombatRules.h"
@@ -155,9 +156,6 @@ void setTrackData(QStandardItem* item, const QVariantMap& summary) {
   item->setData(summary, kTrackSummaryRole);
 }
 
-QJsonObject mapToJsonObject(const QVariantMap& map) {
-  return QJsonObject::fromVariantMap(map);
-}
 // forceColorFromLabel, categoryGlyph, makeTacticalGraphicIcon, makeTrackIcon
 // moved to presentation/TrackIconProvider.h
 
@@ -1432,25 +1430,13 @@ void MainWindow::toggleTacticalOverlays(bool enabled) {
 
 void MainWindow::sendTrackToMap(const QVariantMap& summary, bool focus) {
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-  if (!this->_webView || summary.isEmpty()) {
+  if (!this->_webView) {
     return;
   }
-
-  const QJsonObject object = mapToJsonObject(summary);
-  const QString json = QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
-  const QString type = summary.value(QStringLiteral("type")).toString();
-  if (type == QStringLiteral("Waypoint") || type == QStringLiteral("Route") ||
-      type == QStringLiteral("Area")) {
-    const QString script = QStringLiteral(
-        "window.addOrUpdateQtGraphic && window.addOrUpdateQtGraphic(%1, %2);")
-                               .arg(json, focus ? QStringLiteral("true") : QStringLiteral("false"));
+  const QString script = presentation::MapBridgeScripts::buildAddOrUpdateScript(summary, focus);
+  if (!script.isEmpty()) {
     this->_webView->page()->runJavaScript(script);
-    return;
   }
-  const QString script = QStringLiteral(
-      "window.addOrUpdateQtTrack && window.addOrUpdateQtTrack(%1, %2);")
-                             .arg(json, focus ? QStringLiteral("true") : QStringLiteral("false"));
-  this->_webView->page()->runJavaScript(script);
 #else
   Q_UNUSED(summary)
   Q_UNUSED(focus)
@@ -1459,17 +1445,13 @@ void MainWindow::sendTrackToMap(const QVariantMap& summary, bool focus) {
 
 void MainWindow::removeTrackFromMap(const QString& trackName) {
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-  if (!this->_webView || trackName.trimmed().isEmpty()) {
+  if (!this->_webView) {
     return;
   }
-
-  const QString trackJson =
-      QString::fromUtf8(QJsonDocument(QJsonArray{trackName}).toJson(QJsonDocument::Compact));
-  const QString script = QStringLiteral(
-      "(window.removeQtTrack && window.removeQtTrack(%1));"
-      "(window.removeQtGraphic && window.removeQtGraphic(%1));")
-                             .arg(trackJson.mid(1).chopped(1));
-  this->_webView->page()->runJavaScript(script);
+  const QString script = presentation::MapBridgeScripts::buildRemoveScript(trackName);
+  if (!script.isEmpty()) {
+    this->_webView->page()->runJavaScript(script);
+  }
 #else
   Q_UNUSED(trackName)
 #endif
@@ -1477,16 +1459,13 @@ void MainWindow::removeTrackFromMap(const QString& trackName) {
 
 void MainWindow::sendDraftGraphicToMap(const QVariantMap& summary) {
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-  if (!this->_webView || summary.isEmpty()) {
+  if (!this->_webView) {
     return;
   }
-
-  const QJsonObject object = mapToJsonObject(summary);
-  const QString json = QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
-  const QString script = QStringLiteral(
-      "window.addOrUpdateQtDraftGraphic && window.addOrUpdateQtDraftGraphic(%1);")
-                             .arg(json);
-  this->_webView->page()->runJavaScript(script);
+  const QString script = presentation::MapBridgeScripts::buildAddOrUpdateDraftScript(summary);
+  if (!script.isEmpty()) {
+    this->_webView->page()->runJavaScript(script);
+  }
 #else
   Q_UNUSED(summary)
 #endif
@@ -1494,16 +1473,13 @@ void MainWindow::sendDraftGraphicToMap(const QVariantMap& summary) {
 
 void MainWindow::clearDraftGraphicFromMap(const QString& name) {
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-  if (!this->_webView || name.trimmed().isEmpty()) {
+  if (!this->_webView) {
     return;
   }
-
-  const QString json =
-      QString::fromUtf8(QJsonDocument(QJsonArray{name}).toJson(QJsonDocument::Compact));
-  const QString script = QStringLiteral(
-      "window.removeQtDraftGraphic && window.removeQtDraftGraphic(%1);")
-                             .arg(json.mid(1).chopped(1));
-  this->_webView->page()->runJavaScript(script);
+  const QString script = presentation::MapBridgeScripts::buildRemoveDraftScript(name);
+  if (!script.isEmpty()) {
+    this->_webView->page()->runJavaScript(script);
+  }
 #else
   Q_UNUSED(name)
 #endif
