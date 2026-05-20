@@ -27,6 +27,7 @@ add_executable(qttest_unit_tests
     application/EventBusTest.cpp
     application/AttackTaskProcessorTest.cpp
     application/TaskApplicatorTest.cpp
+    application/ScenarioQueriesTest.cpp
     presentation/EntityVisualStateManagerTest.cpp
     presentation/EntityHomePositionTrackerTest.cpp
     presentation/TrackIconProviderTest.cpp
