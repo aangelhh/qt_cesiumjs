@@ -77,6 +77,8 @@ qt_add_executable(qttest
     src/domain/Sensor.h
     src/domain/Task.cpp
     src/domain/Task.h
+    src/presentation/AssignTaskController.cpp
+    src/presentation/AssignTaskController.h
     src/presentation/BombReleaseController.cpp
     src/presentation/BombReleaseController.h
     src/presentation/BombReleaseActionsController.cpp

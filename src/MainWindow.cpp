@@ -413,6 +413,24 @@ MainWindow::MainWindow(QWidget* parent)
           [this](const QString& msg) { this->appendLogMessage(msg); },
           [this]() { this->updateSimulationControls(); },
           this);
+  _assignTaskController = std::make_unique<presentation::AssignTaskController>(
+      [this]() { return this->selectedEntityName(); },
+      [this]() { return this->currentSelectionIsOperableEntity(); },
+      [this](const QString& name) {
+        const auto it = this->_planExecutor->plans().constFind(name);
+        return it != this->_planExecutor->plans().constEnd() && it->running;
+      },
+      [this]() {
+        return this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+      },
+      [this](const QString& en, const EntityTask& init, const QString& type, EntityTask& out) {
+        return this->captureTaskConfiguration(en, init, type, out);
+      },
+      [this](const QString& en, const EntityTask& task) {
+        return this->applyEntityTask(en, task);
+      },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+      this);
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
@@ -2541,47 +2559,7 @@ void MainWindow::cancelPendingBombRelease() {
 }
 
 void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->currentSelectionIsOperableEntity()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("La entidad seleccionada no esta operable."));
-    return;
-  }
-
-  const auto planIt = this->_planExecutor->plans().constFind(entityName);
-  if (planIt != this->_planExecutor->plans().constEnd() && planIt->running) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No puedes editar la task mientras el plan esta en ejecucion."));
-    return;
-  }
-
-  const QVariantMap currentSummary =
-      this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  EntityTask currentTask;
-  currentTask.taskType = currentSummary.value(QStringLiteral("taskType")).toString();
-  currentTask.enabled = currentSummary.value(QStringLiteral("taskEnabled")).toBool();
-  currentTask.status = currentSummary.value(QStringLiteral("taskStatus")).toString();
-  currentTask.targetHeadingDegrees = currentSummary.value(QStringLiteral("taskTargetHeadingDegrees")).toDouble();
-  currentTask.targetAltitudeMeters = currentSummary.value(QStringLiteral("taskTargetAltitudeMeters")).toInt();
-  currentTask.targetSpeedKnots = currentSummary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble();
-  currentTask.targetLatitude = currentSummary.value(QStringLiteral("taskTargetLatitude")).toDouble();
-  currentTask.targetLongitude = currentSummary.value(QStringLiteral("taskTargetLongitude")).toDouble();
-  currentTask.targetEntityName = currentSummary.value(QStringLiteral("taskTargetEntityName")).toString();
-  currentTask.targetWaypointName = currentSummary.value(QStringLiteral("taskTargetWaypointName")).toString();
-  currentTask.targetRouteName = currentSummary.value(QStringLiteral("taskTargetRouteName")).toString();
-  currentTask.targetAreaName = currentSummary.value(QStringLiteral("taskTargetAreaName")).toString();
-  currentTask.targetAreaRadiusMeters = currentSummary.value(QStringLiteral("taskTargetAreaRadiusMeters")).toDouble();
-
-  EntityTask configuredTask;
-  if (!this->captureTaskConfiguration(entityName, currentTask, initialTaskType, configuredTask)) {
-    return;
-  }
-
-  this->applyEntityTask(entityName, configuredTask);
+  this->_assignTaskController->open(initialTaskType);
 }
 
 void MainWindow::populateTaskCommands() {

@@ -21,6 +21,7 @@
 #include "presentation/GraphicPickCoordinator.h"
 #include "presentation/PlanStepConfigurator.h"
 #include "presentation/PlanTypes.h"
+#include "presentation/AssignTaskController.h"
 #include "presentation/BombReleaseActionsController.h"
 #include "presentation/EntityStateActionsController.h"
 #include "presentation/ScenarioObjectEditorController.h"
@@ -263,6 +264,7 @@ private:
   std::unique_ptr<presentation::BombReleaseActionsController> _bombReleaseActionsController;
   std::unique_ptr<presentation::ScenarioObjectEditorController> _scenarioObjectEditorController;
   std::unique_ptr<presentation::SimulationLifecycleController> _simulationLifecycleController;
+  std::unique_ptr<presentation::AssignTaskController> _assignTaskController;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif
