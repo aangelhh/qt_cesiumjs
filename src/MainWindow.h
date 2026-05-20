@@ -67,8 +67,10 @@ protected:
 
 private slots:
   void openAddEntityDialog();
+  void onEntityDialogAccepted(const struct Entity& entity);
   void beginEntityCoordinatePick();
   void reportPickedCoordinate(double longitude, double latitude, double height);
+  void handleBombPickCoordinate(double longitude, double latitude);
   void reportMapStatus(const QString& message);
   void updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex& previous);
   void handleDetectedContactSelection(const QModelIndex& current, const QModelIndex& previous);
@@ -100,6 +102,7 @@ private slots:
   void addBombToSelectedEntity();
   void launchMissileFromSelectedEntity();
   void launchMissileAtSelectedEntity();
+  void executeMissileLaunch(const QString& launcherName, const QString& targetName, int previousMissileCount);
   void releaseBombFromSelectedEntity();
   void releaseBombAtSurfaceEntity();
   void releaseBombAtCustomCoordinates();

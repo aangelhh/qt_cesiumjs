@@ -963,31 +963,31 @@ void MainWindow::openAddEntityDialog() {
       dialog,
       &QDialog::accepted,
       this,
-      [this, dialog]() {
-        const Entity entity = dialog->entity();
-        const bool hasRadarSensor = std::any_of(
-            entity.sensors.cbegin(),
-            entity.sensors.cend(),
-            [](const SensorDefinition& sensor) {
-              return sensor.sensorType.compare(QStringLiteral("radar"), Qt::CaseInsensitive) == 0;
-            });
-        if (hasRadarSensor && !entity.name.trimmed().isEmpty() &&
-            !this->_entityVisualStateManager->contains(entity.name)) {
-          presentation::EntityVisualState& visualState =
-              this->_entityVisualStateManager->ensureState(entity.name);
-          visualState.radarCoverageVisible = true;
-          visualState.trackHistoryVisible = false;
-          this->_entityVisualStateManager->save();
-        }
-        this->_scenarioState->addEntity(entity);
-        this->appendEntityToUi(entity);
-        this->_ui->statusLabel->setText(
-            EntityTextFormatter::statusMessage(entity));
-      });
+      [this, dialog]() { this->onEntityDialogAccepted(dialog->entity()); });
 
   dialog->show();
   dialog->raise();
   dialog->activateWindow();
+}
+
+void MainWindow::onEntityDialogAccepted(const Entity& entity) {
+  const bool hasRadarSensor = std::any_of(
+      entity.sensors.cbegin(),
+      entity.sensors.cend(),
+      [](const SensorDefinition& sensor) {
+        return sensor.sensorType.compare(QStringLiteral("radar"), Qt::CaseInsensitive) == 0;
+      });
+  if (hasRadarSensor && !entity.name.trimmed().isEmpty() &&
+      !this->_entityVisualStateManager->contains(entity.name)) {
+    presentation::EntityVisualState& visualState =
+        this->_entityVisualStateManager->ensureState(entity.name);
+    visualState.radarCoverageVisible = true;
+    visualState.trackHistoryVisible = false;
+    this->_entityVisualStateManager->save();
+  }
+  this->_scenarioState->addEntity(entity);
+  this->appendEntityToUi(entity);
+  this->_ui->statusLabel->setText(EntityTextFormatter::statusMessage(entity));
 }
 
 void MainWindow::beginEntityCoordinatePick() {
@@ -1021,26 +1021,7 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
   }
 
   if (this->_bombReleaseController->isPickingMode()) {
-    const QString launcherName = this->_bombReleaseController->pickingLauncherName();
-    this->_bombReleaseController->cancelPickMode();
-
-    const Entity* launcher = this->findEntityByName(launcherName);
-    const int bombCount =
-        launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
-    if (!launcher || launcher->destroyed || bombCount <= 0) {
-      this->_ui->statusLabel->setText(
-          QStringLiteral("No se pudo programar el release de bomba para %1.")
-              .arg(launcherName));
-      return;
-    }
-
-    this->queuePendingBombRelease(
-        launcherName,
-        latitude,
-        longitude,
-        0.0,
-        domain::attackPointLabel(latitude, longitude),
-        QStringLiteral("Pick on map"));
+    this->handleBombPickCoordinate(longitude, latitude);
     return;
   }
 
@@ -1067,6 +1048,29 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
       QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
           .arg(latitude,  0, 'f', 5)
           .arg(longitude, 0, 'f', 5));
+}
+
+void MainWindow::handleBombPickCoordinate(double longitude, double latitude) {
+  const QString launcherName = this->_bombReleaseController->pickingLauncherName();
+  this->_bombReleaseController->cancelPickMode();
+
+  const Entity* launcher = this->findEntityByName(launcherName);
+  const int bombCount =
+      launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
+  if (!launcher || launcher->destroyed || bombCount <= 0) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No se pudo programar el release de bomba para %1.")
+            .arg(launcherName));
+    return;
+  }
+
+  this->queuePendingBombRelease(
+      launcherName,
+      latitude,
+      longitude,
+      0.0,
+      domain::attackPointLabel(latitude, longitude),
+      QStringLiteral("Pick on map"));
 }
 
 void MainWindow::openSelectedEntityDetails() {
@@ -2412,21 +2416,25 @@ void MainWindow::launchMissileAtSelectedEntity() {
     return;
   }
 
+  this->executeMissileLaunch(launcherName, targetName, missileCount);
+}
+
+void MainWindow::executeMissileLaunch(
+    const QString& launcherName,
+    const QString& targetName,
+    int previousMissileCount) {
   if (!this->_scenarioState->launchMissileAt(launcherName, targetName)) {
     this->_ui->statusLabel->setText(
-        QStringLiteral("Target out of missile range for %1.")
-            .arg(launcherName));
+        QStringLiteral("Target out of missile range for %1.").arg(launcherName));
     return;
   }
-
   this->appendLogMessage(
-      QStringLiteral("Missile launched from %1 at %2")
-          .arg(launcherName, targetName));
+      QStringLiteral("Missile launched from %1 at %2").arg(launcherName, targetName));
   this->syncScenarioStateToUi();
   this->_ui->statusLabel->setText(
       QStringLiteral("Misil lanzado desde %1 hacia %2. Quedan %3.")
           .arg(launcherName, targetName)
-          .arg(qMax(0, missileCount - 1)));
+          .arg(qMax(0, previousMissileCount - 1)));
 }
 
 void MainWindow::showContextMenuPlaceholder(const QString& actionName) {
