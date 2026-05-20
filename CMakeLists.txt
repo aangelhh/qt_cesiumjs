@@ -83,6 +83,8 @@ qt_add_executable(qttest
     src/presentation/BombReleaseController.h
     src/presentation/BombReleaseActionsController.cpp
     src/presentation/BombReleaseActionsController.h
+    src/presentation/EntityDefaultsResolver.cpp
+    src/presentation/EntityDefaultsResolver.h
     src/presentation/EntityStateActionsController.cpp
     src/presentation/EntityStateActionsController.h
     src/presentation/ScenarioObjectEditorController.cpp

@@ -11,6 +11,7 @@
 #include "domain/BombReleaseGate.h"
 #include "presentation/BombReleaseController.h"
 #include "presentation/DetectedContactsPresenter.h"
+#include "presentation/EntityDefaultsResolver.h"
 #include "presentation/EntityPlanExecutor.h"
 #include "presentation/EntityContextMenuBuilder.h"
 #include "presentation/EntityPlanDialog.h"
@@ -2082,24 +2083,11 @@ bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind,
   }
 
   const QVariantMap summary = this->makeEntityTrackSummary(*entity);
-  const bool hasRunningTaskTargets =
-      summary.value(QStringLiteral("taskEnabled")).toBool() &&
-      summary.value(QStringLiteral("taskStatus")).toString() == QStringLiteral("Running") &&
-      !summary.value(QStringLiteral("taskType")).toString().trimmed().isEmpty();
-
-  const double defaultHeading = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetHeadingDegrees")).toDouble()
-      : entity->headingDegrees;
-  const int defaultAltitudeMeters = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetAltitudeMeters")).toInt()
-      : entity->altitude;
-  double defaultSpeedKnots = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble()
-      : entity->speedKnots;
-  if (defaultSpeedKnots <= 0.0) {
-    defaultSpeedKnots =
-        entity->domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0 ? 220.0 : 12.0;
-  }
+  double defaultHeading;
+  int    defaultAltitudeMeters;
+  double defaultSpeedKnots;
+  presentation::resolvePlanStepDefaults(
+      *entity, summary, defaultHeading, defaultAltitudeMeters, defaultSpeedKnots);
 
   return this->_planStepConfigurator->configure(
       *entity, defaultHeading, defaultAltitudeMeters, defaultSpeedKnots, kind, step);
@@ -2129,30 +2117,18 @@ bool MainWindow::resolveSelectedEntityFlyTargets(
     return false;
   }
 
-  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  const QVariantMap summary =
+      this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
   if (summary.isEmpty()) {
     return false;
   }
-
-  const bool hasRunningTaskTargets =
-      summary.value(QStringLiteral("taskEnabled")).toBool() &&
-      summary.value(QStringLiteral("taskStatus")).toString() == QStringLiteral("Running") &&
-      !summary.value(QStringLiteral("taskType")).toString().trimmed().isEmpty();
 
   const int currentEntityAltitudeMeters = application::entityAltitudeMeters(
       this->_scenarioState,
       summary.value(QStringLiteral("name")).toString());
 
-  headingDegrees = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetHeadingDegrees")).toDouble()
-      : summary.value(QStringLiteral("headingDegrees")).toDouble();
-  altitudeMeters = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetAltitudeMeters")).toInt()
-      : currentEntityAltitudeMeters;
-  speedKnots = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble()
-      : summary.value(QStringLiteral("speedKnots")).toDouble();
-  return true;
+  return presentation::resolveFlyTargetsFromSummary(
+      summary, currentEntityAltitudeMeters, headingDegrees, altitudeMeters, speedKnots);
 }
 
 void MainWindow::applyFlyHeadingAltitudeSpeedTask(
