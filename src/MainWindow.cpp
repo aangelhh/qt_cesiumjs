@@ -369,6 +369,25 @@ MainWindow::MainWindow(QWidget* parent)
       [this](const QString& msg) { this->appendLogMessage(msg); },
       [this]() { this->syncScenarioStateToUi(); },
       this);
+  _scenarioObjectEditorController =
+      std::make_unique<presentation::ScenarioObjectEditorController>(
+          this->_scenarioState,
+          [this]() { return this->selectedEntityName(); },
+          [this]() { return this->selectedObjectName(); },
+          [this]() { return this->currentSelectionIsEntity(); },
+          [this]() { return this->selectedEntityIsDestroyed(); },
+          [this]() {
+            return this->_ui->objectsTreeView->currentIndex()
+                .data(kTrackSummaryRole).toMap();
+          },
+          [this](const QString& name) {
+            return this->cleanupRuntimeReferencesForRemovedEntity(name);
+          },
+          [this](const QString& name) { this->removeTrackFromMap(name); },
+          [this](const QString& msg) { this->appendLogMessage(msg); },
+          [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+          [this]() { this->syncScenarioStateToUi(); },
+          this);
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
@@ -2341,55 +2360,11 @@ void MainWindow::openEntityPlanDialog() {
 }
 
 void MainWindow::clearSelectedTask() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty() || this->selectedEntityIsDestroyed()) {
-    return;
-  }
-
-  if (this->_scenarioState->clearTask(entityName)) {
-    this->appendLogMessage(QStringLiteral("Task cleared for %1").arg(entityName));
-    this->syncScenarioStateToUi();
-  }
+  this->_scenarioObjectEditorController->clearSelectedTask();
 }
 
 void MainWindow::deleteSelectedEntity() {
-  const QString objectName = this->selectedObjectName();
-  if (objectName.isEmpty()) {
-    return;
-  }
-
-  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  const QString type = summary.value(QStringLiteral("type")).toString();
-
-  bool removed = false;
-  QString label = QStringLiteral("Object");
-  if (this->currentSelectionIsEntity()) {
-    removed = this->_scenarioState->removeEntity(objectName);
-    label = QStringLiteral("Entity");
-  } else if (type == QStringLiteral("Waypoint")) {
-    removed = this->_scenarioState->removeWaypoint(objectName);
-    label = QStringLiteral("Waypoint");
-  } else if (type == QStringLiteral("Route")) {
-    removed = this->_scenarioState->removeRoute(objectName);
-    label = QStringLiteral("Route");
-  } else if (type == QStringLiteral("Area")) {
-    removed = this->_scenarioState->removeArea(objectName);
-    label = QStringLiteral("Area");
-  }
-
-  QString cleanupStatusMessage;
-  if (removed) {
-    if (label == QStringLiteral("Entity")) {
-      cleanupStatusMessage = this->cleanupRuntimeReferencesForRemovedEntity(objectName);
-    }
-    this->appendLogMessage(QStringLiteral("%1 deleted: %2").arg(label, objectName));
-    this->removeTrackFromMap(objectName);
-    this->syncScenarioStateToUi();
-    this->_ui->statusLabel->setText(
-        cleanupStatusMessage.isEmpty()
-            ? QStringLiteral("%1 eliminado: %2").arg(label, objectName)
-            : cleanupStatusMessage);
-  }
+  this->_scenarioObjectEditorController->deleteSelected();
 }
 
 void MainWindow::selectObjectByName(const QString& trackName, bool notifyMap) {

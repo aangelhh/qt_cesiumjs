@@ -23,6 +23,7 @@
 #include "presentation/PlanTypes.h"
 #include "presentation/BombReleaseActionsController.h"
 #include "presentation/EntityStateActionsController.h"
+#include "presentation/ScenarioObjectEditorController.h"
 #include "presentation/TacticalGraphicsEditorController.h"
 #include "presentation/TaskAssignmentController.h"
 #include "presentation/WeaponActionsController.h"
@@ -259,6 +260,7 @@ private:
   std::unique_ptr<presentation::TaskAssignmentController> _taskAssignmentController;
   std::unique_ptr<presentation::TacticalGraphicsEditorController> _tacticalGraphicsEditorController;
   std::unique_ptr<presentation::BombReleaseActionsController> _bombReleaseActionsController;
+  std::unique_ptr<presentation::ScenarioObjectEditorController> _scenarioObjectEditorController;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif
