@@ -1663,6 +1663,30 @@ void MainWindow::syncPendingBombTargetToMap() {
       false);
 }
 
+static const char* kTaskQuickBarStyleSheet =
+    "QFrame#taskQuickBar {"
+    "  background-color: rgba(34, 34, 34, 225);"
+    "  border: 1px solid rgba(105, 115, 128, 180);"
+    "  border-radius: 8px;"
+    "}"
+    "QToolButton#taskQuickBarButton {"
+    "  background-color: transparent;"
+    "  border: 1px solid transparent;"
+    "  border-radius: 4px;"
+    "  padding: 2px;"
+    "}"
+    "QToolButton#taskQuickBarButton:hover:enabled {"
+    "  background-color: rgba(68, 87, 108, 200);"
+    "  border-color: rgba(120, 146, 173, 200);"
+    "}"
+    "QToolButton#taskQuickBarButton:pressed:enabled {"
+    "  background-color: rgba(52, 69, 88, 220);"
+    "}"
+    "QToolButton#taskQuickBarButton:disabled {"
+    "  background-color: transparent;"
+    "  border-color: transparent;"
+    "}";
+
 void MainWindow::createTaskQuickBar() {
   if (this->_taskQuickBar) {
     return;
@@ -1671,35 +1695,21 @@ void MainWindow::createTaskQuickBar() {
   auto* panel = new QFrame(this->_ui->viewerHost);
   panel->setObjectName(QStringLiteral("taskQuickBar"));
   panel->setFrameShape(QFrame::StyledPanel);
-  panel->setStyleSheet(QStringLiteral(
-      "QFrame#taskQuickBar {"
-      "  background-color: rgba(34, 34, 34, 225);"
-      "  border: 1px solid rgba(105, 115, 128, 180);"
-      "  border-radius: 8px;"
-      "}"
-      "QToolButton#taskQuickBarButton {"
-      "  background-color: transparent;"
-      "  border: 1px solid transparent;"
-      "  border-radius: 4px;"
-      "  padding: 2px;"
-      "}"
-      "QToolButton#taskQuickBarButton:hover:enabled {"
-      "  background-color: rgba(68, 87, 108, 200);"
-      "  border-color: rgba(120, 146, 173, 200);"
-      "}"
-      "QToolButton#taskQuickBarButton:pressed:enabled {"
-      "  background-color: rgba(52, 69, 88, 220);"
-      "}"
-      "QToolButton#taskQuickBarButton:disabled {"
-      "  background-color: transparent;"
-      "  border-color: transparent;"
-      "}"
-  ));
+  panel->setStyleSheet(QString::fromLatin1(kTaskQuickBarStyleSheet));
 
   auto* layout = new QHBoxLayout(panel);
   layout->setContentsMargins(6, 6, 6, 6);
   layout->setSpacing(3);
 
+  this->populateTaskQuickBarButtons(panel, layout);
+
+  panel->adjustSize();
+  panel->show();
+  panel->raise();
+  this->_taskQuickBar = panel;
+}
+
+void MainWindow::populateTaskQuickBarButtons(QFrame* panel, QHBoxLayout* layout) {
   auto addButton = [this, panel, layout](
                        const QString& iconFileName,
                        const QString& fallbackGlyph,
@@ -1785,11 +1795,6 @@ void MainWindow::createTaskQuickBar() {
       QColor(QStringLiteral("#ff6c52")),
       QStringLiteral("Fire At\nPlaceholder"),
       [this]() { this->showTaskQuickPlaceholder(QStringLiteral("Fire At")); });
-
-  panel->adjustSize();
-  panel->show();
-  panel->raise();
-  this->_taskQuickBar = panel;
 }
 
 void MainWindow::positionTaskQuickBar() {
@@ -3245,66 +3250,71 @@ void MainWindow::openAddAreaDialog() {
   }
 
   if (areaType == QStringLiteral("Circle")) {
-    const double radiusMeters = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Area Radius"),
-        QStringLiteral("Radius (m)"),
-        5000.0,
-        50.0,
-        500000.0,
-        0,
-        &ok);
-    if (!ok) {
-      return;
-    }
-    this->_graphicPickCoordinator->beginAreaCirclePick(
-        name, {areaAltitudeMeters, radiusMeters});
+    this->openAddCircleAreaDialog(name, areaAltitudeMeters);
+  } else if (areaType == QStringLiteral("Ellipse")) {
+    this->openAddEllipseAreaDialog(name, areaAltitudeMeters);
+  } else {
+    this->_graphicPickCoordinator->beginAreaPolygonPick(name, areaAltitudeMeters);
+  }
+}
+
+void MainWindow::openAddCircleAreaDialog(const QString& name, double altitudeMeters) {
+  bool ok = false;
+  const double radiusMeters = QInputDialog::getDouble(
+      this,
+      QStringLiteral("Area Radius"),
+      QStringLiteral("Radius (m)"),
+      5000.0,
+      50.0,
+      500000.0,
+      0,
+      &ok);
+  if (!ok) {
     return;
   }
+  this->_graphicPickCoordinator->beginAreaCirclePick(name, {altitudeMeters, radiusMeters});
+}
 
-  if (areaType == QStringLiteral("Ellipse")) {
-    const double semiMajorMeters = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Ellipse Semi-major Axis"),
-        QStringLiteral("Semi-major axis (m)"),
-        6000.0,
-        50.0,
-        500000.0,
-        0,
-        &ok);
-    if (!ok) {
-      return;
-    }
-    const double semiMinorMeters = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Ellipse Semi-minor Axis"),
-        QStringLiteral("Semi-minor axis (m)"),
-        3000.0,
-        50.0,
-        500000.0,
-        0,
-        &ok);
-    if (!ok) {
-      return;
-    }
-    const double rotationDegrees = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Ellipse Rotation"),
-        QStringLiteral("Rotation (deg)"),
-        0.0,
-        -360.0,
-        360.0,
-        1,
-        &ok);
-    if (!ok) {
-      return;
-    }
-    this->_graphicPickCoordinator->beginAreaEllipsePick(
-        name, {areaAltitudeMeters, semiMajorMeters, semiMinorMeters, rotationDegrees});
+void MainWindow::openAddEllipseAreaDialog(const QString& name, double altitudeMeters) {
+  bool ok = false;
+  const double semiMajorMeters = QInputDialog::getDouble(
+      this,
+      QStringLiteral("Ellipse Semi-major Axis"),
+      QStringLiteral("Semi-major axis (m)"),
+      6000.0,
+      50.0,
+      500000.0,
+      0,
+      &ok);
+  if (!ok) {
     return;
   }
-
-  this->_graphicPickCoordinator->beginAreaPolygonPick(name, areaAltitudeMeters);
+  const double semiMinorMeters = QInputDialog::getDouble(
+      this,
+      QStringLiteral("Ellipse Semi-minor Axis"),
+      QStringLiteral("Semi-minor axis (m)"),
+      3000.0,
+      50.0,
+      500000.0,
+      0,
+      &ok);
+  if (!ok) {
+    return;
+  }
+  const double rotationDegrees = QInputDialog::getDouble(
+      this,
+      QStringLiteral("Ellipse Rotation"),
+      QStringLiteral("Rotation (deg)"),
+      0.0,
+      -360.0,
+      360.0,
+      1,
+      &ok);
+  if (!ok) {
+    return;
+  }
+  this->_graphicPickCoordinator->beginAreaEllipsePick(
+      name, {altitudeMeters, semiMajorMeters, semiMinorMeters, rotationDegrees});
 }
 
 void MainWindow::updateSimulationControls() {

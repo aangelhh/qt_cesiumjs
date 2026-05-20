@@ -2,6 +2,8 @@
 
 #include <QMainWindow>
 #include <QHash>
+#include <QHBoxLayout>
+#include <QFrame>
 #include <QList>
 #include <QModelIndex>
 #include <QPointer>
@@ -107,6 +109,8 @@ private slots:
   void openAddWaypointDialog();
   void openAddRouteDialog();
   void openAddAreaDialog();
+  void openAddCircleAreaDialog(const QString& name, double altitudeMeters);
+  void openAddEllipseAreaDialog(const QString& name, double altitudeMeters);
   void startSimulation();
   void pauseSimulation();
   void stopSimulation();
@@ -171,6 +175,7 @@ private:
   void beginGraphicCoordinatePick();
   void updateSimulationControls();
   void createTaskQuickBar();
+  void populateTaskQuickBarButtons(QFrame* panel, QHBoxLayout* layout);
   void positionTaskQuickBar();
   void updateTaskQuickBarState();
   void showTaskQuickPlaceholder(const QString& actionName);
