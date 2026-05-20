@@ -9,6 +9,10 @@
 
 namespace application {
 
+/// Advances TTL-based transient effects (smoke, flashes, impacts) by deltaSeconds.
+/// Deactivates effects that exceed their TTL and removes them from the list.
+void advanceTransientEffects(QVector<TransientEffect>& effects, double deltaSeconds);
+
 /// Creates an unguided missile munition positioned at the launcher.
 ActiveMunition makeMissileMunition(const Entity& launcher, int serial);
 

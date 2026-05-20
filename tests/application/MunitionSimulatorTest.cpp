@@ -406,3 +406,46 @@ TEST(MunitionSimulator, BombBlastReturnsEmptyForZeroRadius) {
   target.destroyed = false;
   EXPECT_TRUE(computeBombBlastHits(bomb, {target}).isEmpty());
 }
+
+// ── advanceTransientEffects ───────────────────────────────────────────────────
+
+static TransientEffect makeFx(const QString& id, double ttl) {
+  TransientEffect e;
+  e.id = id;
+  e.effectType = QStringLiteral("Smoke");
+  e.ttlSeconds = ttl;
+  e.ageSeconds = 0.0;
+  e.active = true;
+  return e;
+}
+
+TEST(MunitionSimulator, TransientEffectAgesOnStep) {
+  QVector<TransientEffect> fx = { makeFx(QStringLiteral("e1"), 1.0) };
+  advanceTransientEffects(fx, 0.5);
+  ASSERT_EQ(fx.size(), 1);
+  EXPECT_NEAR(fx.at(0).ageSeconds, 0.5, 0.001);
+  EXPECT_TRUE(fx.at(0).active);
+}
+
+TEST(MunitionSimulator, TransientEffectRemovedAfterTtl) {
+  QVector<TransientEffect> fx = { makeFx(QStringLiteral("e1"), 0.3) };
+  advanceTransientEffects(fx, 0.5);
+  EXPECT_TRUE(fx.isEmpty());
+}
+
+TEST(MunitionSimulator, TransientEffectZeroDeltaIsNoop) {
+  QVector<TransientEffect> fx = { makeFx(QStringLiteral("e1"), 1.0) };
+  advanceTransientEffects(fx, 0.0);
+  ASSERT_EQ(fx.size(), 1);
+  EXPECT_NEAR(fx.at(0).ageSeconds, 0.0, 0.001);
+}
+
+TEST(MunitionSimulator, TransientEffectMultiplePartialExpiry) {
+  QVector<TransientEffect> fx = {
+    makeFx(QStringLiteral("short"), 0.1),
+    makeFx(QStringLiteral("long"),  5.0),
+  };
+  advanceTransientEffects(fx, 0.5);
+  ASSERT_EQ(fx.size(), 1);
+  EXPECT_EQ(fx.at(0).id, QStringLiteral("long"));
+}

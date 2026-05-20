@@ -4,8 +4,105 @@
 #include "application/SimulationEngine.h"
 #include "domain/Entity.h"
 #include "domain/Task.h"
+#include "domain/TacticalGraphic.h"
+
+#include <QtMath>
+
+namespace {
+
+bool isMovementTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("MoveToLocation") ||
+         taskType == QStringLiteral("MoveToWaypoint") ||
+         taskType == QStringLiteral("MoveAlongRoute") ||
+         taskType == QStringLiteral("PatrolArea") ||
+         taskType == QStringLiteral("OrbitArea") ||
+         taskType == QStringLiteral("FollowEntity") ||
+         taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
+         taskType == QStringLiteral("AttackAir");
+}
+
+} // namespace
 
 namespace application {
+
+void resolveTaskCoordinates(
+    Entity&                        entity,
+    const QVector<Waypoint>&       waypoints,
+    const QVector<RouteGraphic>&   routes,
+    const QVector<AreaDefinition>& areas) {
+  EntityTask& task = entity.currentTask;
+
+  if (task.taskType == QStringLiteral("MoveToWaypoint") &&
+      !task.targetWaypointName.trimmed().isEmpty()) {
+    for (const Waypoint& wp : waypoints) {
+      if (wp.name == task.targetWaypointName) {
+        task.targetLatitude = wp.latitude;
+        task.targetLongitude = wp.longitude;
+        task.targetAltitudeMeters = static_cast<int>(qRound(wp.altitudeMeters));
+        break;
+      }
+    }
+  }
+
+  if (task.taskType == QStringLiteral("MoveAlongRoute") &&
+      !task.targetRouteName.trimmed().isEmpty()) {
+    for (const RouteGraphic& route : routes) {
+      if (route.name != task.targetRouteName || route.points.isEmpty()) {
+        continue;
+      }
+      const RoutePoint& endPoint = route.points.last();
+      task.targetLatitude = endPoint.latitude;
+      task.targetLongitude = endPoint.longitude;
+      task.targetAltitudeMeters = static_cast<int>(qRound(endPoint.altitudeMeters));
+      break;
+    }
+  }
+
+  if ((task.taskType == QStringLiteral("PatrolArea") ||
+       task.taskType == QStringLiteral("OrbitArea")) &&
+      !task.targetAreaName.trimmed().isEmpty()) {
+    for (const AreaDefinition& area : areas) {
+      if (area.name != task.targetAreaName && area.id != task.targetAreaName) {
+        continue;
+      }
+      task.targetLatitude = area.centerLatitude;
+      task.targetLongitude = area.centerLongitude;
+      task.targetAltitudeMeters = static_cast<int>(qRound(area.centerAltitudeMeters));
+      double radiusMeters = area.radiusMeters;
+      if (radiusMeters <= 0.0) {
+        if (area.areaType == QStringLiteral("Ellipse")) {
+          radiusMeters = qMax(area.semiMinorAxisMeters, 100.0);
+        } else if (!area.points.isEmpty()) {
+          radiusMeters = 250.0;
+        } else {
+          radiusMeters = 500.0;
+        }
+      }
+      task.targetAreaRadiusMeters = radiusMeters;
+      break;
+    }
+  }
+
+  if (task.enabled && isMovementTaskType(task.taskType)) {
+    entity.flightDynamicsEnabled = true;
+    if (entity.flightDynamicsMode.trimmed().isEmpty()) {
+      entity.flightDynamicsMode = QStringLiteral("kinematic");
+    }
+    const bool isSpatialMovement =
+        task.taskType == QStringLiteral("MoveToLocation") ||
+        task.taskType == QStringLiteral("MoveToWaypoint") ||
+        task.taskType == QStringLiteral("MoveAlongRoute") ||
+        task.taskType == QStringLiteral("PatrolArea") ||
+        task.taskType == QStringLiteral("OrbitArea") ||
+        task.taskType == QStringLiteral("FollowEntity");
+    if (isSpatialMovement && task.targetSpeedKnots <= 0.0) {
+      task.targetSpeedKnots =
+          entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0
+          ? 220.0
+          : 12.0;
+    }
+  }
+}
 
 bool applyEntityTask(
     const QString&    entityName,

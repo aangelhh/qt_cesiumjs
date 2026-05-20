@@ -476,4 +476,27 @@ void advanceActiveMunitions(
   }
 }
 
+void advanceTransientEffects(QVector<TransientEffect>& effects, double deltaSeconds) {
+  if (deltaSeconds <= 0.0 || effects.isEmpty()) {
+    return;
+  }
+  for (TransientEffect& effect : effects) {
+    if (!effect.active) {
+      continue;
+    }
+    effect.ageSeconds += deltaSeconds;
+    if (effect.ageSeconds >= effect.ttlSeconds) {
+      effect.active = false;
+    }
+  }
+  for (qsizetype i = effects.size() - 1; i >= 0; --i) {
+    if (!effects.at(i).active) {
+      effects.removeAt(i);
+    }
+    if (i == 0) {
+      break;
+    }
+  }
+}
+
 } // namespace application

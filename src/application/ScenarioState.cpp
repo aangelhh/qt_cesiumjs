@@ -6,13 +6,13 @@
 #include "application/ScenarioSerializer.h"
 #include "application/SensorEngine.h"
 #include "application/TacticalGraphicRepository.h"
+#include "application/TaskApplicator.h"
 
 #include <QDir>
 #include <QtMath>
 
 namespace {
 
-constexpr double kEarthRadiusMeters = 6371000.0;
 constexpr double kDefaultMissileMaxRangeMeters = 60000.0;
 constexpr double kLaunchFlashTtlSeconds = 0.25;
 
@@ -128,23 +128,6 @@ double detectedTargetRangeMeters(
   }
 
   return closestRangeMeters;
-}
-
-double distanceMeters(
-    double latitude1,
-    double longitude1,
-    double latitude2,
-    double longitude2) {
-  const double lat1 = qDegreesToRadians(latitude1);
-  const double lon1 = qDegreesToRadians(longitude1);
-  const double lat2 = qDegreesToRadians(latitude2);
-  const double lon2 = qDegreesToRadians(longitude2);
-  const double deltaLat = lat2 - lat1;
-  const double deltaLon = lon2 - lon1;
-  const double a = qPow(qSin(deltaLat / 2.0), 2.0) +
-                   qCos(lat1) * qCos(lat2) * qPow(qSin(deltaLon / 2.0), 2.0);
-  const double c = 2.0 * qAtan2(qSqrt(a), qSqrt(1.0 - a));
-  return kEarthRadiusMeters * c;
 }
 
 TransientEffect makeTransientEffect(
@@ -283,97 +266,23 @@ bool ScenarioState::removeArea(const QString& areaName) {
 bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task) {
   ScopedLock lock(_mutex);
   for (Entity& entity : _entities) {
-    if (entity.name == entityName) {
-      if (entity.destroyed) {
-        return false;
-      }
-      entity.currentTask = task;
-      if (entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") &&
-          !entity.currentTask.targetWaypointName.trimmed().isEmpty()) {
-        for (const Waypoint& waypoint : _waypoints) {
-          if (waypoint.name == entity.currentTask.targetWaypointName) {
-            entity.currentTask.targetLatitude = waypoint.latitude;
-            entity.currentTask.targetLongitude = waypoint.longitude;
-            entity.currentTask.targetAltitudeMeters =
-                static_cast<int>(qRound(waypoint.altitudeMeters));
-            break;
-          }
-        }
-      }
-      if (entity.currentTask.taskType == QStringLiteral("MoveAlongRoute") &&
-          !entity.currentTask.targetRouteName.trimmed().isEmpty()) {
-        for (const RouteGraphic& route : _routes) {
-          if (route.name != entity.currentTask.targetRouteName || route.points.isEmpty()) {
-            continue;
-          }
-          const RoutePoint& point = route.points.last();
-          entity.currentTask.targetLatitude = point.latitude;
-          entity.currentTask.targetLongitude = point.longitude;
-          entity.currentTask.targetAltitudeMeters =
-              static_cast<int>(qRound(point.altitudeMeters));
-          break;
-        }
-      }
-      if ((entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
-           entity.currentTask.taskType == QStringLiteral("OrbitArea")) &&
-          !entity.currentTask.targetAreaName.trimmed().isEmpty()) {
-        for (const AreaDefinition& area : _areas) {
-          if (area.name != entity.currentTask.targetAreaName &&
-              area.id != entity.currentTask.targetAreaName) {
-            continue;
-          }
-          entity.currentTask.targetLatitude = area.centerLatitude;
-          entity.currentTask.targetLongitude = area.centerLongitude;
-          entity.currentTask.targetAltitudeMeters =
-              static_cast<int>(qRound(area.centerAltitudeMeters));
-          double radiusMeters = area.radiusMeters;
-          if (radiusMeters <= 0.0) {
-            if (area.areaType == QStringLiteral("Ellipse")) {
-              radiusMeters = qMax(area.semiMinorAxisMeters, 100.0);
-            } else if (!area.points.isEmpty()) {
-              radiusMeters = 250.0;
-            } else {
-              radiusMeters = 500.0;
-            }
-          }
-          entity.currentTask.targetAreaRadiusMeters = radiusMeters;
-          break;
-        }
-      }
-      if (task.enabled && isMovementTaskType(entity.currentTask.taskType)) {
-        entity.flightDynamicsEnabled = true;
-        if (entity.flightDynamicsMode.trimmed().isEmpty()) {
-          entity.flightDynamicsMode = QStringLiteral("kinematic");
-        }
-        if (((entity.currentTask.taskType == QStringLiteral("MoveToLocation")) ||
-             (entity.currentTask.taskType == QStringLiteral("MoveToWaypoint")) ||
-             (entity.currentTask.taskType == QStringLiteral("MoveAlongRoute")) ||
-             (entity.currentTask.taskType == QStringLiteral("PatrolArea")) ||
-             (entity.currentTask.taskType == QStringLiteral("OrbitArea"))) &&
-            entity.currentTask.targetSpeedKnots <= 0.0) {
-          entity.currentTask.targetSpeedKnots =
-              entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0
-              ? 220.0
-              : 12.0;
-        }
-        if (entity.currentTask.taskType == QStringLiteral("FollowEntity") &&
-            entity.currentTask.targetSpeedKnots <= 0.0) {
-          entity.currentTask.targetSpeedKnots =
-              entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0
-              ? 220.0
-              : 12.0;
-        }
-      }
-      if (!isMovementTaskType(entity.currentTask.taskType)) {
-        if (domain::TaskStack* stack = this->getTaskStack(entityName)) {
-          while (!stack->isEmpty()) {
-            stack->pop();
-          }
-        }
-      }
-      this->save();
-      return true;
+    if (entity.name != entityName) {
+      continue;
     }
+    if (entity.destroyed) {
+      return false;
+    }
+    entity.currentTask = task;
+    application::resolveTaskCoordinates(entity, _waypoints, _routes, _areas);
+    if (!isMovementTaskType(entity.currentTask.taskType)) {
+      if (domain::TaskStack* stack = this->getTaskStack(entityName)) {
+        while (!stack->isEmpty()) {
+          stack->pop();
+        }
+      }
+    }
+    this->save();
+    return true;
   }
   return false;
 }
@@ -732,29 +641,7 @@ void ScenarioState::advanceActiveMunitions(double deltaSeconds) {
 }
 
 void ScenarioState::advanceTransientEffects(double deltaSeconds) {
-  if (deltaSeconds <= 0.0 || _transientEffects.isEmpty()) {
-    return;
-  }
-
-  for (TransientEffect& effect : _transientEffects) {
-    if (!effect.active) {
-      continue;
-    }
-    effect.ageSeconds += deltaSeconds;
-    if (effect.ageSeconds >= effect.ttlSeconds) {
-      effect.active = false;
-    }
-  }
-
-  for (qsizetype index = _transientEffects.size() - 1; index >= 0; --index) {
-    if (_transientEffects.at(index).active) {
-      continue;
-    }
-    _transientEffects.removeAt(index);
-    if (index == 0) {
-      break;
-    }
-  }
+  application::advanceTransientEffects(_transientEffects, deltaSeconds);
 }
 
 void ScenarioState::advanceBehaviors(double deltaSeconds) {

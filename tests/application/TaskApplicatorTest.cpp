@@ -3,6 +3,7 @@
 #include "application/ScenarioState.h"
 #include "domain/Entity.h"
 #include "domain/Task.h"
+#include "domain/TacticalGraphic.h"
 
 namespace {
 
@@ -162,3 +163,157 @@ TEST_F(TaskApplicatorTest, MoveAlongRouteFallsBackToMoveToLocation) {
 }
 
 } // namespace
+
+// ── resolveTaskCoordinates ────────────────────────────────────────────────────
+
+namespace resolve_tests {
+
+static Entity makeAirEntity(const QString& name) {
+  Entity e;
+  e.name = name;
+  e.domain = QStringLiteral("Air");
+  e.category = QStringLiteral("Fighter");
+  e.flightDynamicsMode = QStringLiteral("kinematic");
+  e.destroyed = false;
+  return e;
+}
+
+static Entity makeGroundEntity(const QString& name) {
+  Entity e;
+  e.name = name;
+  e.domain = QStringLiteral("Ground");
+  e.category = QStringLiteral("Vehicle");
+  e.destroyed = false;
+  return e;
+}
+
+TEST(ResolveTaskCoordinates, MoveToWaypointHydratesCoords) {
+  Entity entity = makeAirEntity(QStringLiteral("E1"));
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveToWaypoint");
+  task.targetWaypointName = QStringLiteral("Alpha");
+  task.enabled = true;
+  entity.currentTask = task;
+
+  Waypoint wp;
+  wp.name = QStringLiteral("Alpha");
+  wp.latitude = 48.0; wp.longitude = 2.0; wp.altitudeMeters = 5000.0;
+  QVector<Waypoint> waypoints = {wp};
+
+  application::resolveTaskCoordinates(entity, waypoints, {}, {});
+
+  EXPECT_NEAR(entity.currentTask.targetLatitude, 48.0, 0.001);
+  EXPECT_NEAR(entity.currentTask.targetLongitude, 2.0, 0.001);
+  EXPECT_EQ(entity.currentTask.targetAltitudeMeters, 5000);
+}
+
+TEST(ResolveTaskCoordinates, MoveToWaypointMissingWaypointNoChange) {
+  Entity entity = makeAirEntity(QStringLiteral("E1"));
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveToWaypoint");
+  task.targetWaypointName = QStringLiteral("Nonexistent");
+  task.targetLatitude = 99.0;
+  entity.currentTask = task;
+
+  application::resolveTaskCoordinates(entity, {}, {}, {});
+
+  EXPECT_NEAR(entity.currentTask.targetLatitude, 99.0, 0.001);
+}
+
+TEST(ResolveTaskCoordinates, MoveAlongRouteTakesLastPoint) {
+  Entity entity = makeAirEntity(QStringLiteral("E1"));
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveAlongRoute");
+  task.targetRouteName = QStringLiteral("Route-1");
+  task.enabled = true;
+  entity.currentTask = task;
+
+  RouteGraphic route;
+  route.name = QStringLiteral("Route-1");
+  RoutePoint p1; p1.latitude = 10.0; p1.longitude = 20.0; p1.altitudeMeters = 3000.0;
+  RoutePoint p2; p2.latitude = 15.0; p2.longitude = 25.0; p2.altitudeMeters = 4000.0;
+  route.points = {p1, p2};
+
+  application::resolveTaskCoordinates(entity, {}, {route}, {});
+
+  EXPECT_NEAR(entity.currentTask.targetLatitude, 15.0, 0.001);
+  EXPECT_NEAR(entity.currentTask.targetLongitude, 25.0, 0.001);
+  EXPECT_EQ(entity.currentTask.targetAltitudeMeters, 4000);
+}
+
+TEST(ResolveTaskCoordinates, PatrolAreaHydratesCenter) {
+  Entity entity = makeAirEntity(QStringLiteral("E1"));
+  EntityTask task;
+  task.taskType = QStringLiteral("PatrolArea");
+  task.targetAreaName = QStringLiteral("Zone-A");
+  task.enabled = true;
+  entity.currentTask = task;
+
+  AreaDefinition area;
+  area.id = QStringLiteral("a1");
+  area.name = QStringLiteral("Zone-A");
+  area.centerLatitude = 35.0; area.centerLongitude = 50.0;
+  area.centerAltitudeMeters = 6000.0;
+  area.radiusMeters = 2000.0;
+
+  application::resolveTaskCoordinates(entity, {}, {}, {area});
+
+  EXPECT_NEAR(entity.currentTask.targetLatitude, 35.0, 0.001);
+  EXPECT_NEAR(entity.currentTask.targetLongitude, 50.0, 0.001);
+  EXPECT_NEAR(entity.currentTask.targetAreaRadiusMeters, 2000.0, 0.1);
+}
+
+TEST(ResolveTaskCoordinates, EnabledMovementTaskEnablesFlightDynamics) {
+  Entity entity = makeAirEntity(QStringLiteral("E1"));
+  entity.flightDynamicsEnabled = false;
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveToLocation");
+  task.targetLatitude = 10.0; task.targetLongitude = 20.0;
+  task.enabled = true;
+  entity.currentTask = task;
+
+  application::resolveTaskCoordinates(entity, {}, {}, {});
+
+  EXPECT_TRUE(entity.flightDynamicsEnabled);
+}
+
+TEST(ResolveTaskCoordinates, DefaultSpeedSetForAirEntityWithNoSpeed) {
+  Entity entity = makeAirEntity(QStringLiteral("E1"));
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveToLocation");
+  task.targetSpeedKnots = 0.0;
+  task.enabled = true;
+  entity.currentTask = task;
+
+  application::resolveTaskCoordinates(entity, {}, {}, {});
+
+  EXPECT_NEAR(entity.currentTask.targetSpeedKnots, 220.0, 0.1);
+}
+
+TEST(ResolveTaskCoordinates, DefaultSpeedSetForGroundEntityWithNoSpeed) {
+  Entity entity = makeGroundEntity(QStringLiteral("G1"));
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveToLocation");
+  task.targetSpeedKnots = 0.0;
+  task.enabled = true;
+  entity.currentTask = task;
+
+  application::resolveTaskCoordinates(entity, {}, {}, {});
+
+  EXPECT_NEAR(entity.currentTask.targetSpeedKnots, 12.0, 0.1);
+}
+
+TEST(ResolveTaskCoordinates, DisabledTaskDoesNotEnableFlightDynamics) {
+  Entity entity = makeAirEntity(QStringLiteral("E1"));
+  entity.flightDynamicsEnabled = false;
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveToLocation");
+  task.enabled = false;
+  entity.currentTask = task;
+
+  application::resolveTaskCoordinates(entity, {}, {}, {});
+
+  EXPECT_FALSE(entity.flightDynamicsEnabled);
+}
+
+} // namespace resolve_tests
