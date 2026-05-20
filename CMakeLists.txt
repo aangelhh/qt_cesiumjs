@@ -79,6 +79,8 @@ qt_add_executable(qttest
     src/domain/Task.h
     src/presentation/BombReleaseController.cpp
     src/presentation/BombReleaseController.h
+    src/presentation/WeaponActionsController.cpp
+    src/presentation/WeaponActionsController.h
     src/presentation/GraphicPickCoordinator.cpp
     src/presentation/GraphicPickCoordinator.h
     src/presentation/PlanStepConfigurator.cpp

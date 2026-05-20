@@ -251,6 +251,25 @@ MainWindow::MainWindow(QWidget* parent)
   this->initializeModels();
   this->populateTaskCommands();
   this->_entityVisualStateManager->load();
+
+  _weaponActionsController = std::make_unique<presentation::WeaponActionsController>(
+      this->_scenarioState,
+      [this]() { return this->selectedEntityName(); },
+      [this](const QString& name) { return this->findEntityByName(name); },
+      [this]() { return this->_simulationRunning; },
+      [this](const QString& msg) { this->appendLogMessage(msg); },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+      [this]() { this->syncScenarioStateToUi(); },
+      [this](const QStringList& options) -> QString {
+        bool ok = false;
+        const QString result = QInputDialog::getItem(
+            this,
+            QStringLiteral("Launch Missile At"),
+            QStringLiteral("Target"),
+            options, 0, false, &ok);
+        return ok ? result : QString{};
+      },
+      this);
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
@@ -2249,180 +2268,32 @@ void MainWindow::restoreSelectedEntity() {
 }
 
 void MainWindow::addMissileToSelectedEntity() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->_scenarioState->addMissileToEntity(entityName, 1)) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No se pudo anadir un misil a %1.").arg(entityName));
-    return;
-  }
-
-  this->appendLogMessage(QStringLiteral("Missile added to %1").arg(entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Misil anadido a %1.").arg(entityName));
+  this->_weaponActionsController->addMissileToSelected();
 }
 
 void MainWindow::addBombToSelectedEntity() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->_scenarioState->addBombToEntity(entityName, 1)) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No se pudo anadir una bomba a %1.").arg(entityName));
-    return;
-  }
-
-  this->appendLogMessage(QStringLiteral("Bomb added to %1").arg(entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Bomba anadida a %1.").arg(entityName));
+  this->_weaponActionsController->addBombToSelected();
 }
 
 void MainWindow::launchMissileFromSelectedEntity() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  const Entity* entity = this->findEntityByName(entityName);
-  const int missileCount =
-      entity ? domain::weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
-
-  if (missileCount <= 0) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay misiles disponibles en %1.").arg(entityName));
-    return;
-  }
-
-  if (!this->_simulationRunning) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Arranca la simulacion para lanzar el misil."));
-    return;
-  }
-
-  if (!this->_scenarioState->launchMissile(entityName)) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No se pudo lanzar un misil desde %1.").arg(entityName));
-    return;
-  }
-
-  this->appendLogMessage(QStringLiteral("Missile launched from %1").arg(entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Misil lanzado desde %1. Quedan %2.")
-          .arg(entityName)
-          .arg(qMax(0, missileCount - 1)));
+  this->_weaponActionsController->launchMissileFromSelected();
 }
 
 void MainWindow::releaseBombFromSelectedEntity() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  const Entity* entity = this->findEntityByName(entityName);
-  const int bombCount =
-      entity ? domain::weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
-
-  if (bombCount <= 0) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay bombas disponibles en %1.").arg(entityName));
-    return;
-  }
-
-  if (!this->_simulationRunning) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Arranca la simulacion para soltar la bomba."));
-    return;
-  }
-
-  if (!this->_scenarioState->releaseBomb(entityName)) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No se pudo soltar una bomba desde %1.").arg(entityName));
-    return;
-  }
-
-  this->appendLogMessage(QStringLiteral("Bomb released from %1").arg(entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Bomba soltada desde %1. Quedan %2.")
-          .arg(entityName)
-          .arg(qMax(0, bombCount - 1)));
+  this->_weaponActionsController->releaseBombFromSelected();
 }
 
 void MainWindow::launchMissileAtSelectedEntity() {
-  const QString launcherName = this->selectedEntityName();
-  if (launcherName.isEmpty()) {
-    return;
-  }
-
-  const Entity* launcher = this->findEntityByName(launcherName);
-  const int missileCount =
-      launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Missile")) : 0;
-  if (!launcher || missileCount <= 0) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay misiles disponibles en %1.").arg(launcherName));
-    return;
-  }
-
-  if (!this->_simulationRunning) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Arranca la simulacion para lanzar el misil."));
-    return;
-  }
-
-  const QVector<application::MissileTargetCandidate> targets =
-      application::detectedMissileTargetsInRange(this->_scenarioState, *launcher);
-  if (targets.isEmpty()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No detected air targets in missile range for %1.")
-            .arg(launcherName));
-    return;
-  }
-
-  QStringList options;
-  QHash<QString, QString> targetNameByOption;
-  for (const application::MissileTargetCandidate& candidate : targets) {
-    if (!candidate.entity) {
-      continue;
-    }
-    const QString option =
-        presentation::missileTargetDisplayLabel(*candidate.entity, candidate.rangeMeters);
-    options.push_back(option);
-    targetNameByOption.insert(option, candidate.entity->name);
-  }
-
-  bool ok = false;
-  const QString selectedOption = QInputDialog::getItem(
-      this,
-      QStringLiteral("Launch Missile At"),
-      QStringLiteral("Target"),
-      options,
-      0,
-      false,
-      &ok);
-  if (!ok || selectedOption.trimmed().isEmpty()) {
-    return;
-  }
-
-  const QString targetName = targetNameByOption.value(selectedOption).trimmed();
-  if (targetName.isEmpty()) {
-    return;
-  }
-
-  this->executeMissileLaunch(launcherName, targetName, missileCount);
+  this->_weaponActionsController->launchMissileAtSelected();
 }
 
 void MainWindow::executeMissileLaunch(
     const QString& launcherName,
     const QString& targetName,
     int previousMissileCount) {
+  // Delegated to WeaponActionsController::launchMissileAtSelected
+  // Called internally — kept for backward compat with connect() wiring.
+  Q_UNUSED(previousMissileCount)
   if (!this->_scenarioState->launchMissileAt(launcherName, targetName)) {
     this->_ui->statusLabel->setText(
         QStringLiteral("Target out of missile range for %1.").arg(launcherName));
@@ -2431,10 +2302,6 @@ void MainWindow::executeMissileLaunch(
   this->appendLogMessage(
       QStringLiteral("Missile launched from %1 at %2").arg(launcherName, targetName));
   this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Misil lanzado desde %1 hacia %2. Quedan %3.")
-          .arg(launcherName, targetName)
-          .arg(qMax(0, previousMissileCount - 1)));
 }
 
 void MainWindow::showContextMenuPlaceholder(const QString& actionName) {
