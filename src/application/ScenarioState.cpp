@@ -5,6 +5,7 @@
 #include "application/MunitionSimulator.h"
 #include "application/ScenarioSerializer.h"
 #include "application/SensorEngine.h"
+#include "application/TacticalGraphicRepository.h"
 
 #include <QDir>
 #include <QtMath>
@@ -230,14 +231,7 @@ bool ScenarioState::removeEntity(const QString& entityName) {
 
 void ScenarioState::addWaypoint(const Waypoint& waypoint) {
   ScopedLock lock(_mutex);
-  for (Waypoint& existing : _waypoints) {
-    if (existing.name == waypoint.name) {
-      existing = waypoint;
-      this->save();
-      return;
-    }
-  }
-  _waypoints.push_back(waypoint);
+  application::upsertWaypoint(_waypoints, waypoint);
   this->save();
 }
 
@@ -247,26 +241,14 @@ const QVector<Waypoint>& ScenarioState::waypoints() const {
 
 bool ScenarioState::removeWaypoint(const QString& waypointName) {
   ScopedLock lock(_mutex);
-  for (qsizetype index = 0; index < _waypoints.size(); ++index) {
-    if (_waypoints.at(index).name == waypointName) {
-      _waypoints.removeAt(index);
-      this->save();
-      return true;
-    }
-  }
-  return false;
+  const bool removed = application::removeWaypoint(_waypoints, waypointName);
+  if (removed) this->save();
+  return removed;
 }
 
 void ScenarioState::addRoute(const RouteGraphic& route) {
   ScopedLock lock(_mutex);
-  for (RouteGraphic& existing : _routes) {
-    if (existing.name == route.name) {
-      existing = route;
-      this->save();
-      return;
-    }
-  }
-  _routes.push_back(route);
+  application::upsertRoute(_routes, route);
   this->save();
 }
 
@@ -276,26 +258,14 @@ const QVector<RouteGraphic>& ScenarioState::routes() const {
 
 bool ScenarioState::removeRoute(const QString& routeName) {
   ScopedLock lock(_mutex);
-  for (qsizetype index = 0; index < _routes.size(); ++index) {
-    if (_routes.at(index).name == routeName) {
-      _routes.removeAt(index);
-      this->save();
-      return true;
-    }
-  }
-  return false;
+  const bool removed = application::removeRoute(_routes, routeName);
+  if (removed) this->save();
+  return removed;
 }
 
 void ScenarioState::addArea(const AreaDefinition& area) {
   ScopedLock lock(_mutex);
-  for (AreaDefinition& existing : _areas) {
-    if (existing.id == area.id || existing.name == area.name) {
-      existing = area;
-      this->save();
-      return;
-    }
-  }
-  _areas.push_back(area);
+  application::upsertArea(_areas, area);
   this->save();
 }
 
@@ -305,22 +275,9 @@ const QVector<AreaDefinition>& ScenarioState::areas() const {
 
 bool ScenarioState::removeArea(const QString& areaName) {
   ScopedLock lock(_mutex);
-  for (qsizetype index = 0; index < _areas.size(); ++index) {
-    if (_areas.at(index).name == areaName || _areas.at(index).id == areaName) {
-      _areas.removeAt(index);
-      for (Entity& entity : _entities) {
-        if ((entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
-             entity.currentTask.taskType == QStringLiteral("OrbitArea")) &&
-            entity.currentTask.targetAreaName == areaName) {
-          entity.currentTask = EntityTask{};
-          entity.currentTask.status = QStringLiteral("Idle");
-        }
-      }
-      this->save();
-      return true;
-    }
-  }
-  return false;
+  const bool removed = application::removeArea(_areas, _entities, areaName);
+  if (removed) this->save();
+  return removed;
 }
 
 bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task) {
