@@ -347,6 +347,28 @@ MainWindow::MainWindow(QWidget* parent)
         return QInputDialog::getDouble(this, title, label, def, mn, mx, decimals, &ok);
       },
       this);
+
+  _bombReleaseActionsController = std::make_unique<presentation::BombReleaseActionsController>(
+      this->_bombReleaseController.get(),
+      [this]() { return this->selectedEntityName(); },
+      [this](const QString& name) -> const Entity* {
+        return this->findEntityByName(name);
+      },
+      [this]() { return this->_simulationRunning; },
+      [this]() { return this->_graphicPickCoordinator->isPending(); },
+      [this]() { this->beginTaskCoordinatePick(); },
+      [this](const Entity& launcher) {
+        return application::validBombReleaseTargets(this->_scenarioState, launcher);
+      },
+      [](const Entity& e) { return presentation::bombTargetDisplayLabel(e); },
+      [this](const QString& title, const QString& label,
+             const QStringList& items, bool& ok) -> QString {
+        return QInputDialog::getItem(this, title, label, items, 0, false, &ok);
+      },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+      [this](const QString& msg) { this->appendLogMessage(msg); },
+      [this]() { this->syncScenarioStateToUi(); },
+      this);
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
@@ -2528,73 +2550,11 @@ void MainWindow::processPendingBombRelease() {
 }
 
 void MainWindow::releaseBombAtSurfaceEntity() {
-  this->clearPendingBombRelease();
-
-  const QString launcherName = this->selectedEntityName();
-  if (launcherName.isEmpty()) {
-    return;
-  }
-
-  const Entity* launcher = this->findEntityByName(launcherName);
-  const int bombCount =
-      launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
-  if (!launcher || bombCount <= 0) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay bombas disponibles en %1.").arg(launcherName));
-    return;
-  }
-
-  if (!this->_simulationRunning) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Arranca la simulacion para programar el release de la bomba."));
-    return;
-  }
-
-  const QVector<const Entity*> targets =
-      application::validBombReleaseTargets(this->_scenarioState, *launcher);
-  if (targets.isEmpty()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay surface targets validos para %1.").arg(launcherName));
-    return;
-  }
-
-  QStringList options;
-  QHash<QString, QString> targetNameByOption;
-  for (const Entity* target : targets) {
-    if (!target) {
-      continue;
-    }
-    const QString option = presentation::bombTargetDisplayLabel(*target);
-    options.push_back(option);
-    targetNameByOption.insert(option, target->name);
-  }
-
-  bool ok = false;
-  const QString selectedOption = QInputDialog::getItem(
-      this,
-      QStringLiteral("Release Bomb At"),
-      QStringLiteral("Surface Target"),
-      options,
-      0,
-      false,
-      &ok);
-  if (!ok || selectedOption.trimmed().isEmpty()) {
-    this->clearPendingBombRelease();
-    return;
-  }
-
-  const QString targetName = targetNameByOption.value(selectedOption).trimmed();
-  const Entity* target = this->findEntityByName(targetName);
-  if (!target) {
-    this->clearPendingBombRelease();
-    return;
-  }
-
-  this->queueBombReleaseAtEntity(launcherName, *target);
+  this->_bombReleaseActionsController->releaseBombAtSurfaceEntity();
 }
 
 void MainWindow::queueBombReleaseAtEntity(const QString& launcherName, const Entity& target) {
-  this->queuePendingBombRelease(
+  this->_bombReleaseController->queue(
       launcherName,
       target.latitude,
       target.longitude,
@@ -2605,58 +2565,11 @@ void MainWindow::queueBombReleaseAtEntity(const QString& launcherName, const Ent
 }
 
 void MainWindow::releaseBombAtCustomCoordinates() {
-  this->clearPendingBombRelease();
-  this->_bombReleaseController->cancelPickMode();
-
-  const QString launcherName = this->selectedEntityName();
-  if (launcherName.isEmpty()) {
-    return;
-  }
-
-  const Entity* launcher = this->findEntityByName(launcherName);
-  const int bombCount =
-      launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
-  if (!launcher || bombCount <= 0) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay bombas disponibles en %1.").arg(launcherName));
-    return;
-  }
-
-  if (!this->_simulationRunning) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Arranca la simulacion para programar el release de la bomba."));
-    return;
-  }
-
-  if (this->_graphicPickCoordinator->isPending()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Termina antes la captura de coordenadas que ya esta activa."));
-    return;
-  }
-
-  this->_bombReleaseController->beginPickMode(launcherName);
-  this->beginTaskCoordinatePick();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Haz clic en el mapa para fijar el punto de ataque de %1.")
-          .arg(launcherName));
+  this->_bombReleaseActionsController->releaseBombAtCustomCoordinates();
 }
 
 void MainWindow::cancelPendingBombRelease() {
-  if (!this->_bombReleaseController->pendingRelease().pending) {
-    this->_ui->statusLabel->setText(QStringLiteral("No hay release de bomba pendiente."));
-    return;
-  }
-
-  const QString launcherName = this->_bombReleaseController->pendingRelease().launcherEntityName;
-  const QString targetLabel = this->_bombReleaseController->pendingRelease().targetLabel;
-  this->_bombReleaseController->cancelPickMode();
-  this->clearPendingBombRelease();
-  this->appendLogMessage(
-      QStringLiteral("Bomb release canceled for %1 on %2")
-          .arg(launcherName, targetLabel));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Release de bomba cancelado para %1.").arg(launcherName));
+  this->_bombReleaseActionsController->cancelPendingBombRelease();
 }
 
 void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
