@@ -2934,8 +2934,7 @@ void MainWindow::releaseBombAtSurfaceEntity() {
       application::validBombReleaseTargets(this->_scenarioState, *launcher);
   if (targets.isEmpty()) {
     this->_ui->statusLabel->setText(
-        QStringLiteral("No hay surface targets validos para %1.")
-            .arg(launcherName));
+        QStringLiteral("No hay surface targets validos para %1.").arg(launcherName));
     return;
   }
 
@@ -2971,14 +2970,18 @@ void MainWindow::releaseBombAtSurfaceEntity() {
     return;
   }
 
+  this->queueBombReleaseAtEntity(launcherName, *target);
+}
+
+void MainWindow::queueBombReleaseAtEntity(const QString& launcherName, const Entity& target) {
   this->queuePendingBombRelease(
       launcherName,
-      target->latitude,
-      target->longitude,
-      static_cast<double>(target->altitude),
-      target->name,
+      target.latitude,
+      target.longitude,
+      static_cast<double>(target.altitude),
+      target.name,
       QStringLiteral("Surface Entity"),
-      target->name);
+      target.name);
 }
 
 void MainWindow::releaseBombAtCustomCoordinates() {

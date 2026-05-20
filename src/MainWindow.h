@@ -105,6 +105,7 @@ private slots:
   void executeMissileLaunch(const QString& launcherName, const QString& targetName, int previousMissileCount);
   void releaseBombFromSelectedEntity();
   void releaseBombAtSurfaceEntity();
+  void queueBombReleaseAtEntity(const QString& launcherName, const struct Entity& target);
   void releaseBombAtCustomCoordinates();
   void cancelPendingBombRelease();
   void clearSelectedTask();
