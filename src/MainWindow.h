@@ -133,6 +133,11 @@ private:
   void syncTracksToMap();
   void syncDetectedContactsToUi();
   void syncScenarioStateToUi();
+  /// Helpers called by syncScenarioStateToUi:
+  bool syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync);
+  void syncActiveMunitionTracksToMap();
+  void syncTransientEffectsToMap();
+  void syncPendingBombTargetToMap();
   void selectObjectByName(const QString& trackName, bool notifyMap);
   QStandardItem* findTrackItemByName(QStandardItem* parent, const QString& trackName) const;
   const struct Entity* findEntityByName(const QString& entityName) const;

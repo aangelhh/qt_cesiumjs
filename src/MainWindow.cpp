@@ -1468,15 +1468,44 @@ void MainWindow::syncDetectedContactsToUi() {
 
 void MainWindow::syncScenarioStateToUi() {
   this->validatePendingBombRelease();
-  const QString selectedEntityNameBeforeSync = this->selectedEntityName();
-  bool selectedEntityRemoved = false;
+  const QString prevSelected = this->selectedEntityName();
 
-  const auto clearQtObjectSelection = [this]() {
-    if (QItemSelectionModel* selectionModel = this->_ui->objectsTreeView->selectionModel()) {
-      selectionModel->clearSelection();
-      selectionModel->clearCurrentIndex();
+  if (this->syncEntityTreeToUi(prevSelected)) {
+    this->_applyingMapSelection = true;
+    if (QItemSelectionModel* sel = this->_ui->objectsTreeView->selectionModel()) {
+      sel->clearSelection();
+      sel->clearCurrentIndex();
     }
-  };
+    this->_applyingMapSelection = false;
+    this->setSelectedTrackDetails(QVariantMap{});
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+    clearQtTrackSelectionInMap(this->_webView);
+#endif
+    this->_ui->statusLabel->setText(QStringLiteral("No hay entidad seleccionada."));
+  }
+
+  this->syncActiveMunitionTracksToMap();
+  this->syncTransientEffectsToMap();
+  this->syncPendingBombTargetToMap();
+  this->syncDetectedContactsToUi();
+
+  for (const QString& message : this->_scenarioState->takePendingEventLogMessages()) {
+    this->appendLogMessage(message);
+    if (message.contains(QStringLiteral("behavior"), Qt::CaseInsensitive)) {
+      this->_ui->statusLabel->setText(message);
+    }
+  }
+
+  if (!this->_simulationRunning) {
+    this->rebuildTacticalGraphicsTree();
+    this->syncTacticalGraphicsToMap();
+  }
+
+  this->updateTaskQuickBarState();
+}
+
+bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync) {
+  bool selectedEntityRemoved = false;
 
   std::function<void(QStandardItem*)> removeMissingFromBranch =
       [this, &removeMissingFromBranch, &selectedEntityRemoved, &selectedEntityNameBeforeSync](
@@ -1484,7 +1513,6 @@ void MainWindow::syncScenarioStateToUi() {
     if (!branch) {
       return;
     }
-
     for (int row = branch->rowCount() - 1; row >= 0; --row) {
       QStandardItem* child = branch->child(row);
       if (!child) {
@@ -1497,8 +1525,8 @@ void MainWindow::syncScenarioStateToUi() {
         }
         continue;
       }
-
-      const QString name = child->data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+      const QString name =
+          child->data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
       bool exists = false;
       for (const Entity& entity : this->_scenarioState->entities()) {
         if (entity.name == name) {
@@ -1521,17 +1549,6 @@ void MainWindow::syncScenarioStateToUi() {
   removeMissingFromBranch(this->_friendlyRootItem);
   removeMissingFromBranch(this->_opposingRootItem);
   removeMissingFromBranch(this->_neutralRootItem);
-
-  if (selectedEntityRemoved) {
-    this->_applyingMapSelection = true;
-    clearQtObjectSelection();
-    this->_applyingMapSelection = false;
-    this->setSelectedTrackDetails(QVariantMap{});
-#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-    clearQtTrackSelectionInMap(this->_webView);
-#endif
-    this->_ui->statusLabel->setText(QStringLiteral("No hay entidad seleccionada."));
-  }
 
   {
     QSet<QString> validNames;
@@ -1567,94 +1584,88 @@ void MainWindow::syncScenarioStateToUi() {
     }
   }
 
+  return selectedEntityRemoved;
+}
+
+void MainWindow::syncActiveMunitionTracksToMap() {
   QSet<QString> currentMunitionTrackNames;
   for (const ActiveMunition& munition : this->_scenarioState->activeMunitions()) {
     currentMunitionTrackNames.insert(munition.id);
     this->sendTrackToMap(presentation::makeMunitionTrackSummary(munition), false);
   }
-
   for (const QString& previousName : this->_activeMunitionTrackNames) {
     if (!currentMunitionTrackNames.contains(previousName)) {
       this->removeTrackFromMap(previousName);
     }
   }
   this->_activeMunitionTrackNames = currentMunitionTrackNames;
+}
 
+void MainWindow::syncTransientEffectsToMap() {
   QSet<QString> currentEffectTrackNames;
   for (const TransientEffect& effect : this->_scenarioState->transientEffects()) {
     currentEffectTrackNames.insert(effect.id);
     this->sendTrackToMap(presentation::makeTransientEffectTrackSummary(effect), false);
   }
-
   for (const QString& previousName : this->_activeEffectTrackNames) {
     if (!currentEffectTrackNames.contains(previousName)) {
       this->removeTrackFromMap(previousName);
     }
   }
   this->_activeEffectTrackNames = currentEffectTrackNames;
+}
 
+void MainWindow::syncPendingBombTargetToMap() {
   const QString pendingBombTargetTrackName = QStringLiteral("Bomb Target");
   const QString pendingBombTargetLineTrackName = QStringLiteral("Bomb Target Line");
-  if (this->_bombReleaseController->pendingRelease().pending) {
-    QString teamLabel = QStringLiteral("Friendly");
-    QString releaseStateLabel = QStringLiteral("Armed");
-    double distanceToBombTargetMeters = -1.0;
-    if (const Entity* launcher =
-            this->findEntityByName(this->_bombReleaseController->pendingRelease().launcherEntityName)) {
-      teamLabel = domain::forceIdentifierLabel(launcher->forceIdentifier);
-      distanceToBombTargetMeters = domain::distanceMeters(
-          launcher->latitude,
-          launcher->longitude,
-          this->_bombReleaseController->pendingRelease().targetLatitude,
-          this->_bombReleaseController->pendingRelease().targetLongitude);
-      const domain::BombReleaseGateEvaluation evaluation = domain::evaluateBombReleaseGate(
-          *launcher,
-          this->_bombReleaseController->pendingRelease().targetLatitude,
-          this->_bombReleaseController->pendingRelease().targetLongitude,
-          this->_bombReleaseController->pendingRelease().targetAltitudeMeters);
-      releaseStateLabel = evaluation.stateLabel();
-      this->sendTrackToMap(
-          presentation::makePendingBombTargetLineTrackSummary(
-              *launcher,
-              this->_bombReleaseController->pendingRelease().targetLatitude,
-              this->_bombReleaseController->pendingRelease().targetLongitude,
-              this->_bombReleaseController->pendingRelease().targetAltitudeMeters,
-              teamLabel,
-              releaseStateLabel),
-          false);
-    } else {
-      this->removeTrackFromMap(pendingBombTargetLineTrackName);
-    }
+
+  if (!this->_bombReleaseController->pendingRelease().pending) {
+    this->removeTrackFromMap(pendingBombTargetTrackName);
+    this->removeTrackFromMap(pendingBombTargetLineTrackName);
+    return;
+  }
+
+  const auto& release = this->_bombReleaseController->pendingRelease();
+  QString teamLabel = QStringLiteral("Friendly");
+  QString releaseStateLabel = QStringLiteral("Armed");
+  double distanceToBombTargetMeters = -1.0;
+
+  if (const Entity* launcher = this->findEntityByName(release.launcherEntityName)) {
+    teamLabel = domain::forceIdentifierLabel(launcher->forceIdentifier);
+    distanceToBombTargetMeters = domain::distanceMeters(
+        launcher->latitude,
+        launcher->longitude,
+        release.targetLatitude,
+        release.targetLongitude);
+    const domain::BombReleaseGateEvaluation evaluation = domain::evaluateBombReleaseGate(
+        *launcher,
+        release.targetLatitude,
+        release.targetLongitude,
+        release.targetAltitudeMeters);
+    releaseStateLabel = evaluation.stateLabel();
     this->sendTrackToMap(
-        presentation::makePendingBombTargetTrackSummary(
-            this->_bombReleaseController->pendingRelease().targetLabel,
-            this->_bombReleaseController->pendingRelease().targetLatitude,
-            this->_bombReleaseController->pendingRelease().targetLongitude,
-            this->_bombReleaseController->pendingRelease().targetAltitudeMeters,
+        presentation::makePendingBombTargetLineTrackSummary(
+            *launcher,
+            release.targetLatitude,
+            release.targetLongitude,
+            release.targetAltitudeMeters,
             teamLabel,
-            releaseStateLabel,
-            distanceToBombTargetMeters),
+            releaseStateLabel),
         false);
   } else {
-    this->removeTrackFromMap(pendingBombTargetTrackName);
     this->removeTrackFromMap(pendingBombTargetLineTrackName);
   }
 
-  this->syncDetectedContactsToUi();
-
-  for (const QString& message : this->_scenarioState->takePendingEventLogMessages()) {
-    this->appendLogMessage(message);
-    if (message.contains(QStringLiteral("behavior"), Qt::CaseInsensitive)) {
-      this->_ui->statusLabel->setText(message);
-    }
-  }
-
-  if (!this->_simulationRunning) {
-    this->rebuildTacticalGraphicsTree();
-    this->syncTacticalGraphicsToMap();
-  }
-
-  this->updateTaskQuickBarState();
+  this->sendTrackToMap(
+      presentation::makePendingBombTargetTrackSummary(
+          release.targetLabel,
+          release.targetLatitude,
+          release.targetLongitude,
+          release.targetAltitudeMeters,
+          teamLabel,
+          releaseStateLabel,
+          distanceToBombTargetMeters),
+      false);
 }
 
 void MainWindow::createTaskQuickBar() {
