@@ -270,6 +270,32 @@ MainWindow::MainWindow(QWidget* parent)
         return ok ? result : QString{};
       },
       this);
+
+  _entityStateActionsController = std::make_unique<presentation::EntityStateActionsController>(
+      this->_scenarioState,
+      this->_entityVisualStateManager.get(),
+      [this]() { return this->selectedEntityName(); },
+      [this]() { return this->selectedEntityIsDestroyed(); },
+      [this]() { return this->currentSelectionIsOperableEntity(); },
+      [this](const QString& name, const EntityTask& task, bool sync) {
+        return this->applyEntityTask(name, task, sync);
+      },
+      [this](double& h, int& a, double& s) {
+        return this->resolveSelectedEntityFlyTargets(h, a, s);
+      },
+      [this](const QString& title, const QString& label,
+             double def, double mn, double mx, bool& ok) -> double {
+        return QInputDialog::getDouble(this, title, label, def, mn, mx, 1, &ok);
+      },
+      [this]() {
+        if (this->_taskDialog) {
+          this->_taskDialog->close();
+        }
+      },
+      [this](const QString& msg) { this->appendLogMessage(msg); },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+      [this]() { this->syncScenarioStateToUi(); },
+      this);
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
@@ -2047,100 +2073,19 @@ void MainWindow::applyFlyHeadingAltitudeSpeedTask(
 }
 
 void MainWindow::setSelectedEntityHeading() {
-  double headingDegrees = 0.0;
-  int altitudeMeters = 0;
-  double speedKnots = 0.0;
-  if (!this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots)) {
-    return;
-  }
-
-  bool ok = false;
-  const double newHeadingDegrees = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Set Heading"),
-      QStringLiteral("Heading (deg)"),
-      headingDegrees,
-      0.0,
-      360.0,
-      1,
-      &ok);
-  if (!ok) {
-    return;
-  }
-
-  this->applyFlyHeadingAltitudeSpeedTask(newHeadingDegrees, altitudeMeters, speedKnots);
+  this->_entityStateActionsController->setSelectedHeading();
 }
 
 void MainWindow::setSelectedEntityAltitude() {
-  double headingDegrees = 0.0;
-  int altitudeMeters = 0;
-  double speedKnots = 0.0;
-  if (!this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots)) {
-    return;
-  }
-
-  bool ok = false;
-  const double newAltitudeMeters = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Set Altitude"),
-      QStringLiteral("Altitude (m)"),
-      static_cast<double>(altitudeMeters),
-      0.0,
-      60000.0,
-      0,
-      &ok);
-  if (!ok) {
-    return;
-  }
-
-  this->applyFlyHeadingAltitudeSpeedTask(
-      headingDegrees,
-      static_cast<int>(std::lround(newAltitudeMeters)),
-      speedKnots);
+  this->_entityStateActionsController->setSelectedAltitude();
 }
 
 void MainWindow::setSelectedEntitySpeed() {
-  double headingDegrees = 0.0;
-  int altitudeMeters = 0;
-  double speedKnots = 0.0;
-  if (!this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots)) {
-    return;
-  }
-
-  bool ok = false;
-  const double newSpeedKnots = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Set Speed"),
-      QStringLiteral("Speed (kts)"),
-      speedKnots,
-      0.0,
-      2000.0,
-      1,
-      &ok);
-  if (!ok) {
-    return;
-  }
-
-  this->applyFlyHeadingAltitudeSpeedTask(headingDegrees, altitudeMeters, newSpeedKnots);
+  this->_entityStateActionsController->setSelectedSpeed();
 }
 
 void MainWindow::setSelectedEntityBehaviorMode(const QString& behaviorMode) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty() || this->selectedEntityIsDestroyed()) {
-    return;
-  }
-
-  if (!this->_scenarioState->setEntityBehaviorMode(entityName, behaviorMode)) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No se pudo cambiar el behavior mode de %1.")
-            .arg(entityName));
-    return;
-  }
-
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("%1 behavior mode: %2.")
-          .arg(entityName, behaviorMode));
+  this->_entityStateActionsController->setSelectedBehaviorMode(behaviorMode);
 }
 
 void MainWindow::focusSelectedEntityInMap() {
@@ -2161,110 +2106,27 @@ void MainWindow::focusSelectedEntityInMap() {
 }
 
 void MainWindow::setSelectedEntityDestroyed(bool destroyed) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->_scenarioState->setEntityDestroyed(entityName, destroyed)) {
-    return;
-  }
-
-  if (destroyed && this->_taskDialog) {
-    this->_taskDialog->close();
-  }
-
-  this->appendLogMessage(
-      QStringLiteral("Entity %1 %2")
-          .arg(entityName, destroyed ? QStringLiteral("marked as destroyed")
-                                     : QStringLiteral("restored")));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      destroyed
-          ? QStringLiteral("Entidad destruida: %1").arg(entityName)
-          : QStringLiteral("Entidad restaurada: %1").arg(entityName));
+  this->_entityStateActionsController->setSelectedDestroyed(destroyed);
 }
 
 void MainWindow::setSelectedEntityHidden(bool hidden) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->_entityVisualStateManager->setFlag(
-          entityName,
-          presentation::EntityVisualStateManager::Flag::Hidden,
-          hidden)) {
-    return;
-  }
-  this->_entityVisualStateManager->save();
-
-  this->appendLogMessage(
-      QStringLiteral("Entity %1 %2")
-          .arg(entityName, hidden ? QStringLiteral("hidden") : QStringLiteral("shown")));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      hidden
-          ? QStringLiteral("Entidad oculta: %1").arg(entityName)
-          : QStringLiteral("Entidad visible: %1").arg(entityName));
+  this->_entityStateActionsController->setSelectedHidden(hidden);
 }
 
 void MainWindow::setSelectedEntityRadarCoverageVisible(bool visible) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->_entityVisualStateManager->setFlag(
-          entityName,
-          presentation::EntityVisualStateManager::Flag::RadarCoverageVisible,
-          visible)) {
-    return;
-  }
-  this->_entityVisualStateManager->save();
-
-  this->appendLogMessage(
-      QStringLiteral("Radar coverage %1 for %2")
-          .arg(visible ? QStringLiteral("enabled") : QStringLiteral("disabled"),
-               entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      visible
-          ? QStringLiteral("Cobertura radar visible para %1").arg(entityName)
-          : QStringLiteral("Cobertura radar oculta para %1").arg(entityName));
+  this->_entityStateActionsController->setSelectedRadarCoverageVisible(visible);
 }
 
 void MainWindow::setSelectedEntityTrackHistoryVisible(bool visible) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->_entityVisualStateManager->setFlag(
-          entityName,
-          presentation::EntityVisualStateManager::Flag::TrackHistoryVisible,
-          visible)) {
-    return;
-  }
-  this->_entityVisualStateManager->save();
-
-  this->appendLogMessage(
-      QStringLiteral("Track history %1 for %2")
-          .arg(visible ? QStringLiteral("enabled") : QStringLiteral("disabled"),
-               entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      visible
-          ? QStringLiteral("Historial de trayectoria visible para %1").arg(entityName)
-          : QStringLiteral("Historial de trayectoria oculto para %1").arg(entityName));
+  this->_entityStateActionsController->setSelectedTrackHistoryVisible(visible);
 }
 
 void MainWindow::destroySelectedEntity() {
-  this->setSelectedEntityDestroyed(true);
+  this->_entityStateActionsController->destroySelected();
 }
 
 void MainWindow::restoreSelectedEntity() {
-  this->setSelectedEntityDestroyed(false);
+  this->_entityStateActionsController->restoreSelected();
 }
 
 void MainWindow::addMissileToSelectedEntity() {

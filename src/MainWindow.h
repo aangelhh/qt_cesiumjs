@@ -21,6 +21,7 @@
 #include "presentation/GraphicPickCoordinator.h"
 #include "presentation/PlanStepConfigurator.h"
 #include "presentation/PlanTypes.h"
+#include "presentation/EntityStateActionsController.h"
 #include "presentation/WeaponActionsController.h"
 
 class QAction;
@@ -254,6 +255,7 @@ private:
   std::unique_ptr<presentation::GraphicPickCoordinator> _graphicPickCoordinator;
   std::unique_ptr<presentation::PlanStepConfigurator> _planStepConfigurator;
   std::unique_ptr<presentation::WeaponActionsController> _weaponActionsController;
+  std::unique_ptr<presentation::EntityStateActionsController> _entityStateActionsController;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif
