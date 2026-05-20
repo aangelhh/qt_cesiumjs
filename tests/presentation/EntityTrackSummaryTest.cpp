@@ -2,6 +2,7 @@
 #include "presentation/TrackSummaryBuilder.h"
 #include "presentation/EntityVisualStateManager.h"
 #include "domain/Entity.h"
+#include "domain/TacticalGraphic.h"
 
 using namespace presentation;
 
@@ -141,4 +142,67 @@ TEST(EntityTrackSummaryTest, DestroyedFlagReflected) {
   e.destroyed = true;
   const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
   EXPECT_TRUE(summary.value(QStringLiteral("destroyed")).toBool());
+}
+
+// ── normalizeEntityCategory ───────────────────────────────────────────────────
+
+TEST(TrackSummaryBuilderTest, NormalizeKnownCategory) {
+  EXPECT_EQ(normalizeEntityCategory(QStringLiteral("Fighter")),   QStringLiteral("Fighter"));
+  EXPECT_EQ(normalizeEntityCategory(QStringLiteral("Bomber")),    QStringLiteral("Bomber"));
+  EXPECT_EQ(normalizeEntityCategory(QStringLiteral("Tank")),      QStringLiteral("Tank"));
+  EXPECT_EQ(normalizeEntityCategory(QStringLiteral("SAMLauncher")), QStringLiteral("SAMLauncher"));
+}
+
+TEST(TrackSummaryBuilderTest, NormalizeUnknownCategoryReturnsOther) {
+  EXPECT_EQ(normalizeEntityCategory(QStringLiteral("Submarine")), QStringLiteral("Other"));
+  EXPECT_EQ(normalizeEntityCategory(QStringLiteral("")),          QStringLiteral("Other"));
+  EXPECT_EQ(normalizeEntityCategory(QStringLiteral("   ")),       QStringLiteral("Other"));
+}
+
+// ── makeWaypointTrackSummary ──────────────────────────────────────────────────
+
+TEST(TrackSummaryBuilderTest, WaypointSummaryHasCorrectFields) {
+  Waypoint wp;
+  wp.name = QStringLiteral("Alpha");
+  wp.latitude = 40.0;
+  wp.longitude = -3.0;
+  wp.altitudeMeters = 500.0;
+  const QVariantMap summary = makeWaypointTrackSummary(wp);
+  EXPECT_EQ(summary.value(QStringLiteral("name")).toString(), QStringLiteral("Alpha"));
+  EXPECT_EQ(summary.value(QStringLiteral("type")).toString(), QStringLiteral("Waypoint"));
+  EXPECT_DOUBLE_EQ(summary.value(QStringLiteral("latitude")).toDouble(), 40.0);
+}
+
+// ── makeRouteTrackSummary ─────────────────────────────────────────────────────
+
+TEST(TrackSummaryBuilderTest, RouteSummaryHasRoutePoints) {
+  RouteGraphic route;
+  route.name = QStringLiteral("Route1");
+  RoutePoint pt; pt.latitude = 41.0; pt.longitude = -4.0;
+  route.points.append(pt);
+  const QVariantMap summary = makeRouteTrackSummary(route);
+  EXPECT_EQ(summary.value(QStringLiteral("type")).toString(), QStringLiteral("Route"));
+  EXPECT_EQ(summary.value(QStringLiteral("routePoints")).toList().size(), 1);
+}
+
+TEST(TrackSummaryBuilderTest, RouteSummaryEmptyRouteUsesDefaults) {
+  RouteGraphic route;
+  route.name = QStringLiteral("Empty");
+  const QVariantMap summary = makeRouteTrackSummary(route);
+  EXPECT_EQ(summary.value(QStringLiteral("routePoints")).toList().size(), 0);
+}
+
+// ── makeAreaTrackSummary ──────────────────────────────────────────────────────
+
+TEST(TrackSummaryBuilderTest, AreaSummaryHasAreaFields) {
+  AreaDefinition area;
+  area.name = QStringLiteral("Zone1");
+  area.areaType = QStringLiteral("Circle");
+  area.centerLatitude = 42.0;
+  area.centerLongitude = -5.0;
+  area.radiusMeters = 5000.0;
+  const QVariantMap summary = makeAreaTrackSummary(area);
+  EXPECT_EQ(summary.value(QStringLiteral("type")).toString(), QStringLiteral("Area"));
+  EXPECT_EQ(summary.value(QStringLiteral("areaType")).toString(), QStringLiteral("Circle"));
+  EXPECT_DOUBLE_EQ(summary.value(QStringLiteral("radiusMeters")).toDouble(), 5000.0);
 }

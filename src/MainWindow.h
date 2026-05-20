@@ -116,6 +116,8 @@ private:
   // presentation/PlanTypes.h
 
   void initializeModels();
+  void initializeObjectTreeModel();
+  void initializeContactsTableModel();
   void appendEntityToUi(const struct Entity& entity);
   QStandardItem* rootItemForForceIdentifier(int forceIdentifier) const;
   QStandardItem* ensureGroupItem(QStandardItem* parent, const QString& label, const QVariantMap& summary);

@@ -3,6 +3,7 @@
 #include "../domain/Entity.h"
 #include "../domain/GeoMath.h"
 #include "../domain/Munition.h"
+#include "../domain/TacticalGraphic.h"
 #include "EntityVisualStateManager.h"
 
 #include <QVariantList>
@@ -317,6 +318,94 @@ QVariantMap makeEntityTrackSummary(
   }
   summary.insert(QStringLiteral("sensorContacts"), contacts);
 
+  return summary;
+}
+
+QString normalizeEntityCategory(const QString& category) {
+  static const QStringList kKnownCategories{
+      QStringLiteral("Fighter"),
+      QStringLiteral("Bomber"),
+      QStringLiteral("Helicopter"),
+      QStringLiteral("Transport"),
+      QStringLiteral("Tank"),
+      QStringLiteral("Truck"),
+      QStringLiteral("ArmoredVehicle"),
+      QStringLiteral("Armored Vehicle"),
+      QStringLiteral("Radar"),
+      QStringLiteral("SAMLauncher"),
+      QStringLiteral("SAM Launcher"),
+  };
+  const QString trimmed = category.trimmed();
+  return kKnownCategories.contains(trimmed) ? trimmed : QStringLiteral("Other");
+}
+
+QVariantMap makeWaypointTrackSummary(const Waypoint& waypoint) {
+  QVariantMap summary = makeTrackSummary(
+      waypoint.name,
+      QStringLiteral("Waypoint"),
+      QStringLiteral("Graphic"),
+      QStringLiteral("%1 m").arg(waypoint.altitudeMeters, 0, 'f', 0),
+      domain::formatPosition(waypoint.latitude, waypoint.longitude),
+      QStringLiteral("Ready"),
+      waypoint.latitude,
+      waypoint.longitude);
+  summary.insert(QStringLiteral("type"), QStringLiteral("Waypoint"));
+  return summary;
+}
+
+QVariantMap makeRouteTrackSummary(const RouteGraphic& route) {
+  QVariantList points;
+  for (const RoutePoint& point : route.points) {
+    points.push_back(QVariantMap{
+        {QStringLiteral("latitude"), point.latitude},
+        {QStringLiteral("longitude"), point.longitude},
+        {QStringLiteral("altitudeMeters"), point.altitudeMeters},
+    });
+  }
+  const RoutePoint firstPoint = route.points.isEmpty() ? RoutePoint{} : route.points.first();
+  QVariantMap summary = makeTrackSummary(
+      route.name,
+      QStringLiteral("Route"),
+      QStringLiteral("Graphic"),
+      QStringLiteral("-"),
+      route.points.isEmpty()
+          ? QStringLiteral("-")
+          : domain::formatPosition(firstPoint.latitude, firstPoint.longitude),
+      QStringLiteral("%1 points").arg(route.points.size()),
+      firstPoint.latitude,
+      firstPoint.longitude);
+  summary.insert(QStringLiteral("type"), QStringLiteral("Route"));
+  summary.insert(QStringLiteral("routePoints"), points);
+  return summary;
+}
+
+QVariantMap makeAreaTrackSummary(const AreaDefinition& area) {
+  QVariantMap summary = makeTrackSummary(
+      area.name,
+      QStringLiteral("Area"),
+      QStringLiteral("Graphic"),
+      QStringLiteral("%1 m").arg(area.centerAltitudeMeters, 0, 'f', 0),
+      domain::formatPosition(area.centerLatitude, area.centerLongitude),
+      QStringLiteral("%1").arg(area.areaType),
+      area.centerLatitude,
+      area.centerLongitude);
+  summary.insert(QStringLiteral("type"), QStringLiteral("Area"));
+  summary.insert(QStringLiteral("areaType"), area.areaType);
+  summary.insert(QStringLiteral("radiusMeters"), area.radiusMeters);
+  summary.insert(QStringLiteral("semiMajorAxisMeters"), area.semiMajorAxisMeters);
+  summary.insert(QStringLiteral("semiMinorAxisMeters"), area.semiMinorAxisMeters);
+  summary.insert(QStringLiteral("rotationDegrees"), area.rotationDegrees);
+  QVariantList areaPoints;
+  for (const RoutePoint& point : area.points) {
+    areaPoints.push_back(QVariantMap{
+        {QStringLiteral("latitude"), point.latitude},
+        {QStringLiteral("longitude"), point.longitude},
+        {QStringLiteral("altitudeMeters"), point.altitudeMeters},
+    });
+  }
+  summary.insert(QStringLiteral("areaPoints"), areaPoints);
+  summary.insert(QStringLiteral("minAltitudeMeters"), area.minAltitudeMeters);
+  summary.insert(QStringLiteral("maxAltitudeMeters"), area.maxAltitudeMeters);
   return summary;
 }
 

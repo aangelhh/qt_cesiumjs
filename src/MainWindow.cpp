@@ -605,6 +605,20 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
 }
 
 void MainWindow::initializeModels() {
+  this->initializeObjectTreeModel();
+  this->initializeContactsTableModel();
+
+  this->_ui->eventLogPlainTextEdit->clear();
+  this->appendLogMessage(QStringLiteral("Operational log ready."));
+  this->appendLogMessage(QStringLiteral("Cesium map connected."));
+  this->appendLogMessage(QStringLiteral("Awaiting commands..."));
+
+  this->_ui->objectsTreeView->clearSelection();
+  this->setSelectedTrackDetails(QVariantMap{});
+  this->rebuildTacticalGraphicsTree();
+}
+
+void MainWindow::initializeObjectTreeModel() {
   this->_objectsModel->setHorizontalHeaderLabels({QStringLiteral("Name")});
 
   this->_friendlyRootItem = new QStandardItem(QStringLiteral("Friendly"));
@@ -615,6 +629,7 @@ void MainWindow::initializeModels() {
   this->_neutralRootItem->setIcon(presentation::makeTrackIcon(QStringLiteral("Neutral"), QStringLiteral("Side"), true));
   this->_tacticalGraphicsRootItem = new QStandardItem(QStringLiteral("Tactical Graphics"));
   this->_tacticalGraphicsRootItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Graphic")));
+
   setTrackData(
       this->_friendlyRootItem,
       presentation::makeTrackSummary(
@@ -676,7 +691,9 @@ void MainWindow::initializeModels() {
       &QItemSelectionModel::currentChanged,
       this,
       &MainWindow::updateSelectedTrackPanel);
+}
 
+void MainWindow::initializeContactsTableModel() {
   this->_detectedContactsModel->setHorizontalHeaderLabels({
       QStringLiteral("Observer"),
       QStringLiteral("Contact"),
@@ -700,15 +717,6 @@ void MainWindow::initializeModels() {
       &QItemSelectionModel::currentChanged,
       this,
       &MainWindow::handleDetectedContactSelection);
-
-  this->_ui->eventLogPlainTextEdit->clear();
-  this->appendLogMessage(QStringLiteral("Operational log ready."));
-  this->appendLogMessage(QStringLiteral("Cesium map connected."));
-  this->appendLogMessage(QStringLiteral("Awaiting commands..."));
-
-  this->_ui->objectsTreeView->clearSelection();
-  this->setSelectedTrackDetails(QVariantMap{});
-  this->rebuildTacticalGraphicsTree();
 }
 
 void MainWindow::appendEntityToUi(const Entity& entity) {
@@ -719,20 +727,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
     return;
   }
 
-  QString category = entity.category.trimmed();
-  if (category != QStringLiteral("Fighter") &&
-      category != QStringLiteral("Bomber") &&
-      category != QStringLiteral("Helicopter") &&
-      category != QStringLiteral("Transport") &&
-      category != QStringLiteral("Tank") &&
-      category != QStringLiteral("Truck") &&
-      category != QStringLiteral("ArmoredVehicle") &&
-      category != QStringLiteral("Armored Vehicle") &&
-      category != QStringLiteral("Radar") &&
-      category != QStringLiteral("SAMLauncher") &&
-      category != QStringLiteral("SAM Launcher")) {
-    category = QStringLiteral("Other");
-  }
+  const QString category = presentation::normalizeEntityCategory(entity.category);
 
   const QVariantMap summary = this->makeEntityTrackSummary(entity);
   QStandardItem* categoryItem = this->ensureGroupItem(
@@ -3124,79 +3119,23 @@ void MainWindow::rebuildTacticalGraphicsTree() {
   this->_tacticalGraphicsRootItem->removeRows(0, this->_tacticalGraphicsRootItem->rowCount());
 
   for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
-    QVariantMap waypointSummary = presentation::makeTrackSummary(
-        waypoint.name,
-        QStringLiteral("Waypoint"),
-        QStringLiteral("Graphic"),
-        QStringLiteral("%1 m").arg(waypoint.altitudeMeters, 0, 'f', 0),
-        domain::formatPosition(waypoint.latitude, waypoint.longitude),
-        QStringLiteral("Ready"),
-        waypoint.latitude,
-        waypoint.longitude);
-    waypointSummary.insert(QStringLiteral("type"), QStringLiteral("Waypoint"));
     auto* waypointItem = new QStandardItem(waypoint.name);
     waypointItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Waypoint")));
-    setTrackData(waypointItem, waypointSummary);
+    setTrackData(waypointItem, presentation::makeWaypointTrackSummary(waypoint));
     this->_tacticalGraphicsRootItem->appendRow(waypointItem);
   }
 
   for (const RouteGraphic& route : this->_scenarioState->routes()) {
-    QVariantList points;
-    for (const RoutePoint& point : route.points) {
-      points.push_back(QVariantMap{
-          {QStringLiteral("latitude"), point.latitude},
-          {QStringLiteral("longitude"), point.longitude},
-          {QStringLiteral("altitudeMeters"), point.altitudeMeters},
-      });
-    }
-    const RoutePoint firstPoint = route.points.isEmpty() ? RoutePoint{} : route.points.first();
-    QVariantMap routeSummary = presentation::makeTrackSummary(
-        route.name,
-        QStringLiteral("Route"),
-        QStringLiteral("Graphic"),
-        QStringLiteral("-"),
-        route.points.isEmpty() ? QStringLiteral("-") : domain::formatPosition(firstPoint.latitude, firstPoint.longitude),
-        QStringLiteral("%1 points").arg(route.points.size()),
-        firstPoint.latitude,
-        firstPoint.longitude);
-    routeSummary.insert(QStringLiteral("type"), QStringLiteral("Route"));
-    routeSummary.insert(QStringLiteral("routePoints"), points);
     auto* routeItem = new QStandardItem(route.name);
     routeItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Route")));
-    setTrackData(routeItem, routeSummary);
+    setTrackData(routeItem, presentation::makeRouteTrackSummary(route));
     this->_tacticalGraphicsRootItem->appendRow(routeItem);
   }
 
   for (const AreaDefinition& area : this->_scenarioState->areas()) {
-    QVariantMap areaSummary = presentation::makeTrackSummary(
-        area.name,
-        QStringLiteral("Area"),
-        QStringLiteral("Graphic"),
-        QStringLiteral("%1 m").arg(area.centerAltitudeMeters, 0, 'f', 0),
-        domain::formatPosition(area.centerLatitude, area.centerLongitude),
-        QStringLiteral("%1").arg(area.areaType),
-        area.centerLatitude,
-        area.centerLongitude);
-    areaSummary.insert(QStringLiteral("type"), QStringLiteral("Area"));
-    areaSummary.insert(QStringLiteral("areaType"), area.areaType);
-    areaSummary.insert(QStringLiteral("radiusMeters"), area.radiusMeters);
-    areaSummary.insert(QStringLiteral("semiMajorAxisMeters"), area.semiMajorAxisMeters);
-    areaSummary.insert(QStringLiteral("semiMinorAxisMeters"), area.semiMinorAxisMeters);
-    areaSummary.insert(QStringLiteral("rotationDegrees"), area.rotationDegrees);
-    QVariantList areaPoints;
-    for (const RoutePoint& point : area.points) {
-      areaPoints.push_back(QVariantMap{
-          {QStringLiteral("latitude"), point.latitude},
-          {QStringLiteral("longitude"), point.longitude},
-          {QStringLiteral("altitudeMeters"), point.altitudeMeters},
-      });
-    }
-    areaSummary.insert(QStringLiteral("areaPoints"), areaPoints);
-    areaSummary.insert(QStringLiteral("minAltitudeMeters"), area.minAltitudeMeters);
-    areaSummary.insert(QStringLiteral("maxAltitudeMeters"), area.maxAltitudeMeters);
     auto* areaItem = new QStandardItem(area.name);
     areaItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Engagement Area")));
-    setTrackData(areaItem, areaSummary);
+    setTrackData(areaItem, presentation::makeAreaTrackSummary(area));
     this->_tacticalGraphicsRootItem->appendRow(areaItem);
   }
 

@@ -7,6 +7,9 @@ struct Entity;
 struct ActiveMunition;
 struct TransientEffect;
 struct PendingBombRelease;
+struct Waypoint;
+struct RouteGraphic;
+struct AreaDefinition;
 
 namespace presentation {
 
@@ -57,5 +60,14 @@ QVariantMap makePendingBombTargetLineTrackSummary(
 /// One-line display labels for entities used as weapon targets.
 QString missileTargetDisplayLabel(const Entity& entity, double rangeMeters);
 QString bombTargetDisplayLabel(const Entity& entity);
+
+/// Normalizes an entity category string to one of the known display categories,
+/// returning "Other" for unrecognised values.
+QString normalizeEntityCategory(const QString& category);
+
+/// Track summaries for tactical graphics (pure functions).
+QVariantMap makeWaypointTrackSummary(const Waypoint& waypoint);
+QVariantMap makeRouteTrackSummary(const RouteGraphic& route);
+QVariantMap makeAreaTrackSummary(const AreaDefinition& area);
 
 } // namespace presentation
