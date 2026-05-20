@@ -22,6 +22,7 @@
 #include "presentation/PlanStepConfigurator.h"
 #include "presentation/PlanTypes.h"
 #include "presentation/EntityStateActionsController.h"
+#include "presentation/TaskAssignmentController.h"
 #include "presentation/WeaponActionsController.h"
 
 class QAction;
@@ -90,7 +91,6 @@ private slots:
   void assignReturnToBaseTask();
   void assignPatrolRouteTask();
   void assignOrbitHoldLocationTask();
-  bool resolveOrbitCenter(double& outLatitude, double& outLongitude);
   void assignFollowEntityTask();
   void assignAttackAirTask();
   void assignAttackSurfaceTask();
@@ -256,6 +256,7 @@ private:
   std::unique_ptr<presentation::PlanStepConfigurator> _planStepConfigurator;
   std::unique_ptr<presentation::WeaponActionsController> _weaponActionsController;
   std::unique_ptr<presentation::EntityStateActionsController> _entityStateActionsController;
+  std::unique_ptr<presentation::TaskAssignmentController> _taskAssignmentController;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif

@@ -81,6 +81,8 @@ qt_add_executable(qttest
     src/presentation/BombReleaseController.h
     src/presentation/EntityStateActionsController.cpp
     src/presentation/EntityStateActionsController.h
+    src/presentation/TaskAssignmentController.cpp
+    src/presentation/TaskAssignmentController.h
     src/presentation/WeaponActionsController.cpp
     src/presentation/WeaponActionsController.h
     src/presentation/GraphicPickCoordinator.cpp

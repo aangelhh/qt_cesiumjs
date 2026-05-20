@@ -85,7 +85,6 @@ constexpr int kDetectedContactTargetRole = Qt::UserRole + 3;
 constexpr int kTaskQuickBarMarginPixels = 14;
 constexpr int kTaskQuickBarButtonPixels = 30;
 constexpr int kTaskQuickBarIconPixels = 18;
-constexpr double kOrbitHoldDefaultRadiusMeters = 1500.0;
 // Bomb release constants now in domain/BombReleaseGate.h
 // Attack timing constants now in application/AttackTaskProcessor.h
 
@@ -295,6 +294,39 @@ MainWindow::MainWindow(QWidget* parent)
       [this](const QString& msg) { this->appendLogMessage(msg); },
       [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
       [this]() { this->syncScenarioStateToUi(); },
+      this);
+
+  _taskAssignmentController = std::make_unique<presentation::TaskAssignmentController>(
+      [this]() { return this->selectedEntityName(); },
+      [this]() { return this->currentSelectionIsOperableEntity(); },
+      [this]() {
+        return this->_ui->objectsTreeView->currentIndex()
+            .data(kTrackSummaryRole).toMap();
+      },
+      [this](const QString& name) {
+        return this->_entityHomePositionTracker->positionFor(name);
+      },
+      [this](bool requirePoints) {
+        return application::availableRouteNames(this->_scenarioState, requirePoints);
+      },
+      [this](double& h, int& a, double& s) {
+        return this->resolveSelectedEntityFlyTargets(h, a, s);
+      },
+      [this](const QString& name, const EntityTask& task) {
+        return this->applyEntityTask(name, task);
+      },
+      [this](const QString& taskType) {
+        this->openAssignTaskDialog(taskType);
+      },
+      [this](const QString& title, const QString& label,
+             const QStringList& items, int current, bool& ok) -> QString {
+        return QInputDialog::getItem(this, title, label, items, current, false, &ok);
+      },
+      [this](const QString& title, const QString& label,
+             double def, double mn, double mx, int decimals, bool& ok) -> double {
+        return QInputDialog::getDouble(this, title, label, def, mn, mx, decimals, &ok);
+      },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
       this);
   {
     QSet<QString> validNames;
@@ -2199,211 +2231,51 @@ void MainWindow::openObjectsContextMenu(const QPoint& position) {
 }
 
 void MainWindow::assignFlyHeadingAltitudeSpeedTask() {
-  this->openAssignTaskDialog(QStringLiteral("FlyHeadingAltitudeSpeed"));
+  this->_taskAssignmentController->assignFlyHeadingAltitudeSpeed();
 }
 
 void MainWindow::assignMoveToLocationTask() {
-  this->openAssignTaskDialog(QStringLiteral("MoveToLocation"));
+  this->_taskAssignmentController->assignMoveToLocation();
 }
 
 void MainWindow::assignMoveToWaypointTask() {
-  this->openAssignTaskDialog(QStringLiteral("MoveToWaypoint"));
+  this->_taskAssignmentController->assignMoveToWaypoint();
 }
 
 void MainWindow::assignMoveAlongRouteTask() {
-  this->openAssignTaskDialog(QStringLiteral("MoveAlongRoute"));
+  this->_taskAssignmentController->assignMoveAlongRoute();
 }
 
 void MainWindow::assignReturnToBaseTask() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty() || !this->currentSelectionIsOperableEntity()) {
-    return;
-  }
-
-  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  const presentation::EntityHomePosition homePosition = this->_entityHomePositionTracker->positionFor(entityName);
-
-  double headingDegrees = 0.0;
-  int currentAltitudeMeters = 0;
-  double speedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
-  this->resolveSelectedEntityFlyTargets(headingDegrees, currentAltitudeMeters, speedKnots);
-
-  EntityTask task;
-  task.taskType = QStringLiteral("MoveToLocation");
-  task.enabled = true;
-  task.status = QStringLiteral("Running");
-  task.targetLatitude = homePosition.valid
-      ? homePosition.latitude
-      : summary.value(QStringLiteral("latitude")).toDouble();
-  task.targetLongitude = homePosition.valid
-      ? homePosition.longitude
-      : summary.value(QStringLiteral("longitude")).toDouble();
-  task.targetAltitudeMeters = homePosition.valid
-      ? homePosition.altitudeMeters
-      : currentAltitudeMeters;
-  task.targetSpeedKnots = speedKnots;
-
-  if (!this->applyEntityTask(entityName, task)) {
-    return;
-  }
-
-  this->_ui->statusLabel->setText(
-      QStringLiteral("RTB asignado a %1.").arg(entityName));
+  this->_taskAssignmentController->assignReturnToBase();
 }
 
 void MainWindow::assignPatrolRouteTask() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty() || !this->currentSelectionIsOperableEntity()) {
-    return;
-  }
-
-  const QStringList availableRoutes = this->availableRouteNames(true);
-  if (availableRoutes.isEmpty()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay rutas disponibles para Patrol Route."));
-    return;
-  }
-
-  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  const QString currentRouteName = summary.value(QStringLiteral("taskTargetRouteName")).toString();
-  int routeIndex = availableRoutes.indexOf(currentRouteName);
-  if (routeIndex < 0) {
-    routeIndex = 0;
-  }
-
-  bool ok = false;
-  const QString routeName = QInputDialog::getItem(
-      this,
-      QStringLiteral("Patrol Route"),
-      QStringLiteral("Route"),
-      availableRoutes,
-      routeIndex,
-      false,
-      &ok);
-  if (!ok || routeName.trimmed().isEmpty()) {
-    return;
-  }
-
-  double headingDegrees = 0.0;
-  int altitudeMeters = 0;
-  double speedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
-  this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots);
-
-  EntityTask task;
-  task.taskType = QStringLiteral("MoveAlongRoute");
-  task.enabled = true;
-  task.status = QStringLiteral("Running");
-  task.targetRouteName = routeName;
-  task.targetAltitudeMeters = altitudeMeters;
-  task.targetSpeedKnots = speedKnots;
-
-  if (!this->applyEntityTask(entityName, task)) {
-    return;
-  }
-
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Patrol Route asignado a %1 sobre %2.")
-          .arg(entityName, routeName));
+  this->_taskAssignmentController->assignPatrolRoute();
 }
 
 void MainWindow::assignOrbitHoldLocationTask() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty() || !this->currentSelectionIsOperableEntity()) {
-    return;
-  }
-
-  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  double centerLatitude  = summary.value(QStringLiteral("latitude")).toDouble();
-  double centerLongitude = summary.value(QStringLiteral("longitude")).toDouble();
-
-  if (!this->resolveOrbitCenter(centerLatitude, centerLongitude)) {
-    return;
-  }
-
-  double headingDegrees = 0.0;
-  int altitudeMeters = 0;
-  double speedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
-  this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots);
-
-  EntityTask task;
-  task.taskType = QStringLiteral("OrbitArea");
-  task.enabled = true;
-  task.status = QStringLiteral("Running");
-  task.targetLatitude = centerLatitude;
-  task.targetLongitude = centerLongitude;
-  task.targetAltitudeMeters = altitudeMeters;
-  task.targetSpeedKnots = speedKnots;
-  task.targetAreaRadiusMeters = kOrbitHoldDefaultRadiusMeters;
-
-  if (!this->applyEntityTask(entityName, task)) {
-    return;
-  }
-
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Orbit / Hold asignado a %1 alrededor de %2, %3.")
-          .arg(entityName)
-          .arg(centerLatitude,  0, 'f', 4)
-          .arg(centerLongitude, 0, 'f', 4));
-}
-
-bool MainWindow::resolveOrbitCenter(double& outLatitude, double& outLongitude) {
-  bool ok = false;
-  const QString centerMode = QInputDialog::getItem(
-      this,
-      QStringLiteral("Orbit / Hold (Location)"),
-      QStringLiteral("Center"),
-      QStringList{
-          QStringLiteral("Current Position"),
-          QStringLiteral("Custom Coordinates"),
-      },
-      0,
-      false,
-      &ok);
-  if (!ok) {
-    return false;
-  }
-
-  if (centerMode != QStringLiteral("Custom Coordinates")) {
-    return true;
-  }
-
-  outLatitude = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Orbit / Hold (Location)"),
-      QStringLiteral("Latitude"),
-      outLatitude,
-      -90.0, 90.0, 6, &ok);
-  if (!ok) {
-    return false;
-  }
-
-  outLongitude = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Orbit / Hold (Location)"),
-      QStringLiteral("Longitude"),
-      outLongitude,
-      -180.0, 180.0, 6, &ok);
-  return ok;
+  this->_taskAssignmentController->assignOrbitHoldLocation();
 }
 
 void MainWindow::assignPatrolAreaTask() {
-  this->openAssignTaskDialog(QStringLiteral("PatrolArea"));
+  this->_taskAssignmentController->assignPatrolArea();
 }
 
 void MainWindow::assignOrbitAreaTask() {
-  this->openAssignTaskDialog(QStringLiteral("OrbitArea"));
+  this->_taskAssignmentController->assignOrbitArea();
 }
 
 void MainWindow::assignFollowEntityTask() {
-  this->openAssignTaskDialog(QStringLiteral("FollowEntity"));
+  this->_taskAssignmentController->assignFollowEntity();
 }
 
 void MainWindow::assignAttackAirTask() {
-  this->openAssignTaskDialog(QStringLiteral("AttackAir"));
+  this->_taskAssignmentController->assignAttackAir();
 }
 
 void MainWindow::assignAttackSurfaceTask() {
-  this->openAssignTaskDialog(QStringLiteral("AttackSurface"));
+  this->_taskAssignmentController->assignAttackSurface();
 }
 
 void MainWindow::openEntityPlanDialog() {
