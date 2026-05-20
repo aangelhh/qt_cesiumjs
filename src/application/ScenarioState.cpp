@@ -505,51 +505,9 @@ void ScenarioState::applyMissileDamage(
 }
 
 void ScenarioState::applyBombBlastDamage(const ActiveMunition& munition) {
-  if (!application::munitionIsBomb(munition) ||
-      munition.blastRadiusMeters <= 0.0 ||
-      munition.baseDamage <= 0.0) {
-    return;
-  }
-
-  struct BlastDamageHit {
-    QString targetName;
-    double damageAmount = 0.0;
-  };
-
-  QVector<BlastDamageHit> hits;
-  for (const Entity& entity : _entities) {
-    if (entity.destroyed || entity.name == munition.launcherEntityName) {
-      continue;
-    }
-
-    const double horizontalDistanceMeters = distanceMeters(
-        munition.latitude,
-        munition.longitude,
-        entity.latitude,
-        entity.longitude);
-    const double verticalSeparationMeters = qAbs(
-        munition.altitudeMeters - static_cast<double>(entity.altitude));
-    const double slantRangeMeters = qSqrt(
-        qPow(horizontalDistanceMeters, 2.0) +
-        qPow(verticalSeparationMeters, 2.0));
-    if (slantRangeMeters >= munition.blastRadiusMeters) {
-      continue;
-    }
-
-    const double damageAmount = munition.baseDamage * (
-        1.0 - slantRangeMeters / munition.blastRadiusMeters);
-    if (damageAmount <= 0.0) {
-      continue;
-    }
-
-    hits.push_back(BlastDamageHit{entity.name, damageAmount});
-  }
-
-  for (const BlastDamageHit& hit : hits) {
-    this->applyDamageWithSource(
-        hit.targetName,
-        hit.damageAmount,
-        QStringLiteral("Bomb"));
+  for (const application::BombBlastHit& hit :
+       application::computeBombBlastHits(munition, _entities)) {
+    this->applyDamageWithSource(hit.targetName, hit.damageAmount, QStringLiteral("Bomb"));
   }
 }
 

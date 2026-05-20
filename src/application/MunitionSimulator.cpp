@@ -236,6 +236,44 @@ bool munitionIsBomb(const ActiveMunition& munition) {
              QStringLiteral("Bomb"), Qt::CaseInsensitive) == 0;
 }
 
+QVector<BombBlastHit> computeBombBlastHits(
+    const ActiveMunition& munition,
+    const QVector<Entity>& entities) {
+  if (!munitionIsBomb(munition) ||
+      munition.blastRadiusMeters <= 0.0 ||
+      munition.baseDamage <= 0.0) {
+    return {};
+  }
+
+  QVector<BombBlastHit> hits;
+  for (const Entity& entity : entities) {
+    if (entity.destroyed || entity.name == munition.launcherEntityName) {
+      continue;
+    }
+
+    const double horizontalDistanceMeters = domain::distanceMeters(
+        munition.latitude, munition.longitude,
+        entity.latitude,   entity.longitude);
+    const double verticalSeparationMeters = qAbs(
+        munition.altitudeMeters - static_cast<double>(entity.altitude));
+    const double slantRangeMeters = qSqrt(
+        qPow(horizontalDistanceMeters, 2.0) +
+        qPow(verticalSeparationMeters, 2.0));
+    if (slantRangeMeters >= munition.blastRadiusMeters) {
+      continue;
+    }
+
+    const double damage = munition.baseDamage *
+        (1.0 - slantRangeMeters / munition.blastRadiusMeters);
+    if (damage <= 0.0) {
+      continue;
+    }
+
+    hits.push_back(BombBlastHit{entity.name, damage});
+  }
+  return hits;
+}
+
 // ─── Simulation step ──────────────────────────────────────────────────────────
 
 void advanceActiveMunitions(

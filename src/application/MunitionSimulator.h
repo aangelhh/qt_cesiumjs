@@ -18,6 +18,21 @@ ActiveMunition makeBombMunition(const Entity& launcher, int serial);
 /// Returns true if the munition is a bomb (vs. missile).
 bool munitionIsBomb(const ActiveMunition& munition);
 
+/// A single blast-damage hit produced by a bomb detonation.
+struct BombBlastHit {
+  QString targetName;
+  double  damageAmount = 0.0;
+};
+
+/// Returns the set of entities hit by a bomb blast, with falloff damage.
+///
+/// Only live, non-launcher entities within the blast radius are included.
+/// Damage falls off linearly from baseDamage at the centre to 0 at the edge.
+/// Returns an empty list if the munition is not a bomb or has no blast radius.
+QVector<BombBlastHit> computeBombBlastHits(
+    const ActiveMunition& munition,
+    const QVector<Entity>& entities);
+
 /// Advances all active munitions by deltaSeconds.
 ///
 /// Handles:

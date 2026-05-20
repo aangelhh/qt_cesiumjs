@@ -313,3 +313,96 @@ TEST(MunitionSimulator_advance, FriendlyEntityNotHit) {
   EXPECT_FALSE(damaged);
   EXPECT_FALSE(munitions.isEmpty()); // still flying
 }
+
+// ── computeBombBlastHits ───────────────────────────────────────────────────────
+
+static ActiveMunition makeGroundedBomb(
+    double lat, double lon, double altMeters,
+    double blastRadius = 200.0, double baseDamage = 100.0) {
+  ActiveMunition m;
+  m.munitionType = QStringLiteral("Bomb");
+  m.id = QStringLiteral("bomb-1");
+  m.launcherEntityName = QStringLiteral("Launcher");
+  m.latitude = lat;
+  m.longitude = lon;
+  m.altitudeMeters = altMeters;
+  m.blastRadiusMeters = blastRadius;
+  m.baseDamage = baseDamage;
+  m.active = true;
+  return m;
+}
+
+TEST(MunitionSimulator, BombBlastHitsEntityInRadius) {
+  const auto bomb = makeGroundedBomb(0.0, 0.0, 10.0);
+  Entity target;
+  target.name = QStringLiteral("T1");
+  target.latitude = 0.0; target.longitude = 0.0; target.altitude = 10;
+  target.destroyed = false;
+  const auto hits = computeBombBlastHits(bomb, {target});
+  ASSERT_EQ(hits.size(), 1);
+  EXPECT_EQ(hits.at(0).targetName, QStringLiteral("T1"));
+  EXPECT_GT(hits.at(0).damageAmount, 0.0);
+  EXPECT_LE(hits.at(0).damageAmount, 100.0);
+}
+
+TEST(MunitionSimulator, BombBlastMissesBeyondRadius) {
+  const auto bomb = makeGroundedBomb(0.0, 0.0, 0.0, 200.0);
+  Entity target;
+  target.name = QStringLiteral("T1");
+  // ~1km away — well outside 200m blast radius
+  target.latitude = 0.009; target.longitude = 0.0; target.altitude = 0;
+  target.destroyed = false;
+  EXPECT_TRUE(computeBombBlastHits(bomb, {target}).isEmpty());
+}
+
+TEST(MunitionSimulator, BombBlastSkipsLauncher) {
+  auto bomb = makeGroundedBomb(0.0, 0.0, 0.0);
+  Entity launcher;
+  launcher.name = QStringLiteral("Launcher"); // same as bomb.launcherEntityName
+  launcher.latitude = 0.0; launcher.longitude = 0.0; launcher.altitude = 0;
+  launcher.destroyed = false;
+  EXPECT_TRUE(computeBombBlastHits(bomb, {launcher}).isEmpty());
+}
+
+TEST(MunitionSimulator, BombBlastSkipsDestroyedEntity) {
+  const auto bomb = makeGroundedBomb(0.0, 0.0, 0.0);
+  Entity target;
+  target.name = QStringLiteral("T1");
+  target.latitude = 0.0; target.longitude = 0.0; target.altitude = 0;
+  target.destroyed = true;
+  EXPECT_TRUE(computeBombBlastHits(bomb, {target}).isEmpty());
+}
+
+TEST(MunitionSimulator, BombBlastDamageFalloffWithDistance) {
+  const auto bomb = makeGroundedBomb(0.0, 0.0, 0.0, 500.0, 100.0);
+  Entity close; close.name = QStringLiteral("Close");
+  close.latitude = 0.0; close.longitude = 0.0; close.altitude = 0; close.destroyed = false;
+  Entity mid; mid.name = QStringLiteral("Mid");
+  mid.latitude = 0.0; mid.longitude = 0.002; mid.altitude = 0; mid.destroyed = false;
+  const auto hits = computeBombBlastHits(bomb, {close, mid});
+  ASSERT_EQ(hits.size(), 2);
+  const double closeDmg = hits.at(0).damageAmount;
+  const double midDmg   = hits.at(1).damageAmount;
+  EXPECT_GT(closeDmg, midDmg);
+}
+
+TEST(MunitionSimulator, BombBlastReturnsEmptyForMissile) {
+  ActiveMunition missile;
+  missile.munitionType = QStringLiteral("Missile");
+  missile.blastRadiusMeters = 200.0;
+  missile.baseDamage = 100.0;
+  Entity target;
+  target.name = QStringLiteral("T1");
+  target.latitude = 0.0; target.longitude = 0.0; target.altitude = 0;
+  target.destroyed = false;
+  EXPECT_TRUE(computeBombBlastHits(missile, {target}).isEmpty());
+}
+
+TEST(MunitionSimulator, BombBlastReturnsEmptyForZeroRadius) {
+  auto bomb = makeGroundedBomb(0.0, 0.0, 0.0, 0.0);
+  Entity target;
+  target.name = QStringLiteral("T1");
+  target.latitude = 0.0; target.longitude = 0.0; target.altitude = 0;
+  target.destroyed = false;
+  EXPECT_TRUE(computeBombBlastHits(bomb, {target}).isEmpty());
+}
