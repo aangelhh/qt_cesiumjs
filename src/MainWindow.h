@@ -22,6 +22,7 @@
 #include "presentation/PlanStepConfigurator.h"
 #include "presentation/PlanTypes.h"
 #include "presentation/EntityStateActionsController.h"
+#include "presentation/TacticalGraphicsEditorController.h"
 #include "presentation/TaskAssignmentController.h"
 #include "presentation/WeaponActionsController.h"
 
@@ -116,8 +117,6 @@ private slots:
   void openAddWaypointDialog();
   void openAddRouteDialog();
   void openAddAreaDialog();
-  void openAddCircleAreaDialog(const QString& name, double altitudeMeters);
-  void openAddEllipseAreaDialog(const QString& name, double altitudeMeters);
   void startSimulation();
   void pauseSimulation();
   void stopSimulation();
@@ -257,6 +256,7 @@ private:
   std::unique_ptr<presentation::WeaponActionsController> _weaponActionsController;
   std::unique_ptr<presentation::EntityStateActionsController> _entityStateActionsController;
   std::unique_ptr<presentation::TaskAssignmentController> _taskAssignmentController;
+  std::unique_ptr<presentation::TacticalGraphicsEditorController> _tacticalGraphicsEditorController;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif

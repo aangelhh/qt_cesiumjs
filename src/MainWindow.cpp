@@ -328,6 +328,25 @@ MainWindow::MainWindow(QWidget* parent)
       },
       [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
       this);
+
+  _tacticalGraphicsEditorController = std::make_unique<presentation::TacticalGraphicsEditorController>(
+      this->_graphicPickCoordinator.get(),
+      [this]() { return static_cast<int>(this->_scenarioState->waypoints().size()); },
+      [this]() { return static_cast<int>(this->_scenarioState->routes().size()); },
+      [this]() { return static_cast<int>(this->_scenarioState->areas().size()); },
+      [this](const QString& title, const QString& label,
+             const QString& def, bool& ok) -> QString {
+        return QInputDialog::getText(this, title, label, QLineEdit::Normal, def, &ok);
+      },
+      [this](const QString& title, const QString& label,
+             const QStringList& items, int current, bool& ok) -> QString {
+        return QInputDialog::getItem(this, title, label, items, current, false, &ok);
+      },
+      [this](const QString& title, const QString& label,
+             double def, double mn, double mx, int decimals, bool& ok) -> double {
+        return QInputDialog::getDouble(this, title, label, def, mn, mx, decimals, &ok);
+      },
+      this);
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
@@ -2768,144 +2787,15 @@ void MainWindow::beginGraphicCoordinatePick() {
 }
 
 void MainWindow::openAddWaypointDialog() {
-  bool ok = false;
-  const QString name = QInputDialog::getText(
-      this,
-      QStringLiteral("Add Waypoint"),
-      QStringLiteral("Waypoint name"),
-      QLineEdit::Normal,
-      QStringLiteral("Waypoint %1").arg(this->_scenarioState->waypoints().size() + 1),
-      &ok).trimmed();
-  if (!ok || name.isEmpty()) {
-    return;
-  }
-  this->_graphicPickCoordinator->beginWaypointPick(name);
+  this->_tacticalGraphicsEditorController->openAddWaypointDialog();
 }
 
 void MainWindow::openAddRouteDialog() {
-  bool ok = false;
-  const QString name = QInputDialog::getText(
-      this,
-      QStringLiteral("Add Route"),
-      QStringLiteral("Route name"),
-      QLineEdit::Normal,
-      QStringLiteral("Route %1").arg(this->_scenarioState->routes().size() + 1),
-      &ok).trimmed();
-  if (!ok || name.isEmpty()) {
-    return;
-  }
-  this->_graphicPickCoordinator->beginRoutePick(name);
+  this->_tacticalGraphicsEditorController->openAddRouteDialog();
 }
 
 void MainWindow::openAddAreaDialog() {
-  bool ok = false;
-  const QString name = QInputDialog::getText(
-      this,
-      QStringLiteral("Add Area"),
-      QStringLiteral("Area name"),
-      QLineEdit::Normal,
-      QStringLiteral("Area %1").arg(this->_scenarioState->areas().size() + 1),
-      &ok).trimmed();
-  if (!ok || name.isEmpty()) {
-    return;
-  }
-
-  const QStringList areaTypes = {
-      QStringLiteral("Circle"),
-      QStringLiteral("Ellipse"),
-      QStringLiteral("Polygon"),
-  };
-  const QString areaType = QInputDialog::getItem(
-      this,
-      QStringLiteral("Area Type"),
-      QStringLiteral("Type"),
-      areaTypes,
-      0,
-      false,
-      &ok);
-  if (!ok) {
-    return;
-  }
-
-  const double areaAltitudeMeters = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Area Altitude"),
-      QStringLiteral("Center altitude (m)"),
-      0.0,
-      -1000.0,
-      80000.0,
-      1,
-      &ok);
-  if (!ok) {
-    return;
-  }
-
-  if (areaType == QStringLiteral("Circle")) {
-    this->openAddCircleAreaDialog(name, areaAltitudeMeters);
-  } else if (areaType == QStringLiteral("Ellipse")) {
-    this->openAddEllipseAreaDialog(name, areaAltitudeMeters);
-  } else {
-    this->_graphicPickCoordinator->beginAreaPolygonPick(name, areaAltitudeMeters);
-  }
-}
-
-void MainWindow::openAddCircleAreaDialog(const QString& name, double altitudeMeters) {
-  bool ok = false;
-  const double radiusMeters = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Area Radius"),
-      QStringLiteral("Radius (m)"),
-      5000.0,
-      50.0,
-      500000.0,
-      0,
-      &ok);
-  if (!ok) {
-    return;
-  }
-  this->_graphicPickCoordinator->beginAreaCirclePick(name, {altitudeMeters, radiusMeters});
-}
-
-void MainWindow::openAddEllipseAreaDialog(const QString& name, double altitudeMeters) {
-  bool ok = false;
-  const double semiMajorMeters = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Ellipse Semi-major Axis"),
-      QStringLiteral("Semi-major axis (m)"),
-      6000.0,
-      50.0,
-      500000.0,
-      0,
-      &ok);
-  if (!ok) {
-    return;
-  }
-  const double semiMinorMeters = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Ellipse Semi-minor Axis"),
-      QStringLiteral("Semi-minor axis (m)"),
-      3000.0,
-      50.0,
-      500000.0,
-      0,
-      &ok);
-  if (!ok) {
-    return;
-  }
-  const double rotationDegrees = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Ellipse Rotation"),
-      QStringLiteral("Rotation (deg)"),
-      0.0,
-      -360.0,
-      360.0,
-      1,
-      &ok);
-  if (!ok) {
-    return;
-  }
-  this->_graphicPickCoordinator->beginAreaEllipsePick(
-      name, {altitudeMeters, semiMajorMeters, semiMinorMeters, rotationDegrees});
+  this->_tacticalGraphicsEditorController->openAddAreaDialog();
 }
 
 void MainWindow::updateSimulationControls() {
