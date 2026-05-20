@@ -110,6 +110,8 @@ qt_add_executable(qttest
     src/presentation/EntityContextMenuStateBuilder.cpp
     src/presentation/EntityContextMenuStateBuilder.h
     src/presentation/TrackSetSyncer.h
+    src/presentation/BombTargetMapSync.cpp
+    src/presentation/BombTargetMapSync.h
     src/presentation/EntityPlanDialog.cpp
     src/presentation/EntityPlanDialog.h
     src/presentation/EntityHomePositionTracker.cpp

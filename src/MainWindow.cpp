@@ -13,6 +13,7 @@
 #include "presentation/DetectedContactsPresenter.h"
 #include "presentation/EntityDefaultsResolver.h"
 #include "presentation/EntityPlanExecutor.h"
+#include "presentation/BombTargetMapSync.h"
 #include "presentation/MapBridgeScripts.h"
 #include "presentation/EntityContextMenuBuilder.h"
 #include "presentation/EntityContextMenuStateBuilder.h"
@@ -1727,56 +1728,11 @@ void MainWindow::syncTransientEffectsToMap() {
 }
 
 void MainWindow::syncPendingBombTargetToMap() {
-  const QString pendingBombTargetTrackName = QStringLiteral("Bomb Target");
-  const QString pendingBombTargetLineTrackName = QStringLiteral("Bomb Target Line");
-
-  if (!this->_bombReleaseController->pendingRelease().pending) {
-    this->removeTrackFromMap(pendingBombTargetTrackName);
-    this->removeTrackFromMap(pendingBombTargetLineTrackName);
-    return;
-  }
-
-  const auto& release = this->_bombReleaseController->pendingRelease();
-  QString teamLabel = QStringLiteral("Friendly");
-  QString releaseStateLabel = QStringLiteral("Armed");
-  double distanceToBombTargetMeters = -1.0;
-
-  if (const Entity* launcher = this->findEntityByName(release.launcherEntityName)) {
-    teamLabel = domain::forceIdentifierLabel(launcher->forceIdentifier);
-    distanceToBombTargetMeters = domain::distanceMeters(
-        launcher->latitude,
-        launcher->longitude,
-        release.targetLatitude,
-        release.targetLongitude);
-    const domain::BombReleaseGateEvaluation evaluation = domain::evaluateBombReleaseGate(
-        *launcher,
-        release.targetLatitude,
-        release.targetLongitude,
-        release.targetAltitudeMeters);
-    releaseStateLabel = evaluation.stateLabel();
-    this->sendTrackToMap(
-        presentation::makePendingBombTargetLineTrackSummary(
-            *launcher,
-            release.targetLatitude,
-            release.targetLongitude,
-            release.targetAltitudeMeters,
-            teamLabel,
-            releaseStateLabel),
-        false);
-  } else {
-    this->removeTrackFromMap(pendingBombTargetLineTrackName);
-  }
-
-  this->sendTrackToMap(
-      presentation::makePendingBombTargetTrackSummary(
-          release.targetLabel,
-          release.targetLatitude,
-          release.targetLongitude,
-          release.targetAltitudeMeters,
-          teamLabel,
-          releaseStateLabel,
-          distanceToBombTargetMeters),
-      false);
+  presentation::syncPendingBombTargetToMap(
+      this->_bombReleaseController->pendingRelease(),
+      [this](const QString& name) { return this->findEntityByName(name); },
+      [this](const QVariantMap& s, bool f) { this->sendTrackToMap(s, f); },
+      [this](const QString& id) { this->removeTrackFromMap(id); });
 }
 
 static const char* kTaskQuickBarStyleSheet =
