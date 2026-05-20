@@ -30,6 +30,7 @@ add_executable(qttest_unit_tests
     application/MunitionSimulatorTest.cpp
     application/BehaviorEngineTest.cpp
     application/ScenarioQueriesTest.cpp
+    application/ScenarioSerializerTest.cpp
     presentation/EntityVisualStateManagerTest.cpp
     presentation/EntityHomePositionTrackerTest.cpp
     presentation/TrackIconProviderTest.cpp
@@ -47,6 +48,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/domain/BombReleaseGate.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/CombatRules.cpp
     ${CMAKE_SOURCE_DIR}/src/application/ScenarioState.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/ScenarioSerializer.cpp
     ${CMAKE_SOURCE_DIR}/src/application/BehaviorEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/application/MunitionSimulator.cpp
     ${CMAKE_SOURCE_DIR}/src/application/ScenarioQueries.cpp

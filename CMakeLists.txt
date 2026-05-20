@@ -43,6 +43,8 @@ qt_add_executable(qttest
     src/infrastructure/ModelCatalog.h
     src/application/ScenarioState.cpp
     src/application/ScenarioState.h
+    src/application/ScenarioSerializer.cpp
+    src/application/ScenarioSerializer.h
     src/application/BehaviorEngine.cpp
     src/application/BehaviorEngine.h
     src/application/MunitionSimulator.cpp
