@@ -174,8 +174,15 @@ DesiredState FlyHeadingAltitudeSpeedTask::evaluate(double currentLat, double cur
 
 // --- FollowEntityTask ---
 
-FollowEntityTask::FollowEntityTask(double targetAlt, double targetSpeedKnots)
-    : m_fallbackAlt(targetAlt), m_fallbackSpeed(targetSpeedKnots)
+FollowEntityTask::FollowEntityTask(
+    double targetAlt,
+    double targetSpeedKnots,
+    double followDistanceMeters,
+    double arrivalToleranceMeters)
+    : m_fallbackAlt(targetAlt),
+      m_fallbackSpeed(targetSpeedKnots),
+      m_followDistanceMeters(std::max(1.0, followDistanceMeters)),
+      m_arrivalToleranceMeters(std::max(0.0, arrivalToleranceMeters))
 {
 }
 
@@ -202,12 +209,19 @@ DesiredState FollowEntityTask::evaluate(double currentLat, double currentLon, do
     
     m_state = State::Running;
     
-    double targetHeading = bearingDegrees(currentLat, currentLon, m_targetLat, m_targetLon);
-    double dist = distanceMeters(currentLat, currentLon, m_targetLat, m_targetLon);
-    
-    double targetSpeed = std::max(m_targetSpeed, m_fallbackSpeed);
-    double assignedSpeed = (dist > 1500.0) ? targetSpeed + 40.0 : targetSpeed;
-    double assignedAlt = (m_fallbackAlt > 0) ? m_fallbackAlt : m_targetAlt;
+    const double targetHeading = bearingDegrees(currentLat, currentLon, m_targetLat, m_targetLon);
+    const double dist = distanceMeters(currentLat, currentLon, m_targetLat, m_targetLon);
+    const double assignedAlt = (m_fallbackAlt > 0) ? m_fallbackAlt : m_targetAlt;
+
+    if (dist <= m_followDistanceMeters) {
+        return {currentHeading, assignedAlt, 0.0};
+    }
+
+    const double targetSpeed = std::max(m_targetSpeed, m_fallbackSpeed);
+    const double assignedSpeed =
+        (dist > m_followDistanceMeters + m_arrivalToleranceMeters)
+        ? targetSpeed
+        : 0.0;
     
     return {targetHeading, assignedAlt, assignedSpeed};
 }

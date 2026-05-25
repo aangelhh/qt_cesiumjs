@@ -77,7 +77,11 @@ private:
 // Primitive Task: Dynamically follow another entity
 class FollowEntityTask : public ITask {
 public:
-    FollowEntityTask(double targetAlt, double targetSpeedKnots);
+    FollowEntityTask(
+        double targetAlt,
+        double targetSpeedKnots,
+        double followDistanceMeters = 1000.0,
+        double arrivalToleranceMeters = 100.0);
     
     // Explicitly feed target coordinates during the application tick
     void updateTargetLocation(double targetLat, double targetLon, double targetAlt, double targetSpeedKnots);
@@ -92,6 +96,8 @@ private:
     double m_targetSpeed = 0.0;
     double m_fallbackAlt;
     double m_fallbackSpeed;
+    double m_followDistanceMeters;
+    double m_arrivalToleranceMeters;
     bool m_hasTargetData = false;
     State m_state = State::NotStarted;
 };
@@ -169,4 +175,8 @@ struct EntityTask {
   QString targetRouteName;
   QString targetAreaName;
   double targetAreaRadiusMeters = 0.0;
+  double followDistanceMeters = 1000.0;
+  double arrivalToleranceMeters = 100.0;
+  double durationSeconds = 0.0;
+  double elapsedSeconds = 0.0;
 };

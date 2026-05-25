@@ -66,9 +66,25 @@ struct CmdAssignFollowTask : public ICommand {
     QString followEntityName;
     double targetAltitudeMeters;
     double targetSpeedKnots;
+    double followDistanceMeters;
+    double arrivalToleranceMeters;
+    double durationSeconds;
 
-    CmdAssignFollowTask(const QString& name, const QString& followName, double alt, double speed)
-        : targetEntityName(name), followEntityName(followName), targetAltitudeMeters(alt), targetSpeedKnots(speed) {}
+    CmdAssignFollowTask(
+        const QString& name,
+        const QString& followName,
+        double alt,
+        double speed,
+        double distance,
+        double tolerance,
+        double duration)
+        : targetEntityName(name),
+          followEntityName(followName),
+          targetAltitudeMeters(alt),
+          targetSpeedKnots(speed),
+          followDistanceMeters(distance),
+          arrivalToleranceMeters(tolerance),
+          durationSeconds(duration) {}
 
     void apply(ScenarioState& scenario) const override;
 };

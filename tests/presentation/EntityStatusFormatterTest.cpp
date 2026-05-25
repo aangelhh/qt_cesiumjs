@@ -19,10 +19,17 @@ static Entity makeEntity(const QString& name, int force = 1) {
 static EntityStatusContext makeCtx(
     const QVector<Entity>& entities = {},
     bool simRunning = false) {
+  static QVector<Entity> storedEntities;
   static QVector<ActiveMunition> noMunitions;
   static PendingBombRelease noBomb;
   static QHash<QString, EntityPlan> noPlans;
-  return EntityStatusContext{entities, noMunitions, noBomb, noPlans, simRunning};
+  storedEntities = entities;
+  return EntityStatusContext{
+      storedEntities,
+      noMunitions,
+      noBomb,
+      noPlans,
+      simRunning};
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

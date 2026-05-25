@@ -319,12 +319,26 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
       // Feed external world data into specific task types before evaluation
       domain::ITask* topTask = it->second.top();
       if (auto* followTask = dynamic_cast<domain::FollowEntityTask*>(topTask)) {
+          const Entity* targetEntity = nullptr;
           for (const Entity& target : snapshot) {
-              if (target.name == entity.currentTask.targetEntityName) {
-                  followTask->updateTargetLocation(target.latitude, target.longitude, static_cast<double>(target.altitude), target.speedKnots);
+              if (target.name == entity.currentTask.targetEntityName && !target.destroyed) {
+                  targetEntity = &target;
                   break;
               }
           }
+          if (!targetEntity) {
+              entity.currentTask.status = QStringLiteral("Target unavailable");
+              entity.speedKnots = 0.0;
+              entity.verticalSpeedMetersPerSecond = 0.0;
+              return;
+          }
+          entity.currentTask.targetLatitude = targetEntity->latitude;
+          entity.currentTask.targetLongitude = targetEntity->longitude;
+          followTask->updateTargetLocation(
+              targetEntity->latitude,
+              targetEntity->longitude,
+              static_cast<double>(targetEntity->altitude),
+              targetEntity->speedKnots);
       }
   
       domain::ITask::State evaluatedState = domain::ITask::State::Running;
@@ -340,8 +354,19 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
       entity.currentTask.targetAltitudeMeters = static_cast<int>(desired.targetAltitudeMeters);
       entity.currentTask.targetSpeedKnots = desired.targetSpeedKnots;
       
+      if (entity.currentTask.taskType == QStringLiteral("FollowEntity") &&
+          entity.currentTask.durationSeconds > 0.0) {
+          entity.currentTask.elapsedSeconds += qMax(0.0, deltaSeconds);
+          if (entity.currentTask.elapsedSeconds >= entity.currentTask.durationSeconds) {
+              evaluatedState = domain::ITask::State::Completed;
+          }
+      }
+
       if (evaluatedState == domain::ITask::State::Completed) {
-          entity.currentTask.status = QStringLiteral("On target");
+          entity.currentTask.status =
+              entity.currentTask.taskType == QStringLiteral("FollowEntity")
+              ? QStringLiteral("Completed")
+              : QStringLiteral("On target");
       } else if (evaluatedState == domain::ITask::State::Failed) {
           entity.currentTask.status = QStringLiteral("Target unavailable");
       } else {
@@ -363,7 +388,8 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
       entity.speedKnots = clampStep(
           entity.speedKnots, entity.currentTask.targetSpeedKnots, kAccelerationKnotsPerSecond * deltaSeconds);
           
-      if (entity.currentTask.status == QStringLiteral("On target")) {
+      if (entity.currentTask.status == QStringLiteral("On target") ||
+          entity.currentTask.status == QStringLiteral("Completed")) {
           entity.speedKnots = 0.0;
           entity.verticalSpeedMetersPerSecond = 0.0;
       }

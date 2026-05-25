@@ -157,6 +157,10 @@ QJsonObject toJson(const EntityTask& task) {
       {QStringLiteral("targetRouteName"), task.targetRouteName},
       {QStringLiteral("targetAreaName"), task.targetAreaName},
       {QStringLiteral("targetAreaRadiusMeters"), task.targetAreaRadiusMeters},
+      {QStringLiteral("followDistanceMeters"), task.followDistanceMeters},
+      {QStringLiteral("arrivalToleranceMeters"), task.arrivalToleranceMeters},
+      {QStringLiteral("durationSeconds"), task.durationSeconds},
+      {QStringLiteral("elapsedSeconds"), task.elapsedSeconds},
   };
 }
 
@@ -175,6 +179,10 @@ EntityTask taskFromJson(const QJsonObject& object) {
   task.targetRouteName = object.value(QStringLiteral("targetRouteName")).toString();
   task.targetAreaName = object.value(QStringLiteral("targetAreaName")).toString();
   task.targetAreaRadiusMeters = object.value(QStringLiteral("targetAreaRadiusMeters")).toDouble(0.0);
+  task.followDistanceMeters = object.value(QStringLiteral("followDistanceMeters")).toDouble(1000.0);
+  task.arrivalToleranceMeters = object.value(QStringLiteral("arrivalToleranceMeters")).toDouble(100.0);
+  task.durationSeconds = object.value(QStringLiteral("durationSeconds")).toDouble(0.0);
+  task.elapsedSeconds = object.value(QStringLiteral("elapsedSeconds")).toDouble(0.0);
   return task;
 }
 

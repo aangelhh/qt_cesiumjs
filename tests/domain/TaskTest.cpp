@@ -129,6 +129,15 @@ TEST(FollowEntityTask, ChasesTargetWhenLocationKnown) {
     EXPECT_NEAR(desired.targetHeadingDegrees, 0.0, 1.0);
 }
 
+TEST(FollowEntityTask, StopsPursuitInsideFollowDistance) {
+    domain::FollowEntityTask task(5000.0, 250.0, 1000.0, 100.0);
+    task.updateTargetLocation(kOriginLat + kFiveKmNorthDeltaLat / 10.0, kOriginLon, 5000.0, 250.0);
+    const auto desired = task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_DOUBLE_EQ(desired.targetHeadingDegrees, 45.0);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 0.0);
+}
+
 // --- OrbitAreaTask ---------------------------------------------------------
 
 TEST(OrbitAreaTask, DoesNotCompleteWhenOrbiting) {

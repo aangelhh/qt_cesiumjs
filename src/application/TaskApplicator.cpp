@@ -95,7 +95,14 @@ void resolveTaskCoordinates(
         task.taskType == QStringLiteral("PatrolArea") ||
         task.taskType == QStringLiteral("OrbitArea") ||
         task.taskType == QStringLiteral("FollowEntity");
-    if (isSpatialMovement && task.targetSpeedKnots <= 0.0) {
+    if (task.taskType == QStringLiteral("FollowEntity") &&
+        task.targetSpeedKnots <= 0.0) {
+      task.targetSpeedKnots = entity.speedKnots > 0.0
+          ? entity.speedKnots
+          : (entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0
+             ? 220.0
+             : 12.0);
+    } else if (isSpatialMovement && task.targetSpeedKnots <= 0.0) {
       task.targetSpeedKnots =
           entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0
           ? 220.0
@@ -185,7 +192,9 @@ bool applyEntityTask(
     } else if (task.taskType == "FollowEntity") {
       stack->push(std::make_unique<domain::FollowEntityTask>(
           static_cast<double>(task.targetAltitudeMeters),
-          task.targetSpeedKnots));
+          task.targetSpeedKnots,
+          resolvedEntity.currentTask.followDistanceMeters,
+          resolvedEntity.currentTask.arrivalToleranceMeters));
     } else if (task.taskType == "PatrolArea") {
       for (const AreaDefinition& area : state->areas()) {
         if (area.name != resolvedEntity.currentTask.targetAreaName &&
@@ -238,7 +247,10 @@ bool applyEntityTask(
           entityName,
           task.targetEntityName,
           task.targetAltitudeMeters,
-          task.targetSpeedKnots));
+          task.targetSpeedKnots,
+          task.followDistanceMeters,
+          task.arrivalToleranceMeters,
+          task.durationSeconds));
     } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
       simulationEngine->enqueueCommand(std::make_unique<CmdAssignOrbitTask>(
           entityName,

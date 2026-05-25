@@ -47,6 +47,7 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
     case PlanStepKind::PatrolArea:           return QStringLiteral("Patrol Area");
     case PlanStepKind::FlyHeadingAltitudeSpeed: return QStringLiteral("Fly Heading / Altitude / Speed");
     case PlanStepKind::OrbitHoldLocation:    return QStringLiteral("Orbit / Hold (Location)");
+    case PlanStepKind::FollowEntity:         return QStringLiteral("Follow Entity");
     case PlanStepKind::ReturnToBase:         return QStringLiteral("Return To Base");
     case PlanStepKind::AttackAir:            return QStringLiteral("Attack Air");
     case PlanStepKind::AttackSurface:        return QStringLiteral("Attack Surface");
@@ -265,6 +266,7 @@ bool EntityPlanExecutor::startPlanStepTask(const QString& entityName, EntityPlan
   }
   PlanStep& step = plan.steps[plan.currentStepIndex];
   step.status = QString(plan_status::Running);
+  step.task.elapsedSeconds = 0.0;
   if (!_applyTask(entityName, step.task, false)) {
     step.status = QString(plan_status::Failed);
     plan.running = false;
@@ -380,6 +382,7 @@ bool EntityPlanExecutor::activePlanStepCompleted(
 
     case PlanStepKind::AttackAir:
     case PlanStepKind::AttackSurface:
+    case PlanStepKind::FollowEntity:
       plan.currentStableTicks = 0;
       return entity.currentTask.status == QStringLiteral("Completed");
   }
@@ -455,6 +458,13 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
     case PlanStepKind::OrbitHoldLocation:
     case PlanStepKind::ReturnToBase:
       return true;
+
+    case PlanStepKind::FollowEntity: {
+      if (step.task.targetEntityName.trimmed().isEmpty()) {
+        return setReason(QStringLiteral("follow target is not set"));
+      }
+      return true;
+    }
 
     case PlanStepKind::AttackAir: {
       if (step.task.targetEntityName.trimmed().isEmpty()) {
@@ -543,6 +553,11 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
              currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
              nearlyEqual(currentTask.targetAreaRadiusMeters, step.task.targetAreaRadiusMeters, 1.0) &&
              nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+
+    case PlanStepKind::FollowEntity:
+      return currentTask.targetEntityName == step.task.targetEntityName &&
+             nearlyEqual(currentTask.followDistanceMeters, step.task.followDistanceMeters, 1.0) &&
+             nearlyEqual(currentTask.arrivalToleranceMeters, step.task.arrivalToleranceMeters, 1.0);
 
     case PlanStepKind::AttackAir:
       return currentTask.targetEntityName == step.task.targetEntityName;

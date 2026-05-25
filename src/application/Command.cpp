@@ -97,14 +97,26 @@ void CmdAssignFollowTask::apply(ScenarioState& scenario) const {
     task.targetEntityName = followEntityName;
     task.targetAltitudeMeters = static_cast<int>(targetAltitudeMeters);
     task.targetSpeedKnots = targetSpeedKnots;
+    task.followDistanceMeters = followDistanceMeters;
+    task.arrivalToleranceMeters = arrivalToleranceMeters;
+    task.durationSeconds = durationSeconds;
     task.status = "Running";
     scenario.assignTask(targetName, task);
+
+    for (const Entity& entity : scenario.entities()) {
+        if (entity.name == targetName) {
+            task = entity.currentTask;
+            break;
+        }
+    }
 
     if (domain::TaskStack* stack = scenario.getTaskStack(targetName)) {
         clearStack(*stack);
         stack->push(std::make_unique<domain::FollowEntityTask>(
             static_cast<double>(task.targetAltitudeMeters),
-            task.targetSpeedKnots));
+            task.targetSpeedKnots,
+            task.followDistanceMeters,
+            task.arrivalToleranceMeters));
     }
 }
 

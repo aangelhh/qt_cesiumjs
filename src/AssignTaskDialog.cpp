@@ -25,6 +25,9 @@ AssignTaskDialog::AssignTaskDialog(
       _speedSpin(new QDoubleSpinBox(this)),
       _latitudeSpin(new QDoubleSpinBox(this)),
       _longitudeSpin(new QDoubleSpinBox(this)),
+      _followDistanceSpin(new QDoubleSpinBox(this)),
+      _arrivalToleranceSpin(new QDoubleSpinBox(this)),
+      _durationSpin(new QDoubleSpinBox(this)),
       _followTargetCombo(new QComboBox(this)),
       _waypointCombo(new QComboBox(this)),
       _routeCombo(new QComboBox(this)),
@@ -72,6 +75,22 @@ AssignTaskDialog::AssignTaskDialog(
   _longitudeSpin->setSingleStep(0.001);
   _longitudeSpin->setSuffix(QStringLiteral(" deg"));
 
+  _followDistanceSpin->setRange(1.0, 100000.0);
+  _followDistanceSpin->setDecimals(1);
+  _followDistanceSpin->setSingleStep(100.0);
+  _followDistanceSpin->setSuffix(QStringLiteral(" m"));
+
+  _arrivalToleranceSpin->setRange(0.0, 10000.0);
+  _arrivalToleranceSpin->setDecimals(1);
+  _arrivalToleranceSpin->setSingleStep(50.0);
+  _arrivalToleranceSpin->setSuffix(QStringLiteral(" m"));
+
+  _durationSpin->setRange(0.0, 86400.0);
+  _durationSpin->setDecimals(1);
+  _durationSpin->setSingleStep(60.0);
+  _durationSpin->setSpecialValueText(QStringLiteral("Until cancelled"));
+  _durationSpin->setSuffix(QStringLiteral(" s"));
+
   for (const QString& targetName : availableTargets) {
     _followTargetCombo->addItem(targetName, targetName);
   }
@@ -91,6 +110,9 @@ AssignTaskDialog::AssignTaskDialog(
   formLayout->addRow(QStringLiteral("Target Route"), _routeCombo);
   formLayout->addRow(QStringLiteral("Target Area"), _areaCombo);
   formLayout->addRow(QStringLiteral("Target Entity"), _followTargetCombo);
+  formLayout->addRow(QStringLiteral("Follow Distance"), _followDistanceSpin);
+  formLayout->addRow(QStringLiteral("Arrival Tolerance"), _arrivalToleranceSpin);
+  formLayout->addRow(QStringLiteral("Duration"), _durationSpin);
   layout->addLayout(formLayout);
 
   const QString initialType = initialTaskType.isEmpty() ? currentTask.taskType : initialTaskType;
@@ -104,6 +126,10 @@ AssignTaskDialog::AssignTaskDialog(
   _latitudeSpin->setValue(currentTask.targetLatitude);
   _longitudeSpin->setValue(currentTask.targetLongitude);
   _altitudeSpin->setValue(currentTask.targetAltitudeMeters);
+  _followDistanceSpin->setValue(
+      currentTask.followDistanceMeters > 0.0 ? currentTask.followDistanceMeters : 1000.0);
+  _arrivalToleranceSpin->setValue(currentTask.arrivalToleranceMeters);
+  _durationSpin->setValue(currentTask.durationSeconds);
   if (!currentTask.targetEntityName.trimmed().isEmpty()) {
     const int followIndex = _followTargetCombo->findData(currentTask.targetEntityName);
     if (followIndex >= 0) {
@@ -159,6 +185,10 @@ EntityTask AssignTaskDialog::task() const {
   task.targetWaypointName = _waypointCombo->currentText().trimmed();
   task.targetRouteName = _routeCombo->currentText().trimmed();
   task.targetAreaName = _areaCombo->currentText().trimmed();
+  task.followDistanceMeters = _followDistanceSpin->value();
+  task.arrivalToleranceMeters = _arrivalToleranceSpin->value();
+  task.durationSeconds = _durationSpin->value();
+  task.elapsedSeconds = 0.0;
   return task;
 }
 
@@ -188,6 +218,9 @@ void AssignTaskDialog::syncUiForTaskType() {
   _routeCombo->setEnabled(isRouteTask);
   _areaCombo->setEnabled(isAreaTask);
   _followTargetCombo->setEnabled(isFollowTask || isAttackAirTask || isAttackSurfaceTask);
+  _followDistanceSpin->setEnabled(isFollowTask);
+  _arrivalToleranceSpin->setEnabled(isFollowTask);
+  _durationSpin->setEnabled(isFollowTask);
 }
 
 void AssignTaskDialog::setPickedCoordinate(double longitude, double latitude, double height) {

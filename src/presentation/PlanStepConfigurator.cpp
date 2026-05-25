@@ -181,6 +181,27 @@ bool PlanStepConfigurator::configure(
       return true;
     }
 
+    case PlanStepKind::FollowEntity: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("FollowEntity");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.targetAltitudeMeters = defaultAltitudeMeters;
+      initial.targetSpeedKnots = defaultSpeedKnots;
+      initial.followDistanceMeters = 1000.0;
+      initial.arrivalToleranceMeters = 100.0;
+      if (!_capture(entity.name, initial, QStringLiteral("FollowEntity"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.status = QStringLiteral("Queued");
+      step.label = QStringLiteral("Follow Entity: %1")
+          .arg(step.task.targetEntityName.trimmed().isEmpty()
+               ? QStringLiteral("-")
+               : step.task.targetEntityName.trimmed());
+      return true;
+    }
+
     case PlanStepKind::ReturnToBase: {
       const EntityHomePosition home = _homePos(entity.name);
       step.task.taskType             = QStringLiteral("MoveToLocation");
