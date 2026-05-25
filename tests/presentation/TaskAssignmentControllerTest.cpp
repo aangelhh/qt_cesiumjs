@@ -124,6 +124,27 @@ TEST(TaskAssignmentController, assignAttackAirOpensDlg) {
   delete ctrl;
 }
 
+TEST(TaskAssignmentController, assignInterceptEntityOpensUnifiedDialog) {
+  Fixture f;
+  auto* ctrl = f.makeController();
+  ctrl->assignInterceptEntity();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("InterceptEntity"));
+  delete ctrl;
+}
+
+TEST(TaskAssignmentController, legacyInterceptActionsOpenUnifiedDialog) {
+  Fixture f;
+  auto* ctrl = f.makeController();
+
+  ctrl->assignInterceptEntity2D();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("InterceptEntity"));
+
+  f.openedDialog.clear();
+  ctrl->assignInterceptEntity3D();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("InterceptEntity"));
+  delete ctrl;
+}
+
 // ── assignReturnToBase ───────────────────────────────────────────────────────
 
 TEST(TaskAssignmentController, rtbUsesCurrentPositionWhenNoHome) {

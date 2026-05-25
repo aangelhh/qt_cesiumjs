@@ -9,6 +9,16 @@
 #include <QtMath>
 #include <QVBoxLayout>
 
+namespace {
+
+bool isInterceptEntityTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("InterceptEntity") ||
+         taskType == QStringLiteral("InterceptEntity2D") ||
+         taskType == QStringLiteral("InterceptEntity3D");
+}
+
+} // namespace
+
 AssignTaskDialog::AssignTaskDialog(
     const QString& entityName,
     const QStringList& availableTargets,
@@ -49,8 +59,7 @@ AssignTaskDialog::AssignTaskDialog(
   _taskTypeCombo->addItem(QStringLiteral("Patrol Area"), QStringLiteral("PatrolArea"));
   _taskTypeCombo->addItem(QStringLiteral("Orbit Area"), QStringLiteral("OrbitArea"));
   _taskTypeCombo->addItem(QStringLiteral("Follow Entity"), QStringLiteral("FollowEntity"));
-  _taskTypeCombo->addItem(QStringLiteral("Intercept Entity 2D"), QStringLiteral("InterceptEntity2D"));
-  _taskTypeCombo->addItem(QStringLiteral("Intercept Entity 3D"), QStringLiteral("InterceptEntity3D"));
+  _taskTypeCombo->addItem(QStringLiteral("Intercept Entity"), QStringLiteral("InterceptEntity"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Air"), QStringLiteral("AttackAir"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Surface"), QStringLiteral("AttackSurface"));
 
@@ -124,7 +133,10 @@ AssignTaskDialog::AssignTaskDialog(
   formLayout->addRow(QStringLiteral("Duration / Timeout"), _durationSpin);
   layout->addLayout(formLayout);
 
-  const QString initialType = initialTaskType.isEmpty() ? currentTask.taskType : initialTaskType;
+  const QString rawInitialType = initialTaskType.isEmpty() ? currentTask.taskType : initialTaskType;
+  const QString initialType = isInterceptEntityTaskType(rawInitialType)
+      ? QStringLiteral("InterceptEntity")
+      : rawInitialType;
   const int taskIndex = _taskTypeCombo->findData(initialType);
   if (taskIndex >= 0) {
     _taskTypeCombo->setCurrentIndex(taskIndex);
@@ -136,17 +148,14 @@ AssignTaskDialog::AssignTaskDialog(
   _longitudeSpin->setValue(currentTask.targetLongitude);
   _altitudeSpin->setValue(currentTask.targetAltitudeMeters);
   _followDistanceSpin->setValue(
-      currentTask.interceptDistanceMeters > 0.0 &&
-          (initialType == QStringLiteral("InterceptEntity2D") ||
-           initialType == QStringLiteral("InterceptEntity3D"))
-      ? currentTask.interceptDistanceMeters
+      isInterceptEntityTaskType(rawInitialType)
+      ? (currentTask.interceptDistanceMeters > 0.0 ? currentTask.interceptDistanceMeters : 500.0)
       : (currentTask.followDistanceMeters > 0.0 ? currentTask.followDistanceMeters : 1000.0));
   _arrivalToleranceSpin->setValue(currentTask.arrivalToleranceMeters);
   _altitudeToleranceSpin->setValue(
       currentTask.altitudeToleranceMeters > 0.0 ? currentTask.altitudeToleranceMeters : 250.0);
   _durationSpin->setValue(
-      initialType == QStringLiteral("InterceptEntity2D") ||
-          initialType == QStringLiteral("InterceptEntity3D")
+      isInterceptEntityTaskType(rawInitialType)
       ? (currentTask.timeoutSeconds > 0.0 ? currentTask.timeoutSeconds : 120.0)
       : currentTask.durationSeconds);
   if (!currentTask.targetEntityName.trimmed().isEmpty()) {
@@ -224,8 +233,7 @@ void AssignTaskDialog::syncUiForTaskType() {
       taskType == QStringLiteral("PatrolArea") ||
       taskType == QStringLiteral("OrbitArea");
   const bool isFollowTask = taskType == QStringLiteral("FollowEntity");
-  const bool isInterceptTask = taskType == QStringLiteral("InterceptEntity2D");
-  const bool isIntercept3DTask = taskType == QStringLiteral("InterceptEntity3D");
+  const bool isInterceptTask = isInterceptEntityTaskType(taskType);
   const bool isAttackAirTask = taskType == QStringLiteral("AttackAir");
   const bool isAttackSurfaceTask = taskType == QStringLiteral("AttackSurface");
 
@@ -242,11 +250,11 @@ void AssignTaskDialog::syncUiForTaskType() {
   _routeCombo->setEnabled(isRouteTask);
   _areaCombo->setEnabled(isAreaTask);
   _followTargetCombo->setEnabled(
-      isFollowTask || isInterceptTask || isIntercept3DTask || isAttackAirTask || isAttackSurfaceTask);
-  _followDistanceSpin->setEnabled(isFollowTask || isInterceptTask || isIntercept3DTask);
+      isFollowTask || isInterceptTask || isAttackAirTask || isAttackSurfaceTask);
+  _followDistanceSpin->setEnabled(isFollowTask || isInterceptTask);
   _arrivalToleranceSpin->setEnabled(isFollowTask);
-  _altitudeToleranceSpin->setEnabled(isIntercept3DTask);
-  _durationSpin->setEnabled(isFollowTask || isInterceptTask || isIntercept3DTask);
+  _altitudeToleranceSpin->setEnabled(isInterceptTask);
+  _durationSpin->setEnabled(isFollowTask || isInterceptTask);
 }
 
 void AssignTaskDialog::setPickedCoordinate(double longitude, double latitude, double height) {

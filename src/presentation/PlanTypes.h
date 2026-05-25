@@ -38,6 +38,7 @@ enum class PlanStepKind {
   FlyHeadingAltitudeSpeed,
   OrbitHoldLocation,
   FollowEntity,
+  InterceptEntity,
   InterceptEntity2D,
   InterceptEntity3D,
   ReturnToBase,

@@ -170,6 +170,10 @@ QJsonObject toJson(const EntityTask& task) {
 EntityTask taskFromJson(const QJsonObject& object) {
   EntityTask task;
   task.taskType = object.value(QStringLiteral("taskType")).toString();
+  if (task.taskType == QStringLiteral("InterceptEntity2D") ||
+      task.taskType == QStringLiteral("InterceptEntity3D")) {
+    task.taskType = QStringLiteral("InterceptEntity");
+  }
   task.enabled = object.value(QStringLiteral("enabled")).toBool(false);
   task.status = object.value(QStringLiteral("status")).toString(QStringLiteral("Idle"));
   task.targetHeadingDegrees = object.value(QStringLiteral("targetHeadingDegrees")).toDouble(0.0);

@@ -25,8 +25,7 @@ struct EntityContextMenuSlots {
   std::function<void()> assignPatrolAreaTask;
   std::function<void()> assignOrbitAreaTask;
   std::function<void()> assignFollowEntityTask;
-  std::function<void()> assignInterceptEntity2DTask;
-  std::function<void()> assignInterceptEntity3DTask;
+  std::function<void()> assignInterceptEntityTask;
   std::function<void()> assignAttackAirTask;
   std::function<void()> assignAttackSurfaceTask;
   std::function<void()> clearSelectedTask;

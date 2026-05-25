@@ -117,13 +117,14 @@ TEST_F(TaskApplicatorTest, AssignsFollowEntityTask) {
   EXPECT_TRUE(result);
 }
 
-TEST_F(TaskApplicatorTest, AssignsInterceptEntity2DTask) {
+TEST_F(TaskApplicatorTest, AssignsInterceptEntityTaskWith3DStack) {
   state->addEntity(makeAirEntity("Interceptor"));
   EntityTask task;
-  task.taskType = "InterceptEntity2D";
+  task.taskType = "InterceptEntity";
   task.targetEntityName = "Target1";
   task.targetSpeedKnots = 420.0;
   task.interceptDistanceMeters = 500.0;
+  task.altitudeToleranceMeters = 250.0;
   task.timeoutSeconds = 120.0;
 
   const bool result = application::applyEntityTask(
@@ -135,27 +136,44 @@ TEST_F(TaskApplicatorTest, AssignsInterceptEntity2DTask) {
   const domain::TaskStack* stack = state->getTaskStack("Interceptor");
   ASSERT_NE(stack, nullptr);
   EXPECT_FALSE(stack->isEmpty());
+  EXPECT_NE(dynamic_cast<domain::InterceptEntity3DTask*>(stack->top()), nullptr);
+
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity"));
+  EXPECT_DOUBLE_EQ(state->entities().front().currentTask.altitudeToleranceMeters, 250.0);
 }
 
-TEST_F(TaskApplicatorTest, AssignsInterceptEntity3DTask) {
+TEST_F(TaskApplicatorTest, LegacyInterceptEntityTypesNormalizeToUnified3DTask) {
   state->addEntity(makeAirEntity("Interceptor3D"));
-  EntityTask task;
-  task.taskType = "InterceptEntity3D";
-  task.targetEntityName = "Target1";
-  task.targetSpeedKnots = 420.0;
-  task.interceptDistanceMeters = 500.0;
-  task.altitudeToleranceMeters = 250.0;
-  task.timeoutSeconds = 120.0;
 
-  const bool result = application::applyEntityTask(
-      "Interceptor3D", task, false, state, nullptr,
+  EntityTask legacy2d;
+  legacy2d.taskType = "InterceptEntity2D";
+  legacy2d.targetEntityName = "Target1";
+  legacy2d.targetSpeedKnots = 420.0;
+  legacy2d.interceptDistanceMeters = 500.0;
+  legacy2d.timeoutSeconds = 120.0;
+
+  EXPECT_TRUE(application::applyEntityTask(
+      "Interceptor3D", legacy2d, false, state, nullptr,
       [this](const QString& m) { logMessages << m; },
-      []() {});
-
-  EXPECT_TRUE(result);
+      []() {}));
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity"));
   const domain::TaskStack* stack = state->getTaskStack("Interceptor3D");
   ASSERT_NE(stack, nullptr);
   EXPECT_FALSE(stack->isEmpty());
+  EXPECT_NE(dynamic_cast<domain::InterceptEntity3DTask*>(stack->top()), nullptr);
+
+  EntityTask legacy3d = legacy2d;
+  legacy3d.taskType = "InterceptEntity3D";
+  legacy3d.altitudeToleranceMeters = 300.0;
+  EXPECT_TRUE(application::applyEntityTask(
+      "Interceptor3D", legacy3d, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {}));
+  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity"));
+  EXPECT_DOUBLE_EQ(state->entities().front().currentTask.altitudeToleranceMeters, 300.0);
+  EXPECT_NE(dynamic_cast<domain::InterceptEntity3DTask*>(stack->top()), nullptr);
 }
 
 // syncUi callback is called only when syncUi==true
