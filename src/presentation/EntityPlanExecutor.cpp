@@ -48,6 +48,7 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
     case PlanStepKind::FlyHeadingAltitudeSpeed: return QStringLiteral("Fly Heading / Altitude / Speed");
     case PlanStepKind::OrbitHoldLocation:    return QStringLiteral("Orbit / Hold (Location)");
     case PlanStepKind::FollowEntity:         return QStringLiteral("Follow Entity");
+    case PlanStepKind::InterceptEntity2D:    return QStringLiteral("Intercept Entity 2D");
     case PlanStepKind::ReturnToBase:         return QStringLiteral("Return To Base");
     case PlanStepKind::AttackAir:            return QStringLiteral("Attack Air");
     case PlanStepKind::AttackSurface:        return QStringLiteral("Attack Surface");
@@ -383,6 +384,7 @@ bool EntityPlanExecutor::activePlanStepCompleted(
     case PlanStepKind::AttackAir:
     case PlanStepKind::AttackSurface:
     case PlanStepKind::FollowEntity:
+    case PlanStepKind::InterceptEntity2D:
       plan.currentStableTicks = 0;
       return entity.currentTask.status == QStringLiteral("Completed");
   }
@@ -462,6 +464,13 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
     case PlanStepKind::FollowEntity: {
       if (step.task.targetEntityName.trimmed().isEmpty()) {
         return setReason(QStringLiteral("follow target is not set"));
+      }
+      return true;
+    }
+
+    case PlanStepKind::InterceptEntity2D: {
+      if (step.task.targetEntityName.trimmed().isEmpty()) {
+        return setReason(QStringLiteral("intercept target is not set"));
       }
       return true;
     }
@@ -558,6 +567,11 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
       return currentTask.targetEntityName == step.task.targetEntityName &&
              nearlyEqual(currentTask.followDistanceMeters, step.task.followDistanceMeters, 1.0) &&
              nearlyEqual(currentTask.arrivalToleranceMeters, step.task.arrivalToleranceMeters, 1.0);
+
+    case PlanStepKind::InterceptEntity2D:
+      return currentTask.targetEntityName == step.task.targetEntityName &&
+             nearlyEqual(currentTask.interceptDistanceMeters, step.task.interceptDistanceMeters, 1.0) &&
+             nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
 
     case PlanStepKind::AttackAir:
       return currentTask.targetEntityName == step.task.targetEntityName;

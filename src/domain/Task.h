@@ -102,6 +102,25 @@ private:
     State m_state = State::NotStarted;
 };
 
+// Primitive Task: Close horizontal distance to another entity.
+class InterceptEntity2DTask : public ITask {
+public:
+    InterceptEntity2DTask(double speedKnots, double interceptDistanceMeters);
+
+    void updateTargetLocation(double targetLat, double targetLon);
+
+    State getState() const override;
+    DesiredState evaluate(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt) override;
+
+private:
+    double m_targetLat = 0.0;
+    double m_targetLon = 0.0;
+    double m_speedKnots;
+    double m_interceptDistanceMeters;
+    bool m_hasTargetData = false;
+    State m_state = State::NotStarted;
+};
+
 // Primitive Task: Orbit or patrol around a central point
 class OrbitAreaTask : public ITask {
 public:
@@ -179,4 +198,6 @@ struct EntityTask {
   double arrivalToleranceMeters = 100.0;
   double durationSeconds = 0.0;
   double elapsedSeconds = 0.0;
+  double interceptDistanceMeters = 500.0;
+  double timeoutSeconds = 120.0;
 };

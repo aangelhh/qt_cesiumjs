@@ -36,6 +36,13 @@ EntityTask AssignTaskController::taskFromSummary(const QVariantMap& summary) {
   task.targetRouteName        = summary.value(QStringLiteral("taskTargetRouteName")).toString();
   task.targetAreaName         = summary.value(QStringLiteral("taskTargetAreaName")).toString();
   task.targetAreaRadiusMeters = summary.value(QStringLiteral("taskTargetAreaRadiusMeters")).toDouble();
+  task.followDistanceMeters   = summary.value(QStringLiteral("taskFollowDistanceMeters"), 1000.0).toDouble();
+  task.arrivalToleranceMeters = summary.value(QStringLiteral("taskArrivalToleranceMeters"), 100.0).toDouble();
+  task.durationSeconds        = summary.value(QStringLiteral("taskDurationSeconds")).toDouble();
+  task.elapsedSeconds         = summary.value(QStringLiteral("taskElapsedSeconds")).toDouble();
+  task.interceptDistanceMeters =
+      summary.value(QStringLiteral("taskInterceptDistanceMeters"), 500.0).toDouble();
+  task.timeoutSeconds         = summary.value(QStringLiteral("taskTimeoutSeconds"), 120.0).toDouble();
   return task;
 }
 
