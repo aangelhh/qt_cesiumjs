@@ -52,8 +52,8 @@ void populateEntityContextMenu(
       actions.assignOrbitAreaTask);
   addSlotAction(movementMenu, QStringLiteral("Follow Entity..."),
       actions.assignFollowEntityTask);
-  addSlotAction(movementMenu, QStringLiteral("Intercept Entity 2D..."),
-      actions.assignInterceptEntity2DTask);
+  addSlotAction(movementMenu, QStringLiteral("Intercept Entity..."),
+      actions.assignInterceptEntityTask);
 
   QMenu* attackTaskMenu = taskMenu->addMenu(QStringLiteral("Attack"));
   addSlotAction(attackTaskMenu, QStringLiteral("Attack Air..."),

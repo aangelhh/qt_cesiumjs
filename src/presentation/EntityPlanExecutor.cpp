@@ -37,7 +37,14 @@ EntityPlan& EntityPlanExecutor::ensurePlan(const QString& entityName) {
 
 QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
   if (!step.label.trimmed().isEmpty()) {
-    return step.label;
+    QString label = step.label;
+    if (step.kind == PlanStepKind::InterceptEntity ||
+        step.kind == PlanStepKind::InterceptEntity2D ||
+        step.kind == PlanStepKind::InterceptEntity3D) {
+      label.replace(QStringLiteral("Intercept Entity 2D"), QStringLiteral("Intercept Entity"));
+      label.replace(QStringLiteral("Intercept Entity 3D"), QStringLiteral("Intercept Entity"));
+    }
+    return label;
   }
 
   switch (step.kind) {
@@ -48,7 +55,9 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
     case PlanStepKind::FlyHeadingAltitudeSpeed: return QStringLiteral("Fly Heading / Altitude / Speed");
     case PlanStepKind::OrbitHoldLocation:    return QStringLiteral("Orbit / Hold (Location)");
     case PlanStepKind::FollowEntity:         return QStringLiteral("Follow Entity");
-    case PlanStepKind::InterceptEntity2D:    return QStringLiteral("Intercept Entity 2D");
+    case PlanStepKind::InterceptEntity:
+    case PlanStepKind::InterceptEntity2D:
+    case PlanStepKind::InterceptEntity3D:    return QStringLiteral("Intercept Entity");
     case PlanStepKind::ReturnToBase:         return QStringLiteral("Return To Base");
     case PlanStepKind::AttackAir:            return QStringLiteral("Attack Air");
     case PlanStepKind::AttackSurface:        return QStringLiteral("Attack Surface");
@@ -384,7 +393,9 @@ bool EntityPlanExecutor::activePlanStepCompleted(
     case PlanStepKind::AttackAir:
     case PlanStepKind::AttackSurface:
     case PlanStepKind::FollowEntity:
+    case PlanStepKind::InterceptEntity:
     case PlanStepKind::InterceptEntity2D:
+    case PlanStepKind::InterceptEntity3D:
       plan.currentStableTicks = 0;
       return entity.currentTask.status == QStringLiteral("Completed");
   }
@@ -468,7 +479,9 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
       return true;
     }
 
-    case PlanStepKind::InterceptEntity2D: {
+    case PlanStepKind::InterceptEntity:
+    case PlanStepKind::InterceptEntity2D:
+    case PlanStepKind::InterceptEntity3D: {
       if (step.task.targetEntityName.trimmed().isEmpty()) {
         return setReason(QStringLiteral("intercept target is not set"));
       }
@@ -523,7 +536,14 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
     const Entity& entity,
     const PlanStep& step) const {
   const EntityTask& currentTask = entity.currentTask;
-  if (currentTask.taskType != step.task.taskType) {
+  const auto isInterceptType = [](const QString& taskType) {
+    return taskType == QStringLiteral("InterceptEntity") ||
+           taskType == QStringLiteral("InterceptEntity2D") ||
+           taskType == QStringLiteral("InterceptEntity3D");
+  };
+
+  if (currentTask.taskType != step.task.taskType &&
+      !(isInterceptType(currentTask.taskType) && isInterceptType(step.task.taskType))) {
     return false;
   }
 
@@ -568,9 +588,12 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
              nearlyEqual(currentTask.followDistanceMeters, step.task.followDistanceMeters, 1.0) &&
              nearlyEqual(currentTask.arrivalToleranceMeters, step.task.arrivalToleranceMeters, 1.0);
 
+    case PlanStepKind::InterceptEntity:
     case PlanStepKind::InterceptEntity2D:
+    case PlanStepKind::InterceptEntity3D:
       return currentTask.targetEntityName == step.task.targetEntityName &&
              nearlyEqual(currentTask.interceptDistanceMeters, step.task.interceptDistanceMeters, 1.0) &&
+             nearlyEqual(currentTask.altitudeToleranceMeters, step.task.altitudeToleranceMeters, 1.0) &&
              nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
 
     case PlanStepKind::AttackAir:

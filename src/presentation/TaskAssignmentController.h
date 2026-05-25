@@ -63,7 +63,9 @@ public:
   void assignPatrolArea();
   void assignOrbitArea();
   void assignFollowEntity();
+  void assignInterceptEntity();
   void assignInterceptEntity2D();
+  void assignInterceptEntity3D();
   void assignAttackAir();
   void assignAttackSurface();
 

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "presentation/PlanStepConfigurator.h"
+#include "presentation/EntityPlanExecutor.h"
 #include "presentation/EntityHomePositionTracker.h"
 #include "domain/Entity.h"
 #include "domain/GeoMath.h"
@@ -213,6 +214,66 @@ TEST_F(PlanStepConfiguratorTest, AttackAir_Label) {
   PlanStep step;
   EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::AttackAir, step));
   EXPECT_EQ(step.label, QStringLiteral("Attack Air: Target1"));
+}
+
+// ── InterceptEntity ───────────────────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, InterceptEntity_UsesUnified3DTaskAndLabel) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
+        EXPECT_EQ(initialType, QStringLiteral("InterceptEntity"));
+        out = init;
+        out.targetEntityName = QStringLiteral("Target1");
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Interceptor");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::InterceptEntity, step));
+  EXPECT_EQ(step.kind, PlanStepKind::InterceptEntity);
+  EXPECT_EQ(step.task.taskType, QStringLiteral("InterceptEntity"));
+  EXPECT_DOUBLE_EQ(step.task.interceptDistanceMeters, 500.0);
+  EXPECT_DOUBLE_EQ(step.task.altitudeToleranceMeters, 250.0);
+  EXPECT_EQ(step.label, QStringLiteral("Intercept Entity: Target1"));
+}
+
+TEST_F(PlanStepConfiguratorTest, LegacyInterceptKindsConfigureAsUnifiedInterceptEntity) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
+        EXPECT_EQ(initialType, QStringLiteral("InterceptEntity"));
+        out = init;
+        out.targetEntityName = QStringLiteral("Target1");
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Legacy");
+  PlanStep step2d;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::InterceptEntity2D, step2d));
+  EXPECT_EQ(step2d.task.taskType, QStringLiteral("InterceptEntity"));
+  EXPECT_EQ(step2d.label, QStringLiteral("Intercept Entity: Target1"));
+
+  PlanStep step3d;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::InterceptEntity3D, step3d));
+  EXPECT_EQ(step3d.task.taskType, QStringLiteral("InterceptEntity"));
+  EXPECT_EQ(step3d.label, QStringLiteral("Intercept Entity: Target1"));
+}
+
+TEST_F(PlanStepConfiguratorTest, LegacyInterceptDisplayLabelsAreUnified) {
+  PlanStep step2d;
+  step2d.kind = PlanStepKind::InterceptEntity2D;
+  step2d.label = QStringLiteral("Intercept Entity 2D: Target1");
+  EXPECT_EQ(
+      presentation::EntityPlanExecutor::planStepDisplayLabel(step2d),
+      QStringLiteral("Intercept Entity: Target1"));
+
+  PlanStep step3d;
+  step3d.kind = PlanStepKind::InterceptEntity3D;
+  step3d.label = QStringLiteral("Intercept Entity 3D: Target1");
+  EXPECT_EQ(
+      presentation::EntityPlanExecutor::planStepDisplayLabel(step3d),
+      QStringLiteral("Intercept Entity: Target1"));
 }
 
 // ── AttackSurface ─────────────────────────────────────────────────────────

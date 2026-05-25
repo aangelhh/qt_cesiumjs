@@ -40,6 +40,7 @@ private:
   QDoubleSpinBox* _longitudeSpin;
   QDoubleSpinBox* _followDistanceSpin;
   QDoubleSpinBox* _arrivalToleranceSpin;
+  QDoubleSpinBox* _altitudeToleranceSpin;
   QDoubleSpinBox* _durationSpin;
   QComboBox* _followTargetCombo;
   QComboBox* _waypointCombo;

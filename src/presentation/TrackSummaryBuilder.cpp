@@ -72,6 +72,7 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("taskDurationSeconds"), 0.0},
       {QStringLiteral("taskElapsedSeconds"), 0.0},
       {QStringLiteral("taskInterceptDistanceMeters"), 500.0},
+      {QStringLiteral("taskAltitudeToleranceMeters"), 250.0},
       {QStringLiteral("taskTimeoutSeconds"), 120.0},
       {QStringLiteral("destroyed"), false},
       {QStringLiteral("damagePercent"), 0.0},
@@ -295,6 +296,7 @@ QVariantMap makeEntityTrackSummary(
   summary.insert(QStringLiteral("taskDurationSeconds"),         entity.currentTask.durationSeconds);
   summary.insert(QStringLiteral("taskElapsedSeconds"),          entity.currentTask.elapsedSeconds);
   summary.insert(QStringLiteral("taskInterceptDistanceMeters"), entity.currentTask.interceptDistanceMeters);
+  summary.insert(QStringLiteral("taskAltitudeToleranceMeters"), entity.currentTask.altitudeToleranceMeters);
   summary.insert(QStringLiteral("taskTimeoutSeconds"),          entity.currentTask.timeoutSeconds);
   summary.insert(QStringLiteral("sensorCount"),    entity.sensors.size());
   summary.insert(QStringLiteral("contactCount"),   entity.sensorContacts.size());

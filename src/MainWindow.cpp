@@ -554,8 +554,10 @@ MainWindow::MainWindow(QWidget* parent)
           this->assignOrbitAreaTask();
         } else if (taskType == QStringLiteral("FollowEntity")) {
           this->assignFollowEntityTask();
-        } else if (taskType == QStringLiteral("InterceptEntity2D")) {
-          this->assignInterceptEntity2DTask();
+        } else if (taskType == QStringLiteral("InterceptEntity") ||
+                   taskType == QStringLiteral("InterceptEntity2D") ||
+                   taskType == QStringLiteral("InterceptEntity3D")) {
+          this->assignInterceptEntityTask();
         } else if (taskType == QStringLiteral("AttackAir")) {
           this->assignAttackAirTask();
         } else if (taskType == QStringLiteral("AttackSurface")) {
@@ -752,10 +754,17 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
   this->_ui->selectionTypeValueLabel->setText(type);
   const QString taskType = value("taskType", QStringLiteral("No current tasks"));
   const QString taskStatus = value("taskStatus", QStringLiteral("-"));
+  const auto displayTaskType = [](const QString& rawTaskType) {
+    return rawTaskType == QStringLiteral("InterceptEntity") ||
+           rawTaskType == QStringLiteral("InterceptEntity2D") ||
+           rawTaskType == QStringLiteral("InterceptEntity3D")
+        ? QStringLiteral("Intercept Entity")
+        : rawTaskType;
+  };
   const QString operationalState =
       taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
           ? status
-          : QStringLiteral("%1 (%2)").arg(taskType, taskStatus);
+          : QStringLiteral("%1 (%2)").arg(displayTaskType(taskType), taskStatus);
   const Entity* selectedEntity = this->findEntityByName(name);
   this->_ui->selectionStateValueLabel->setWordWrap(false);
   this->_ui->selectionStateValueLabel->setStyleSheet(QString());
@@ -1940,7 +1949,7 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   actions.assignPatrolAreaTask              = [this]() { this->assignPatrolAreaTask(); };
   actions.assignOrbitAreaTask               = [this]() { this->assignOrbitAreaTask(); };
   actions.assignFollowEntityTask            = [this]() { this->assignFollowEntityTask(); };
-  actions.assignInterceptEntity2DTask       = [this]() { this->assignInterceptEntity2DTask(); };
+  actions.assignInterceptEntityTask         = [this]() { this->assignInterceptEntityTask(); };
   actions.assignAttackAirTask               = [this]() { this->assignAttackAirTask(); };
   actions.assignAttackSurfaceTask           = [this]() { this->assignAttackSurfaceTask(); };
   actions.clearSelectedTask                 = [this]() { this->clearSelectedTask(); };
@@ -2221,8 +2230,8 @@ void MainWindow::assignFollowEntityTask() {
   this->_taskAssignmentController->assignFollowEntity();
 }
 
-void MainWindow::assignInterceptEntity2DTask() {
-  this->_taskAssignmentController->assignInterceptEntity2D();
+void MainWindow::assignInterceptEntityTask() {
+  this->_taskAssignmentController->assignInterceptEntity();
 }
 
 void MainWindow::assignAttackAirTask() {
@@ -2485,7 +2494,7 @@ void MainWindow::populateTaskCommands() {
       { "Movement: Patrol Area...",                    "PatrolArea"              },
       { "Movement: Orbit Area...",                     "OrbitArea"               },
       { "Movement: Follow Entity...",                  "FollowEntity"            },
-      { "Movement: Intercept Entity 2D...",            "InterceptEntity2D"        },
+      { "Movement: Intercept Entity...",               "InterceptEntity"          },
       { "Attack: Attack Air...",                       "AttackAir"               },
       { "Attack: Attack Surface...",                   "AttackSurface"           },
       { "Other: Clear Current Task",                   "ClearTask"               },

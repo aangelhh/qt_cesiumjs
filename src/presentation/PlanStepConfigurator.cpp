@@ -202,20 +202,24 @@ bool PlanStepConfigurator::configure(
       return true;
     }
 
-    case PlanStepKind::InterceptEntity2D: {
+    case PlanStepKind::InterceptEntity:
+    case PlanStepKind::InterceptEntity2D:
+    case PlanStepKind::InterceptEntity3D: {
       EntityTask initial;
-      initial.taskType = QStringLiteral("InterceptEntity2D");
+      initial.taskType = QStringLiteral("InterceptEntity");
       initial.enabled = true;
       initial.status = QStringLiteral("Queued");
       initial.targetSpeedKnots = defaultSpeedKnots;
       initial.interceptDistanceMeters = 500.0;
+      initial.altitudeToleranceMeters = 250.0;
       initial.timeoutSeconds = 120.0;
-      if (!_capture(entity.name, initial, QStringLiteral("InterceptEntity2D"), step.task)) {
+      if (!_capture(entity.name, initial, QStringLiteral("InterceptEntity"), step.task)) {
         return false;
       }
       step.task.enabled = true;
       step.task.status = QStringLiteral("Queued");
-      step.label = QStringLiteral("Intercept Entity 2D: %1")
+      step.task.taskType = QStringLiteral("InterceptEntity");
+      step.label = QStringLiteral("Intercept Entity: %1")
           .arg(step.task.targetEntityName.trimmed().isEmpty()
                ? QStringLiteral("-")
                : step.task.targetEntityName.trimmed());

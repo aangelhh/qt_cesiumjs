@@ -10,6 +10,12 @@
 
 namespace {
 
+bool isInterceptEntityTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("InterceptEntity") ||
+         taskType == QStringLiteral("InterceptEntity2D") ||
+         taskType == QStringLiteral("InterceptEntity3D");
+}
+
 bool isMovementTaskType(const QString& taskType) {
   return taskType == QStringLiteral("MoveToLocation") ||
          taskType == QStringLiteral("MoveToWaypoint") ||
@@ -17,7 +23,7 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("PatrolArea") ||
          taskType == QStringLiteral("OrbitArea") ||
          taskType == QStringLiteral("FollowEntity") ||
-         taskType == QStringLiteral("InterceptEntity2D") ||
+         isInterceptEntityTaskType(taskType) ||
          taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
          taskType == QStringLiteral("AttackAir");
 }
@@ -96,9 +102,9 @@ void resolveTaskCoordinates(
         task.taskType == QStringLiteral("PatrolArea") ||
         task.taskType == QStringLiteral("OrbitArea") ||
         task.taskType == QStringLiteral("FollowEntity") ||
-        task.taskType == QStringLiteral("InterceptEntity2D");
+        isInterceptEntityTaskType(task.taskType);
     if ((task.taskType == QStringLiteral("FollowEntity") ||
-         task.taskType == QStringLiteral("InterceptEntity2D")) &&
+         isInterceptEntityTaskType(task.taskType)) &&
         task.targetSpeedKnots <= 0.0) {
       task.targetSpeedKnots = entity.speedKnots > 0.0
           ? entity.speedKnots
@@ -127,11 +133,25 @@ bool applyEntityTask(
     return false;
   }
 
-  if (!state->assignTask(entityName, task)) {
+  EntityTask taskToApply = task;
+  if (isInterceptEntityTaskType(taskToApply.taskType)) {
+    taskToApply.taskType = QStringLiteral("InterceptEntity");
+    if (taskToApply.altitudeToleranceMeters <= 0.0) {
+      taskToApply.altitudeToleranceMeters = 250.0;
+    }
+    if (taskToApply.interceptDistanceMeters <= 0.0) {
+      taskToApply.interceptDistanceMeters = 500.0;
+    }
+    if (taskToApply.timeoutSeconds <= 0.0) {
+      taskToApply.timeoutSeconds = 120.0;
+    }
+  }
+
+  if (!state->assignTask(entityName, taskToApply)) {
     return false;
   }
 
-  log(QStringLiteral("Task %1 assigned to %2").arg(task.taskType, entityName));
+  log(QStringLiteral("Task %1 assigned to %2").arg(taskToApply.taskType, entityName));
 
   Entity resolvedEntity;
   bool foundEntity = false;
@@ -151,14 +171,14 @@ bool applyEntityTask(
     while (!stack->isEmpty()) {
       stack->pop();
     }
-    if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
+    if (taskToApply.taskType == "MoveToLocation" || taskToApply.taskType == "MoveToWaypoint") {
       double targetLat = resolvedEntity.currentTask.targetLatitude;
       double targetLon = resolvedEntity.currentTask.targetLongitude;
       double targetAlt = resolvedEntity.currentTask.targetAltitudeMeters;
       double targetSpeed = resolvedEntity.currentTask.targetSpeedKnots;
-      if (task.taskType == "MoveToWaypoint" && !task.targetWaypointName.trimmed().isEmpty()) {
+      if (taskToApply.taskType == "MoveToWaypoint" && !taskToApply.targetWaypointName.trimmed().isEmpty()) {
         for (const Waypoint& waypoint : state->waypoints()) {
-          if (waypoint.name == task.targetWaypointName) {
+          if (waypoint.name == taskToApply.targetWaypointName) {
             targetLat = waypoint.latitude;
             targetLon = waypoint.longitude;
             targetAlt = waypoint.altitudeMeters;
@@ -168,7 +188,7 @@ bool applyEntityTask(
       }
       stack->push(std::make_unique<domain::MoveToLocationTask>(
           targetLat, targetLon, targetAlt, targetSpeed));
-    } else if (task.taskType == "MoveAlongRoute") {
+    } else if (taskToApply.taskType == "MoveAlongRoute") {
       bool createdRouteTask = false;
       for (const RouteGraphic& route : state->routes()) {
         if (route.name != resolvedEntity.currentTask.targetRouteName ||
@@ -187,22 +207,23 @@ bool applyEntityTask(
             resolvedEntity.currentTask.targetAltitudeMeters,
             resolvedEntity.currentTask.targetSpeedKnots));
       }
-    } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
+    } else if (taskToApply.taskType == "FlyHeadingAltitudeSpeed") {
       stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
-          task.targetHeadingDegrees,
-          static_cast<double>(task.targetAltitudeMeters),
-          task.targetSpeedKnots));
-    } else if (task.taskType == "FollowEntity") {
+          taskToApply.targetHeadingDegrees,
+          static_cast<double>(taskToApply.targetAltitudeMeters),
+          taskToApply.targetSpeedKnots));
+    } else if (taskToApply.taskType == "FollowEntity") {
       stack->push(std::make_unique<domain::FollowEntityTask>(
-          static_cast<double>(task.targetAltitudeMeters),
-          task.targetSpeedKnots,
+          static_cast<double>(taskToApply.targetAltitudeMeters),
+          taskToApply.targetSpeedKnots,
           resolvedEntity.currentTask.followDistanceMeters,
           resolvedEntity.currentTask.arrivalToleranceMeters));
-    } else if (task.taskType == "InterceptEntity2D") {
-      stack->push(std::make_unique<domain::InterceptEntity2DTask>(
+    } else if (isInterceptEntityTaskType(taskToApply.taskType)) {
+      stack->push(std::make_unique<domain::InterceptEntity3DTask>(
           resolvedEntity.currentTask.targetSpeedKnots,
-          resolvedEntity.currentTask.interceptDistanceMeters));
-    } else if (task.taskType == "PatrolArea") {
+          resolvedEntity.currentTask.interceptDistanceMeters,
+          resolvedEntity.currentTask.altitudeToleranceMeters));
+    } else if (taskToApply.taskType == "PatrolArea") {
       for (const AreaDefinition& area : state->areas()) {
         if (area.name != resolvedEntity.currentTask.targetAreaName &&
             area.id != resolvedEntity.currentTask.targetAreaName) {
@@ -223,7 +244,7 @@ bool applyEntityTask(
             resolvedEntity.currentTask.targetSpeedKnots,
             true));
       }
-    } else if (task.taskType == "OrbitArea") {
+    } else if (taskToApply.taskType == "OrbitArea") {
       stack->push(std::make_unique<domain::OrbitAreaTask>(
           resolvedEntity.currentTask.targetLatitude,
           resolvedEntity.currentTask.targetLongitude,
@@ -235,7 +256,7 @@ bool applyEntityTask(
   }
 
   if (simulationEngine) {
-    if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
+    if (taskToApply.taskType == "MoveToLocation" || taskToApply.taskType == "MoveToWaypoint") {
       simulationEngine->enqueueCommand(std::make_unique<CmdAssignMoveTask>(
           0,
           entityName,
@@ -243,29 +264,30 @@ bool applyEntityTask(
           resolvedEntity.currentTask.targetLongitude,
           resolvedEntity.currentTask.targetAltitudeMeters,
           resolvedEntity.currentTask.targetSpeedKnots));
-    } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
+    } else if (taskToApply.taskType == "FlyHeadingAltitudeSpeed") {
       simulationEngine->enqueueCommand(std::make_unique<CmdAssignFlyHeadingTask>(
           entityName,
-          task.targetHeadingDegrees,
-          task.targetAltitudeMeters,
-          task.targetSpeedKnots));
-    } else if (task.taskType == "FollowEntity") {
+          taskToApply.targetHeadingDegrees,
+          taskToApply.targetAltitudeMeters,
+          taskToApply.targetSpeedKnots));
+    } else if (taskToApply.taskType == "FollowEntity") {
       simulationEngine->enqueueCommand(std::make_unique<CmdAssignFollowTask>(
           entityName,
-          task.targetEntityName,
-          task.targetAltitudeMeters,
-          task.targetSpeedKnots,
-          task.followDistanceMeters,
-          task.arrivalToleranceMeters,
-          task.durationSeconds));
-    } else if (task.taskType == "InterceptEntity2D") {
-      simulationEngine->enqueueCommand(std::make_unique<CmdAssignInterceptEntity2DTask>(
+          taskToApply.targetEntityName,
+          taskToApply.targetAltitudeMeters,
+          taskToApply.targetSpeedKnots,
+          taskToApply.followDistanceMeters,
+          taskToApply.arrivalToleranceMeters,
+          taskToApply.durationSeconds));
+    } else if (isInterceptEntityTaskType(taskToApply.taskType)) {
+      simulationEngine->enqueueCommand(std::make_unique<CmdAssignInterceptEntity3DTask>(
           entityName,
-          task.targetEntityName,
-          task.targetSpeedKnots,
-          task.interceptDistanceMeters,
-          task.timeoutSeconds));
-    } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
+          taskToApply.targetEntityName,
+          taskToApply.targetSpeedKnots,
+          taskToApply.interceptDistanceMeters,
+          taskToApply.altitudeToleranceMeters,
+          taskToApply.timeoutSeconds));
+    } else if (taskToApply.taskType == "PatrolArea" || taskToApply.taskType == "OrbitArea") {
       simulationEngine->enqueueCommand(std::make_unique<CmdAssignOrbitTask>(
           entityName,
           resolvedEntity.currentTask.targetAreaName,
@@ -274,7 +296,7 @@ bool applyEntityTask(
           resolvedEntity.currentTask.targetAreaRadiusMeters,
           resolvedEntity.currentTask.targetAltitudeMeters,
           resolvedEntity.currentTask.targetSpeedKnots,
-          (task.taskType == "PatrolArea")));
+          (taskToApply.taskType == "PatrolArea")));
     }
   }
 

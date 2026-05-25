@@ -32,6 +32,13 @@ QString buildEntityOperationalStatus(
     const QString text = summary.value(QString::fromLatin1(key)).toString().trimmed();
     return text.isEmpty() ? fallback : text;
   };
+  const auto displayTaskType = [](const QString& taskType) {
+    return taskType == QStringLiteral("InterceptEntity") ||
+           taskType == QStringLiteral("InterceptEntity2D") ||
+           taskType == QStringLiteral("InterceptEntity3D")
+        ? QStringLiteral("Intercept Entity")
+        : taskType;
+  };
 
   const QString taskType = value("taskType", QStringLiteral("No current tasks"));
   const QString taskStatus = value("taskStatus", QStringLiteral("-"));
@@ -39,7 +46,7 @@ QString buildEntityOperationalStatus(
   QString operationalState =
       taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
           ? status
-          : QStringLiteral("%1 (%2)").arg(taskType, taskStatus);
+          : QStringLiteral("%1 (%2)").arg(displayTaskType(taskType), taskStatus);
 
   if (!entity) {
     return operationalState;
@@ -49,7 +56,7 @@ QString buildEntityOperationalStatus(
   const QString liveTaskStatus = entity->currentTask.status.trimmed();
   if (entity->currentTask.enabled && !liveTaskType.isEmpty()) {
     operationalState = QStringLiteral("%1 (%2)")
-        .arg(liveTaskType, liveTaskStatus.isEmpty() ? QStringLiteral("-") : liveTaskStatus);
+        .arg(displayTaskType(liveTaskType), liveTaskStatus.isEmpty() ? QStringLiteral("-") : liveTaskStatus);
   }
 
   const QString entityName = entity->name;
