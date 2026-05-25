@@ -138,6 +138,34 @@ TEST(FollowEntityTask, StopsPursuitInsideFollowDistance) {
     EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 0.0);
 }
 
+// --- InterceptEntity2DTask -------------------------------------------------
+
+TEST(InterceptEntity2DTask, FailsWhenNoTargetEverProvided) {
+    domain::InterceptEntity2DTask task(300.0, 500.0);
+    const auto desired = task.evaluate(kOriginLat, kOriginLon, 5000.0, 0.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Failed);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 0.0);
+}
+
+TEST(InterceptEntity2DTask, ChasesTargetWhenOutsideInterceptDistance) {
+    domain::InterceptEntity2DTask task(300.0, 500.0);
+    task.updateTargetLocation(kOriginLat + kFiveKmNorthDeltaLat, kOriginLon);
+    const auto desired = task.evaluate(kOriginLat, kOriginLon, 5000.0, 90.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_NEAR(desired.targetHeadingDegrees, 0.0, 1.0);
+    EXPECT_DOUBLE_EQ(desired.targetAltitudeMeters, 5000.0);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 300.0);
+}
+
+TEST(InterceptEntity2DTask, CompletesInsideInterceptDistance) {
+    domain::InterceptEntity2DTask task(300.0, 500.0);
+    task.updateTargetLocation(kOriginLat + kFiveKmNorthDeltaLat / 20.0, kOriginLon);
+    const auto desired = task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Completed);
+    EXPECT_DOUBLE_EQ(desired.targetHeadingDegrees, 45.0);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 0.0);
+}
+
 // --- OrbitAreaTask ---------------------------------------------------------
 
 TEST(OrbitAreaTask, DoesNotCompleteWhenOrbiting) {

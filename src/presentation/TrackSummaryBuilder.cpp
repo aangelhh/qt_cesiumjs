@@ -67,6 +67,12 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("taskTargetEntityName"), QString()},
       {QStringLiteral("taskTargetWaypointName"), QString()},
       {QStringLiteral("taskTargetRouteName"), QString()},
+      {QStringLiteral("taskFollowDistanceMeters"), 1000.0},
+      {QStringLiteral("taskArrivalToleranceMeters"), 100.0},
+      {QStringLiteral("taskDurationSeconds"), 0.0},
+      {QStringLiteral("taskElapsedSeconds"), 0.0},
+      {QStringLiteral("taskInterceptDistanceMeters"), 500.0},
+      {QStringLiteral("taskTimeoutSeconds"), 120.0},
       {QStringLiteral("destroyed"), false},
       {QStringLiteral("damagePercent"), 0.0},
       {QStringLiteral("damageState"), QStringLiteral("Intact")},
@@ -284,6 +290,12 @@ QVariantMap makeEntityTrackSummary(
   summary.insert(QStringLiteral("taskTargetRouteName"),         entity.currentTask.targetRouteName);
   summary.insert(QStringLiteral("taskTargetAreaName"),          entity.currentTask.targetAreaName);
   summary.insert(QStringLiteral("taskTargetAreaRadiusMeters"),  entity.currentTask.targetAreaRadiusMeters);
+  summary.insert(QStringLiteral("taskFollowDistanceMeters"),    entity.currentTask.followDistanceMeters);
+  summary.insert(QStringLiteral("taskArrivalToleranceMeters"),  entity.currentTask.arrivalToleranceMeters);
+  summary.insert(QStringLiteral("taskDurationSeconds"),         entity.currentTask.durationSeconds);
+  summary.insert(QStringLiteral("taskElapsedSeconds"),          entity.currentTask.elapsedSeconds);
+  summary.insert(QStringLiteral("taskInterceptDistanceMeters"), entity.currentTask.interceptDistanceMeters);
+  summary.insert(QStringLiteral("taskTimeoutSeconds"),          entity.currentTask.timeoutSeconds);
   summary.insert(QStringLiteral("sensorCount"),    entity.sensors.size());
   summary.insert(QStringLiteral("contactCount"),   entity.sensorContacts.size());
 

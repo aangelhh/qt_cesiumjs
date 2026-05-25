@@ -202,6 +202,8 @@ ITask::State FollowEntityTask::getState() const
 
 DesiredState FollowEntityTask::evaluate(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt)
 {
+    (void)dt;
+
     if (!m_hasTargetData) {
         m_state = State::Failed; // Target unavailable
         return {currentHeading, currentAlt, 0.0};
@@ -224,6 +226,51 @@ DesiredState FollowEntityTask::evaluate(double currentLat, double currentLon, do
         : 0.0;
     
     return {targetHeading, assignedAlt, assignedSpeed};
+}
+
+// --- InterceptEntity2DTask ---
+
+InterceptEntity2DTask::InterceptEntity2DTask(double speedKnots, double interceptDistanceMeters)
+    : m_speedKnots(speedKnots),
+      m_interceptDistanceMeters(std::max(1.0, interceptDistanceMeters))
+{
+}
+
+void InterceptEntity2DTask::updateTargetLocation(double targetLat, double targetLon)
+{
+    m_targetLat = targetLat;
+    m_targetLon = targetLon;
+    m_hasTargetData = true;
+}
+
+ITask::State InterceptEntity2DTask::getState() const
+{
+    return m_state;
+}
+
+DesiredState InterceptEntity2DTask::evaluate(
+    double currentLat,
+    double currentLon,
+    double currentAlt,
+    double currentHeading,
+    double dt)
+{
+    (void)dt;
+
+    if (!m_hasTargetData) {
+        m_state = State::Failed;
+        return {currentHeading, currentAlt, 0.0};
+    }
+
+    const double dist = distanceMeters(currentLat, currentLon, m_targetLat, m_targetLon);
+    if (dist <= m_interceptDistanceMeters) {
+        m_state = State::Completed;
+        return {currentHeading, currentAlt, 0.0};
+    }
+
+    m_state = State::Running;
+    const double targetHeading = bearingDegrees(currentLat, currentLon, m_targetLat, m_targetLon);
+    return {targetHeading, currentAlt, m_speedKnots};
 }
 
 // --- OrbitAreaTask ---

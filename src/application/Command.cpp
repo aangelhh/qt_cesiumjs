@@ -120,6 +120,37 @@ void CmdAssignFollowTask::apply(ScenarioState& scenario) const {
     }
 }
 
+void CmdAssignInterceptEntity2DTask::apply(ScenarioState& scenario) const {
+    const QString targetName = targetEntityName.trimmed();
+    if (targetName.isEmpty()) {
+        return;
+    }
+
+    EntityTask task;
+    task.enabled = true;
+    task.taskType = "InterceptEntity2D";
+    task.targetEntityName = interceptEntityName;
+    task.targetSpeedKnots = targetSpeedKnots;
+    task.interceptDistanceMeters = interceptDistanceMeters;
+    task.timeoutSeconds = timeoutSeconds;
+    task.status = "Running";
+    scenario.assignTask(targetName, task);
+
+    for (const Entity& entity : scenario.entities()) {
+        if (entity.name == targetName) {
+            task = entity.currentTask;
+            break;
+        }
+    }
+
+    if (domain::TaskStack* stack = scenario.getTaskStack(targetName)) {
+        clearStack(*stack);
+        stack->push(std::make_unique<domain::InterceptEntity2DTask>(
+            task.targetSpeedKnots,
+            task.interceptDistanceMeters));
+    }
+}
+
 void CmdAssignOrbitTask::apply(ScenarioState& scenario) const {
     const QString targetName = targetEntityName.trimmed();
     if (targetName.isEmpty()) {

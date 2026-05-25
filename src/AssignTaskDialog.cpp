@@ -48,6 +48,7 @@ AssignTaskDialog::AssignTaskDialog(
   _taskTypeCombo->addItem(QStringLiteral("Patrol Area"), QStringLiteral("PatrolArea"));
   _taskTypeCombo->addItem(QStringLiteral("Orbit Area"), QStringLiteral("OrbitArea"));
   _taskTypeCombo->addItem(QStringLiteral("Follow Entity"), QStringLiteral("FollowEntity"));
+  _taskTypeCombo->addItem(QStringLiteral("Intercept Entity 2D"), QStringLiteral("InterceptEntity2D"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Air"), QStringLiteral("AttackAir"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Surface"), QStringLiteral("AttackSurface"));
 
@@ -110,9 +111,9 @@ AssignTaskDialog::AssignTaskDialog(
   formLayout->addRow(QStringLiteral("Target Route"), _routeCombo);
   formLayout->addRow(QStringLiteral("Target Area"), _areaCombo);
   formLayout->addRow(QStringLiteral("Target Entity"), _followTargetCombo);
-  formLayout->addRow(QStringLiteral("Follow Distance"), _followDistanceSpin);
+  formLayout->addRow(QStringLiteral("Follow / Intercept Distance"), _followDistanceSpin);
   formLayout->addRow(QStringLiteral("Arrival Tolerance"), _arrivalToleranceSpin);
-  formLayout->addRow(QStringLiteral("Duration"), _durationSpin);
+  formLayout->addRow(QStringLiteral("Duration / Timeout"), _durationSpin);
   layout->addLayout(formLayout);
 
   const QString initialType = initialTaskType.isEmpty() ? currentTask.taskType : initialTaskType;
@@ -127,9 +128,14 @@ AssignTaskDialog::AssignTaskDialog(
   _longitudeSpin->setValue(currentTask.targetLongitude);
   _altitudeSpin->setValue(currentTask.targetAltitudeMeters);
   _followDistanceSpin->setValue(
-      currentTask.followDistanceMeters > 0.0 ? currentTask.followDistanceMeters : 1000.0);
+      currentTask.interceptDistanceMeters > 0.0 && initialType == QStringLiteral("InterceptEntity2D")
+      ? currentTask.interceptDistanceMeters
+      : (currentTask.followDistanceMeters > 0.0 ? currentTask.followDistanceMeters : 1000.0));
   _arrivalToleranceSpin->setValue(currentTask.arrivalToleranceMeters);
-  _durationSpin->setValue(currentTask.durationSeconds);
+  _durationSpin->setValue(
+      initialType == QStringLiteral("InterceptEntity2D")
+      ? (currentTask.timeoutSeconds > 0.0 ? currentTask.timeoutSeconds : 120.0)
+      : currentTask.durationSeconds);
   if (!currentTask.targetEntityName.trimmed().isEmpty()) {
     const int followIndex = _followTargetCombo->findData(currentTask.targetEntityName);
     if (followIndex >= 0) {
@@ -188,6 +194,8 @@ EntityTask AssignTaskDialog::task() const {
   task.followDistanceMeters = _followDistanceSpin->value();
   task.arrivalToleranceMeters = _arrivalToleranceSpin->value();
   task.durationSeconds = _durationSpin->value();
+  task.interceptDistanceMeters = _followDistanceSpin->value();
+  task.timeoutSeconds = _durationSpin->value();
   task.elapsedSeconds = 0.0;
   return task;
 }
@@ -202,6 +210,7 @@ void AssignTaskDialog::syncUiForTaskType() {
       taskType == QStringLiteral("PatrolArea") ||
       taskType == QStringLiteral("OrbitArea");
   const bool isFollowTask = taskType == QStringLiteral("FollowEntity");
+  const bool isInterceptTask = taskType == QStringLiteral("InterceptEntity2D");
   const bool isAttackAirTask = taskType == QStringLiteral("AttackAir");
   const bool isAttackSurfaceTask = taskType == QStringLiteral("AttackSurface");
 
@@ -217,10 +226,11 @@ void AssignTaskDialog::syncUiForTaskType() {
   _waypointCombo->setEnabled(isWaypointTask);
   _routeCombo->setEnabled(isRouteTask);
   _areaCombo->setEnabled(isAreaTask);
-  _followTargetCombo->setEnabled(isFollowTask || isAttackAirTask || isAttackSurfaceTask);
-  _followDistanceSpin->setEnabled(isFollowTask);
+  _followTargetCombo->setEnabled(
+      isFollowTask || isInterceptTask || isAttackAirTask || isAttackSurfaceTask);
+  _followDistanceSpin->setEnabled(isFollowTask || isInterceptTask);
   _arrivalToleranceSpin->setEnabled(isFollowTask);
-  _durationSpin->setEnabled(isFollowTask);
+  _durationSpin->setEnabled(isFollowTask || isInterceptTask);
 }
 
 void AssignTaskDialog::setPickedCoordinate(double longitude, double latitude, double height) {
