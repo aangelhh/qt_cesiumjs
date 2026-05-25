@@ -6,16 +6,38 @@
 #include "application/ScenarioState.h"
 #include "application/SimulationEngine.h"
 #include "application/Command.h"
+#include "application/ScenarioQueries.h"
+#include "application/TaskApplicator.h"
+#include "domain/BombReleaseGate.h"
+#include "presentation/BombReleaseController.h"
+#include "presentation/DetectedContactsPresenter.h"
+#include "presentation/EntityDefaultsResolver.h"
+#include "presentation/EntityPlanExecutor.h"
+#include "presentation/BombTargetMapSync.h"
+#include "presentation/MapBridgeScripts.h"
+#include "presentation/EntityContextMenuBuilder.h"
+#include "presentation/EntityContextMenuStateBuilder.h"
+#include "presentation/TrackSetSyncer.h"
+#include "presentation/EntityPlanDialog.h"
+#include "domain/CombatRules.h"
 #include "domain/Entity.h"
+#include "domain/GeoMath.h"
 #include "infrastructure/CesiumScenePage.h"
 #include "infrastructure/MapBridge.h"
 #include "infrastructure/ModelCatalog.h"
 #include "presentation/EntityTextFormatter.h"
+#include "presentation/EntityHomePositionTracker.h"
+#include "presentation/EntityStatusFormatter.h"
+#include "presentation/EntityVisualStateManager.h"
+#include "presentation/PlanStepConfigurator.h"
+#include "presentation/TrackIconProvider.h"
+#include "presentation/TrackSummaryBuilder.h"
 #include "ui_MainWindow.h"
 
 #include <QAbstractItemView>
 #include <QAction>
 #include <QActionGroup>
+#include <QApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QEvent>
@@ -65,97 +87,27 @@ namespace {
 constexpr int kTrackSummaryRole = Qt::UserRole + 1;
 constexpr int kDetectedContactObserverRole = Qt::UserRole + 2;
 constexpr int kDetectedContactTargetRole = Qt::UserRole + 3;
-constexpr double kGraphicAltitudeOffsetMeters = 15.0;
-constexpr double kPolygonCloseDistanceMeters = 50.0;
+// kGraphicAltitudeOffsetMeters and kPolygonCloseDistanceMeters moved to presentation/GraphicPickCoordinator.cpp
 constexpr int kTaskQuickBarMarginPixels = 14;
 constexpr int kTaskQuickBarButtonPixels = 30;
 constexpr int kTaskQuickBarIconPixels = 18;
-constexpr double kOrbitHoldDefaultRadiusMeters = 1500.0;
-constexpr double kKnotsToMetersPerSecond = 0.514444;
-constexpr double kBombReleaseGravityMetersPerSecondSquared = 9.81;
-constexpr double kBombReleaseHeadingConeDegrees = 35.0;
-constexpr double kBombReleaseDistanceToleranceMeters = 150.0;
-constexpr double kAutoBombReleaseCooldownSeconds = 20.0;
-constexpr double kAttackAirTimeoutSeconds = 120.0;
-constexpr double kAttackAirMissileCooldownSeconds = 8.0;
-constexpr double kAttackAirMinimumPursuitSpeedKnots = 320.0;
-constexpr double kAttackAirTargetSpeedMarginKnots = 60.0;
-constexpr QLatin1StringView kTaskStatusNotStarted("NotStarted");
-constexpr QLatin1StringView kTaskStatusRunning("Running");
-constexpr QLatin1StringView kTaskStatusCompleted("Completed");
-constexpr QLatin1StringView kTaskStatusFailed("Failed");
-constexpr QLatin1StringView kTaskStatusCompletedWithFailures("CompletedWithFailures");
+// Bomb release constants now in domain/BombReleaseGate.h
+// Attack timing constants now in application/AttackTaskProcessor.h
 
-QString planStatusDisplayLabel(const QString& status) {
-  if (status == kTaskStatusCompletedWithFailures) {
-    return QStringLiteral("Completed (with failures)");
-  }
-  return status;
-}
+// planStatusDisplayLabel moved to domain/CombatRules.h
 
-bool attackTaskStatusIsTerminal(const QString& status) {
-  return status == kTaskStatusCompleted ||
-         status == kTaskStatusFailed ||
-         status == QStringLiteral("Target unavailable");
-}
-
-bool attackSurfaceCoordinatesAreUsable(double latitude, double longitude) {
-  if (!std::isfinite(latitude) || !std::isfinite(longitude)) {
-    return false;
-  }
-  if (latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0) {
-    return false;
-  }
-  return !(qFuzzyIsNull(latitude) && qFuzzyIsNull(longitude));
-}
-
-bool activeMissileInFlightForTarget(
-    const ScenarioState* scenarioState,
-    const QString& launcherName,
-    const QString& targetName) {
-  if (!scenarioState) {
-    return false;
-  }
-
-  for (const ActiveMunition& munition : scenarioState->activeMunitions()) {
-    if (!munition.active ||
-        munition.munitionType.compare(QStringLiteral("Missile"), Qt::CaseInsensitive) != 0) {
-      continue;
-    }
-    if (munition.launcherEntityName.compare(launcherName, Qt::CaseInsensitive) == 0 &&
-        munition.targetEntityName.compare(targetName, Qt::CaseInsensitive) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
+// attackTaskStatusIsTerminal, attackSurfaceCoordinatesAreUsable,
+// autoBehaviorDamageReactionLevel, autoBehaviorCanEngageByDamage
+// moved to domain/CombatRules.h
 
 
-int autoBehaviorDamageReactionLevel(const Entity& entity) {
-  if (entity.destroyed) {
-    return 3;
-  }
-  if (entity.damagePercent >= 80.0) {
-    return 2;
-  }
-  if (entity.damagePercent >= 50.0) {
-    return 1;
-  }
-  return 0;
-}
+// activeMissileInFlightForTarget moved to application/ScenarioQueries.h
 
-bool autoBehaviorCanEngageByDamage(const Entity& entity) {
-  return autoBehaviorDamageReactionLevel(entity) == 0;
-}
 
-QStringList behaviorModeOptions() {
-  return {
-      QStringLiteral("Manual"),
-      QStringLiteral("Aggressive"),
-      QStringLiteral("Defensive"),
-      QStringLiteral("Patrol"),
-  };
-}
+// autoBehaviorDamageReactionLevel, autoBehaviorCanEngageByDamage
+// moved to domain/CombatRules.h
+
+// behaviorModeOptions moved to presentation/EntityContextMenuStateBuilder.h
 
 QString projectRootPath() {
 #ifdef QTTEST_SOURCE_DIR
@@ -181,655 +133,28 @@ void clearQtTrackSelectionInMap(QWebEngineView* webView) {
 }
 #endif
 
-QIcon makeTaskQuickFallbackIcon(const QString& glyph, const QColor& accent) {
-  QPixmap pixmap(kTaskQuickBarIconPixels, kTaskQuickBarIconPixels);
-  pixmap.fill(Qt::transparent);
+// makeTaskQuickFallbackIcon, loadTaskQuickBarIcon moved to presentation/TrackIconProvider.h
 
-  QPainter painter(&pixmap);
-  painter.setRenderHint(QPainter::Antialiasing, true);
-  painter.setPen(Qt::NoPen);
-  painter.setBrush(QColor(22, 30, 40, 220));
-  painter.drawRoundedRect(pixmap.rect().adjusted(1, 1, -1, -1), 4, 4);
+// makeTrackSummary, makeMunitionTrackSummary, makeTransientEffectTrackSummary,
+// makePendingBombTargetTrackSummary, makePendingBombTargetLineTrackSummary
+// moved to presentation/TrackSummaryBuilder.h
 
-  QFont font = painter.font();
-  font.setBold(true);
-  font.setPixelSize(10);
-  painter.setFont(font);
-  painter.setPen(accent);
-  painter.drawText(pixmap.rect(), Qt::AlignCenter, glyph.left(2).toUpper());
-  return QIcon(pixmap);
-}
+// forceIdentifierLabel, entityCanUseMissileActions moved to domain/CombatRules.h
 
-QIcon loadTaskQuickBarIcon(
-    const QString& fileName,
-    const QString& fallbackGlyph,
-    const QColor& accent) {
-  const QString path = taskQuickBarIconPath(fileName);
-  if (QFileInfo::exists(path)) {
-    const QIcon icon(path);
-    if (!icon.isNull()) {
-      return icon;
-    }
-  }
-  return makeTaskQuickFallbackIcon(fallbackGlyph, accent);
-}
+// weaponQuantity moved to domain/BombReleaseGate.h
 
-QVariantMap makeTrackSummary(
-    const QString& name,
-    const QString& type,
-    const QString& team,
-    const QString& altitudeText,
-    const QString& positionText,
-    const QString& status,
-    double latitude,
-    double longitude) {
-  return {
-      {QStringLiteral("name"), name},
-      {QStringLiteral("type"), type},
-      {QStringLiteral("team"), team},
-      {QStringLiteral("altitude"), altitudeText},
-      {QStringLiteral("position"), positionText},
-      {QStringLiteral("status"), status},
-      {QStringLiteral("latitude"), latitude},
-      {QStringLiteral("longitude"), longitude},
-      {QStringLiteral("callsign"), QString()},
-      {QStringLiteral("domain"), QString()},
-      {QStringLiteral("category"), QString()},
-      {QStringLiteral("forceIdentifier"), 0},
-      {QStringLiteral("entityKind"), 0},
-      {QStringLiteral("entityDomain"), 0},
-      {QStringLiteral("entityCountry"), 0},
-      {QStringLiteral("entityCategory"), 0},
-      {QStringLiteral("entitySubcategory"), 0},
-      {QStringLiteral("entitySpecific"), 0},
-      {QStringLiteral("entityExtra"), 0},
-      {QStringLiteral("entityTypeCode"), QString()},
-      {QStringLiteral("modelName"), QString()},
-      {QStringLiteral("modelUri"), QString()},
-      {QStringLiteral("munitionType"), QString()},
-      {QStringLiteral("effectType"), QString()},
-      {QStringLiteral("headingDegrees"), 0.0},
-      {QStringLiteral("pitchDegrees"), 0.0},
-      {QStringLiteral("rollDegrees"), 0.0},
-      {QStringLiteral("modelScale"), 1.0},
-      {QStringLiteral("pointSize"), 11},
-      {QStringLiteral("labelVisible"), true},
-      {QStringLiteral("flightDynamicsEnabled"), false},
-      {QStringLiteral("flightDynamicsMode"), QStringLiteral("kinematic")},
-      {QStringLiteral("jsbsimAircraftModel"), QString()},
-      {QStringLiteral("speedKnots"), 0.0},
-      {QStringLiteral("verticalSpeedMetersPerSecond"), 0.0},
-      {QStringLiteral("taskType"), QString()},
-      {QStringLiteral("taskEnabled"), false},
-      {QStringLiteral("taskStatus"), QStringLiteral("Idle")},
-      {QStringLiteral("taskTargetHeadingDegrees"), 0.0},
-      {QStringLiteral("taskTargetAltitudeMeters"), 0},
-      {QStringLiteral("taskTargetSpeedKnots"), 0.0},
-      {QStringLiteral("taskTargetLatitude"), 0.0},
-      {QStringLiteral("taskTargetLongitude"), 0.0},
-      {QStringLiteral("taskTargetEntityName"), QString()},
-      {QStringLiteral("taskTargetWaypointName"), QString()},
-      {QStringLiteral("taskTargetRouteName"), QString()},
-      {QStringLiteral("destroyed"), false},
-      {QStringLiteral("damagePercent"), 0.0},
-      {QStringLiteral("damageState"), QStringLiteral("Intact")},
-      {QStringLiteral("hidden"), false},
-      {QStringLiteral("radarCoverageVisible"), false},
-      {QStringLiteral("trackHistoryVisible"), false},
-  };
-}
+// MissileTargetCandidate, detectedMissileTargetsInRange, activeMissileInFlightForTarget,
+// entityAltitudeMeters, validBombReleaseTargets, bestDetectedSurfaceBombTarget
+// moved to application/ScenarioQueries.h
 
-QString forceIdentifierLabel(int forceIdentifier) {
-  switch (forceIdentifier) {
-    case 1:
-      return QStringLiteral("Friendly");
-    case 2:
-      return QStringLiteral("Opposing");
-    case 3:
-      return QStringLiteral("Neutral");
-    default:
-      return QStringLiteral("Unknown");
-  }
-}
-
-bool entityCanUseMissileActions(const Entity& entity) {
-  return !entity.destroyed &&
-         entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0 &&
-         entity.category.compare(QStringLiteral("Fighter"), Qt::CaseInsensitive) == 0;
-}
-
-int weaponQuantity(const Entity& entity, const QString& weaponType) {
-  for (const WeaponInventoryItem& item : entity.weapons) {
-    if (item.weaponType.compare(weaponType, Qt::CaseInsensitive) == 0) {
-      return item.quantity;
-    }
-  }
-  return 0;
-}
-
-struct MissileTargetCandidate {
-  const Entity* entity = nullptr;
-  double rangeMeters = -1.0;
-};
-
-QVector<MissileTargetCandidate> detectedMissileTargetsInRange(
-    const ScenarioState* scenarioState,
-    const Entity& launcher) {
-  QVector<MissileTargetCandidate> targets;
-  if (!scenarioState) {
-    return targets;
-  }
-
-  const double maxRangeMeters = ScenarioState::missileMaxRangeMeters();
-  QSet<QString> addedTargetNames;
-  for (const SensorContact& contact : launcher.sensorContacts) {
-    if (!contact.detected || contact.rangeMeters <= 0.0 ||
-        contact.rangeMeters > maxRangeMeters) {
-      continue;
-    }
-
-    const QString targetName = contact.targetEntityName.trimmed();
-    const QString targetKey = targetName.toCaseFolded();
-    if (targetName.isEmpty() || addedTargetNames.contains(targetKey)) {
-      continue;
-    }
-
-    for (const Entity& candidate : scenarioState->entities()) {
-      if (candidate.name.compare(targetName, Qt::CaseInsensitive) != 0 ||
-          candidate.name == launcher.name ||
-          candidate.destroyed ||
-          candidate.forceIdentifier == launcher.forceIdentifier ||
-          candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
-        continue;
-      }
-      targets.push_back({&candidate, contact.rangeMeters});
-      addedTargetNames.insert(targetKey);
-      break;
-    }
-  }
-
-  return targets;
-}
-
-QString missileTargetDisplayLabel(const Entity& entity, double rangeMeters) {
-  return QStringLiteral("%1 (%2 / %3, %4 km)")
-      .arg(
-          entity.name,
-          forceIdentifierLabel(entity.forceIdentifier),
-          entity.category,
-          QString::number(rangeMeters / 1000.0, 'f', 1));
-}
-
-QString formatPosition(double latitude, double longitude) {
-  return QStringLiteral("%1, %2")
-      .arg(latitude, 0, 'f', 4)
-      .arg(longitude, 0, 'f', 4);
-}
-
-QVariantMap makeMunitionTrackSummary(const ActiveMunition& munition) {
-  const double altitudeMeters = qMax(0.0, munition.altitudeMeters);
-  const double speedKnots = munition.speedMetersPerSecond / 0.514444;
-  const QString munitionType = munition.munitionType.trimmed();
-  const bool isBomb = munitionType.compare(QStringLiteral("Bomb"), Qt::CaseInsensitive) == 0;
-  QVariantMap summary = makeTrackSummary(
-      munition.id,
-      QStringLiteral("Munition"),
-      forceIdentifierLabel(munition.forceIdentifier),
-      QStringLiteral("%1 m").arg(altitudeMeters, 0, 'f', 0),
-      formatPosition(munition.latitude, munition.longitude),
-      munition.status.trimmed().isEmpty() ? QStringLiteral("Flying") : munition.status,
-      munition.latitude,
-      munition.longitude);
-  summary.insert(QStringLiteral("category"), isBomb ? QStringLiteral("Bomb") : QStringLiteral("Missile"));
-  summary.insert(QStringLiteral("munitionType"), munition.munitionType);
-  summary.insert(QStringLiteral("forceIdentifier"), munition.forceIdentifier);
-  summary.insert(QStringLiteral("modelName"), isBomb ? QStringLiteral("Bomb") : QStringLiteral("Missile"));
-  summary.insert(QStringLiteral("modelUri"), munition.modelUri);
-  summary.insert(QStringLiteral("headingDegrees"), munition.headingDegrees);
-  summary.insert(QStringLiteral("pitchDegrees"), munition.pitchDegrees);
-  summary.insert(QStringLiteral("rollDegrees"), munition.rollDegrees);
-  summary.insert(QStringLiteral("speedKnots"), speedKnots);
-  summary.insert(QStringLiteral("modelScale"), isBomb ? 0.5 : 0.35);
-  summary.insert(QStringLiteral("labelVisible"), false);
-  return summary;
-}
-
-QVariantMap makeTransientEffectTrackSummary(const TransientEffect& effect) {
-  const double altitudeMeters = qMax(0.0, effect.altitudeMeters);
-  const QString effectType = effect.effectType.trimmed().toCaseFolded();
-  int pointSize = 10;
-  if (effectType == QStringLiteral("impactflash")) {
-    pointSize = 18;
-  } else if (effectType == QStringLiteral("bombsmoketrail")) {
-    pointSize = 8;
-  } else if (effectType == QStringLiteral("bombimpactflash")) {
-    pointSize = 16;
-  } else if (effectType == QStringLiteral("bombsmoke")) {
-    pointSize = 20;
-  }
-  QVariantMap summary = makeTrackSummary(
-      effect.id,
-      QStringLiteral("Effect"),
-      forceIdentifierLabel(effect.forceIdentifier),
-      QStringLiteral("%1 m").arg(altitudeMeters, 0, 'f', 0),
-      formatPosition(effect.latitude, effect.longitude),
-      effect.effectType,
-      effect.latitude,
-      effect.longitude);
-  summary.insert(QStringLiteral("category"), QStringLiteral("Effect"));
-  summary.insert(QStringLiteral("effectType"), effect.effectType);
-  summary.insert(QStringLiteral("forceIdentifier"), effect.forceIdentifier);
-  summary.insert(QStringLiteral("labelVisible"), false);
-  summary.insert(QStringLiteral("pointSize"), pointSize);
-  return summary;
-}
-
-QVariantMap makePendingBombTargetTrackSummary(
-    const QString& targetLabel,
-    double latitude,
-    double longitude,
-    double targetAltitudeMeters,
-    const QString& teamLabel,
-    const QString& releaseStateLabel,
-    double distanceMetersToTarget) {
-  const QString distanceText = distanceMetersToTarget >= 0.0
-      ? QStringLiteral("%1 km").arg(distanceMetersToTarget / 1000.0, 0, 'f', 1)
-      : QString();
-  QVariantMap summary = makeTrackSummary(
-      QStringLiteral("Bomb Target"),
-      QStringLiteral("PendingBombTarget"),
-      teamLabel.trimmed().isEmpty() ? QStringLiteral("Friendly") : teamLabel,
-      QStringLiteral("%1 m").arg(qMax(0.0, targetAltitudeMeters), 0, 'f', 0),
-      formatPosition(latitude, longitude),
-      distanceText.trimmed().isEmpty()
-          ? (releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel)
-          : QStringLiteral("%1 | %2")
-                .arg(
-                    releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel,
-                    distanceText),
-      latitude,
-      longitude);
-  summary.insert(QStringLiteral("category"), QStringLiteral("PendingBombTarget"));
-  summary.insert(QStringLiteral("pointSize"), 16);
-  summary.insert(QStringLiteral("labelVisible"), true);
-  summary.insert(QStringLiteral("pendingBombReleaseState"), releaseStateLabel);
-  summary.insert(QStringLiteral("pendingBombTargetLabel"), targetLabel);
-  summary.insert(QStringLiteral("pendingBombTargetDistanceMeters"), distanceMetersToTarget);
-  return summary;
-}
-
-QVariantMap makePendingBombTargetLineTrackSummary(
-    const Entity& launcher,
-    double targetLatitude,
-    double targetLongitude,
-    double targetAltitudeMeters,
-    const QString& teamLabel,
-    const QString& releaseStateLabel) {
-  QVariantMap summary = makeTrackSummary(
-      QStringLiteral("Bomb Target Line"),
-      QStringLiteral("PendingBombTargetLine"),
-      teamLabel.trimmed().isEmpty() ? QStringLiteral("Friendly") : teamLabel,
-      QStringLiteral("%1 m").arg(qMax(0, launcher.altitude)),
-      formatPosition(launcher.latitude, launcher.longitude),
-      releaseStateLabel.trimmed().isEmpty() ? QStringLiteral("Armed") : releaseStateLabel,
-      launcher.latitude,
-      launcher.longitude);
-  summary.insert(QStringLiteral("category"), QStringLiteral("PendingBombTargetLine"));
-  summary.insert(QStringLiteral("labelVisible"), false);
-  summary.insert(QStringLiteral("pendingBombReleaseState"), releaseStateLabel);
-  QVariantList routePoints;
-  routePoints.push_back(QVariantMap{
-      {QStringLiteral("longitude"), launcher.longitude},
-      {QStringLiteral("latitude"), launcher.latitude},
-      {QStringLiteral("altitudeMeters"), static_cast<double>(launcher.altitude)},
-  });
-  routePoints.push_back(QVariantMap{
-      {QStringLiteral("longitude"), targetLongitude},
-      {QStringLiteral("latitude"), targetLatitude},
-      {QStringLiteral("altitudeMeters"), targetAltitudeMeters},
-  });
-  summary.insert(QStringLiteral("routePoints"), routePoints);
-  return summary;
-}
-
-struct BombReleaseGateEvaluation {
-  bool valid = false;
-  bool targetAhead = false;
-  bool withinHeadingCone = false;
-  bool withinReleaseWindow = false;
-
-  bool readyToRelease() const {
-    return valid && targetAhead && withinHeadingCone && withinReleaseWindow;
-  }
-
-  QString stateLabel() const {
-    return readyToRelease()
-        ? QStringLiteral("In Release Window")
-        : QStringLiteral("Armed");
-  }
-};
-
-double distanceMeters(
-    double latitude1,
-    double longitude1,
-    double latitude2,
-    double longitude2) {
-  constexpr double earthRadiusMeters = 6371000.0;
-  const double lat1 = qDegreesToRadians(latitude1);
-  const double lon1 = qDegreesToRadians(longitude1);
-  const double lat2 = qDegreesToRadians(latitude2);
-  const double lon2 = qDegreesToRadians(longitude2);
-  const double deltaLat = lat2 - lat1;
-  const double deltaLon = lon2 - lon1;
-  const double a = qPow(qSin(deltaLat / 2.0), 2.0) +
-                   qCos(lat1) * qCos(lat2) * qPow(qSin(deltaLon / 2.0), 2.0);
-  const double c = 2.0 * qAtan2(qSqrt(a), qSqrt(1.0 - a));
-  return earthRadiusMeters * c;
-}
-
-double normalizeDegrees360(double degrees) {
-  while (degrees < 0.0) {
-    degrees += 360.0;
-  }
-  while (degrees >= 360.0) {
-    degrees -= 360.0;
-  }
-  return degrees;
-}
-
-double shortestSignedAngle(double currentHeading, double targetHeading) {
-  double delta = normalizeDegrees360(targetHeading) - normalizeDegrees360(currentHeading);
-  while (delta > 180.0) {
-    delta -= 360.0;
-  }
-  while (delta < -180.0) {
-    delta += 360.0;
-  }
-  return delta;
-}
-
-double bearingDegrees(
-    double latitude1,
-    double longitude1,
-    double latitude2,
-    double longitude2) {
-  const double lat1 = qDegreesToRadians(latitude1);
-  const double lon1 = qDegreesToRadians(longitude1);
-  const double lat2 = qDegreesToRadians(latitude2);
-  const double lon2 = qDegreesToRadians(longitude2);
-  const double deltaLon = lon2 - lon1;
-
-  const double y = qSin(deltaLon) * qCos(lat2);
-  const double x = qCos(lat1) * qSin(lat2) -
-                   qSin(lat1) * qCos(lat2) * qCos(deltaLon);
-  return normalizeDegrees360(qRadiansToDegrees(qAtan2(y, x)));
-}
-
-BombReleaseGateEvaluation evaluateBombReleaseGate(
-    const Entity& launcher,
-    double targetLatitude,
-    double targetLongitude,
-    double targetAltitudeMeters) {
-  BombReleaseGateEvaluation evaluation;
-  const double relativeAltitudeMeters = qMax(
-      0.0,
-      static_cast<double>(launcher.altitude) - targetAltitudeMeters);
-  const double horizontalSpeedMetersPerSecond = qMax(
-      0.0,
-      launcher.speedKnots * kKnotsToMetersPerSecond *
-          qCos(qDegreesToRadians(launcher.pitchDegrees)));
-  if (relativeAltitudeMeters <= 0.0 || horizontalSpeedMetersPerSecond <= 1.0) {
-    return evaluation;
-  }
-
-  const double verticalSpeedMetersPerSecond =
-      launcher.verticalSpeedMetersPerSecond;
-  const double discriminant =
-      qPow(verticalSpeedMetersPerSecond, 2.0) +
-      2.0 * kBombReleaseGravityMetersPerSecondSquared * relativeAltitudeMeters;
-  if (discriminant < 0.0) {
-    return evaluation;
-  }
-
-  const double timeToImpactSeconds =
-      (verticalSpeedMetersPerSecond + qSqrt(discriminant)) /
-      kBombReleaseGravityMetersPerSecondSquared;
-  if (timeToImpactSeconds <= 0.0) {
-    return evaluation;
-  }
-
-  const double releaseDistanceMeters =
-      horizontalSpeedMetersPerSecond * timeToImpactSeconds;
-  const double distanceToTargetMeters = distanceMeters(
-      launcher.latitude,
-      launcher.longitude,
-      targetLatitude,
-      targetLongitude);
-  const double desiredHeadingDegrees = bearingDegrees(
-      launcher.latitude,
-      launcher.longitude,
-      targetLatitude,
-      targetLongitude);
-  const double headingErrorDegrees = qAbs(shortestSignedAngle(
-      launcher.headingDegrees,
-      desiredHeadingDegrees));
-
-  evaluation.valid = true;
-  evaluation.targetAhead = headingErrorDegrees <= 90.0;
-  evaluation.withinHeadingCone =
-      headingErrorDegrees <= kBombReleaseHeadingConeDegrees;
-  evaluation.withinReleaseWindow = qAbs(
-      distanceToTargetMeters - releaseDistanceMeters) <=
-      kBombReleaseDistanceToleranceMeters;
-  return evaluation;
-}
-
-QString attackPointLabel(double latitude, double longitude) {
-  return QStringLiteral("%1, %2")
-      .arg(latitude, 0, 'f', 4)
-      .arg(longitude, 0, 'f', 4);
-}
-
-int entityAltitudeMeters(const ScenarioState* scenarioState, const QString& entityName) {
-  if (!scenarioState || entityName.trimmed().isEmpty()) {
-    return 0;
-  }
-
-  for (const Entity& entity : scenarioState->entities()) {
-    if (entity.name == entityName) {
-      return entity.altitude;
-    }
-  }
-  return 0;
-}
-
-QVector<const Entity*> validBombReleaseTargets(
-    const ScenarioState* scenarioState,
-    const Entity& launcher) {
-  QVector<const Entity*> targets;
-  if (!scenarioState) {
-    return targets;
-  }
-
-  for (const Entity& candidate : scenarioState->entities()) {
-    if (candidate.name == launcher.name ||
-        candidate.destroyed ||
-        candidate.forceIdentifier == launcher.forceIdentifier ||
-        candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
-      continue;
-    }
-    targets.push_back(&candidate);
-  }
-  return targets;
-}
-
-const Entity* bestDetectedSurfaceBombTarget(
-    const ScenarioState* scenarioState,
-    const Entity& launcher) {
-  if (!scenarioState) {
-    return nullptr;
-  }
-
-  const Entity* selectedTarget = nullptr;
-  double selectedRangeMeters = -1.0;
-  for (const SensorContact& contact : launcher.sensorContacts) {
-    if (!contact.detected || contact.targetEntityName.trimmed().isEmpty()) {
-      continue;
-    }
-
-    const QString targetName = contact.targetEntityName.trimmed();
-    for (const Entity& candidate : scenarioState->entities()) {
-      if (candidate.name.compare(targetName, Qt::CaseInsensitive) != 0 ||
-          candidate.name == launcher.name ||
-          candidate.destroyed ||
-          candidate.forceIdentifier == launcher.forceIdentifier ||
-          candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
-        continue;
-      }
-
-      if (selectedRangeMeters < 0.0 ||
-          contact.rangeMeters < selectedRangeMeters) {
-        selectedTarget = &candidate;
-        selectedRangeMeters = contact.rangeMeters;
-      }
-      break;
-    }
-  }
-
-  return selectedTarget;
-}
-
-QString bombTargetDisplayLabel(const Entity& entity) {
-  return QStringLiteral("%1 (%2 / %3)")
-      .arg(entity.name, forceIdentifierLabel(entity.forceIdentifier), entity.domain);
-}
+// bombTargetDisplayLabel moved to presentation/TrackSummaryBuilder.h
 
 void setTrackData(QStandardItem* item, const QVariantMap& summary) {
   item->setData(summary, kTrackSummaryRole);
 }
 
-QJsonObject mapToJsonObject(const QVariantMap& map) {
-  return QJsonObject::fromVariantMap(map);
-}
-QColor forceColorFromLabel(const QString& team) {
-  const QString normalized = team.trimmed().toLower();
-  if (normalized.contains(QStringLiteral("opposing"))) {
-    return QColor(QStringLiteral("#ff3b30"));
-  }
-  if (normalized.contains(QStringLiteral("neutral"))) {
-    return QColor(QStringLiteral("#35c759"));
-  }
-  if (normalized.contains(QStringLiteral("unknown"))) {
-    return QColor(QStringLiteral("#ffd60a"));
-  }
-  return QColor(QStringLiteral("#55d3ff"));
-}
-
-QString categoryGlyph(const QString& category) {
-  const QString normalized = category.trimmed().toLower();
-  const QString compact = QString(normalized)
-      .remove(QChar(' '))
-      .remove(QChar('_'))
-      .remove(QChar('-'));
-  if (normalized == QStringLiteral("fighter")) {
-    return QStringLiteral("F");
-  }
-  if (normalized == QStringLiteral("bomber")) {
-    return QStringLiteral("B");
-  }
-  if (normalized == QStringLiteral("helicopter")) {
-    return QStringLiteral("H");
-  }
-  if (normalized == QStringLiteral("transport")) {
-    return QStringLiteral("T");
-  }
-  if (normalized == QStringLiteral("tank")) {
-    return QStringLiteral("K");
-  }
-  if (normalized == QStringLiteral("truck")) {
-    return QStringLiteral("R");
-  }
-  if (compact == QStringLiteral("armoredvehicle") ||
-      compact == QStringLiteral("armouredvehicle")) {
-    return QStringLiteral("V");
-  }
-  if (normalized == QStringLiteral("radar")) {
-    return QStringLiteral("D");
-  }
-  if (compact == QStringLiteral("samlauncher")) {
-    return QStringLiteral("A");
-  }
-  if (normalized == QStringLiteral("other")) {
-    return QStringLiteral("O");
-  }
-  if (normalized == QStringLiteral("side")) {
-    return QStringLiteral("S");
-  }
-  return QStringLiteral("E");
-}
-
-QIcon makeTacticalGraphicIcon(const QString& graphicType) {
-  QPixmap pixmap(18, 18);
-  pixmap.fill(Qt::transparent);
-
-  QPainter painter(&pixmap);
-  painter.setRenderHint(QPainter::Antialiasing, true);
-
-  const QString normalized = graphicType.trimmed().toLower();
-  if (normalized == QStringLiteral("route")) {
-    QPen pen(QColor(QStringLiteral("#ff6c52")));
-    pen.setWidth(2);
-    pen.setStyle(Qt::DashLine);
-    painter.setPen(pen);
-    painter.drawLine(3, 15, 15, 3);
-  } else if (normalized == QStringLiteral("waypoint")) {
-    QPen pen(QColor(QStringLiteral("#b6f4b2")));
-    pen.setWidth(1);
-    painter.setPen(pen);
-    painter.setBrush(QColor(QStringLiteral("#dff9da")));
-    painter.drawRect(5, 3, 8, 10);
-  } else if (normalized == QStringLiteral("engagement area")) {
-    QPen pen(QColor(QStringLiteral("#ff5656")));
-    pen.setWidth(2);
-    painter.setPen(pen);
-    painter.setBrush(Qt::NoBrush);
-    painter.drawRect(4, 4, 10, 10);
-  } else {
-    QPen pen(QColor(QStringLiteral("#ffd85e")));
-    pen.setWidth(2);
-    painter.setPen(pen);
-    painter.drawEllipse(4, 4, 10, 10);
-  }
-
-  return QIcon(pixmap);
-}
-
-QIcon makeTrackIcon(const QString& team, const QString& category, bool isGroup) {
-  QPixmap pixmap(18, 18);
-  pixmap.fill(Qt::transparent);
-
-  QPainter painter(&pixmap);
-  painter.setRenderHint(QPainter::Antialiasing, true);
-
-  const QColor accent = forceColorFromLabel(team);
-  const QRect outerRect(1, 1, 16, 16);
-  const QRect innerRect(3, 3, 12, 12);
-
-  QPen pen(accent);
-  pen.setWidth(isGroup ? 2 : 1);
-  painter.setPen(pen);
-  painter.setBrush(QColor(7, 17, 29, isGroup ? 220 : 245));
-  painter.drawRoundedRect(outerRect, 4, 4);
-
-  QFont font = painter.font();
-  font.setBold(true);
-  font.setPixelSize(isGroup ? 10 : 9);
-  painter.setFont(font);
-  painter.setPen(accent);
-  painter.drawText(innerRect, Qt::AlignCenter, categoryGlyph(category));
-
-  return QIcon(pixmap);
-}
+// forceColorFromLabel, categoryGlyph, makeTacticalGraphicIcon, makeTrackIcon
+// moved to presentation/TrackIconProvider.h
 
 } // namespace
 
@@ -854,17 +179,62 @@ MainWindow::MainWindow(QWidget* parent)
       _simulationTimer(new QTimer(this)),
       _applyingMapSelection(false),
       _simulationRunning(false),
-      _isPickingBombTarget(false),
-      _pendingGraphicMode(),
-      _pendingGraphicName(),
-      _bombTargetPickLauncherName(),
-      _pendingAreaType(QStringLiteral("Circle")),
-      _pendingAreaRadiusMeters(1000.0),
-      _pendingAreaAltitudeMeters(0.0),
-      _pendingAreaSemiMajorMeters(1000.0),
-      _pendingAreaSemiMinorMeters(600.0),
-      _pendingAreaRotationDegrees(0.0),
-      m_simulationEngine(new application::SimulationEngine(_scenarioState, this))
+      m_simulationEngine(new application::SimulationEngine(_scenarioState, this)),
+      _bombReleaseController(std::make_unique<presentation::BombReleaseController>(
+          _scenarioState,
+          [this](const QString& msg) { this->appendLogMessage(msg); },
+          [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+          [this]() { this->syncScenarioStateToUi(); },
+          [this](const QString& name, bool notify) { this->selectObjectByName(name, notify); },
+          [this](const QString& track) { this->removeTrackFromMap(track); },
+          this)),
+      _attackTaskProcessor(std::make_unique<application::AttackTaskProcessor>(
+          _scenarioState,
+          _bombReleaseController.get(),
+          [this](const QString& msg) { this->appendLogMessage(msg); },
+          [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+          [this](const QString& launcher, double lat, double lon, double alt,
+                 const QString& label, const QString& source,
+                 const QString& targetEntity, bool log, bool focus) {
+            this->queuePendingBombRelease(launcher, lat, lon, alt, label, source, targetEntity, log, focus);
+          },
+          this)),
+      _planExecutor(std::make_unique<presentation::EntityPlanExecutor>(
+          _scenarioState,
+          [this](const QString& name, const EntityTask& task, bool sync) {
+            return this->applyEntityTask(name, task, sync);
+          },
+          [this](const QString& msg) { this->appendLogMessage(msg); },
+          [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+          this)),
+      _entityVisualStateManager(std::make_unique<presentation::EntityVisualStateManager>(
+          QDir(projectRootPath()).absoluteFilePath(QStringLiteral("Data/entity_visual_state.json")))),
+      _entityHomePositionTracker(std::make_unique<presentation::EntityHomePositionTracker>()),
+      _graphicPickCoordinator(std::make_unique<presentation::GraphicPickCoordinator>(
+          _scenarioState,
+          [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+          [this]() { this->syncScenarioStateToUi(); },
+          [this](const QVariantMap& draft) { this->sendDraftGraphicToMap(draft); },
+          [this](const QString& name) { this->clearDraftGraphicFromMap(name); },
+          [this]() { this->beginGraphicCoordinatePick(); })),
+      _planStepConfigurator(std::make_unique<presentation::PlanStepConfigurator>(
+          [this](const QString& en, const EntityTask& it, const QString& itype, EntityTask& out) {
+            return this->captureTaskConfiguration(en, it, itype, out);
+          },
+          [this](const QString& nameOrId) -> const AreaDefinition* {
+            return this->findAreaByNameOrId(nameOrId);
+          },
+          [this](const QString& en) {
+            return this->_entityHomePositionTracker->positionFor(en);
+          },
+          [this](const QString& title, const QString& label,
+                 const QStringList& items, bool& ok) -> QString {
+            return QInputDialog::getItem(this, title, label, items, 0, false, &ok);
+          },
+          [this](const QString& title, const QString& label,
+                 double def, double mn, double mx, bool& ok) -> double {
+            return QInputDialog::getDouble(this, title, label, def, mn, mx, 1, &ok);
+          }))
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
       , _webView(nullptr)
 #endif
@@ -875,8 +245,195 @@ MainWindow::MainWindow(QWidget* parent)
 
   this->initializeModels();
   this->populateTaskCommands();
-  this->loadEntityVisualStates();
-  this->pruneEntityVisualStates();
+  this->_entityVisualStateManager->load();
+
+  _weaponActionsController = std::make_unique<presentation::WeaponActionsController>(
+      this->_scenarioState,
+      [this]() { return this->selectedEntityName(); },
+      [this](const QString& name) { return this->findEntityByName(name); },
+      [this]() { return this->_simulationRunning; },
+      [this](const QString& msg) { this->appendLogMessage(msg); },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+      [this]() { this->syncScenarioStateToUi(); },
+      [this](const QStringList& options) -> QString {
+        bool ok = false;
+        const QString result = QInputDialog::getItem(
+            this,
+            QStringLiteral("Launch Missile At"),
+            QStringLiteral("Target"),
+            options, 0, false, &ok);
+        return ok ? result : QString{};
+      },
+      this);
+
+  _entityStateActionsController = std::make_unique<presentation::EntityStateActionsController>(
+      this->_scenarioState,
+      this->_entityVisualStateManager.get(),
+      [this]() { return this->selectedEntityName(); },
+      [this]() { return this->selectedEntityIsDestroyed(); },
+      [this]() { return this->currentSelectionIsOperableEntity(); },
+      [this](const QString& name, const EntityTask& task, bool sync) {
+        return this->applyEntityTask(name, task, sync);
+      },
+      [this](double& h, int& a, double& s) {
+        return this->resolveSelectedEntityFlyTargets(h, a, s);
+      },
+      [this](const QString& title, const QString& label,
+             double def, double mn, double mx, bool& ok) -> double {
+        return QInputDialog::getDouble(this, title, label, def, mn, mx, 1, &ok);
+      },
+      [this]() {
+        if (this->_taskDialog) {
+          this->_taskDialog->close();
+        }
+      },
+      [this](const QString& msg) { this->appendLogMessage(msg); },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+      [this]() { this->syncScenarioStateToUi(); },
+      this);
+
+  _taskAssignmentController = std::make_unique<presentation::TaskAssignmentController>(
+      [this]() { return this->selectedEntityName(); },
+      [this]() { return this->currentSelectionIsOperableEntity(); },
+      [this]() {
+        return this->_ui->objectsTreeView->currentIndex()
+            .data(kTrackSummaryRole).toMap();
+      },
+      [this](const QString& name) {
+        return this->_entityHomePositionTracker->positionFor(name);
+      },
+      [this](bool requirePoints) {
+        return application::availableRouteNames(this->_scenarioState, requirePoints);
+      },
+      [this](double& h, int& a, double& s) {
+        return this->resolveSelectedEntityFlyTargets(h, a, s);
+      },
+      [this](const QString& name, const EntityTask& task) {
+        return this->applyEntityTask(name, task);
+      },
+      [this](const QString& taskType) {
+        this->openAssignTaskDialog(taskType);
+      },
+      [this](const QString& title, const QString& label,
+             const QStringList& items, int current, bool& ok) -> QString {
+        return QInputDialog::getItem(this, title, label, items, current, false, &ok);
+      },
+      [this](const QString& title, const QString& label,
+             double def, double mn, double mx, int decimals, bool& ok) -> double {
+        return QInputDialog::getDouble(this, title, label, def, mn, mx, decimals, &ok);
+      },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+      this);
+
+  _tacticalGraphicsEditorController = std::make_unique<presentation::TacticalGraphicsEditorController>(
+      this->_graphicPickCoordinator.get(),
+      [this]() { return static_cast<int>(this->_scenarioState->waypoints().size()); },
+      [this]() { return static_cast<int>(this->_scenarioState->routes().size()); },
+      [this]() { return static_cast<int>(this->_scenarioState->areas().size()); },
+      [this](const QString& title, const QString& label,
+             const QString& def, bool& ok) -> QString {
+        return QInputDialog::getText(this, title, label, QLineEdit::Normal, def, &ok);
+      },
+      [this](const QString& title, const QString& label,
+             const QStringList& items, int current, bool& ok) -> QString {
+        return QInputDialog::getItem(this, title, label, items, current, false, &ok);
+      },
+      [this](const QString& title, const QString& label,
+             double def, double mn, double mx, int decimals, bool& ok) -> double {
+        return QInputDialog::getDouble(this, title, label, def, mn, mx, decimals, &ok);
+      },
+      this);
+
+  _bombReleaseActionsController = std::make_unique<presentation::BombReleaseActionsController>(
+      this->_bombReleaseController.get(),
+      [this]() { return this->selectedEntityName(); },
+      [this](const QString& name) -> const Entity* {
+        return this->findEntityByName(name);
+      },
+      [this]() { return this->_simulationRunning; },
+      [this]() { return this->_graphicPickCoordinator->isPending(); },
+      [this]() { this->beginTaskCoordinatePick(); },
+      [this](const Entity& launcher) {
+        return application::validBombReleaseTargets(this->_scenarioState, launcher);
+      },
+      [](const Entity& e) { return presentation::bombTargetDisplayLabel(e); },
+      [this](const QString& title, const QString& label,
+             const QStringList& items, bool& ok) -> QString {
+        return QInputDialog::getItem(this, title, label, items, 0, false, &ok);
+      },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+      [this](const QString& msg) { this->appendLogMessage(msg); },
+      [this]() { this->syncScenarioStateToUi(); },
+      this);
+  _scenarioObjectEditorController =
+      std::make_unique<presentation::ScenarioObjectEditorController>(
+          this->_scenarioState,
+          [this]() { return this->selectedEntityName(); },
+          [this]() { return this->selectedObjectName(); },
+          [this]() { return this->currentSelectionIsEntity(); },
+          [this]() { return this->selectedEntityIsDestroyed(); },
+          [this]() {
+            return this->_ui->objectsTreeView->currentIndex()
+                .data(kTrackSummaryRole).toMap();
+          },
+          [this](const QString& name) {
+            return this->cleanupRuntimeReferencesForRemovedEntity(name);
+          },
+          [this](const QString& name) { this->removeTrackFromMap(name); },
+          [this](const QString& msg) { this->appendLogMessage(msg); },
+          [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+          [this]() { this->syncScenarioStateToUi(); },
+          this);
+  _simulationLifecycleController =
+      std::make_unique<presentation::SimulationLifecycleController>(
+          this->_scenarioState,
+          [this]() { return this->_simulationRunning; },
+          [this](bool v) { this->_simulationRunning = v; },
+          [this]() { this->_simulationTimer->start(); },
+          [this]() { this->_simulationTimer->stop(); },
+          [this]() {
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+            if (this->_webView) {
+              this->_webView->page()->runJavaScript(
+                  QStringLiteral("window.refreshQtTrackedEntity && window.refreshQtTrackedEntity();"));
+            }
+#endif
+          },
+          [this]() { this->_bombReleaseController->cancelPickMode(); },
+          [this]() {
+            this->_attackTaskProcessor->autoBombReleaseCooldownSeconds().clear();
+          },
+          [this]() { this->clearPendingBombRelease(); },
+          [this]() { this->syncScenarioStateToUi(); },
+          [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+          [this](const QString& msg) { this->appendLogMessage(msg); },
+          [this]() { this->updateSimulationControls(); },
+          this);
+  _assignTaskController = std::make_unique<presentation::AssignTaskController>(
+      [this]() { return this->selectedEntityName(); },
+      [this]() { return this->currentSelectionIsOperableEntity(); },
+      [this](const QString& name) {
+        const auto it = this->_planExecutor->plans().constFind(name);
+        return it != this->_planExecutor->plans().constEnd() && it->running;
+      },
+      [this]() {
+        return this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+      },
+      [this](const QString& en, const EntityTask& init, const QString& type, EntityTask& out) {
+        return this->captureTaskConfiguration(en, init, type, out);
+      },
+      [this](const QString& en, const EntityTask& task) {
+        return this->applyEntityTask(en, task);
+      },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+      this);
+  {
+    QSet<QString> validNames;
+    for (const Entity& entity : this->_scenarioState->entities()) {
+      validNames.insert(entity.name);
+    }
+    this->_entityVisualStateManager->pruneTo(validNames);
+  }
   for (const Entity& entity : this->_scenarioState->entities()) {
     this->appendEntityToUi(entity);
   }
@@ -1006,12 +563,7 @@ MainWindow::MainWindow(QWidget* parent)
         }
       });
 
-  const QString accessToken = []() {
-    const QString configured =
-        CesiumScenePage::readConfigValue(QStringLiteral("ion_access_token"));
-    return configured.isEmpty() ? CesiumScenePage::defaultAccessToken()
-                                : configured;
-  }();
+  const QString accessToken = CesiumScenePage::defaultAccessToken();
   const QString assetId = []() {
     const QString configured =
         CesiumScenePage::readConfigValue(QStringLiteral("ion_asset_id"));
@@ -1214,321 +766,44 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
 QString MainWindow::buildSelectedEntityOperationalStatus(
     const QVariantMap& summary,
     const Entity* entity) const {
-  const auto value = [&summary](const char* key, const QString& fallback = QStringLiteral("-")) {
-    const QString text = summary.value(QString::fromLatin1(key)).toString().trimmed();
-    return text.isEmpty() ? fallback : text;
-  };
-
-  const QString taskType = value("taskType", QStringLiteral("No current tasks"));
-  const QString taskStatus = value("taskStatus", QStringLiteral("-"));
-  const QString status = value("status");
-  QString operationalState =
-      taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
-          ? status
-          : QStringLiteral("%1 (%2)").arg(taskType, taskStatus);
-
-  if (!entity) {
-    return operationalState;
-  }
-
-  const QString liveTaskType = entity->currentTask.taskType.trimmed();
-  const QString liveTaskStatus = entity->currentTask.status.trimmed();
-  if (entity->currentTask.enabled && !liveTaskType.isEmpty()) {
-    operationalState = QStringLiteral("%1 (%2)")
-        .arg(liveTaskType, liveTaskStatus.isEmpty() ? QStringLiteral("-") : liveTaskStatus);
-  }
-
-  const QString entityName = entity->name;
-  const int missileCount = weaponQuantity(*entity, QStringLiteral("Missile"));
-  const int bombCount = weaponQuantity(*entity, QStringLiteral("Bomb"));
-  const QString behaviorMode = entity->behaviorMode.trimmed().isEmpty()
-      ? QStringLiteral("Manual")
-      : entity->behaviorMode.trimmed();
-  const QString behaviorTargetName = entity->behaviorTargetEntityName.trimmed();
-  const Entity* behaviorTarget = this->findEntityByName(behaviorTargetName);
-
-  bool behaviorTargetDetected = false;
-  double behaviorTargetRangeMeters = -1.0;
-  for (const SensorContact& contact : entity->sensorContacts) {
-    if (contact.targetEntityName.compare(behaviorTargetName, Qt::CaseInsensitive) != 0) {
-      continue;
-    }
-    if (contact.detected) {
-      behaviorTargetDetected = true;
-      if (behaviorTargetRangeMeters < 0.0 ||
-          contact.rangeMeters < behaviorTargetRangeMeters) {
-        behaviorTargetRangeMeters = contact.rangeMeters;
-      }
-    }
-  }
-
-  const QString behaviorTargetStatus = behaviorTargetName.isEmpty()
-      ? QStringLiteral("-")
-      : QStringLiteral("%1 | %2 | %3%4")
-            .arg(
-                behaviorTargetDetected
-                    ? QStringLiteral("detected")
-                    : QStringLiteral("not detected"),
-                behaviorTarget
-                    ? (behaviorTarget->forceIdentifier == entity->forceIdentifier
-                           ? QStringLiteral("friendly")
-                           : QStringLiteral("enemy"))
-                    : QStringLiteral("unknown side"),
-                behaviorTarget
-                    ? (behaviorTarget->destroyed
-                           ? QStringLiteral("destroyed")
-                           : QStringLiteral("alive"))
-                    : QStringLiteral("missing"),
-                behaviorTargetRangeMeters >= 0.0
-                    ? QStringLiteral(" | %1 km")
-                          .arg(behaviorTargetRangeMeters / 1000.0, 0, 'f', 1)
-                    : QString());
-
-  struct ContactDebugLine {
-    double rangeMeters = 0.0;
-    QString text;
-  };
-  QVector<ContactDebugLine> contactLines;
-  for (const SensorContact& contact : entity->sensorContacts) {
-    const QString targetName = contact.targetEntityName.trimmed();
-    const Entity* target = this->findEntityByName(targetName);
-    const bool friendly = target && target->forceIdentifier == entity->forceIdentifier;
-    const bool destroyed = target && target->destroyed;
-    const bool validBehaviorTarget =
-        contact.detected &&
-        target &&
-        !destroyed &&
-        target->name != entityName &&
-        !friendly;
-
-    contactLines.push_back(ContactDebugLine{
-        contact.rangeMeters,
-        QStringLiteral("%1 | %2 | %3 km | brg %4 deg | %5 | %6 | %7")
-            .arg(targetName.isEmpty() ? QStringLiteral("<unknown>") : targetName)
-            .arg(contact.detected ? QStringLiteral("detected") : QStringLiteral("not detected"))
-            .arg(contact.rangeMeters / 1000.0, 0, 'f', 1)
-            .arg(contact.bearingDegrees, 0, 'f', 1)
-            .arg(target
-                     ? (friendly ? QStringLiteral("friendly") : QStringLiteral("enemy"))
-                     : QStringLiteral("unknown side"))
-            .arg(target
-                     ? (destroyed ? QStringLiteral("destroyed") : QStringLiteral("alive"))
-                     : QStringLiteral("unknown state"))
-            .arg(validBehaviorTarget
-                     ? QStringLiteral("behavior valid")
-                     : QStringLiteral("behavior blocked")),
-    });
-  }
-  std::sort(
-      contactLines.begin(),
-      contactLines.end(),
-      [](const ContactDebugLine& left, const ContactDebugLine& right) {
-        return left.rangeMeters < right.rangeMeters;
-      });
-
-  QStringList contactTextLines;
-  for (int index = 0; index < contactLines.size() && index < 10; ++index) {
-    contactTextLines.push_back(QStringLiteral("  %1").arg(contactLines.at(index).text));
-  }
-  const QString contactsText = contactTextLines.isEmpty()
-      ? QStringLiteral("  No contacts detected")
-      : contactTextLines.join(QStringLiteral("\n"));
-
-  QString bombReleaseState = QStringLiteral("None");
-  QString bombTargetText = QStringLiteral("-");
-  QString bombDistanceText = QStringLiteral("-");
-  if (this->_pendingBombRelease.pending &&
-      this->_pendingBombRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0) {
-    const BombReleaseGateEvaluation evaluation = evaluateBombReleaseGate(
-        *entity,
-        this->_pendingBombRelease.targetLatitude,
-        this->_pendingBombRelease.targetLongitude,
-        this->_pendingBombRelease.targetAltitudeMeters);
-    bombReleaseState = evaluation.stateLabel();
-    bombTargetText = this->_pendingBombRelease.targetLabel.trimmed().isEmpty()
-        ? attackPointLabel(
-              this->_pendingBombRelease.targetLatitude,
-              this->_pendingBombRelease.targetLongitude)
-        : this->_pendingBombRelease.targetLabel.trimmed();
-    bombDistanceText = QStringLiteral("%1 km")
-        .arg(
-            distanceMeters(
-                entity->latitude,
-                entity->longitude,
-                this->_pendingBombRelease.targetLatitude,
-                this->_pendingBombRelease.targetLongitude) / 1000.0,
-            0,
-            'f',
-            1);
-  } else {
-    for (const ActiveMunition& munition : this->_scenarioState->activeMunitions()) {
-      if (munition.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0 &&
-          munition.munitionType.compare(QStringLiteral("Bomb"), Qt::CaseInsensitive) == 0) {
-        bombReleaseState = QStringLiteral("Released");
-        bombTargetText = munition.id;
-        break;
-      }
-    }
-  }
-
-  const bool canUseWeapons = entityCanUseMissileActions(*entity);
-
-  bool hasAirTarget = false;
-  bool hasDetectedAirTarget = false;
-  bool hasMissileTargetInRange = false;
-  const double missileMaxRangeMeters = ScenarioState::missileMaxRangeMeters();
-  for (const Entity& candidate : this->_scenarioState->entities()) {
-    if (candidate.name == entityName ||
-        candidate.destroyed ||
-        candidate.forceIdentifier == entity->forceIdentifier ||
-        candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
-      continue;
-    }
-    hasAirTarget = true;
-    for (const SensorContact& contact : entity->sensorContacts) {
-      if (!contact.detected ||
-          contact.targetEntityName.compare(candidate.name, Qt::CaseInsensitive) != 0) {
-        continue;
-      }
-      hasDetectedAirTarget = true;
-      if (contact.rangeMeters > 0.0 && contact.rangeMeters <= missileMaxRangeMeters) {
-        hasMissileTargetInRange = true;
-      }
-    }
-  }
-
-  const auto availabilityText = [](bool available, const QString& reason) {
-    return available
-        ? QStringLiteral("✔ Available")
-        : QStringLiteral("✖ Blocked (%1)").arg(reason);
-  };
-  const auto fieldLine = [](const QString& label, const QString& text) {
-    return QStringLiteral("  %1 %2")
-        .arg(label + QStringLiteral(":"), -24, QLatin1Char(' '))
-        .arg(text);
-  };
-
-  QString launchMissileReason;
-  if (!canUseWeapons || entity->destroyed) {
-    launchMissileReason = QStringLiteral("platform not eligible");
-  } else if (missileCount <= 0) {
-    launchMissileReason = QStringLiteral("no missiles");
-  } else if (!this->_simulationRunning) {
-    launchMissileReason = QStringLiteral("simulation stopped");
-  } else if (!hasAirTarget) {
-    launchMissileReason = QStringLiteral("no target");
-  } else if (!hasDetectedAirTarget) {
-    launchMissileReason = QStringLiteral("target not detected");
-  } else if (!hasMissileTargetInRange) {
-    launchMissileReason = QStringLiteral("out of range");
-  }
-  const bool launchMissileAvailable = launchMissileReason.isEmpty();
-
-  QString releaseBombReason;
-  if (!canUseWeapons || entity->destroyed) {
-    releaseBombReason = QStringLiteral("platform not eligible");
-  } else if (bombCount <= 0) {
-    releaseBombReason = QStringLiteral("no bombs");
-  } else if (!this->_simulationRunning) {
-    releaseBombReason = QStringLiteral("simulation stopped");
-  }
-  const bool releaseBombAvailable = releaseBombReason.isEmpty();
-
-  const bool cancelBombAvailable =
-      this->_pendingBombRelease.pending &&
-      this->_pendingBombRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0;
-  const auto activePlanIt = this->_entityPlans.constFind(entityName);
-  const EntityPlan* activePlan = (activePlanIt != this->_entityPlans.constEnd())
-      ? &activePlanIt.value()
-      : nullptr;
-  const QString planStatus = (!activePlan || activePlan->status.trimmed().isEmpty())
-      ? QString(kTaskStatusNotStarted)
-      : planStatusDisplayLabel(activePlan->status.trimmed());
-  QString currentPlanStep = QStringLiteral("-");
-  if (activePlan &&
-      activePlan->running &&
-      activePlan->currentStepIndex >= 0 &&
-      activePlan->currentStepIndex < activePlan->steps.size()) {
-    const PlanStep& step = activePlan->steps.at(activePlan->currentStepIndex);
-    const QString stepStatus = step.status.trimmed().isEmpty()
-        ? QString(kTaskStatusNotStarted)
-        : step.status.trimmed();
-    currentPlanStep = QStringLiteral("%1 [%2]")
-        .arg(this->planStepDisplayLabel(step), stepStatus);
-  }
-
-  QStringList lines;
-  lines << QStringLiteral("[ENTITY]")
-        << fieldLine(QStringLiteral("State"), operationalState)
-        << fieldLine(
-               QStringLiteral("Damage"),
-               QStringLiteral("%1 (%2%)")
-                   .arg(
-                       value("damageState", QStringLiteral("Intact")),
-                       QString::number(
-                           summary.value(QStringLiteral("damagePercent"), 0.0).toDouble(),
-                           'f',
-                           0)))
-        << QStringLiteral("")
-        << QStringLiteral("")
-        << QStringLiteral("[WEAPONS]")
-        << fieldLine(QStringLiteral("Missiles"), QString::number(missileCount))
-        << fieldLine(QStringLiteral("Bombs"), QString::number(bombCount))
-        << QStringLiteral("")
-        << QStringLiteral("")
-        << QStringLiteral("[BEHAVIOR]")
-        << fieldLine(QStringLiteral("Mode"), behaviorMode)
-        << fieldLine(
-               QStringLiteral("Target"),
-               behaviorTargetName.isEmpty() ? QStringLiteral("-") : behaviorTargetName)
-        << fieldLine(QStringLiteral("Target status"), behaviorTargetStatus)
-        << QStringLiteral("")
-        << QStringLiteral("")
-        << QStringLiteral("[SENSORS]")
-        << contactsText
-        << QStringLiteral("")
-        << QStringLiteral("")
-        << QStringLiteral("[BOMBING]")
-        << fieldLine(QStringLiteral("Pending Release"), bombReleaseState)
-        << fieldLine(QStringLiteral("Bomb Target"), bombTargetText)
-        << fieldLine(QStringLiteral("Distance"), bombDistanceText)
-        << QStringLiteral("")
-        << QStringLiteral("")
-        << QStringLiteral("[PLAN]")
-        << fieldLine(QStringLiteral("Status"), planStatus)
-        << fieldLine(QStringLiteral("Current Step"), currentPlanStep)
-        << QStringLiteral("")
-        << QStringLiteral("")
-        << QStringLiteral("[ACTIONS]")
-        << fieldLine(
-               QStringLiteral("Launch Missile At"),
-               availabilityText(launchMissileAvailable, launchMissileReason))
-        << fieldLine(
-               QStringLiteral("Release Bomb At"),
-               availabilityText(releaseBombAvailable, releaseBombReason))
-        << fieldLine(
-               QStringLiteral("Cancel Bomb Release"),
-               availabilityText(
-                   cancelBombAvailable,
-                   QStringLiteral("no pending release")));
-
-  return lines.join(QStringLiteral("\n"));
+  const presentation::EntityStatusContext ctx{
+      this->_scenarioState->entities(),
+      this->_scenarioState->activeMunitions(),
+      this->_bombReleaseController->pendingRelease(),
+      this->_planExecutor->plans(),
+      this->_simulationRunning};
+  return presentation::buildEntityOperationalStatus(summary, entity, ctx);
 }
 
 void MainWindow::initializeModels() {
+  this->initializeObjectTreeModel();
+  this->initializeContactsTableModel();
+
+  this->_ui->eventLogPlainTextEdit->clear();
+  this->appendLogMessage(QStringLiteral("Operational log ready."));
+  this->appendLogMessage(QStringLiteral("Cesium map connected."));
+  this->appendLogMessage(QStringLiteral("Awaiting commands..."));
+
+  this->_ui->objectsTreeView->clearSelection();
+  this->setSelectedTrackDetails(QVariantMap{});
+  this->rebuildTacticalGraphicsTree();
+}
+
+void MainWindow::initializeObjectTreeModel() {
   this->_objectsModel->setHorizontalHeaderLabels({QStringLiteral("Name")});
 
   this->_friendlyRootItem = new QStandardItem(QStringLiteral("Friendly"));
-  this->_friendlyRootItem->setIcon(makeTrackIcon(QStringLiteral("Friendly"), QStringLiteral("Side"), true));
+  this->_friendlyRootItem->setIcon(presentation::makeTrackIcon(QStringLiteral("Friendly"), QStringLiteral("Side"), true));
   this->_opposingRootItem = new QStandardItem(QStringLiteral("Opposing"));
-  this->_opposingRootItem->setIcon(makeTrackIcon(QStringLiteral("Opposing"), QStringLiteral("Side"), true));
+  this->_opposingRootItem->setIcon(presentation::makeTrackIcon(QStringLiteral("Opposing"), QStringLiteral("Side"), true));
   this->_neutralRootItem = new QStandardItem(QStringLiteral("Neutral"));
-  this->_neutralRootItem->setIcon(makeTrackIcon(QStringLiteral("Neutral"), QStringLiteral("Side"), true));
+  this->_neutralRootItem->setIcon(presentation::makeTrackIcon(QStringLiteral("Neutral"), QStringLiteral("Side"), true));
   this->_tacticalGraphicsRootItem = new QStandardItem(QStringLiteral("Tactical Graphics"));
-  this->_tacticalGraphicsRootItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Graphic")));
+  this->_tacticalGraphicsRootItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Graphic")));
+
   setTrackData(
       this->_friendlyRootItem,
-      makeTrackSummary(
+      presentation::makeTrackSummary(
           QStringLiteral("Friendly"),
           QStringLiteral("Side"),
           QStringLiteral("Friendly"),
@@ -1539,7 +814,7 @@ void MainWindow::initializeModels() {
           0.0));
   setTrackData(
       this->_opposingRootItem,
-      makeTrackSummary(
+      presentation::makeTrackSummary(
           QStringLiteral("Opposing"),
           QStringLiteral("Side"),
           QStringLiteral("Opposing"),
@@ -1550,7 +825,7 @@ void MainWindow::initializeModels() {
           0.0));
   setTrackData(
       this->_neutralRootItem,
-      makeTrackSummary(
+      presentation::makeTrackSummary(
           QStringLiteral("Neutral"),
           QStringLiteral("Side"),
           QStringLiteral("Neutral"),
@@ -1561,7 +836,7 @@ void MainWindow::initializeModels() {
           0.0));
   setTrackData(
       this->_tacticalGraphicsRootItem,
-      makeTrackSummary(
+      presentation::makeTrackSummary(
           QStringLiteral("Tactical Graphics"),
           QStringLiteral("Graphic"),
           QStringLiteral("Overlay"),
@@ -1587,7 +862,9 @@ void MainWindow::initializeModels() {
       &QItemSelectionModel::currentChanged,
       this,
       &MainWindow::updateSelectedTrackPanel);
+}
 
+void MainWindow::initializeContactsTableModel() {
   this->_detectedContactsModel->setHorizontalHeaderLabels({
       QStringLiteral("Observer"),
       QStringLiteral("Contact"),
@@ -1611,48 +888,26 @@ void MainWindow::initializeModels() {
       &QItemSelectionModel::currentChanged,
       this,
       &MainWindow::handleDetectedContactSelection);
-
-  this->_ui->eventLogPlainTextEdit->clear();
-  this->appendLogMessage(QStringLiteral("Operational log ready."));
-  this->appendLogMessage(QStringLiteral("Cesium map connected."));
-  this->appendLogMessage(QStringLiteral("Awaiting commands..."));
-
-  this->_ui->objectsTreeView->clearSelection();
-  this->setSelectedTrackDetails(QVariantMap{});
-  this->rebuildTacticalGraphicsTree();
 }
 
 void MainWindow::appendEntityToUi(const Entity& entity) {
-  this->rememberEntityHomePosition(entity);
+  this->_entityHomePositionTracker->remember(entity);
 
   QStandardItem* rootItem = this->rootItemForForceIdentifier(entity.forceIdentifier);
   if (!rootItem) {
     return;
   }
 
-  QString category = entity.category.trimmed();
-  if (category != QStringLiteral("Fighter") &&
-      category != QStringLiteral("Bomber") &&
-      category != QStringLiteral("Helicopter") &&
-      category != QStringLiteral("Transport") &&
-      category != QStringLiteral("Tank") &&
-      category != QStringLiteral("Truck") &&
-      category != QStringLiteral("ArmoredVehicle") &&
-      category != QStringLiteral("Armored Vehicle") &&
-      category != QStringLiteral("Radar") &&
-      category != QStringLiteral("SAMLauncher") &&
-      category != QStringLiteral("SAM Launcher")) {
-    category = QStringLiteral("Other");
-  }
+  const QString category = presentation::normalizeEntityCategory(entity.category);
 
   const QVariantMap summary = this->makeEntityTrackSummary(entity);
   QStandardItem* categoryItem = this->ensureGroupItem(
       rootItem,
       category,
-      makeTrackSummary(
+      presentation::makeTrackSummary(
           category,
           QStringLiteral("Category"),
-          forceIdentifierLabel(entity.forceIdentifier),
+          domain::forceIdentifierLabel(entity.forceIdentifier),
           QStringLiteral("-"),
           QStringLiteral("Multiple tracks"),
           QStringLiteral("Category"),
@@ -1660,7 +915,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
           0.0));
 
   auto* item = new QStandardItem(entity.name);
-  item->setIcon(makeTrackIcon(forceIdentifierLabel(entity.forceIdentifier), category, false));
+  item->setIcon(presentation::makeTrackIcon(domain::forceIdentifierLabel(entity.forceIdentifier), category, false));
   setTrackData(item, summary);
   categoryItem->appendRow(item);
   this->_ui->objectsTreeView->expand(rootItem->index());
@@ -1673,109 +928,9 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
 }
 
 QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
-  const EntityVisualState visualState = this->entityVisualStateFor(entity.name);
-  const QString damageState = entity.damageStateLabel();
-
-  QVariantMap summary = makeTrackSummary(
-      entity.name,
-      entity.type,
-      forceIdentifierLabel(entity.forceIdentifier),
-      QStringLiteral("%1 m").arg(entity.altitude),
-      formatPosition(entity.latitude, entity.longitude),
-      damageState,
-      entity.latitude,
-      entity.longitude);
-  summary.insert(QStringLiteral("domain"), entity.domain);
-  summary.insert(QStringLiteral("category"), entity.category);
-  summary.insert(QStringLiteral("callsign"), entity.callsign);
-  summary.insert(QStringLiteral("forceIdentifier"), entity.forceIdentifier);
-  summary.insert(QStringLiteral("entityKind"), entity.entityKind);
-  summary.insert(QStringLiteral("entityDomain"), entity.entityDomain);
-  summary.insert(QStringLiteral("entityCountry"), entity.entityCountry);
-  summary.insert(QStringLiteral("entityCategory"), entity.entityCategory);
-  summary.insert(QStringLiteral("entitySubcategory"), entity.entitySubcategory);
-  summary.insert(QStringLiteral("entitySpecific"), entity.entitySpecific);
-  summary.insert(QStringLiteral("entityExtra"), entity.entityExtra);
-  summary.insert(QStringLiteral("entityTypeCode"), entity.entityTypeCode);
-  summary.insert(QStringLiteral("modelName"), entity.modelName);
-  summary.insert(QStringLiteral("modelUri"), entity.modelUri);
-  summary.insert(QStringLiteral("headingDegrees"), entity.headingDegrees);
-  summary.insert(QStringLiteral("pitchDegrees"), entity.pitchDegrees);
-  summary.insert(QStringLiteral("rollDegrees"), entity.rollDegrees);
-  summary.insert(QStringLiteral("flightDynamicsEnabled"), entity.flightDynamicsEnabled);
-  summary.insert(QStringLiteral("flightDynamicsMode"), entity.flightDynamicsMode);
-  summary.insert(QStringLiteral("jsbsimAircraftModel"), entity.jsbsimAircraftModel);
-  summary.insert(QStringLiteral("speedKnots"), entity.speedKnots);
-  summary.insert(QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond);
-  summary.insert(QStringLiteral("destroyed"), entity.destroyed);
-  summary.insert(QStringLiteral("damagePercent"), entity.damagePercent);
-  summary.insert(QStringLiteral("damageState"), damageState);
-  summary.insert(QStringLiteral("behaviorMode"), entity.behaviorMode.trimmed().isEmpty()
-      ? QStringLiteral("Manual")
-      : entity.behaviorMode);
-  summary.insert(QStringLiteral("behaviorTargetEntityName"), entity.behaviorTargetEntityName);
-  summary.insert(QStringLiteral("hidden"), visualState.hidden);
-  summary.insert(QStringLiteral("radarCoverageVisible"), visualState.radarCoverageVisible);
-  summary.insert(QStringLiteral("trackHistoryVisible"), visualState.trackHistoryVisible);
-  summary.insert(QStringLiteral("taskType"), entity.currentTask.taskType);
-  summary.insert(QStringLiteral("taskEnabled"), entity.currentTask.enabled);
-  summary.insert(QStringLiteral("taskStatus"), entity.currentTask.status);
-  summary.insert(QStringLiteral("taskTargetHeadingDegrees"), entity.currentTask.targetHeadingDegrees);
-  summary.insert(QStringLiteral("taskTargetAltitudeMeters"), entity.currentTask.targetAltitudeMeters);
-  summary.insert(QStringLiteral("taskTargetSpeedKnots"), entity.currentTask.targetSpeedKnots);
-  summary.insert(QStringLiteral("taskTargetLatitude"), entity.currentTask.targetLatitude);
-  summary.insert(QStringLiteral("taskTargetLongitude"), entity.currentTask.targetLongitude);
-  summary.insert(QStringLiteral("taskTargetEntityName"), entity.currentTask.targetEntityName);
-  summary.insert(QStringLiteral("taskTargetWaypointName"), entity.currentTask.targetWaypointName);
-  summary.insert(QStringLiteral("taskTargetRouteName"), entity.currentTask.targetRouteName);
-  summary.insert(QStringLiteral("taskTargetAreaName"), entity.currentTask.targetAreaName);
-  summary.insert(QStringLiteral("taskTargetAreaRadiusMeters"), entity.currentTask.targetAreaRadiusMeters);
-  summary.insert(QStringLiteral("sensorCount"), entity.sensors.size());
-  summary.insert(QStringLiteral("contactCount"), entity.sensorContacts.size());
-
-  QVariantList sensors;
-  for (const SensorDefinition& sensor : entity.sensors) {
-    sensors.push_back(QVariantMap{
-        {QStringLiteral("id"), sensor.id},
-        {QStringLiteral("name"), sensor.name},
-        {QStringLiteral("sensorType"), sensor.sensorType},
-        {QStringLiteral("enabled"), sensor.enabled},
-        {QStringLiteral("emitting"), sensor.emitting},
-        {QStringLiteral("maxRangeMeters"), sensor.maxRangeMeters},
-        {QStringLiteral("azimuthCenterDegrees"), sensor.azimuthCenterDegrees},
-        {QStringLiteral("azimuthWidthDegrees"), sensor.azimuthWidthDegrees},
-        {QStringLiteral("elevationCenterDegrees"), sensor.elevationCenterDegrees},
-        {QStringLiteral("elevationWidthDegrees"), sensor.elevationWidthDegrees},
-        {QStringLiteral("maxTracks"), sensor.maxTracks},
-    });
-  }
-  summary.insert(QStringLiteral("sensors"), sensors);
-
-  QVariantList contacts;
-  for (const SensorContact& contact : entity.sensorContacts) {
-    contacts.push_back(QVariantMap{
-        {QStringLiteral("sensorId"), contact.sensorId},
-        {QStringLiteral("targetEntityName"), contact.targetEntityName},
-        {QStringLiteral("rangeMeters"), contact.rangeMeters},
-        {QStringLiteral("bearingDegrees"), contact.bearingDegrees},
-        {QStringLiteral("lineOfSight"), contact.lineOfSight},
-        {QStringLiteral("detected"), contact.detected},
-    });
-  }
-  summary.insert(QStringLiteral("sensorContacts"), contacts);
-  return summary;
-}
-
-MainWindow::EntityVisualState MainWindow::entityVisualStateFor(const QString& entityName) const {
-  return this->_entityVisualStates.value(entityName);
-}
-
-MainWindow::EntityVisualState& MainWindow::ensureEntityVisualState(const QString& entityName) {
-  return this->_entityVisualStates[entityName];
-}
-
-MainWindow::EntityHomePosition MainWindow::entityHomePositionFor(const QString& entityName) const {
-  return this->_entityHomePositions.value(entityName);
+  const presentation::EntityVisualState visualState =
+      this->_entityVisualStateManager->stateFor(entity.name);
+  return presentation::makeEntityTrackSummary(entity, visualState);
 }
 
 const Waypoint* MainWindow::findWaypointByName(const QString& waypointName) const {
@@ -1821,203 +976,23 @@ const AreaDefinition* MainWindow::findAreaByNameOrId(const QString& areaNameOrId
 }
 
 QStringList MainWindow::availableWaypointNames() const {
-  QStringList names;
-  QSet<QString> seen;
-  for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
-    const QString name = waypoint.name.trimmed();
-    if (name.isEmpty() || seen.contains(name)) {
-      continue;
-    }
-    seen.insert(name);
-    names.append(name);
-  }
-  return names;
+  return application::availableWaypointNames(this->_scenarioState);
 }
 
 QStringList MainWindow::availableRouteNames(bool requirePoints) const {
-  QStringList names;
-  QSet<QString> seen;
-  for (const RouteGraphic& route : this->_scenarioState->routes()) {
-    const QString name = route.name.trimmed();
-    if (name.isEmpty() || seen.contains(name)) {
-      continue;
-    }
-    if (requirePoints && route.points.isEmpty()) {
-      continue;
-    }
-    seen.insert(name);
-    names.append(name);
-  }
-  return names;
+  return application::availableRouteNames(this->_scenarioState, requirePoints);
 }
 
 QStringList MainWindow::availableAreaNames() const {
-  QStringList names;
-  QSet<QString> seen;
-  for (const AreaDefinition& area : this->_scenarioState->areas()) {
-    QString name = area.name.trimmed();
-    if (name.isEmpty()) {
-      name = area.id.trimmed();
-    }
-    if (name.isEmpty() || seen.contains(name)) {
-      continue;
-    }
-    seen.insert(name);
-    names.append(name);
-  }
-  return names;
+  return application::availableAreaNames(this->_scenarioState);
 }
 
-MainWindow::EntityPlan& MainWindow::ensureEntityPlan(const QString& entityName) {
-  return this->_entityPlans[entityName];
-}
-
-void MainWindow::rememberEntityHomePosition(const Entity& entity) {
-  if (entity.name.trimmed().isEmpty() || this->_entityHomePositions.contains(entity.name)) {
-    return;
-  }
-
-  this->_entityHomePositions.insert(entity.name, EntityHomePosition{
-      entity.latitude,
-      entity.longitude,
-      entity.altitude,
-      true,
-  });
-}
-
-QString MainWindow::entityVisualStatePath() const {
-  return QDir(projectRootPath()).absoluteFilePath(QStringLiteral("Data/entity_visual_state.json"));
-}
-
-void MainWindow::loadEntityVisualStates() {
-  this->_entityVisualStates.clear();
-
-  QFile file(this->entityVisualStatePath());
-  if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
-    return;
-  }
-
-  const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
-  if (!document.isObject()) {
-    return;
-  }
-
-  const QJsonObject entitiesObject = document.object().value(QStringLiteral("entities")).toObject();
-  for (auto it = entitiesObject.begin(); it != entitiesObject.end(); ++it) {
-    const QJsonObject stateObject = it.value().toObject();
-    EntityVisualState visualState;
-    visualState.hidden = stateObject.value(QStringLiteral("hidden")).toBool(false);
-    visualState.radarCoverageVisible =
-        stateObject.value(QStringLiteral("radarCoverageVisible")).toBool(false);
-    visualState.trackHistoryVisible =
-        stateObject.value(QStringLiteral("trackHistoryVisible")).toBool(false);
-    this->_entityVisualStates.insert(it.key(), visualState);
-  }
-}
-
-void MainWindow::saveEntityVisualStates() const {
-  QJsonObject entitiesObject;
-  for (auto it = this->_entityVisualStates.constBegin(); it != this->_entityVisualStates.constEnd(); ++it) {
-    entitiesObject.insert(it.key(), QJsonObject{
-                                      {QStringLiteral("hidden"), it.value().hidden},
-                                      {QStringLiteral("radarCoverageVisible"),
-                                       it.value().radarCoverageVisible},
-                                      {QStringLiteral("trackHistoryVisible"),
-                                       it.value().trackHistoryVisible},
-                                  });
-  }
-
-  QFile file(this->entityVisualStatePath());
-  const QFileInfo info(file);
-  QDir().mkpath(info.absolutePath());
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-    return;
-  }
-
-  const QJsonDocument document(QJsonObject{
-      {QStringLiteral("entities"), entitiesObject},
-  });
-  file.write(document.toJson(QJsonDocument::Indented));
-}
-
-void MainWindow::pruneEntityVisualStates() {
-  QSet<QString> validEntityNames;
-  for (const Entity& entity : this->_scenarioState->entities()) {
-    validEntityNames.insert(entity.name);
-  }
-
-  bool removed = false;
-  for (auto it = this->_entityVisualStates.begin(); it != this->_entityVisualStates.end();) {
-    if (!validEntityNames.contains(it.key())) {
-      it = this->_entityVisualStates.erase(it);
-      removed = true;
-      continue;
-    }
-    ++it;
-  }
-
-  if (removed) {
-    this->saveEntityVisualStates();
-  }
-}
-
-void MainWindow::pruneEntityHomePositions() {
-  QSet<QString> validEntityNames;
-  for (const Entity& entity : this->_scenarioState->entities()) {
-    validEntityNames.insert(entity.name);
-  }
-
-  for (auto it = this->_entityHomePositions.begin(); it != this->_entityHomePositions.end();) {
-    if (!validEntityNames.contains(it.key())) {
-      it = this->_entityHomePositions.erase(it);
-      continue;
-    }
-    ++it;
-  }
+EntityPlan& MainWindow::ensureEntityPlan(const QString& entityName) {
+  return this->_planExecutor->ensurePlan(entityName);
 }
 
 void MainWindow::pruneEntityPlans() {
-  QSet<QString> validEntityNames;
-  for (const Entity& entity : this->_scenarioState->entities()) {
-    validEntityNames.insert(entity.name);
-  }
-
-  for (auto it = this->_entityPlans.begin(); it != this->_entityPlans.end();) {
-    if (!validEntityNames.contains(it.key())) {
-      it = this->_entityPlans.erase(it);
-      continue;
-    }
-    ++it;
-  }
-}
-
-QString MainWindow::planStepDisplayLabel(const PlanStep& step) const {
-  if (!step.label.trimmed().isEmpty()) {
-    return step.label;
-  }
-
-  switch (step.kind) {
-    case PlanStepKind::MoveToLocation:
-      return QStringLiteral("Move To Location");
-    case PlanStepKind::MoveToWaypoint:
-      return QStringLiteral("Move To Waypoint");
-    case PlanStepKind::MoveAlongRoute:
-      return QStringLiteral("Move Along Route");
-    case PlanStepKind::PatrolArea:
-      return QStringLiteral("Patrol Area");
-    case PlanStepKind::FlyHeadingAltitudeSpeed:
-      return QStringLiteral("Fly Heading / Altitude / Speed");
-    case PlanStepKind::OrbitHoldLocation:
-      return QStringLiteral("Orbit / Hold (Location)");
-    case PlanStepKind::ReturnToBase:
-      return QStringLiteral("Return To Base");
-    case PlanStepKind::AttackAir:
-      return QStringLiteral("Attack Air");
-    case PlanStepKind::AttackSurface:
-      return QStringLiteral("Attack Surface");
-  }
-
-  return QStringLiteral("Plan Step");
+  this->_planExecutor->prunePlans();
 }
 
 bool MainWindow::captureTaskConfiguration(
@@ -2041,6 +1016,11 @@ bool MainWindow::captureTaskConfiguration(
   const QStringList availableRoutes = this->availableRouteNames(false);
   const QStringList availableAreas = this->availableAreaNames();
 
+  QWidget* dialogParent = QApplication::activeModalWidget();
+  if (!dialogParent) {
+    dialogParent = this;
+  }
+
   QPointer<AssignTaskDialog> dialog = new AssignTaskDialog(
       entityName,
       availableTargets,
@@ -2049,9 +1029,9 @@ bool MainWindow::captureTaskConfiguration(
       availableAreas,
       initialTask,
       initialTaskType,
-      this);
+      dialogParent);
   dialog->setAttribute(Qt::WA_DeleteOnClose, false);
-  dialog->setWindowModality(Qt::NonModal);
+  dialog->setWindowModality(dialogParent == this ? Qt::NonModal : Qt::WindowModal);
   this->_taskDialog = dialog;
 
   QEventLoop loop;
@@ -2127,7 +1107,7 @@ QStandardItem* MainWindow::ensureGroupItem(
   }
 
   auto* item = new QStandardItem(label);
-  item->setIcon(makeTrackIcon(summary.value(QStringLiteral("team")).toString(), label, true));
+  item->setIcon(presentation::makeTrackIcon(summary.value(QStringLiteral("team")).toString(), label, true));
   setTrackData(item, summary);
   parent->appendRow(item);
   return item;
@@ -2159,30 +1139,31 @@ void MainWindow::openAddEntityDialog() {
       dialog,
       &QDialog::accepted,
       this,
-      [this, dialog]() {
-        const Entity entity = dialog->entity();
-        const bool hasRadarSensor = std::any_of(
-            entity.sensors.cbegin(),
-            entity.sensors.cend(),
-            [](const SensorDefinition& sensor) {
-              return sensor.sensorType.compare(QStringLiteral("radar"), Qt::CaseInsensitive) == 0;
-            });
-        if (hasRadarSensor && !entity.name.trimmed().isEmpty() &&
-            !this->_entityVisualStates.contains(entity.name)) {
-          EntityVisualState& visualState = this->ensureEntityVisualState(entity.name);
-          visualState.radarCoverageVisible = true;
-          visualState.trackHistoryVisible = false;
-          this->saveEntityVisualStates();
-        }
-        this->_scenarioState->addEntity(entity);
-        this->appendEntityToUi(entity);
-        this->_ui->statusLabel->setText(
-            EntityTextFormatter::statusMessage(entity));
-      });
+      [this, dialog]() { this->onEntityDialogAccepted(dialog->entity()); });
 
   dialog->show();
   dialog->raise();
   dialog->activateWindow();
+}
+
+void MainWindow::onEntityDialogAccepted(const Entity& entity) {
+  const bool hasRadarSensor = std::any_of(
+      entity.sensors.cbegin(),
+      entity.sensors.cend(),
+      [](const SensorDefinition& sensor) {
+        return sensor.sensorType.compare(QStringLiteral("radar"), Qt::CaseInsensitive) == 0;
+      });
+  if (hasRadarSensor && !entity.name.trimmed().isEmpty() &&
+      !this->_entityVisualStateManager->contains(entity.name)) {
+    presentation::EntityVisualState& visualState =
+        this->_entityVisualStateManager->ensureState(entity.name);
+    visualState.radarCoverageVisible = true;
+    visualState.trackHistoryVisible = false;
+    this->_entityVisualStateManager->save();
+  }
+  this->_scenarioState->addEntity(entity);
+  this->appendEntityToUi(entity);
+  this->_ui->statusLabel->setText(EntityTextFormatter::statusMessage(entity));
 }
 
 void MainWindow::beginEntityCoordinatePick() {
@@ -2211,220 +1192,12 @@ void MainWindow::beginEntityCoordinatePick() {
 }
 
 void MainWindow::reportPickedCoordinate(double longitude, double latitude, double height) {
-  const double graphicAltitude = qMax(0.0, height + kGraphicAltitudeOffsetMeters);
-  bool handledGraphic = false;
-
-  if (_pendingGraphicMode == QStringLiteral("Waypoint")) {
-    Waypoint waypoint;
-    waypoint.name = _pendingGraphicName;
-    waypoint.longitude = longitude;
-    waypoint.latitude = latitude;
-    waypoint.altitudeMeters = graphicAltitude;
-    this->_scenarioState->addWaypoint(waypoint);
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Waypoint %1 creado en lat %2, lon %3, alt %4 m.")
-            .arg(_pendingGraphicName)
-            .arg(latitude, 0, 'f', 5)
-            .arg(longitude, 0, 'f', 5)
-            .arg(graphicAltitude, 0, 'f', 0));
-    _pendingGraphicMode.clear();
-    _pendingGraphicName.clear();
-    handledGraphic = true;
-    this->syncScenarioStateToUi();
-  } else if (_pendingGraphicMode == QStringLiteral("Route")) {
-    _pendingRoutePoints.push_back(QVariantMap{
-        {QStringLiteral("longitude"), longitude},
-        {QStringLiteral("latitude"), latitude},
-        {QStringLiteral("altitudeMeters"), graphicAltitude},
-    });
-    if (_pendingRoutePoints.size() >= 2) {
-      RouteGraphic route;
-      route.name = _pendingGraphicName;
-      for (const QVariantMap& pointSummary : _pendingRoutePoints) {
-        RoutePoint point;
-        point.longitude = pointSummary.value(QStringLiteral("longitude")).toDouble();
-        point.latitude = pointSummary.value(QStringLiteral("latitude")).toDouble();
-        point.altitudeMeters = pointSummary.value(QStringLiteral("altitudeMeters")).toDouble();
-        route.points.push_back(point);
-      }
-      this->_scenarioState->addRoute(route);
-      this->_ui->statusLabel->setText(
-          QStringLiteral("Route %1 creada con %2 puntos. Ajustada a +%3 m sobre el terreno.")
-              .arg(_pendingGraphicName)
-              .arg(route.points.size())
-              .arg(kGraphicAltitudeOffsetMeters, 0, 'f', 0));
-      this->clearDraftGraphicFromMap(_pendingGraphicName + QStringLiteral(" (draft)"));
-      _pendingGraphicMode.clear();
-      _pendingGraphicName.clear();
-      _pendingRoutePoints.clear();
-      handledGraphic = true;
-      this->syncScenarioStateToUi();
-    } else {
-      QVariantMap draftSummary = makeTrackSummary(
-          _pendingGraphicName + QStringLiteral(" (draft)"),
-          QStringLiteral("Route"),
-          QStringLiteral("Graphic"),
-          QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
-          formatPosition(latitude, longitude),
-          QStringLiteral("Route draft"),
-          latitude,
-          longitude);
-      draftSummary.insert(QStringLiteral("type"), QStringLiteral("Route"));
-      QVariantList routePoints;
-      for (const QVariantMap& pointSummary : _pendingRoutePoints) {
-        routePoints.push_back(pointSummary);
-      }
-      draftSummary.insert(QStringLiteral("routePoints"), routePoints);
-      this->sendDraftGraphicToMap(draftSummary);
-      this->_ui->statusLabel->setText(
-          QStringLiteral("Primer punto de la ruta capturado. Selecciona ahora el segundo punto en el mapa."));
-      this->beginGraphicCoordinatePick();
-      return;
-    }
-  } else if (_pendingGraphicMode == QStringLiteral("Area")) {
-    AreaDefinition area;
-    area.id = _pendingGraphicName;
-    area.name = _pendingGraphicName;
-    area.areaType = _pendingAreaType;
-    area.centerLongitude = longitude;
-    area.centerLatitude = latitude;
-    area.centerAltitudeMeters = _pendingAreaAltitudeMeters;
-    area.radiusMeters = _pendingAreaRadiusMeters;
-    area.semiMajorAxisMeters = _pendingAreaSemiMajorMeters;
-    area.semiMinorAxisMeters = _pendingAreaSemiMinorMeters;
-    area.rotationDegrees = _pendingAreaRotationDegrees;
-    this->_scenarioState->addArea(area);
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Area %1 (%2) creada en lat %3, lon %4.")
-            .arg(_pendingGraphicName)
-            .arg(_pendingAreaType)
-            .arg(latitude, 0, 'f', 5)
-            .arg(longitude, 0, 'f', 5));
-    _pendingGraphicMode.clear();
-    _pendingGraphicName.clear();
-    handledGraphic = true;
-    this->syncScenarioStateToUi();
-  } else if (_pendingGraphicMode == QStringLiteral("AreaPolygon")) {
-    const QVariantMap capturedPoint = {
-        {QStringLiteral("longitude"), longitude},
-        {QStringLiteral("latitude"), latitude},
-        {QStringLiteral("altitudeMeters"), graphicAltitude},
-    };
-    if (_pendingAreaPoints.size() >= 3) {
-      const QVariantMap& firstPoint = _pendingAreaPoints.first();
-      const double closeDistanceMeters = distanceMeters(
-          latitude,
-          longitude,
-          firstPoint.value(QStringLiteral("latitude")).toDouble(),
-          firstPoint.value(QStringLiteral("longitude")).toDouble());
-      if (closeDistanceMeters <= kPolygonCloseDistanceMeters) {
-        AreaDefinition area;
-        area.id = _pendingGraphicName;
-        area.name = _pendingGraphicName;
-        area.areaType = QStringLiteral("Polygon");
-        area.centerLongitude = firstPoint.value(QStringLiteral("longitude")).toDouble();
-        area.centerLatitude = firstPoint.value(QStringLiteral("latitude")).toDouble();
-        area.centerAltitudeMeters = firstPoint.value(QStringLiteral("altitudeMeters")).toDouble();
-        for (const QVariantMap& pointSummary : _pendingAreaPoints) {
-          RoutePoint point;
-          point.longitude = pointSummary.value(QStringLiteral("longitude")).toDouble();
-          point.latitude = pointSummary.value(QStringLiteral("latitude")).toDouble();
-          point.altitudeMeters = pointSummary.value(QStringLiteral("altitudeMeters")).toDouble();
-          area.points.push_back(point);
-        }
-        this->_scenarioState->addArea(area);
-        this->clearDraftGraphicFromMap(_pendingGraphicName + QStringLiteral(" (draft)"));
-        this->_ui->statusLabel->setText(
-            QStringLiteral("Polygon area %1 creada con %2 puntos.")
-                .arg(_pendingGraphicName)
-                .arg(area.points.size()));
-        _pendingGraphicMode.clear();
-        _pendingGraphicName.clear();
-        _pendingAreaPoints.clear();
-        handledGraphic = true;
-        this->syncScenarioStateToUi();
-      } else {
-        _pendingAreaPoints.push_back(capturedPoint);
-        QVariantMap draftSummary = makeTrackSummary(
-            _pendingGraphicName + QStringLiteral(" (draft)"),
-            QStringLiteral("Area"),
-            QStringLiteral("Graphic"),
-            QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
-            formatPosition(latitude, longitude),
-            QStringLiteral("Polygon draft"),
-            latitude,
-            longitude);
-        draftSummary.insert(QStringLiteral("type"), QStringLiteral("Area"));
-        draftSummary.insert(QStringLiteral("areaType"), QStringLiteral("Polygon"));
-        draftSummary.insert(QStringLiteral("radiusMeters"), 0.0);
-        draftSummary.insert(QStringLiteral("semiMajorAxisMeters"), 0.0);
-        draftSummary.insert(QStringLiteral("semiMinorAxisMeters"), 0.0);
-        draftSummary.insert(QStringLiteral("rotationDegrees"), 0.0);
-        QVariantList areaPoints;
-        for (const QVariantMap& pointSummary : _pendingAreaPoints) {
-          areaPoints.push_back(pointSummary);
-        }
-        draftSummary.insert(QStringLiteral("areaPoints"), areaPoints);
-        this->sendDraftGraphicToMap(draftSummary);
-        this->_ui->statusLabel->setText(
-            QStringLiteral("Punto %1 del polygon capturado. Para cerrar, pincha cerca del primer punto.")
-                .arg(_pendingAreaPoints.size()));
-        this->beginGraphicCoordinatePick();
-        return;
-      }
-    } else {
-      _pendingAreaPoints.push_back(capturedPoint);
-      QVariantMap draftSummary = makeTrackSummary(
-          _pendingGraphicName + QStringLiteral(" (draft)"),
-          QStringLiteral("Area"),
-          QStringLiteral("Graphic"),
-          QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
-          formatPosition(latitude, longitude),
-          QStringLiteral("Polygon draft"),
-          latitude,
-          longitude);
-      draftSummary.insert(QStringLiteral("type"), QStringLiteral("Area"));
-      draftSummary.insert(QStringLiteral("areaType"), QStringLiteral("Polygon"));
-      draftSummary.insert(QStringLiteral("radiusMeters"), 0.0);
-      draftSummary.insert(QStringLiteral("semiMajorAxisMeters"), 0.0);
-      draftSummary.insert(QStringLiteral("semiMinorAxisMeters"), 0.0);
-      draftSummary.insert(QStringLiteral("rotationDegrees"), 0.0);
-      QVariantList areaPoints;
-      for (const QVariantMap& pointSummary : _pendingAreaPoints) {
-        areaPoints.push_back(pointSummary);
-      }
-      draftSummary.insert(QStringLiteral("areaPoints"), areaPoints);
-      this->sendDraftGraphicToMap(draftSummary);
-      this->_ui->statusLabel->setText(
-          QStringLiteral("Punto %1 del polygon capturado. Sigue anadiendo puntos; para cerrar, pincha cerca del primero.")
-              .arg(_pendingAreaPoints.size()));
-      this->beginGraphicCoordinatePick();
-      return;
-    }
+  if (this->_graphicPickCoordinator->handleCoordinate(longitude, latitude, height)) {
+    return;
   }
 
-  if (this->_isPickingBombTarget) {
-    const QString launcherName = this->_bombTargetPickLauncherName.trimmed();
-    this->_isPickingBombTarget = false;
-    this->_bombTargetPickLauncherName.clear();
-
-    const Entity* launcher = this->findEntityByName(launcherName);
-    const int bombCount =
-        launcher ? weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
-    if (!launcher || launcher->destroyed || bombCount <= 0) {
-      this->_ui->statusLabel->setText(
-          QStringLiteral("No se pudo programar el release de bomba para %1.")
-              .arg(launcherName));
-      return;
-    }
-
-    this->queuePendingBombRelease(
-        launcherName,
-        latitude,
-        longitude,
-        0.0,
-        attackPointLabel(latitude, longitude),
-        QStringLiteral("Pick on map"));
+  if (this->_bombReleaseController->isPickingMode()) {
+    this->handleBombPickCoordinate(longitude, latitude);
     return;
   }
 
@@ -2447,12 +1220,33 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
     });
   }
 
-  if (!handledGraphic) {
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
+          .arg(latitude,  0, 'f', 5)
+          .arg(longitude, 0, 'f', 5));
+}
+
+void MainWindow::handleBombPickCoordinate(double longitude, double latitude) {
+  const QString launcherName = this->_bombReleaseController->pickingLauncherName();
+  this->_bombReleaseController->cancelPickMode();
+
+  const Entity* launcher = this->findEntityByName(launcherName);
+  const int bombCount =
+      launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
+  if (!launcher || launcher->destroyed || bombCount <= 0) {
     this->_ui->statusLabel->setText(
-        QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
-            .arg(latitude, 0, 'f', 5)
-            .arg(longitude, 0, 'f', 5));
+        QStringLiteral("No se pudo programar el release de bomba para %1.")
+            .arg(launcherName));
+    return;
   }
+
+  this->queuePendingBombRelease(
+      launcherName,
+      latitude,
+      longitude,
+      0.0,
+      domain::attackPointLabel(latitude, longitude),
+      QStringLiteral("Pick on map"));
 }
 
 void MainWindow::openSelectedEntityDetails() {
@@ -2479,48 +1273,15 @@ void MainWindow::reportMapStatus(const QString& message) {
 }
 
 void MainWindow::startSimulation() {
-  if (this->_simulationRunning) {
-    return;
-  }
-
-  this->_simulationRunning = true;
-  this->_simulationTimer->start();
-#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-  if (this->_webView) {
-    this->_webView->page()->runJavaScript(
-        QStringLiteral("window.refreshQtTrackedEntity && window.refreshQtTrackedEntity();"));
-  }
-#endif
-  this->_ui->statusLabel->setText(QStringLiteral("Simulacion en marcha."));
-  this->appendLogMessage(QStringLiteral("Simulation started."));
-  this->updateSimulationControls();
+  this->_simulationLifecycleController->start();
 }
 
 void MainWindow::pauseSimulation() {
-  if (!this->_simulationRunning) {
-    return;
-  }
-
-  this->_simulationRunning = false;
-  this->_simulationTimer->stop();
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(QStringLiteral("Simulacion en pausa."));
-  this->appendLogMessage(QStringLiteral("Simulation paused."));
-  this->updateSimulationControls();
+  this->_simulationLifecycleController->pause();
 }
 
 void MainWindow::stopSimulation() {
-  this->_simulationRunning = false;
-  this->_simulationTimer->stop();
-  this->_isPickingBombTarget = false;
-  this->_bombTargetPickLauncherName.clear();
-  this->_autoBombReleaseCooldownSeconds.clear();
-  this->clearPendingBombRelease();
-  this->_scenarioState->stopMission();
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(QStringLiteral("Mision detenida. Todas las tasks han terminado."));
-  this->appendLogMessage(QStringLiteral("Simulation stopped. Mission state cleared."));
-  this->updateSimulationControls();
+  this->_simulationLifecycleController->stop();
 }
 
 void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex&) {
@@ -2666,25 +1427,13 @@ void MainWindow::toggleTacticalOverlays(bool enabled) {
 
 void MainWindow::sendTrackToMap(const QVariantMap& summary, bool focus) {
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-  if (!this->_webView || summary.isEmpty()) {
+  if (!this->_webView) {
     return;
   }
-
-  const QJsonObject object = mapToJsonObject(summary);
-  const QString json = QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
-  const QString type = summary.value(QStringLiteral("type")).toString();
-  if (type == QStringLiteral("Waypoint") || type == QStringLiteral("Route") ||
-      type == QStringLiteral("Area")) {
-    const QString script = QStringLiteral(
-        "window.addOrUpdateQtGraphic && window.addOrUpdateQtGraphic(%1, %2);")
-                               .arg(json, focus ? QStringLiteral("true") : QStringLiteral("false"));
+  const QString script = presentation::MapBridgeScripts::buildAddOrUpdateScript(summary, focus);
+  if (!script.isEmpty()) {
     this->_webView->page()->runJavaScript(script);
-    return;
   }
-  const QString script = QStringLiteral(
-      "window.addOrUpdateQtTrack && window.addOrUpdateQtTrack(%1, %2);")
-                             .arg(json, focus ? QStringLiteral("true") : QStringLiteral("false"));
-  this->_webView->page()->runJavaScript(script);
 #else
   Q_UNUSED(summary)
   Q_UNUSED(focus)
@@ -2693,17 +1442,13 @@ void MainWindow::sendTrackToMap(const QVariantMap& summary, bool focus) {
 
 void MainWindow::removeTrackFromMap(const QString& trackName) {
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-  if (!this->_webView || trackName.trimmed().isEmpty()) {
+  if (!this->_webView) {
     return;
   }
-
-  const QString trackJson =
-      QString::fromUtf8(QJsonDocument(QJsonArray{trackName}).toJson(QJsonDocument::Compact));
-  const QString script = QStringLiteral(
-      "(window.removeQtTrack && window.removeQtTrack(%1));"
-      "(window.removeQtGraphic && window.removeQtGraphic(%1));")
-                             .arg(trackJson.mid(1).chopped(1));
-  this->_webView->page()->runJavaScript(script);
+  const QString script = presentation::MapBridgeScripts::buildRemoveScript(trackName);
+  if (!script.isEmpty()) {
+    this->_webView->page()->runJavaScript(script);
+  }
 #else
   Q_UNUSED(trackName)
 #endif
@@ -2711,16 +1456,13 @@ void MainWindow::removeTrackFromMap(const QString& trackName) {
 
 void MainWindow::sendDraftGraphicToMap(const QVariantMap& summary) {
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-  if (!this->_webView || summary.isEmpty()) {
+  if (!this->_webView) {
     return;
   }
-
-  const QJsonObject object = mapToJsonObject(summary);
-  const QString json = QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
-  const QString script = QStringLiteral(
-      "window.addOrUpdateQtDraftGraphic && window.addOrUpdateQtDraftGraphic(%1);")
-                             .arg(json);
-  this->_webView->page()->runJavaScript(script);
+  const QString script = presentation::MapBridgeScripts::buildAddOrUpdateDraftScript(summary);
+  if (!script.isEmpty()) {
+    this->_webView->page()->runJavaScript(script);
+  }
 #else
   Q_UNUSED(summary)
 #endif
@@ -2728,16 +1470,13 @@ void MainWindow::sendDraftGraphicToMap(const QVariantMap& summary) {
 
 void MainWindow::clearDraftGraphicFromMap(const QString& name) {
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-  if (!this->_webView || name.trimmed().isEmpty()) {
+  if (!this->_webView) {
     return;
   }
-
-  const QString json =
-      QString::fromUtf8(QJsonDocument(QJsonArray{name}).toJson(QJsonDocument::Compact));
-  const QString script = QStringLiteral(
-      "window.removeQtDraftGraphic && window.removeQtDraftGraphic(%1);")
-                             .arg(json.mid(1).chopped(1));
-  this->_webView->page()->runJavaScript(script);
+  const QString script = presentation::MapBridgeScripts::buildRemoveDraftScript(name);
+  if (!script.isEmpty()) {
+    this->_webView->page()->runJavaScript(script);
+  }
 #else
   Q_UNUSED(name)
 #endif
@@ -2797,69 +1536,40 @@ void MainWindow::syncDetectedContactsToUi() {
 
   this->_detectedContactsModel->removeRows(0, this->_detectedContactsModel->rowCount());
 
-  const QVector<Entity>& entities = this->_scenarioState->entities();
-  const auto findEntityByName = [&entities](const QString& name) -> const Entity* {
-    for (const Entity& entity : entities) {
-      if (entity.name == name) {
-        return &entity;
-      }
-    }
-    return nullptr;
-  };
-
   const QString lastSeenText =
       QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
-  QSet<QString> insertedPairs;
   int restoredRow = -1;
 
-  for (const Entity& observer : entities) {
-    for (const SensorContact& contact : observer.sensorContacts) {
-      if (!contact.detected) {
-        continue;
+  const QVector<presentation::DetectedContactRow> rows =
+      presentation::buildDetectedContactRows(this->_scenarioState->entities());
+
+  for (const presentation::DetectedContactRow& row : rows) {
+    auto* observerItem = new QStandardItem(row.observerName);
+    observerItem->setData(row.observerName, kDetectedContactObserverRole);
+    observerItem->setData(row.targetName, kDetectedContactTargetRole);
+
+    QList<QStandardItem*> rowItems{
+        observerItem,
+        new QStandardItem(row.targetName),
+        new QStandardItem(row.forceLabel),
+        new QStandardItem(row.typeLabel),
+        new QStandardItem(row.rangeText),
+        new QStandardItem(row.bearingText),
+        new QStandardItem(row.altitudeText),
+        new QStandardItem(lastSeenText),
+    };
+
+    for (QStandardItem* item : rowItems) {
+      if (item) {
+        item->setEditable(false);
       }
+    }
 
-      const QString pairKey =
-          observer.name + QStringLiteral("::") + contact.targetEntityName;
-      if (insertedPairs.contains(pairKey)) {
-        continue;
-      }
+    this->_detectedContactsModel->appendRow(rowItems);
 
-      const Entity* target = findEntityByName(contact.targetEntityName);
-      if (!target) {
-        continue;
-      }
-
-      insertedPairs.insert(pairKey);
-
-      auto* observerItem = new QStandardItem(observer.name);
-      observerItem->setData(observer.name, kDetectedContactObserverRole);
-      observerItem->setData(contact.targetEntityName, kDetectedContactTargetRole);
-
-      QList<QStandardItem*> rowItems{
-          observerItem,
-          new QStandardItem(target->name),
-          new QStandardItem(forceIdentifierLabel(target->forceIdentifier)),
-          new QStandardItem(target->type.trimmed().isEmpty() ? target->category : target->type),
-          new QStandardItem(
-              QStringLiteral("%1 km").arg(contact.rangeMeters / 1000.0, 0, 'f', 1)),
-          new QStandardItem(
-              QStringLiteral("%1 deg").arg(contact.bearingDegrees, 0, 'f', 1)),
-          new QStandardItem(QStringLiteral("%1 m").arg(target->altitude)),
-          new QStandardItem(lastSeenText),
-      };
-
-      for (QStandardItem* item : rowItems) {
-        if (item) {
-          item->setEditable(false);
-        }
-      }
-
-      this->_detectedContactsModel->appendRow(rowItems);
-
-      if (observer.name == selectedObserverName &&
-          contact.targetEntityName == selectedContactName) {
-        restoredRow = this->_detectedContactsModel->rowCount() - 1;
-      }
+    if (row.observerName == selectedObserverName &&
+        row.targetName == selectedContactName) {
+      restoredRow = this->_detectedContactsModel->rowCount() - 1;
     }
   }
 
@@ -2879,15 +1589,44 @@ void MainWindow::syncDetectedContactsToUi() {
 
 void MainWindow::syncScenarioStateToUi() {
   this->validatePendingBombRelease();
-  const QString selectedEntityNameBeforeSync = this->selectedEntityName();
-  bool selectedEntityRemoved = false;
+  const QString prevSelected = this->selectedEntityName();
 
-  const auto clearQtObjectSelection = [this]() {
-    if (QItemSelectionModel* selectionModel = this->_ui->objectsTreeView->selectionModel()) {
-      selectionModel->clearSelection();
-      selectionModel->clearCurrentIndex();
+  if (this->syncEntityTreeToUi(prevSelected)) {
+    this->_applyingMapSelection = true;
+    if (QItemSelectionModel* sel = this->_ui->objectsTreeView->selectionModel()) {
+      sel->clearSelection();
+      sel->clearCurrentIndex();
     }
-  };
+    this->_applyingMapSelection = false;
+    this->setSelectedTrackDetails(QVariantMap{});
+#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
+    clearQtTrackSelectionInMap(this->_webView);
+#endif
+    this->_ui->statusLabel->setText(QStringLiteral("No hay entidad seleccionada."));
+  }
+
+  this->syncActiveMunitionTracksToMap();
+  this->syncTransientEffectsToMap();
+  this->syncPendingBombTargetToMap();
+  this->syncDetectedContactsToUi();
+
+  for (const QString& message : this->_scenarioState->takePendingEventLogMessages()) {
+    this->appendLogMessage(message);
+    if (message.contains(QStringLiteral("behavior"), Qt::CaseInsensitive)) {
+      this->_ui->statusLabel->setText(message);
+    }
+  }
+
+  if (!this->_simulationRunning) {
+    this->rebuildTacticalGraphicsTree();
+    this->syncTacticalGraphicsToMap();
+  }
+
+  this->updateTaskQuickBarState();
+}
+
+bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync) {
+  bool selectedEntityRemoved = false;
 
   std::function<void(QStandardItem*)> removeMissingFromBranch =
       [this, &removeMissingFromBranch, &selectedEntityRemoved, &selectedEntityNameBeforeSync](
@@ -2895,7 +1634,6 @@ void MainWindow::syncScenarioStateToUi() {
     if (!branch) {
       return;
     }
-
     for (int row = branch->rowCount() - 1; row >= 0; --row) {
       QStandardItem* child = branch->child(row);
       if (!child) {
@@ -2908,8 +1646,8 @@ void MainWindow::syncScenarioStateToUi() {
         }
         continue;
       }
-
-      const QString name = child->data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+      const QString name =
+          child->data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
       bool exists = false;
       for (const Entity& entity : this->_scenarioState->entities()) {
         if (entity.name == name) {
@@ -2933,23 +1671,18 @@ void MainWindow::syncScenarioStateToUi() {
   removeMissingFromBranch(this->_opposingRootItem);
   removeMissingFromBranch(this->_neutralRootItem);
 
-  if (selectedEntityRemoved) {
-    this->_applyingMapSelection = true;
-    clearQtObjectSelection();
-    this->_applyingMapSelection = false;
-    this->setSelectedTrackDetails(QVariantMap{});
-#if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
-    clearQtTrackSelectionInMap(this->_webView);
-#endif
-    this->_ui->statusLabel->setText(QStringLiteral("No hay entidad seleccionada."));
+  {
+    QSet<QString> validNames;
+    for (const Entity& entity : this->_scenarioState->entities()) {
+      validNames.insert(entity.name);
+    }
+    this->_entityVisualStateManager->pruneTo(validNames);
+    this->_entityHomePositionTracker->pruneTo(validNames);
   }
-
-  this->pruneEntityVisualStates();
-  this->pruneEntityHomePositions();
   this->pruneEntityPlans();
 
   for (const Entity& entity : this->_scenarioState->entities()) {
-    this->rememberEntityHomePosition(entity);
+    this->_entityHomePositionTracker->remember(entity);
 
     QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entity.name);
     if (!item) {
@@ -2972,95 +1705,60 @@ void MainWindow::syncScenarioStateToUi() {
     }
   }
 
-  QSet<QString> currentMunitionTrackNames;
-  for (const ActiveMunition& munition : this->_scenarioState->activeMunitions()) {
-    currentMunitionTrackNames.insert(munition.id);
-    this->sendTrackToMap(makeMunitionTrackSummary(munition), false);
-  }
-
-  for (const QString& previousName : this->_activeMunitionTrackNames) {
-    if (!currentMunitionTrackNames.contains(previousName)) {
-      this->removeTrackFromMap(previousName);
-    }
-  }
-  this->_activeMunitionTrackNames = currentMunitionTrackNames;
-
-  QSet<QString> currentEffectTrackNames;
-  for (const TransientEffect& effect : this->_scenarioState->transientEffects()) {
-    currentEffectTrackNames.insert(effect.id);
-    this->sendTrackToMap(makeTransientEffectTrackSummary(effect), false);
-  }
-
-  for (const QString& previousName : this->_activeEffectTrackNames) {
-    if (!currentEffectTrackNames.contains(previousName)) {
-      this->removeTrackFromMap(previousName);
-    }
-  }
-  this->_activeEffectTrackNames = currentEffectTrackNames;
-
-  const QString pendingBombTargetTrackName = QStringLiteral("Bomb Target");
-  const QString pendingBombTargetLineTrackName = QStringLiteral("Bomb Target Line");
-  if (this->_pendingBombRelease.pending) {
-    QString teamLabel = QStringLiteral("Friendly");
-    QString releaseStateLabel = QStringLiteral("Armed");
-    double distanceToBombTargetMeters = -1.0;
-    if (const Entity* launcher =
-            this->findEntityByName(this->_pendingBombRelease.launcherEntityName)) {
-      teamLabel = forceIdentifierLabel(launcher->forceIdentifier);
-      distanceToBombTargetMeters = distanceMeters(
-          launcher->latitude,
-          launcher->longitude,
-          this->_pendingBombRelease.targetLatitude,
-          this->_pendingBombRelease.targetLongitude);
-      const BombReleaseGateEvaluation evaluation = evaluateBombReleaseGate(
-          *launcher,
-          this->_pendingBombRelease.targetLatitude,
-          this->_pendingBombRelease.targetLongitude,
-          this->_pendingBombRelease.targetAltitudeMeters);
-      releaseStateLabel = evaluation.stateLabel();
-      this->sendTrackToMap(
-          makePendingBombTargetLineTrackSummary(
-              *launcher,
-              this->_pendingBombRelease.targetLatitude,
-              this->_pendingBombRelease.targetLongitude,
-              this->_pendingBombRelease.targetAltitudeMeters,
-              teamLabel,
-              releaseStateLabel),
-          false);
-    } else {
-      this->removeTrackFromMap(pendingBombTargetLineTrackName);
-    }
-    this->sendTrackToMap(
-        makePendingBombTargetTrackSummary(
-            this->_pendingBombRelease.targetLabel,
-            this->_pendingBombRelease.targetLatitude,
-            this->_pendingBombRelease.targetLongitude,
-            this->_pendingBombRelease.targetAltitudeMeters,
-            teamLabel,
-            releaseStateLabel,
-            distanceToBombTargetMeters),
-        false);
-  } else {
-    this->removeTrackFromMap(pendingBombTargetTrackName);
-    this->removeTrackFromMap(pendingBombTargetLineTrackName);
-  }
-
-  this->syncDetectedContactsToUi();
-
-  for (const QString& message : this->_scenarioState->takePendingEventLogMessages()) {
-    this->appendLogMessage(message);
-    if (message.contains(QStringLiteral("behavior"), Qt::CaseInsensitive)) {
-      this->_ui->statusLabel->setText(message);
-    }
-  }
-
-  if (!this->_simulationRunning) {
-    this->rebuildTacticalGraphicsTree();
-    this->syncTacticalGraphicsToMap();
-  }
-
-  this->updateTaskQuickBarState();
+  return selectedEntityRemoved;
 }
+
+void MainWindow::syncActiveMunitionTracksToMap() {
+  this->_activeMunitionTrackNames = presentation::syncCollectionToMap<ActiveMunition>(
+      this->_scenarioState->activeMunitions(),
+      [](const ActiveMunition& m) { return m.id; },
+      [](const ActiveMunition& m) { return presentation::makeMunitionTrackSummary(m); },
+      this->_activeMunitionTrackNames,
+      [this](const QVariantMap& s, bool sel) { this->sendTrackToMap(s, sel); },
+      [this](const QString& id) { this->removeTrackFromMap(id); });
+}
+
+void MainWindow::syncTransientEffectsToMap() {
+  this->_activeEffectTrackNames = presentation::syncCollectionToMap<TransientEffect>(
+      this->_scenarioState->transientEffects(),
+      [](const TransientEffect& e) { return e.id; },
+      [](const TransientEffect& e) { return presentation::makeTransientEffectTrackSummary(e); },
+      this->_activeEffectTrackNames,
+      [this](const QVariantMap& s, bool sel) { this->sendTrackToMap(s, sel); },
+      [this](const QString& id) { this->removeTrackFromMap(id); });
+}
+
+void MainWindow::syncPendingBombTargetToMap() {
+  presentation::syncPendingBombTargetToMap(
+      this->_bombReleaseController->pendingRelease(),
+      [this](const QString& name) { return this->findEntityByName(name); },
+      [this](const QVariantMap& s, bool f) { this->sendTrackToMap(s, f); },
+      [this](const QString& id) { this->removeTrackFromMap(id); });
+}
+
+static const char* kTaskQuickBarStyleSheet =
+    "QFrame#taskQuickBar {"
+    "  background-color: rgba(34, 34, 34, 225);"
+    "  border: 1px solid rgba(105, 115, 128, 180);"
+    "  border-radius: 8px;"
+    "}"
+    "QToolButton#taskQuickBarButton {"
+    "  background-color: transparent;"
+    "  border: 1px solid transparent;"
+    "  border-radius: 4px;"
+    "  padding: 2px;"
+    "}"
+    "QToolButton#taskQuickBarButton:hover:enabled {"
+    "  background-color: rgba(68, 87, 108, 200);"
+    "  border-color: rgba(120, 146, 173, 200);"
+    "}"
+    "QToolButton#taskQuickBarButton:pressed:enabled {"
+    "  background-color: rgba(52, 69, 88, 220);"
+    "}"
+    "QToolButton#taskQuickBarButton:disabled {"
+    "  background-color: transparent;"
+    "  border-color: transparent;"
+    "}";
 
 void MainWindow::createTaskQuickBar() {
   if (this->_taskQuickBar) {
@@ -3070,35 +1768,21 @@ void MainWindow::createTaskQuickBar() {
   auto* panel = new QFrame(this->_ui->viewerHost);
   panel->setObjectName(QStringLiteral("taskQuickBar"));
   panel->setFrameShape(QFrame::StyledPanel);
-  panel->setStyleSheet(QStringLiteral(
-      "QFrame#taskQuickBar {"
-      "  background-color: rgba(34, 34, 34, 225);"
-      "  border: 1px solid rgba(105, 115, 128, 180);"
-      "  border-radius: 8px;"
-      "}"
-      "QToolButton#taskQuickBarButton {"
-      "  background-color: transparent;"
-      "  border: 1px solid transparent;"
-      "  border-radius: 4px;"
-      "  padding: 2px;"
-      "}"
-      "QToolButton#taskQuickBarButton:hover:enabled {"
-      "  background-color: rgba(68, 87, 108, 200);"
-      "  border-color: rgba(120, 146, 173, 200);"
-      "}"
-      "QToolButton#taskQuickBarButton:pressed:enabled {"
-      "  background-color: rgba(52, 69, 88, 220);"
-      "}"
-      "QToolButton#taskQuickBarButton:disabled {"
-      "  background-color: transparent;"
-      "  border-color: transparent;"
-      "}"
-  ));
+  panel->setStyleSheet(QString::fromLatin1(kTaskQuickBarStyleSheet));
 
   auto* layout = new QHBoxLayout(panel);
   layout->setContentsMargins(6, 6, 6, 6);
   layout->setSpacing(3);
 
+  this->populateTaskQuickBarButtons(panel, layout);
+
+  panel->adjustSize();
+  panel->show();
+  panel->raise();
+  this->_taskQuickBar = panel;
+}
+
+void MainWindow::populateTaskQuickBarButtons(QFrame* panel, QHBoxLayout* layout) {
   auto addButton = [this, panel, layout](
                        const QString& iconFileName,
                        const QString& fallbackGlyph,
@@ -3111,7 +1795,8 @@ void MainWindow::createTaskQuickBar() {
     button->setAutoRaise(false);
     button->setFixedSize(kTaskQuickBarButtonPixels, kTaskQuickBarButtonPixels);
     button->setIconSize(QSize(kTaskQuickBarIconPixels, kTaskQuickBarIconPixels));
-    button->setIcon(loadTaskQuickBarIcon(iconFileName, fallbackGlyph, accent));
+    button->setIcon(presentation::loadTaskQuickBarIcon(
+        taskQuickBarIconPath(iconFileName), fallbackGlyph, accent));
     button->setToolTip(tooltip);
     layout->addWidget(button);
     this->_taskQuickButtons.append(button);
@@ -3183,11 +1868,6 @@ void MainWindow::createTaskQuickBar() {
       QColor(QStringLiteral("#ff6c52")),
       QStringLiteral("Fire At\nPlaceholder"),
       [this]() { this->showTaskQuickPlaceholder(QStringLiteral("Fire At")); });
-
-  panel->adjustSize();
-  panel->show();
-  panel->raise();
-  this->_taskQuickBar = panel;
 }
 
 void MainWindow::positionTaskQuickBar() {
@@ -3234,377 +1914,67 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   const bool entityDestroyed = this->selectedEntityIsDestroyed();
   const QString entityName = this->selectedEntityName();
   const Entity* entity = this->findEntityByName(entityName);
-  const bool canUseWeapons = entity && entityCanUseMissileActions(*entity);
-  const int missileCount =
-      entity ? weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
-  const int bombCount =
-      entity ? weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
-  const int detectedMissileTargetCount =
-      entity ? detectedMissileTargetsInRange(this->_scenarioState, *entity).size() : 0;
-  QMenu* taskMenu = menu.addMenu(QStringLiteral("Task"));
-  QMenu* movementMenu = taskMenu->addMenu(QStringLiteral("Movement"));
-  movementMenu->addAction(
-      QStringLiteral("Fly Heading / Altitude / Speed..."),
-      this,
-      &MainWindow::assignFlyHeadingAltitudeSpeedTask);
-  movementMenu->addAction(
-      QStringLiteral("Move To Location..."),
-      this,
-      &MainWindow::assignMoveToLocationTask);
-  movementMenu->addAction(
-      QStringLiteral("Move To Waypoint..."),
-      this,
-      &MainWindow::assignMoveToWaypointTask);
-  movementMenu->addAction(
-      QStringLiteral("Move Along Route..."),
-      this,
-      &MainWindow::assignMoveAlongRouteTask);
-  movementMenu->addAction(
-      QStringLiteral("Patrol Route..."),
-      this,
-      &MainWindow::assignPatrolRouteTask);
-  movementMenu->addAction(
-      QStringLiteral("Orbit / Hold (Location)..."),
-      this,
-      &MainWindow::assignOrbitHoldLocationTask);
-  movementMenu->addAction(
-      QStringLiteral("Return To Base"),
-      this,
-      &MainWindow::assignReturnToBaseTask);
-  movementMenu->addAction(
-      QStringLiteral("Patrol Area..."),
-      this,
-      &MainWindow::assignPatrolAreaTask);
-  movementMenu->addAction(
-      QStringLiteral("Orbit Area..."),
-      this,
-      &MainWindow::assignOrbitAreaTask);
-  movementMenu->addAction(
-      QStringLiteral("Follow Entity..."),
-      this,
-      &MainWindow::assignFollowEntityTask);
-  QMenu* attackTaskMenu = taskMenu->addMenu(QStringLiteral("Attack"));
-  attackTaskMenu->addAction(
-      QStringLiteral("Attack Air..."),
-      this,
-      &MainWindow::assignAttackAirTask);
-  attackTaskMenu->addAction(
-      QStringLiteral("Attack Surface..."),
-      this,
-      &MainWindow::assignAttackSurfaceTask);
-  taskMenu->addSeparator();
-  taskMenu->addAction(QStringLiteral("Clear Current Task"), this, &MainWindow::clearSelectedTask);
-  taskMenu->setEnabled(!entityDestroyed);
 
-  QMenu* setMenu = menu.addMenu(QStringLiteral("Set"));
-  setMenu->addAction(QStringLiteral("Heading..."), this, &MainWindow::setSelectedEntityHeading);
-  setMenu->addAction(QStringLiteral("Altitude..."), this, &MainWindow::setSelectedEntityAltitude);
-  setMenu->addAction(QStringLiteral("Speed..."), this, &MainWindow::setSelectedEntitySpeed);
-  setMenu->setEnabled(!entityDestroyed);
+  const QVariantMap summaryMap =
+      this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
 
-  QMenu* behaviorMenu = menu.addMenu(QStringLiteral("Behavior"));
-  QActionGroup* behaviorGroup = new QActionGroup(behaviorMenu);
-  behaviorGroup->setExclusive(true);
-  const QString currentBehaviorMode = entity && !entity->behaviorMode.trimmed().isEmpty()
-      ? entity->behaviorMode.trimmed()
-      : QStringLiteral("Manual");
-  for (const QString& behaviorMode : behaviorModeOptions()) {
-    QAction* behaviorAction = behaviorMenu->addAction(behaviorMode);
-    behaviorAction->setCheckable(true);
-    behaviorAction->setChecked(
-        behaviorMode.compare(currentBehaviorMode, Qt::CaseInsensitive) == 0);
-    behaviorGroup->addAction(behaviorAction);
-    QObject::connect(
-        behaviorAction,
-        &QAction::triggered,
-        this,
-        [this, behaviorMode]() {
-          this->setSelectedEntityBehaviorMode(behaviorMode);
-        });
-  }
-  behaviorMenu->setEnabled(entity && !entityDestroyed);
+  presentation::EntityContextMenuState state =
+      presentation::buildEntityContextMenuState(
+          entity,
+          this->_scenarioState,
+          this->_bombReleaseController->pendingRelease(),
+          this->_simulationRunning,
+          entityDestroyed,
+          summaryMap);
 
-  QAction* planAction = menu.addAction(QStringLiteral("Plan..."), this, &MainWindow::openEntityPlanDialog);
-  planAction->setEnabled(!entityDestroyed);
+  presentation::EntityContextMenuSlots actions;
+  actions.assignFlyHeadingAltitudeSpeedTask = [this]() { this->assignFlyHeadingAltitudeSpeedTask(); };
+  actions.assignMoveToLocationTask          = [this]() { this->assignMoveToLocationTask(); };
+  actions.assignMoveToWaypointTask          = [this]() { this->assignMoveToWaypointTask(); };
+  actions.assignMoveAlongRouteTask          = [this]() { this->assignMoveAlongRouteTask(); };
+  actions.assignPatrolRouteTask             = [this]() { this->assignPatrolRouteTask(); };
+  actions.assignOrbitHoldLocationTask       = [this]() { this->assignOrbitHoldLocationTask(); };
+  actions.assignReturnToBaseTask            = [this]() { this->assignReturnToBaseTask(); };
+  actions.assignPatrolAreaTask              = [this]() { this->assignPatrolAreaTask(); };
+  actions.assignOrbitAreaTask               = [this]() { this->assignOrbitAreaTask(); };
+  actions.assignFollowEntityTask            = [this]() { this->assignFollowEntityTask(); };
+  actions.assignAttackAirTask               = [this]() { this->assignAttackAirTask(); };
+  actions.assignAttackSurfaceTask           = [this]() { this->assignAttackSurfaceTask(); };
+  actions.clearSelectedTask                 = [this]() { this->clearSelectedTask(); };
+  actions.setSelectedEntityHeading          = [this]() { this->setSelectedEntityHeading(); };
+  actions.setSelectedEntityAltitude         = [this]() { this->setSelectedEntityAltitude(); };
+  actions.setSelectedEntitySpeed            = [this]() { this->setSelectedEntitySpeed(); };
+  actions.setSelectedEntityBehaviorMode     = [this](const QString& m) { this->setSelectedEntityBehaviorMode(m); };
+  actions.openEntityPlanDialog              = [this]() { this->openEntityPlanDialog(); };
+  actions.addMissileToSelectedEntity        = [this]() { this->addMissileToSelectedEntity(); };
+  actions.addBombToSelectedEntity           = [this]() { this->addBombToSelectedEntity(); };
+  actions.launchMissileFromSelectedEntity   = [this]() { this->launchMissileFromSelectedEntity(); };
+  actions.launchMissileAtSelectedEntity     = [this]() { this->launchMissileAtSelectedEntity(); };
+  actions.releaseBombFromSelectedEntity     = [this]() { this->releaseBombFromSelectedEntity(); };
+  actions.releaseBombAtSurfaceEntity        = [this]() { this->releaseBombAtSurfaceEntity(); };
+  actions.releaseBombAtCustomCoordinates    = [this]() { this->releaseBombAtCustomCoordinates(); };
+  actions.cancelPendingBombRelease          = [this]() { this->cancelPendingBombRelease(); };
+  actions.openSelectedEntityDetails         = [this]() { this->openSelectedEntityDetails(); };
+  actions.focusSelectedEntityInMap          = [this]() { this->focusSelectedEntityInMap(); };
+  actions.deleteSelectedEntity              = [this]() { this->deleteSelectedEntity(); };
+  actions.restoreSelectedEntity             = [this]() { this->restoreSelectedEntity(); };
+  actions.destroySelectedEntity             = [this]() { this->destroySelectedEntity(); };
+  actions.setSelectedEntityHidden           = [this](bool h) { this->setSelectedEntityHidden(h); };
+  actions.setSelectedEntityRadarCoverageVisible = [this](bool v) { this->setSelectedEntityRadarCoverageVisible(v); };
+  actions.setSelectedEntityTrackHistoryVisible  = [this](bool v) { this->setSelectedEntityTrackHistoryVisible(v); };
 
-  QMenu* weaponsMenu = menu.addMenu(QStringLiteral("Weapons"));
-  QAction* addMissileAction = weaponsMenu->addAction(
-      QStringLiteral("Add Missile"),
-      this,
-      &MainWindow::addMissileToSelectedEntity);
-  QAction* addBombAction = weaponsMenu->addAction(
-      QStringLiteral("Add Bomb"),
-      this,
-      &MainWindow::addBombToSelectedEntity);
-  QAction* launchMissileAction = weaponsMenu->addAction(
-      QStringLiteral("Launch Missile (%1)").arg(missileCount),
-      this,
-      &MainWindow::launchMissileFromSelectedEntity);
-  QAction* launchMissileAtAction = weaponsMenu->addAction(
-      QStringLiteral("Launch Missile At..."),
-      this,
-      &MainWindow::launchMissileAtSelectedEntity);
-  QAction* releaseBombAction = weaponsMenu->addAction(
-      QStringLiteral("Release Bomb (%1)").arg(bombCount),
-      this,
-      &MainWindow::releaseBombFromSelectedEntity);
-  QMenu* releaseBombAtMenu = weaponsMenu->addMenu(QStringLiteral("Release Bomb At..."));
-  QAction* releaseBombAtSurfaceAction = releaseBombAtMenu->addAction(
-      QStringLiteral("Surface Entity..."),
-      this,
-      &MainWindow::releaseBombAtSurfaceEntity);
-  QAction* releaseBombAtCustomAction = releaseBombAtMenu->addAction(
-      QStringLiteral("Custom Coordinates..."),
-      this,
-      &MainWindow::releaseBombAtCustomCoordinates);
-  QAction* cancelBombReleaseAction = weaponsMenu->addAction(
-      QStringLiteral("Cancel Bomb Release"),
-      this,
-      &MainWindow::cancelPendingBombRelease);
-  addMissileAction->setEnabled(canUseWeapons);
-  addBombAction->setEnabled(canUseWeapons);
-  launchMissileAction->setEnabled(
-      canUseWeapons && missileCount > 0 && this->_simulationRunning);
-  launchMissileAtAction->setEnabled(
-      canUseWeapons &&
-      missileCount > 0 &&
-      this->_simulationRunning &&
-      detectedMissileTargetCount > 0);
-  releaseBombAction->setEnabled(
-      canUseWeapons && bombCount > 0 && this->_simulationRunning);
-  releaseBombAtMenu->setEnabled(
-      canUseWeapons && bombCount > 0 && this->_simulationRunning);
-  releaseBombAtSurfaceAction->setEnabled(
-      canUseWeapons && bombCount > 0 && this->_simulationRunning);
-  releaseBombAtCustomAction->setEnabled(
-      canUseWeapons && bombCount > 0 && this->_simulationRunning);
-  cancelBombReleaseAction->setEnabled(
-      this->_pendingBombRelease.pending &&
-      entity &&
-      this->_pendingBombRelease.launcherEntityName.compare(entity->name, Qt::CaseInsensitive) == 0);
-  if (canUseWeapons && missileCount > 0 && this->_simulationRunning &&
-      detectedMissileTargetCount <= 0) {
-    const QString message =
-        QStringLiteral("No detected air targets in missile range for %1.")
-            .arg(entityName);
-    launchMissileAtAction->setToolTip(message);
-    launchMissileAtAction->setStatusTip(message);
-  }
-
-  menu.addSeparator();
-  menu.addAction(QStringLiteral("Information..."), this, &MainWindow::openSelectedEntityDetails);
-  menu.addAction(QStringLiteral("Focus / Track Camera"), this, &MainWindow::focusSelectedEntityInMap);
-  menu.addSeparator();
-
-  QAction* editAction = menu.addAction(QStringLiteral("Edit..."));
-  QObject::connect(
-      editAction,
-      &QAction::triggered,
-      this,
-      [this]() { this->showContextMenuPlaceholder(QStringLiteral("Edit")); });
-
-  menu.addAction(QStringLiteral("Delete"), this, &MainWindow::deleteSelectedEntity);
-
-  QAction* hideAction = menu.addAction(QStringLiteral("Hide"));
-  hideAction->setCheckable(true);
-  hideAction->setChecked(
-      this->_ui->objectsTreeView->currentIndex()
-          .data(kTrackSummaryRole)
-          .toMap()
-          .value(QStringLiteral("hidden"))
-          .toBool());
-  QObject::connect(
-      hideAction,
-      &QAction::toggled,
-      this,
-      [this](bool hidden) { this->setSelectedEntityHidden(hidden); });
-
-  if (entityDestroyed) {
-    menu.addAction(QStringLiteral("Restore"), this, &MainWindow::restoreSelectedEntity);
-  } else {
-    menu.addAction(QStringLiteral("Destroyed"), this, &MainWindow::destroySelectedEntity);
-  }
-
-  menu.addSeparator();
-
-  QAction* radarCoverageAction = menu.addAction(QStringLiteral("Show Radar Coverage"));
-  radarCoverageAction->setCheckable(true);
-  radarCoverageAction->setChecked(
-      this->_ui->objectsTreeView->currentIndex()
-          .data(kTrackSummaryRole)
-          .toMap()
-          .value(QStringLiteral("radarCoverageVisible"))
-          .toBool());
-  QObject::connect(
-      radarCoverageAction,
-      &QAction::toggled,
-      this,
-      [this](bool visible) { this->setSelectedEntityRadarCoverageVisible(visible); });
-
-  QAction* trackHistoryAction = menu.addAction(QStringLiteral("Show Track History"));
-  trackHistoryAction->setCheckable(true);
-  trackHistoryAction->setChecked(
-      this->_ui->objectsTreeView->currentIndex()
-          .data(kTrackSummaryRole)
-          .toMap()
-          .value(QStringLiteral("trackHistoryVisible"))
-          .toBool());
-  QObject::connect(
-      trackHistoryAction,
-      &QAction::toggled,
-      this,
-      [this](bool visible) { this->setSelectedEntityTrackHistoryVisible(visible); });
+  presentation::populateEntityContextMenu(menu, state, actions);
 }
 
 bool MainWindow::applyEntityTask(const QString& entityName, const EntityTask& task, bool syncUi) {
-  if (entityName.isEmpty()) {
-    return false;
-  }
-
-  if (!this->_scenarioState->assignTask(entityName, task)) {
-    return false;
-  }
-
-  this->appendLogMessage(
-      QStringLiteral("Task %1 assigned to %2").arg(task.taskType, entityName));
-
-  Entity resolvedEntity;
-  bool foundEntity = false;
-  for (const Entity& entity : this->_scenarioState->entities()) {
-    if (entity.name != entityName) {
-      continue;
-    }
-    resolvedEntity = entity;
-    foundEntity = true;
-    break;
-  }
-  if (!foundEntity) {
-    return false;
-  }
-
-  if (domain::TaskStack* stack = this->_scenarioState->getTaskStack(entityName)) {
-    while (!stack->isEmpty()) {
-      stack->pop();
-    }
-    if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
-      double targetLat = resolvedEntity.currentTask.targetLatitude;
-      double targetLon = resolvedEntity.currentTask.targetLongitude;
-      double targetAlt = resolvedEntity.currentTask.targetAltitudeMeters;
-      double targetSpeed = resolvedEntity.currentTask.targetSpeedKnots;
-      if (task.taskType == "MoveToWaypoint" && !task.targetWaypointName.trimmed().isEmpty()) {
-        for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
-          if (waypoint.name == task.targetWaypointName) {
-            targetLat = waypoint.latitude;
-            targetLon = waypoint.longitude;
-            targetAlt = waypoint.altitudeMeters;
-            break;
-          }
-        }
-      }
-      stack->push(std::make_unique<domain::MoveToLocationTask>(
-          targetLat,
-          targetLon,
-          targetAlt,
-          targetSpeed));
-    } else if (task.taskType == "MoveAlongRoute") {
-      bool createdRouteTask = false;
-      for (const RouteGraphic& route : this->_scenarioState->routes()) {
-        if (route.name != resolvedEntity.currentTask.targetRouteName ||
-            route.points.isEmpty()) {
-          continue;
-        }
-        stack->push(std::make_unique<domain::RouteTask>(
-            route.points,
-            resolvedEntity.currentTask.targetSpeedKnots));
-        createdRouteTask = true;
-        break;
-      }
-      if (!createdRouteTask) {
-        stack->push(std::make_unique<domain::MoveToLocationTask>(
-            resolvedEntity.currentTask.targetLatitude,
-            resolvedEntity.currentTask.targetLongitude,
-            resolvedEntity.currentTask.targetAltitudeMeters,
-            resolvedEntity.currentTask.targetSpeedKnots));
-      }
-    } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
-      stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
-          task.targetHeadingDegrees,
-          static_cast<double>(task.targetAltitudeMeters),
-          task.targetSpeedKnots));
-    } else if (task.taskType == "FollowEntity") {
-      stack->push(std::make_unique<domain::FollowEntityTask>(
-          static_cast<double>(task.targetAltitudeMeters),
-          task.targetSpeedKnots));
-    } else if (task.taskType == "PatrolArea") {
-      for (const AreaDefinition& area : this->_scenarioState->areas()) {
-        if (area.name != resolvedEntity.currentTask.targetAreaName &&
-            area.id != resolvedEntity.currentTask.targetAreaName) {
-          continue;
-        }
-        stack->push(std::make_unique<domain::PatrolAreaTask>(
-            domain::buildPatrolRouteFromArea(area),
-            static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
-            resolvedEntity.currentTask.targetSpeedKnots));
-        break;
-      }
-      if (stack->isEmpty()) {
-        stack->push(std::make_unique<domain::OrbitAreaTask>(
-            resolvedEntity.currentTask.targetLatitude,
-            resolvedEntity.currentTask.targetLongitude,
-            resolvedEntity.currentTask.targetAreaRadiusMeters,
-            static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
-            resolvedEntity.currentTask.targetSpeedKnots,
-            true));
-      }
-    } else if (task.taskType == "OrbitArea") {
-      stack->push(std::make_unique<domain::OrbitAreaTask>(
-          resolvedEntity.currentTask.targetLatitude,
-          resolvedEntity.currentTask.targetLongitude,
-          resolvedEntity.currentTask.targetAreaRadiusMeters,
-          static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
-          resolvedEntity.currentTask.targetSpeedKnots,
-          false));
-    }
-  }
-
-  if (m_simulationEngine) {
-    if (task.taskType == "MoveToLocation" || task.taskType == "MoveToWaypoint") {
-      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignMoveTask>(
-          0,
-          entityName,
-          resolvedEntity.currentTask.targetLatitude,
-          resolvedEntity.currentTask.targetLongitude,
-          resolvedEntity.currentTask.targetAltitudeMeters,
-          resolvedEntity.currentTask.targetSpeedKnots));
-    } else if (task.taskType == "FlyHeadingAltitudeSpeed") {
-      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignFlyHeadingTask>(
-          entityName,
-          task.targetHeadingDegrees,
-          task.targetAltitudeMeters,
-          task.targetSpeedKnots));
-    } else if (task.taskType == "FollowEntity") {
-      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignFollowTask>(
-          entityName,
-          task.targetEntityName,
-          task.targetAltitudeMeters,
-          task.targetSpeedKnots));
-    } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
-      m_simulationEngine->enqueueCommand(std::make_unique<application::CmdAssignOrbitTask>(
-          entityName,
-          resolvedEntity.currentTask.targetAreaName,
-          resolvedEntity.currentTask.targetLatitude,
-          resolvedEntity.currentTask.targetLongitude,
-          resolvedEntity.currentTask.targetAreaRadiusMeters,
-          resolvedEntity.currentTask.targetAltitudeMeters,
-          resolvedEntity.currentTask.targetSpeedKnots,
-          (task.taskType == "PatrolArea")));
-    }
-  }
-
-  if (syncUi) {
-    this->syncScenarioStateToUi();
-  }
-  return true;
+  return application::applyEntityTask(
+      entityName,
+      task,
+      syncUi,
+      this->_scenarioState,
+      this->m_simulationEngine,
+      [this](const QString& msg) { this->appendLogMessage(msg); },
+      [this]() { this->syncScenarioStateToUi(); });
 }
 
 bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind, PlanStep& step) {
@@ -3614,752 +1984,31 @@ bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind,
   }
 
   const QVariantMap summary = this->makeEntityTrackSummary(*entity);
-  const bool hasRunningTaskTargets =
-      summary.value(QStringLiteral("taskEnabled")).toBool() &&
-      summary.value(QStringLiteral("taskStatus")).toString() == QStringLiteral("Running") &&
-      !summary.value(QStringLiteral("taskType")).toString().trimmed().isEmpty();
+  double defaultHeading;
+  int    defaultAltitudeMeters;
+  double defaultSpeedKnots;
+  presentation::resolvePlanStepDefaults(
+      *entity, summary, defaultHeading, defaultAltitudeMeters, defaultSpeedKnots);
 
-  const double defaultHeading = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetHeadingDegrees")).toDouble()
-      : entity->headingDegrees;
-  const int defaultAltitudeMeters = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetAltitudeMeters")).toInt()
-      : entity->altitude;
-  double defaultSpeedKnots = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble()
-      : entity->speedKnots;
-  if (defaultSpeedKnots <= 0.0) {
-    defaultSpeedKnots =
-        entity->domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0 ? 220.0 : 12.0;
-  }
-
-  step = PlanStep{};
-  step.kind = kind;
-  step.task.enabled = true;
-  step.task.status = QStringLiteral("Queued");
-  step.status = QStringLiteral("NotStarted");
-
-  bool ok = false;
-  switch (kind) {
-    case PlanStepKind::MoveToLocation: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("MoveToLocation");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetLatitude = entity->latitude;
-      initialTask.targetLongitude = entity->longitude;
-      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
-      initialTask.targetSpeedKnots = defaultSpeedKnots;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("MoveToLocation"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.label = QStringLiteral("Move To %1, %2")
-                       .arg(step.task.targetLatitude, 0, 'f', 4)
-                       .arg(step.task.targetLongitude, 0, 'f', 4);
-      return true;
-    }
-
-    case PlanStepKind::MoveToWaypoint: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("MoveToWaypoint");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetWaypointName = summary.value(QStringLiteral("taskTargetWaypointName")).toString();
-      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
-      initialTask.targetSpeedKnots = defaultSpeedKnots;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("MoveToWaypoint"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.label = QStringLiteral("Move To Waypoint: %1").arg(step.task.targetWaypointName);
-      return true;
-    }
-
-    case PlanStepKind::MoveAlongRoute: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("MoveAlongRoute");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetRouteName = summary.value(QStringLiteral("taskTargetRouteName")).toString();
-      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
-      initialTask.targetSpeedKnots = defaultSpeedKnots;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("MoveAlongRoute"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.label = QStringLiteral("Move Along Route: %1").arg(step.task.targetRouteName);
-      return true;
-    }
-
-    case PlanStepKind::PatrolArea: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("PatrolArea");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetAreaName = summary.value(QStringLiteral("taskTargetAreaName")).toString();
-      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
-      initialTask.targetSpeedKnots = defaultSpeedKnots;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("PatrolArea"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      if (const AreaDefinition* area = this->findAreaByNameOrId(step.task.targetAreaName)) {
-        step.task.targetLatitude = area->centerLatitude;
-        step.task.targetLongitude = area->centerLongitude;
-        double radiusMeters = area->radiusMeters;
-        if (radiusMeters <= 0.0) {
-          if (area->areaType == QStringLiteral("Ellipse")) {
-            radiusMeters = qMax(area->semiMinorAxisMeters, 100.0);
-          } else if (!area->points.isEmpty()) {
-            radiusMeters = 250.0;
-          } else {
-            radiusMeters = 500.0;
-          }
-        }
-        step.task.targetAreaRadiusMeters = radiusMeters;
-      }
-      step.label = QStringLiteral("Patrol Area: %1").arg(step.task.targetAreaName);
-      return true;
-    }
-
-    case PlanStepKind::FlyHeadingAltitudeSpeed: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("FlyHeadingAltitudeSpeed");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetHeadingDegrees = defaultHeading;
-      initialTask.targetAltitudeMeters = defaultAltitudeMeters;
-      initialTask.targetSpeedKnots = defaultSpeedKnots;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("FlyHeadingAltitudeSpeed"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.label = QStringLiteral("Fly H%1 A%2 S%3")
-                       .arg(step.task.targetHeadingDegrees, 0, 'f', 0)
-                       .arg(step.task.targetAltitudeMeters)
-                       .arg(step.task.targetSpeedKnots, 0, 'f', 0);
-      return true;
-    }
-
-    case PlanStepKind::OrbitHoldLocation: {
-      double centerLatitude = entity->latitude;
-      double centerLongitude = entity->longitude;
-      const QString centerMode = QInputDialog::getItem(
-          this,
-          QStringLiteral("Plan Step: Orbit / Hold (Location)"),
-          QStringLiteral("Center"),
-          QStringList{
-              QStringLiteral("Current Position"),
-              QStringLiteral("Custom Coordinates"),
-          },
-          0,
-          false,
-          &ok);
-      if (!ok) {
-        return false;
-      }
-
-      if (centerMode == QStringLiteral("Custom Coordinates")) {
-        centerLatitude = QInputDialog::getDouble(
-            this,
-            QStringLiteral("Plan Step: Orbit / Hold (Location)"),
-            QStringLiteral("Latitude"),
-            centerLatitude,
-            -90.0,
-            90.0,
-            6,
-            &ok);
-        if (!ok) {
-          return false;
-        }
-
-        centerLongitude = QInputDialog::getDouble(
-            this,
-            QStringLiteral("Plan Step: Orbit / Hold (Location)"),
-            QStringLiteral("Longitude"),
-            centerLongitude,
-            -180.0,
-            180.0,
-            6,
-            &ok);
-        if (!ok) {
-          return false;
-        }
-      }
-
-      step.task.taskType = QStringLiteral("OrbitArea");
-      step.task.targetLatitude = centerLatitude;
-      step.task.targetLongitude = centerLongitude;
-      step.task.targetAltitudeMeters = defaultAltitudeMeters;
-      step.task.targetSpeedKnots = defaultSpeedKnots;
-      step.task.targetAreaRadiusMeters = kOrbitHoldDefaultRadiusMeters;
-      step.label = QStringLiteral("Orbit / Hold at %1, %2")
-                       .arg(centerLatitude, 0, 'f', 4)
-                       .arg(centerLongitude, 0, 'f', 4);
-      return true;
-    }
-
-    case PlanStepKind::ReturnToBase: {
-      const EntityHomePosition homePosition = this->entityHomePositionFor(entityName);
-      step.task.taskType = QStringLiteral("MoveToLocation");
-      step.task.targetLatitude = homePosition.valid ? homePosition.latitude : entity->latitude;
-      step.task.targetLongitude = homePosition.valid ? homePosition.longitude : entity->longitude;
-      step.task.targetAltitudeMeters =
-          homePosition.valid ? homePosition.altitudeMeters : defaultAltitudeMeters;
-      step.task.targetSpeedKnots = defaultSpeedKnots;
-      step.label = QStringLiteral("Return To Base");
-      return true;
-    }
-
-    case PlanStepKind::AttackAir: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("AttackAir");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("AttackAir"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.task.status = QStringLiteral("Queued");
-      step.label = QStringLiteral("Attack Air: %1")
-                       .arg(step.task.targetEntityName.trimmed().isEmpty()
-                                ? QStringLiteral("-")
-                                : step.task.targetEntityName.trimmed());
-      return true;
-    }
-
-    case PlanStepKind::AttackSurface: {
-      EntityTask initialTask;
-      initialTask.taskType = QStringLiteral("AttackSurface");
-      initialTask.enabled = true;
-      initialTask.status = QStringLiteral("Queued");
-      initialTask.targetLatitude = entity->latitude;
-      initialTask.targetLongitude = entity->longitude;
-      initialTask.targetAltitudeMeters = 0;
-      if (!this->captureTaskConfiguration(
-              entityName,
-              initialTask,
-              QStringLiteral("AttackSurface"),
-              step.task)) {
-        return false;
-      }
-      step.task.enabled = true;
-      step.task.status = QStringLiteral("Queued");
-      const QString targetName = step.task.targetEntityName.trimmed();
-      step.label = targetName.isEmpty()
-          ? QStringLiteral("Attack Surface: %1")
-                .arg(attackPointLabel(step.task.targetLatitude, step.task.targetLongitude))
-          : QStringLiteral("Attack Surface: %1").arg(targetName);
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool MainWindow::validatePlanStepForExecution(const PlanStep& step, QString* reason) const {
-  auto setReason = [reason](const QString& text) {
-    if (reason) {
-      *reason = text;
-    }
-    return false;
-  };
-
-  if (step.task.taskType.trimmed().isEmpty()) {
-    return setReason(QStringLiteral("step task type is empty"));
-  }
-
-  switch (step.kind) {
-    case PlanStepKind::MoveToWaypoint:
-      if (step.task.targetWaypointName.trimmed().isEmpty()) {
-        return setReason(QStringLiteral("waypoint is not set"));
-      }
-      if (!this->findWaypointByName(step.task.targetWaypointName)) {
-        return setReason(
-            QStringLiteral("waypoint '%1' no longer exists").arg(step.task.targetWaypointName));
-      }
-      return true;
-
-    case PlanStepKind::MoveAlongRoute: {
-      if (step.task.targetRouteName.trimmed().isEmpty()) {
-        return setReason(QStringLiteral("route is not set"));
-      }
-      const RouteGraphic* route = this->findRouteByName(step.task.targetRouteName);
-      if (!route) {
-        return setReason(
-            QStringLiteral("route '%1' no longer exists").arg(step.task.targetRouteName));
-      }
-      if (route->points.isEmpty()) {
-        return setReason(
-            QStringLiteral("route '%1' has no points").arg(step.task.targetRouteName));
-      }
-      return true;
-    }
-
-    case PlanStepKind::PatrolArea:
-      if (step.task.targetAreaName.trimmed().isEmpty()) {
-        return setReason(QStringLiteral("area is not set"));
-      }
-      if (!this->findAreaByNameOrId(step.task.targetAreaName)) {
-        return setReason(
-            QStringLiteral("area '%1' no longer exists").arg(step.task.targetAreaName));
-      }
-      return true;
-
-    case PlanStepKind::MoveToLocation:
-    case PlanStepKind::FlyHeadingAltitudeSpeed:
-    case PlanStepKind::OrbitHoldLocation:
-    case PlanStepKind::ReturnToBase:
-      return true;
-
-    case PlanStepKind::AttackAir:
-      if (step.task.targetEntityName.trimmed().isEmpty()) {
-        return setReason(QStringLiteral("air target is not set"));
-      }
-      if (!this->findEntityByName(step.task.targetEntityName.trimmed())) {
-        return setReason(
-            QStringLiteral("air target '%1' no longer exists")
-                .arg(step.task.targetEntityName.trimmed()));
-      }
-      return true;
-
-    case PlanStepKind::AttackSurface:
-      if (!step.task.targetEntityName.trimmed().isEmpty()) {
-        if (!this->findEntityByName(step.task.targetEntityName.trimmed())) {
-          return setReason(
-              QStringLiteral("surface target '%1' no longer exists")
-                  .arg(step.task.targetEntityName.trimmed()));
-        }
-        return true;
-      }
-      if (!attackSurfaceCoordinatesAreUsable(
-              step.task.targetLatitude,
-              step.task.targetLongitude)) {
-        return setReason(QStringLiteral("surface target coordinates are not set"));
-      }
-      return true;
-  }
-
-  return true;
-}
-
-bool MainWindow::activeTaskMatchesPlanStep(const Entity& entity, const PlanStep& step) const {
-  const EntityTask& currentTask = entity.currentTask;
-  if (currentTask.taskType != step.task.taskType) {
-    return false;
-  }
-
-  auto nearlyEqual = [](double left, double right, double epsilon) {
-    return qAbs(left - right) <= epsilon;
-  };
-
-  switch (step.kind) {
-    case PlanStepKind::MoveToLocation:
-    case PlanStepKind::ReturnToBase:
-      return nearlyEqual(currentTask.targetLatitude, step.task.targetLatitude, 1e-6) &&
-             nearlyEqual(currentTask.targetLongitude, step.task.targetLongitude, 1e-6) &&
-             currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
-             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
-
-    case PlanStepKind::MoveToWaypoint:
-      return currentTask.targetWaypointName == step.task.targetWaypointName &&
-             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
-
-    case PlanStepKind::MoveAlongRoute:
-      return currentTask.targetRouteName == step.task.targetRouteName &&
-             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
-
-    case PlanStepKind::PatrolArea:
-      return currentTask.targetAreaName == step.task.targetAreaName &&
-             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
-
-    case PlanStepKind::FlyHeadingAltitudeSpeed:
-      return nearlyEqual(currentTask.targetHeadingDegrees, step.task.targetHeadingDegrees, 0.1) &&
-             currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
-             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
-
-    case PlanStepKind::OrbitHoldLocation:
-      return nearlyEqual(currentTask.targetLatitude, step.task.targetLatitude, 1e-6) &&
-             nearlyEqual(currentTask.targetLongitude, step.task.targetLongitude, 1e-6) &&
-             currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
-             nearlyEqual(currentTask.targetAreaRadiusMeters, step.task.targetAreaRadiusMeters, 1.0) &&
-             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
-
-    case PlanStepKind::AttackAir:
-      return currentTask.targetEntityName == step.task.targetEntityName;
-
-    case PlanStepKind::AttackSurface:
-      if (!step.task.targetEntityName.trimmed().isEmpty()) {
-        return currentTask.targetEntityName == step.task.targetEntityName;
-      }
-      return nearlyEqual(currentTask.targetLatitude, step.task.targetLatitude, 1e-6) &&
-             nearlyEqual(currentTask.targetLongitude, step.task.targetLongitude, 1e-6) &&
-             currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters;
-  }
-
-  return false;
+  return this->_planStepConfigurator->configure(
+      *entity, defaultHeading, defaultAltitudeMeters, defaultSpeedKnots, kind, step);
 }
 
 bool MainWindow::startEntityPlan(const QString& entityName) {
-  const Entity* entity = this->findEntityByName(entityName);
-  if (!entity || entity->destroyed) {
-    return false;
-  }
-
-  EntityPlan& plan = this->ensureEntityPlan(entityName);
-  if (plan.steps.isEmpty()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("El plan esta vacio para %1.").arg(entityName));
-    return false;
-  }
-
-  for (int index = 0; index < plan.steps.size(); ++index) {
-    QString invalidReason;
-    if (!this->validatePlanStepForExecution(plan.steps.at(index), &invalidReason)) {
-      plan.running = false;
-      plan.currentStepIndex = -1;
-      plan.currentStableTicks = 0;
-      const QString stepLabel = this->planStepDisplayLabel(plan.steps.at(index));
-      this->appendLogMessage(
-          QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
-              .arg(entityName, stepLabel, invalidReason));
-      this->_ui->statusLabel->setText(
-          QStringLiteral("Plan detenido para %1: step invalido (%2).")
-              .arg(entityName, stepLabel));
-      return false;
-    }
-  }
-
-  plan.running = true;
-  plan.status = QString(kTaskStatusRunning);
-  plan.currentStepIndex = 0;
-  plan.currentStableTicks = 0;
-  for (PlanStep& step : plan.steps) {
-    step.status = QString(kTaskStatusNotStarted);
-  }
-  if (!this->startPlanStepTask(entityName, plan)) {
-    return false;
-  }
-
-  this->appendLogMessage(
-      QStringLiteral("Plan started for %1").arg(entityName));
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Plan en ejecucion para %1.").arg(entityName));
-  return true;
+  return this->_planExecutor->startPlan(entityName);
 }
 
 void MainWindow::stopEntityPlan(const QString& entityName, bool clearCurrentTask) {
-  auto it = this->_entityPlans.find(entityName);
-  if (it == this->_entityPlans.end()) {
-    return;
-  }
-
-  it->running = false;
-  it->currentStepIndex = -1;
-  it->currentStableTicks = 0;
-  if (it->status == QString(kTaskStatusRunning)) {
-    it->status = QString(kTaskStatusNotStarted);
-  }
-
+  this->_planExecutor->stopPlan(entityName, clearCurrentTask);
   if (clearCurrentTask) {
-    this->_scenarioState->clearTask(entityName);
     this->syncScenarioStateToUi();
   }
 }
 
-bool MainWindow::startPlanStepTask(const QString& entityName, EntityPlan& plan) {
-  if (plan.currentStepIndex < 0 || plan.currentStepIndex >= plan.steps.size()) {
-    return false;
-  }
-  PlanStep& step = plan.steps[plan.currentStepIndex];
-  step.status = QString(kTaskStatusRunning);
-  if (!this->applyEntityTask(entityName, step.task, false)) {
-    step.status = QString(kTaskStatusFailed);
-    plan.running = false;
-    plan.status = QString(kTaskStatusFailed);
-    plan.currentStepIndex = -1;
-    plan.currentStableTicks = 0;
-    return false;
-  }
-  return true;
-}
-
-void MainWindow::failRunningPlan(
-    const QString& entityName,
-    EntityPlan& plan,
-    const QString& logMessage,
-    const QString& statusMessage) {
-  if (!logMessage.isEmpty()) {
-    this->appendLogMessage(logMessage);
-  }
-  if (!statusMessage.isEmpty()) {
-    this->_ui->statusLabel->setText(statusMessage);
-  }
-  if (plan.currentStepIndex >= 0 && plan.currentStepIndex < plan.steps.size()) {
-    plan.steps[plan.currentStepIndex].status = QString(kTaskStatusFailed);
-  }
-  plan.running = false;
-  plan.status = QString(kTaskStatusFailed);
-  plan.currentStepIndex = -1;
-  plan.currentStableTicks = 0;
-}
-
-void MainWindow::completeRunningPlan(
-    const QString& entityName,
-    EntityPlan& plan,
-    const QString& completedLabel) {
-  plan.running = false;
-  bool hasFailedSteps = false;
-  for (const PlanStep& step : plan.steps) {
-    if (step.status == kTaskStatusFailed) {
-      hasFailedSteps = true;
-      break;
-    }
-  }
-  plan.status = (hasFailedSteps ? QString(kTaskStatusCompletedWithFailures) : QString(kTaskStatusCompleted));
-  plan.currentStepIndex = -1;
-  if (hasFailedSteps) {
-    this->appendLogMessage(
-        QStringLiteral("Plan completed with failures for %1 after %2.")
-            .arg(entityName, completedLabel));
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Plan completado con fallas para %1.").arg(entityName));
-  } else {
-    this->appendLogMessage(
-        QStringLiteral("Plan completed for %1 after %2.")
-            .arg(entityName, completedLabel));
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Plan completado para %1.").arg(entityName));
-  }
-}
-
-bool MainWindow::activePlanStepCompleted(const Entity& entity, EntityPlan& plan) const {
-  if (plan.currentStepIndex < 0 || plan.currentStepIndex >= plan.steps.size()) {
-    return false;
-  }
-
-  const PlanStep& step = plan.steps.at(plan.currentStepIndex);
-  switch (step.kind) {
-    case PlanStepKind::MoveToLocation:
-    case PlanStepKind::MoveToWaypoint:
-    case PlanStepKind::MoveAlongRoute:
-    case PlanStepKind::ReturnToBase:
-      plan.currentStableTicks = 0;
-      return entity.currentTask.status == QStringLiteral("On target");
-
-    case PlanStepKind::PatrolArea: {
-      const double distanceToCenterMeters = distanceMeters(
-          entity.latitude,
-          entity.longitude,
-          step.task.targetLatitude,
-          step.task.targetLongitude);
-      const double holdDistanceMeters = qMax(
-          100.0,
-          step.task.targetAreaRadiusMeters * 1.15);
-      if (distanceToCenterMeters <= holdDistanceMeters) {
-        ++plan.currentStableTicks;
-      } else {
-        plan.currentStableTicks = 0;
-      }
-      return plan.currentStableTicks >= 3;
-    }
-
-    case PlanStepKind::FlyHeadingAltitudeSpeed: {
-      const double headingErrorDegrees = qAbs(shortestSignedAngle(
-          entity.headingDegrees,
-          step.task.targetHeadingDegrees));
-      const int altitudeErrorMeters = qAbs(entity.altitude - step.task.targetAltitudeMeters);
-      const double speedErrorKnots = qAbs(entity.speedKnots - step.task.targetSpeedKnots);
-      if (headingErrorDegrees <= 5.0 &&
-          altitudeErrorMeters <= 50 &&
-          speedErrorKnots <= 10.0) {
-        ++plan.currentStableTicks;
-      } else {
-        plan.currentStableTicks = 0;
-      }
-      return plan.currentStableTicks >= 3;
-    }
-
-    case PlanStepKind::OrbitHoldLocation: {
-      const double distanceToCenterMeters = distanceMeters(
-          entity.latitude,
-          entity.longitude,
-          step.task.targetLatitude,
-          step.task.targetLongitude);
-      const double holdDistanceMeters = qMax(
-          100.0,
-          step.task.targetAreaRadiusMeters * 1.15);
-      if (distanceToCenterMeters <= holdDistanceMeters) {
-        ++plan.currentStableTicks;
-      } else {
-        plan.currentStableTicks = 0;
-      }
-      return plan.currentStableTicks >= 3;
-    }
-
-    case PlanStepKind::AttackAir:
-    case PlanStepKind::AttackSurface:
-      plan.currentStableTicks = 0;
-      return entity.currentTask.status == QStringLiteral("Completed");
-  }
-
-  return false;
-}
-
 void MainWindow::advanceEntityPlans() {
-  for (auto it = this->_entityPlans.begin(); it != this->_entityPlans.end(); ++it) {
-    const QString entityName = it.key();
-    EntityPlan& plan = it.value();
-    if (!plan.running) {
-      continue;
-    }
-
-    const Entity* entity = this->findEntityByName(entityName);
-    if (!entity || entity->destroyed) {
-      this->failRunningPlan(entityName, plan);
-      continue;
-    }
-
-    if (plan.currentStepIndex < 0 || plan.currentStepIndex >= plan.steps.size()) {
-      this->failRunningPlan(entityName, plan);
-      continue;
-    }
-
-    PlanStep& activeStep = plan.steps[plan.currentStepIndex];
-    activeStep.status = QString(kTaskStatusRunning);
-    QString invalidReason;
-    if (!this->validatePlanStepForExecution(activeStep, &invalidReason)) {
-      this->failRunningPlan(
-          entityName,
-          plan,
-          QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
-              .arg(entityName, this->planStepDisplayLabel(activeStep), invalidReason),
-          QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
-      continue;
-    }
-
-    const bool taskFailedForStep =
-        entity->currentTask.status == QStringLiteral("Target unavailable") ||
-        entity->currentTask.status == QStringLiteral("Failed");
-    if (taskFailedForStep) {
-      const QString failedLabel = this->planStepDisplayLabel(activeStep);
-      activeStep.status = QString(kTaskStatusFailed);
-      ++plan.currentStepIndex;
-      plan.currentStableTicks = 0;
-
-      if (plan.currentStepIndex >= plan.steps.size()) {
-        this->completeRunningPlan(entityName, plan, failedLabel);
-        continue;
-      }
-
-      PlanStep& nextStepAfterFailure = plan.steps[plan.currentStepIndex];
-      QString nextInvalidReasonAfterFailure;
-      if (!this->validatePlanStepForExecution(nextStepAfterFailure, &nextInvalidReasonAfterFailure)) {
-        this->failRunningPlan(
-            entityName,
-            plan,
-            QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
-                .arg(entityName, this->planStepDisplayLabel(nextStepAfterFailure), nextInvalidReasonAfterFailure),
-            QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
-        continue;
-      }
-
-      const QString nextLabelAfterFailure = this->planStepDisplayLabel(nextStepAfterFailure);
-      if (!this->startPlanStepTask(entityName, plan)) {
-        this->failRunningPlan(
-            entityName,
-            plan,
-            QStringLiteral("Plan halted for %1 while starting step %2.")
-                .arg(entityName, nextLabelAfterFailure),
-            QStringLiteral("Plan fallido para %1: no se pudo arrancar step %2.")
-                .arg(entityName, nextLabelAfterFailure));
-        continue;
-      }
-
-      this->appendLogMessage(
-          QStringLiteral("Plan continued for %1 after failed step %2; next step: %3")
-              .arg(entityName, failedLabel, nextLabelAfterFailure));
-      continue;
-    }
-
-    if (this->activePlanStepCompleted(*entity, plan)) {
-      const QString completedLabel = this->planStepDisplayLabel(activeStep);
-      activeStep.status = QString(kTaskStatusCompleted);
-      ++plan.currentStepIndex;
-      plan.currentStableTicks = 0;
-
-      if (plan.currentStepIndex >= plan.steps.size()) {
-        this->completeRunningPlan(entityName, plan, completedLabel);
-        continue;
-      }
-
-      PlanStep& nextStep = plan.steps[plan.currentStepIndex];
-      QString nextInvalidReason;
-      if (!this->validatePlanStepForExecution(nextStep, &nextInvalidReason)) {
-        this->failRunningPlan(
-            entityName,
-            plan,
-            QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
-                .arg(entityName, this->planStepDisplayLabel(nextStep), nextInvalidReason),
-            QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
-        continue;
-      }
-
-      const QString nextLabel = this->planStepDisplayLabel(nextStep);
-      if (!this->startPlanStepTask(entityName, plan)) {
-        this->failRunningPlan(
-            entityName,
-            plan,
-            QStringLiteral("Plan halted for %1 while starting step %2.")
-                .arg(entityName, nextLabel),
-            QStringLiteral("Plan fallido para %1: no se pudo arrancar step %2.")
-                .arg(entityName, nextLabel));
-        continue;
-      }
-
-      this->appendLogMessage(
-          QStringLiteral("Plan advanced for %1: %2").arg(entityName, nextLabel));
-      continue;
-    }
-
-    if (!entity->currentTask.enabled ||
-        !this->activeTaskMatchesPlanStep(*entity, activeStep)) {
-      this->failRunningPlan(
-          entityName,
-          plan,
-          QStringLiteral("Plan stopped for %1 after task override.").arg(entityName),
-          QStringLiteral("Plan detenido para %1: task modificada manualmente.").arg(entityName));
-      continue;
-    }
-
-    continue;
-  }
+  this->_planExecutor->advancePlans();
 }
+
 
 bool MainWindow::resolveSelectedEntityFlyTargets(
     double& headingDegrees,
@@ -4369,30 +2018,18 @@ bool MainWindow::resolveSelectedEntityFlyTargets(
     return false;
   }
 
-  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  const QVariantMap summary =
+      this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
   if (summary.isEmpty()) {
     return false;
   }
 
-  const bool hasRunningTaskTargets =
-      summary.value(QStringLiteral("taskEnabled")).toBool() &&
-      summary.value(QStringLiteral("taskStatus")).toString() == QStringLiteral("Running") &&
-      !summary.value(QStringLiteral("taskType")).toString().trimmed().isEmpty();
-
-  const int currentEntityAltitudeMeters = entityAltitudeMeters(
+  const int currentEntityAltitudeMeters = application::entityAltitudeMeters(
       this->_scenarioState,
       summary.value(QStringLiteral("name")).toString());
 
-  headingDegrees = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetHeadingDegrees")).toDouble()
-      : summary.value(QStringLiteral("headingDegrees")).toDouble();
-  altitudeMeters = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetAltitudeMeters")).toInt()
-      : currentEntityAltitudeMeters;
-  speedKnots = hasRunningTaskTargets
-      ? summary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble()
-      : summary.value(QStringLiteral("speedKnots")).toDouble();
-  return true;
+  return presentation::resolveFlyTargetsFromSummary(
+      summary, currentEntityAltitudeMeters, headingDegrees, altitudeMeters, speedKnots);
 }
 
 void MainWindow::applyFlyHeadingAltitudeSpeedTask(
@@ -4412,133 +2049,23 @@ void MainWindow::applyFlyHeadingAltitudeSpeedTask(
   task.targetAltitudeMeters = altitudeMeters;
   task.targetSpeedKnots = speedKnots;
 
-  if (!this->_scenarioState->assignTask(entityName, task)) {
-    return;
-  }
-
-  if (domain::TaskStack* stack = this->_scenarioState->getTaskStack(entityName)) {
-    while (!stack->isEmpty()) {
-      stack->pop();
-    }
-    stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
-        headingDegrees,
-        static_cast<double>(altitudeMeters),
-        speedKnots));
-  }
-
-  if (m_simulationEngine) {
-    m_simulationEngine->enqueueCommand(
-        std::make_unique<application::CmdAssignFlyHeadingTask>(
-            entityName,
-            headingDegrees,
-            static_cast<double>(altitudeMeters),
-            speedKnots));
-  }
-
-  this->appendLogMessage(
-      QStringLiteral("Set FlyHeadingAltitudeSpeed applied to %1 (hdg %2 deg, alt %3 m, spd %4 kts)")
-          .arg(entityName)
-          .arg(headingDegrees, 0, 'f', 1)
-          .arg(altitudeMeters)
-          .arg(speedKnots, 0, 'f', 1));
-  this->syncScenarioStateToUi();
+  this->applyEntityTask(entityName, task, /*syncUi=*/true);
 }
 
 void MainWindow::setSelectedEntityHeading() {
-  double headingDegrees = 0.0;
-  int altitudeMeters = 0;
-  double speedKnots = 0.0;
-  if (!this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots)) {
-    return;
-  }
-
-  bool ok = false;
-  const double newHeadingDegrees = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Set Heading"),
-      QStringLiteral("Heading (deg)"),
-      headingDegrees,
-      0.0,
-      360.0,
-      1,
-      &ok);
-  if (!ok) {
-    return;
-  }
-
-  this->applyFlyHeadingAltitudeSpeedTask(newHeadingDegrees, altitudeMeters, speedKnots);
+  this->_entityStateActionsController->setSelectedHeading();
 }
 
 void MainWindow::setSelectedEntityAltitude() {
-  double headingDegrees = 0.0;
-  int altitudeMeters = 0;
-  double speedKnots = 0.0;
-  if (!this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots)) {
-    return;
-  }
-
-  bool ok = false;
-  const double newAltitudeMeters = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Set Altitude"),
-      QStringLiteral("Altitude (m)"),
-      static_cast<double>(altitudeMeters),
-      0.0,
-      60000.0,
-      0,
-      &ok);
-  if (!ok) {
-    return;
-  }
-
-  this->applyFlyHeadingAltitudeSpeedTask(
-      headingDegrees,
-      static_cast<int>(std::lround(newAltitudeMeters)),
-      speedKnots);
+  this->_entityStateActionsController->setSelectedAltitude();
 }
 
 void MainWindow::setSelectedEntitySpeed() {
-  double headingDegrees = 0.0;
-  int altitudeMeters = 0;
-  double speedKnots = 0.0;
-  if (!this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots)) {
-    return;
-  }
-
-  bool ok = false;
-  const double newSpeedKnots = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Set Speed"),
-      QStringLiteral("Speed (kts)"),
-      speedKnots,
-      0.0,
-      2000.0,
-      1,
-      &ok);
-  if (!ok) {
-    return;
-  }
-
-  this->applyFlyHeadingAltitudeSpeedTask(headingDegrees, altitudeMeters, newSpeedKnots);
+  this->_entityStateActionsController->setSelectedSpeed();
 }
 
 void MainWindow::setSelectedEntityBehaviorMode(const QString& behaviorMode) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty() || this->selectedEntityIsDestroyed()) {
-    return;
-  }
-
-  if (!this->_scenarioState->setEntityBehaviorMode(entityName, behaviorMode)) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No se pudo cambiar el behavior mode de %1.")
-            .arg(entityName));
-    return;
-  }
-
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("%1 behavior mode: %2.")
-          .arg(entityName, behaviorMode));
+  this->_entityStateActionsController->setSelectedBehaviorMode(behaviorMode);
 }
 
 void MainWindow::focusSelectedEntityInMap() {
@@ -4559,317 +2086,64 @@ void MainWindow::focusSelectedEntityInMap() {
 }
 
 void MainWindow::setSelectedEntityDestroyed(bool destroyed) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->_scenarioState->setEntityDestroyed(entityName, destroyed)) {
-    return;
-  }
-
-  if (destroyed && this->_taskDialog) {
-    this->_taskDialog->close();
-  }
-
-  this->appendLogMessage(
-      QStringLiteral("Entity %1 %2")
-          .arg(entityName, destroyed ? QStringLiteral("marked as destroyed")
-                                     : QStringLiteral("restored")));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      destroyed
-          ? QStringLiteral("Entidad destruida: %1").arg(entityName)
-          : QStringLiteral("Entidad restaurada: %1").arg(entityName));
+  this->_entityStateActionsController->setSelectedDestroyed(destroyed);
 }
 
 void MainWindow::setSelectedEntityHidden(bool hidden) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  EntityVisualState visualState = this->entityVisualStateFor(entityName);
-  if (visualState.hidden == hidden) {
-    return;
-  }
-
-  visualState.hidden = hidden;
-  if (!visualState.hidden &&
-      !visualState.radarCoverageVisible &&
-      !visualState.trackHistoryVisible) {
-    this->_entityVisualStates.remove(entityName);
-  } else {
-    this->ensureEntityVisualState(entityName) = visualState;
-  }
-  this->saveEntityVisualStates();
-
-  this->appendLogMessage(
-      QStringLiteral("Entity %1 %2")
-          .arg(entityName, hidden ? QStringLiteral("hidden")
-                                  : QStringLiteral("shown")));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      hidden
-          ? QStringLiteral("Entidad oculta: %1").arg(entityName)
-          : QStringLiteral("Entidad visible: %1").arg(entityName));
+  this->_entityStateActionsController->setSelectedHidden(hidden);
 }
 
 void MainWindow::setSelectedEntityRadarCoverageVisible(bool visible) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  EntityVisualState visualState = this->entityVisualStateFor(entityName);
-  if (visualState.radarCoverageVisible == visible) {
-    return;
-  }
-
-  visualState.radarCoverageVisible = visible;
-  if (!visualState.hidden &&
-      !visualState.radarCoverageVisible &&
-      !visualState.trackHistoryVisible) {
-    this->_entityVisualStates.remove(entityName);
-  } else {
-    this->ensureEntityVisualState(entityName) = visualState;
-  }
-  this->saveEntityVisualStates();
-
-  this->appendLogMessage(
-      QStringLiteral("Radar coverage %1 for %2")
-          .arg(visible ? QStringLiteral("enabled") : QStringLiteral("disabled"),
-               entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      visible
-          ? QStringLiteral("Cobertura radar visible para %1").arg(entityName)
-          : QStringLiteral("Cobertura radar oculta para %1").arg(entityName));
+  this->_entityStateActionsController->setSelectedRadarCoverageVisible(visible);
 }
 
 void MainWindow::setSelectedEntityTrackHistoryVisible(bool visible) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  EntityVisualState visualState = this->entityVisualStateFor(entityName);
-  if (visualState.trackHistoryVisible == visible) {
-    return;
-  }
-
-  visualState.trackHistoryVisible = visible;
-  if (!visualState.hidden &&
-      !visualState.radarCoverageVisible &&
-      !visualState.trackHistoryVisible) {
-    this->_entityVisualStates.remove(entityName);
-  } else {
-    this->ensureEntityVisualState(entityName) = visualState;
-  }
-  this->saveEntityVisualStates();
-
-  this->appendLogMessage(
-      QStringLiteral("Track history %1 for %2")
-          .arg(visible ? QStringLiteral("enabled") : QStringLiteral("disabled"),
-               entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      visible
-          ? QStringLiteral("Historial de trayectoria visible para %1").arg(entityName)
-          : QStringLiteral("Historial de trayectoria oculto para %1").arg(entityName));
+  this->_entityStateActionsController->setSelectedTrackHistoryVisible(visible);
 }
 
 void MainWindow::destroySelectedEntity() {
-  this->setSelectedEntityDestroyed(true);
+  this->_entityStateActionsController->destroySelected();
 }
 
 void MainWindow::restoreSelectedEntity() {
-  this->setSelectedEntityDestroyed(false);
+  this->_entityStateActionsController->restoreSelected();
 }
 
 void MainWindow::addMissileToSelectedEntity() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->_scenarioState->addMissileToEntity(entityName, 1)) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No se pudo anadir un misil a %1.").arg(entityName));
-    return;
-  }
-
-  this->appendLogMessage(QStringLiteral("Missile added to %1").arg(entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Misil anadido a %1.").arg(entityName));
+  this->_weaponActionsController->addMissileToSelected();
 }
 
 void MainWindow::addBombToSelectedEntity() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->_scenarioState->addBombToEntity(entityName, 1)) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No se pudo anadir una bomba a %1.").arg(entityName));
-    return;
-  }
-
-  this->appendLogMessage(QStringLiteral("Bomb added to %1").arg(entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Bomba anadida a %1.").arg(entityName));
+  this->_weaponActionsController->addBombToSelected();
 }
 
 void MainWindow::launchMissileFromSelectedEntity() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  const Entity* entity = this->findEntityByName(entityName);
-  const int missileCount =
-      entity ? weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
-
-  if (missileCount <= 0) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay misiles disponibles en %1.").arg(entityName));
-    return;
-  }
-
-  if (!this->_simulationRunning) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Arranca la simulacion para lanzar el misil."));
-    return;
-  }
-
-  if (!this->_scenarioState->launchMissile(entityName)) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No se pudo lanzar un misil desde %1.").arg(entityName));
-    return;
-  }
-
-  this->appendLogMessage(QStringLiteral("Missile launched from %1").arg(entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Misil lanzado desde %1. Quedan %2.")
-          .arg(entityName)
-          .arg(qMax(0, missileCount - 1)));
+  this->_weaponActionsController->launchMissileFromSelected();
 }
 
 void MainWindow::releaseBombFromSelectedEntity() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  const Entity* entity = this->findEntityByName(entityName);
-  const int bombCount =
-      entity ? weaponQuantity(*entity, QStringLiteral("Bomb")) : 0;
-
-  if (bombCount <= 0) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay bombas disponibles en %1.").arg(entityName));
-    return;
-  }
-
-  if (!this->_simulationRunning) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Arranca la simulacion para soltar la bomba."));
-    return;
-  }
-
-  if (!this->_scenarioState->releaseBomb(entityName)) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No se pudo soltar una bomba desde %1.").arg(entityName));
-    return;
-  }
-
-  this->appendLogMessage(QStringLiteral("Bomb released from %1").arg(entityName));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Bomba soltada desde %1. Quedan %2.")
-          .arg(entityName)
-          .arg(qMax(0, bombCount - 1)));
+  this->_weaponActionsController->releaseBombFromSelected();
 }
 
 void MainWindow::launchMissileAtSelectedEntity() {
-  const QString launcherName = this->selectedEntityName();
-  if (launcherName.isEmpty()) {
-    return;
-  }
+  this->_weaponActionsController->launchMissileAtSelected();
+}
 
-  const Entity* launcher = this->findEntityByName(launcherName);
-  const int missileCount =
-      launcher ? weaponQuantity(*launcher, QStringLiteral("Missile")) : 0;
-  if (!launcher || missileCount <= 0) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay misiles disponibles en %1.").arg(launcherName));
-    return;
-  }
-
-  if (!this->_simulationRunning) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Arranca la simulacion para lanzar el misil."));
-    return;
-  }
-
-  const QVector<MissileTargetCandidate> targets =
-      detectedMissileTargetsInRange(this->_scenarioState, *launcher);
-  if (targets.isEmpty()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No detected air targets in missile range for %1.")
-            .arg(launcherName));
-    return;
-  }
-
-  QStringList options;
-  QHash<QString, QString> targetNameByOption;
-  for (const MissileTargetCandidate& candidate : targets) {
-    if (!candidate.entity) {
-      continue;
-    }
-    const QString option =
-        missileTargetDisplayLabel(*candidate.entity, candidate.rangeMeters);
-    options.push_back(option);
-    targetNameByOption.insert(option, candidate.entity->name);
-  }
-
-  bool ok = false;
-  const QString selectedOption = QInputDialog::getItem(
-      this,
-      QStringLiteral("Launch Missile At"),
-      QStringLiteral("Target"),
-      options,
-      0,
-      false,
-      &ok);
-  if (!ok || selectedOption.trimmed().isEmpty()) {
-    return;
-  }
-
-  const QString targetName = targetNameByOption.value(selectedOption).trimmed();
-  if (targetName.isEmpty()) {
-    return;
-  }
-
+void MainWindow::executeMissileLaunch(
+    const QString& launcherName,
+    const QString& targetName,
+    int previousMissileCount) {
+  // Delegated to WeaponActionsController::launchMissileAtSelected
+  // Called internally — kept for backward compat with connect() wiring.
+  Q_UNUSED(previousMissileCount)
   if (!this->_scenarioState->launchMissileAt(launcherName, targetName)) {
     this->_ui->statusLabel->setText(
-        QStringLiteral("Target out of missile range for %1.")
-            .arg(launcherName));
+        QStringLiteral("Target out of missile range for %1.").arg(launcherName));
     return;
   }
-
   this->appendLogMessage(
-      QStringLiteral("Missile launched from %1 at %2")
-          .arg(launcherName, targetName));
+      QStringLiteral("Missile launched from %1 at %2").arg(launcherName, targetName));
   this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Misil lanzado desde %1 hacia %2. Quedan %3.")
-          .arg(launcherName, targetName)
-          .arg(qMax(0, missileCount - 1)));
 }
 
 void MainWindow::showContextMenuPlaceholder(const QString& actionName) {
@@ -4905,211 +2179,51 @@ void MainWindow::openObjectsContextMenu(const QPoint& position) {
 }
 
 void MainWindow::assignFlyHeadingAltitudeSpeedTask() {
-  this->openAssignTaskDialog(QStringLiteral("FlyHeadingAltitudeSpeed"));
+  this->_taskAssignmentController->assignFlyHeadingAltitudeSpeed();
 }
 
 void MainWindow::assignMoveToLocationTask() {
-  this->openAssignTaskDialog(QStringLiteral("MoveToLocation"));
+  this->_taskAssignmentController->assignMoveToLocation();
 }
 
 void MainWindow::assignMoveToWaypointTask() {
-  this->openAssignTaskDialog(QStringLiteral("MoveToWaypoint"));
+  this->_taskAssignmentController->assignMoveToWaypoint();
 }
 
 void MainWindow::assignMoveAlongRouteTask() {
-  this->openAssignTaskDialog(QStringLiteral("MoveAlongRoute"));
+  this->_taskAssignmentController->assignMoveAlongRoute();
 }
 
 void MainWindow::assignReturnToBaseTask() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty() || !this->currentSelectionIsOperableEntity()) {
-    return;
-  }
-
-  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  const EntityHomePosition homePosition = this->entityHomePositionFor(entityName);
-
-  double headingDegrees = 0.0;
-  int currentAltitudeMeters = 0;
-  double speedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
-  this->resolveSelectedEntityFlyTargets(headingDegrees, currentAltitudeMeters, speedKnots);
-
-  EntityTask task;
-  task.taskType = QStringLiteral("MoveToLocation");
-  task.enabled = true;
-  task.status = QStringLiteral("Running");
-  task.targetLatitude = homePosition.valid
-      ? homePosition.latitude
-      : summary.value(QStringLiteral("latitude")).toDouble();
-  task.targetLongitude = homePosition.valid
-      ? homePosition.longitude
-      : summary.value(QStringLiteral("longitude")).toDouble();
-  task.targetAltitudeMeters = homePosition.valid
-      ? homePosition.altitudeMeters
-      : currentAltitudeMeters;
-  task.targetSpeedKnots = speedKnots;
-
-  if (!this->applyEntityTask(entityName, task)) {
-    return;
-  }
-
-  this->_ui->statusLabel->setText(
-      QStringLiteral("RTB asignado a %1.").arg(entityName));
+  this->_taskAssignmentController->assignReturnToBase();
 }
 
 void MainWindow::assignPatrolRouteTask() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty() || !this->currentSelectionIsOperableEntity()) {
-    return;
-  }
-
-  const QStringList availableRoutes = this->availableRouteNames(true);
-  if (availableRoutes.isEmpty()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay rutas disponibles para Patrol Route."));
-    return;
-  }
-
-  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  const QString currentRouteName = summary.value(QStringLiteral("taskTargetRouteName")).toString();
-  int routeIndex = availableRoutes.indexOf(currentRouteName);
-  if (routeIndex < 0) {
-    routeIndex = 0;
-  }
-
-  bool ok = false;
-  const QString routeName = QInputDialog::getItem(
-      this,
-      QStringLiteral("Patrol Route"),
-      QStringLiteral("Route"),
-      availableRoutes,
-      routeIndex,
-      false,
-      &ok);
-  if (!ok || routeName.trimmed().isEmpty()) {
-    return;
-  }
-
-  double headingDegrees = 0.0;
-  int altitudeMeters = 0;
-  double speedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
-  this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots);
-
-  EntityTask task;
-  task.taskType = QStringLiteral("MoveAlongRoute");
-  task.enabled = true;
-  task.status = QStringLiteral("Running");
-  task.targetRouteName = routeName;
-  task.targetAltitudeMeters = altitudeMeters;
-  task.targetSpeedKnots = speedKnots;
-
-  if (!this->applyEntityTask(entityName, task)) {
-    return;
-  }
-
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Patrol Route asignado a %1 sobre %2.")
-          .arg(entityName, routeName));
+  this->_taskAssignmentController->assignPatrolRoute();
 }
 
 void MainWindow::assignOrbitHoldLocationTask() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty() || !this->currentSelectionIsOperableEntity()) {
-    return;
-  }
-
-  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  double centerLatitude = summary.value(QStringLiteral("latitude")).toDouble();
-  double centerLongitude = summary.value(QStringLiteral("longitude")).toDouble();
-
-  bool ok = false;
-  const QString centerMode = QInputDialog::getItem(
-      this,
-      QStringLiteral("Orbit / Hold (Location)"),
-      QStringLiteral("Center"),
-      QStringList{
-          QStringLiteral("Current Position"),
-          QStringLiteral("Custom Coordinates"),
-      },
-      0,
-      false,
-      &ok);
-  if (!ok) {
-    return;
-  }
-
-  if (centerMode == QStringLiteral("Custom Coordinates")) {
-    centerLatitude = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Orbit / Hold (Location)"),
-        QStringLiteral("Latitude"),
-        centerLatitude,
-        -90.0,
-        90.0,
-        6,
-        &ok);
-    if (!ok) {
-      return;
-    }
-
-    centerLongitude = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Orbit / Hold (Location)"),
-        QStringLiteral("Longitude"),
-        centerLongitude,
-        -180.0,
-        180.0,
-        6,
-        &ok);
-    if (!ok) {
-      return;
-    }
-  }
-
-  double headingDegrees = 0.0;
-  int altitudeMeters = 0;
-  double speedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
-  this->resolveSelectedEntityFlyTargets(headingDegrees, altitudeMeters, speedKnots);
-
-  EntityTask task;
-  task.taskType = QStringLiteral("OrbitArea");
-  task.enabled = true;
-  task.status = QStringLiteral("Running");
-  task.targetLatitude = centerLatitude;
-  task.targetLongitude = centerLongitude;
-  task.targetAltitudeMeters = altitudeMeters;
-  task.targetSpeedKnots = speedKnots;
-  task.targetAreaRadiusMeters = kOrbitHoldDefaultRadiusMeters;
-
-  if (!this->applyEntityTask(entityName, task)) {
-    return;
-  }
-
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Orbit / Hold asignado a %1 alrededor de %2, %3.")
-          .arg(entityName)
-          .arg(centerLatitude, 0, 'f', 4)
-          .arg(centerLongitude, 0, 'f', 4));
+  this->_taskAssignmentController->assignOrbitHoldLocation();
 }
 
 void MainWindow::assignPatrolAreaTask() {
-  this->openAssignTaskDialog(QStringLiteral("PatrolArea"));
+  this->_taskAssignmentController->assignPatrolArea();
 }
 
 void MainWindow::assignOrbitAreaTask() {
-  this->openAssignTaskDialog(QStringLiteral("OrbitArea"));
+  this->_taskAssignmentController->assignOrbitArea();
 }
 
 void MainWindow::assignFollowEntityTask() {
-  this->openAssignTaskDialog(QStringLiteral("FollowEntity"));
+  this->_taskAssignmentController->assignFollowEntity();
 }
 
 void MainWindow::assignAttackAirTask() {
-  this->openAssignTaskDialog(QStringLiteral("AttackAir"));
+  this->_taskAssignmentController->assignAttackAir();
 }
 
 void MainWindow::assignAttackSurfaceTask() {
-  this->openAssignTaskDialog(QStringLiteral("AttackSurface"));
+  this->_taskAssignmentController->assignAttackSurface();
 }
 
 void MainWindow::openEntityPlanDialog() {
@@ -5118,319 +2232,55 @@ void MainWindow::openEntityPlanDialog() {
     return;
   }
 
-  this->ensureEntityPlan(entityName);
-
-  QDialog dialog(this);
-  dialog.setWindowTitle(QStringLiteral("Plan for %1").arg(entityName));
-  dialog.resize(520, 420);
-  dialog.setWindowModality(Qt::WindowModal);
-
-  auto planForEntity = [this, entityName]() -> EntityPlan& {
-    return this->ensureEntityPlan(entityName);
-  };
-
-  auto* layout = new QVBoxLayout(&dialog);
-  auto* stepsList = new QListWidget(&dialog);
-  layout->addWidget(stepsList);
-  auto* planStatusLabel = new QLabel(&dialog);
-  layout->addWidget(planStatusLabel);
-
-  auto* editButtonsLayout = new QHBoxLayout();
-  auto* addButton = new QPushButton(QStringLiteral("Add"), &dialog);
-  auto* removeButton = new QPushButton(QStringLiteral("Remove"), &dialog);
-  auto* upButton = new QPushButton(QStringLiteral("Up"), &dialog);
-  auto* downButton = new QPushButton(QStringLiteral("Down"), &dialog);
-  editButtonsLayout->addWidget(addButton);
-  editButtonsLayout->addWidget(removeButton);
-  editButtonsLayout->addWidget(upButton);
-  editButtonsLayout->addWidget(downButton);
-  editButtonsLayout->addStretch(1);
-  layout->addLayout(editButtonsLayout);
-
-  auto* actionButtonsLayout = new QHBoxLayout();
-  auto* runButton = new QPushButton(QStringLiteral("Run Plan"), &dialog);
-  auto* stopButton = new QPushButton(QStringLiteral("Stop Plan"), &dialog);
-  auto* closeButton = new QPushButton(QStringLiteral("Close"), &dialog);
-  actionButtonsLayout->addWidget(runButton);
-  actionButtonsLayout->addWidget(stopButton);
-  actionButtonsLayout->addStretch(1);
-  actionButtonsLayout->addWidget(closeButton);
-  layout->addLayout(actionButtonsLayout);
-
-  auto refreshList = [this, planForEntity, stepsList, planStatusLabel]() {
-    const EntityPlan& plan = planForEntity();
-    const int previousRow = stepsList->currentRow();
-    stepsList->clear();
-    planStatusLabel->setText(
-        QStringLiteral("Plan Status: %1").arg(plan.status.trimmed().isEmpty()
-            ? QStringLiteral("NotStarted")
-            : planStatusDisplayLabel(plan.status.trimmed())));
-    for (int index = 0; index < plan.steps.size(); ++index) {
-      const QString prefix =
-          (plan.running && index == plan.currentStepIndex) ? QStringLiteral(">> ") : QString();
-      stepsList->addItem(
-          QStringLiteral("%1%2. [%3] %4")
-              .arg(prefix)
-              .arg(index + 1)
-              .arg(plan.steps.at(index).status.trimmed().isEmpty()
-                       ? QStringLiteral("NotStarted")
-                       : plan.steps.at(index).status.trimmed())
-              .arg(this->planStepDisplayLabel(plan.steps.at(index))));
-    }
-
-    if (!plan.steps.isEmpty()) {
-      stepsList->setCurrentRow(qBound(0, previousRow, plan.steps.size() - 1));
-    }
-  };
-
-  auto refreshButtons = [this,
-                         planForEntity,
-                         entityName,
-                         stepsList,
-                         addButton,
-                         removeButton,
-                         upButton,
-                         downButton,
-                         runButton,
-                         stopButton]() {
-    const EntityPlan& plan = planForEntity();
-    const int currentRow = stepsList->currentRow();
-    const bool hasSelection = currentRow >= 0 && currentRow < plan.steps.size();
-    const bool editable = !plan.running;
-    const Entity* entity = this->findEntityByName(entityName);
-
-    addButton->setEnabled(editable);
-    removeButton->setEnabled(editable && hasSelection);
-    upButton->setEnabled(editable && hasSelection && currentRow > 0);
-    downButton->setEnabled(
-        editable &&
-        hasSelection &&
-        currentRow >= 0 &&
-        currentRow < plan.steps.size() - 1);
-    runButton->setEnabled(editable && entity && !entity->destroyed && !plan.steps.isEmpty());
-    stopButton->setEnabled(plan.running);
-  };
-
-  QObject::connect(stepsList, &QListWidget::currentRowChanged, &dialog, refreshButtons);
-
-  QObject::connect(addButton, &QPushButton::clicked, &dialog, [this, &dialog, planForEntity, entityName, stepsList, refreshList, refreshButtons, addButton]() {
-    if (planForEntity().running) {
-      this->_ui->statusLabel->setText(
-          QStringLiteral("No puedes editar steps mientras el plan esta en ejecucion."));
-      refreshButtons();
+  if (this->_entityPlanDialog) {
+    if (this->_entityPlanDialogEntityName == entityName) {
+      this->_entityPlanDialog->show();
+      this->_entityPlanDialog->raise();
+      this->_entityPlanDialog->activateWindow();
       return;
     }
+    this->_entityPlanDialog->close();
+    this->_entityPlanDialog = nullptr;
+    this->_entityPlanDialogEntityName.clear();
+  }
 
-    QMenu addMenu(&dialog);
-    QAction* moveToLocationAction = addMenu.addAction(QStringLiteral("Move To Location"));
-    moveToLocationAction->setData(static_cast<int>(PlanStepKind::MoveToLocation));
-    QAction* moveToWaypointAction = addMenu.addAction(QStringLiteral("Move To Waypoint"));
-    moveToWaypointAction->setData(static_cast<int>(PlanStepKind::MoveToWaypoint));
-    QAction* moveAlongRouteAction = addMenu.addAction(QStringLiteral("Move Along Route"));
-    moveAlongRouteAction->setData(static_cast<int>(PlanStepKind::MoveAlongRoute));
-    QAction* patrolAreaAction = addMenu.addAction(QStringLiteral("Patrol Area"));
-    patrolAreaAction->setData(static_cast<int>(PlanStepKind::PatrolArea));
-    QAction* flyAction = addMenu.addAction(QStringLiteral("Fly Heading / Altitude / Speed"));
-    flyAction->setData(static_cast<int>(PlanStepKind::FlyHeadingAltitudeSpeed));
-    QAction* orbitAction = addMenu.addAction(QStringLiteral("Orbit / Hold (Location)"));
-    orbitAction->setData(static_cast<int>(PlanStepKind::OrbitHoldLocation));
-    QAction* rtbAction = addMenu.addAction(QStringLiteral("Return To Base"));
-    rtbAction->setData(static_cast<int>(PlanStepKind::ReturnToBase));
-    addMenu.addSeparator();
-    QAction* attackAirAction = addMenu.addAction(QStringLiteral("Attack Air"));
-    attackAirAction->setData(static_cast<int>(PlanStepKind::AttackAir));
-    QAction* attackSurfaceAction = addMenu.addAction(QStringLiteral("Attack Surface"));
-    attackSurfaceAction->setData(static_cast<int>(PlanStepKind::AttackSurface));
+  auto* dialog = new presentation::EntityPlanDialog(
+      entityName,
+      this->_scenarioState,
+      this->_planExecutor.get(),
+      [this](const QString& en, PlanStepKind kind, PlanStep& step) {
+        return this->configurePlanStep(en, kind, step);
+      },
+      [this](const QString& msg) { this->appendLogMessage(msg); },
+      [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
+      [this]() { this->syncScenarioStateToUi(); },
+      this);
+  dialog->setAttribute(Qt::WA_DeleteOnClose);
+  this->_entityPlanDialog = dialog;
+  this->_entityPlanDialogEntityName = entityName;
 
-    QAction* selectedAction = addMenu.exec(addButton->mapToGlobal(QPoint(0, addButton->height())));
-    if (!selectedAction) {
-      return;
-    }
+  QObject::connect(
+      dialog,
+      &QObject::destroyed,
+      this,
+      [this, dialog]() {
+        if (this->_entityPlanDialog == dialog) {
+          this->_entityPlanDialog = nullptr;
+          this->_entityPlanDialogEntityName.clear();
+        }
+      });
 
-    PlanStep step;
-    dialog.hide();
-    const bool configured = this->configurePlanStep(
-        entityName,
-        static_cast<PlanStepKind>(selectedAction->data().toInt()),
-        step);
-    dialog.show();
-    dialog.raise();
-    dialog.activateWindow();
-    if (!configured) {
-      return;
-    }
-
-    EntityPlan& plan = planForEntity();
-    plan.steps.push_back(step);
-    refreshList();
-    stepsList->setCurrentRow(plan.steps.size() - 1);
-    refreshButtons();
-  });
-
-  QObject::connect(removeButton, &QPushButton::clicked, &dialog, [this, planForEntity, stepsList, refreshList, refreshButtons]() {
-    EntityPlan& plan = planForEntity();
-    if (plan.running) {
-      if (this->_ui && this->_ui->statusLabel) {
-        this->_ui->statusLabel->setText(
-            QStringLiteral("No puedes editar steps mientras el plan esta en ejecucion."));
-      }
-      refreshButtons();
-      return;
-    }
-
-    const int row = stepsList->currentRow();
-    if (row < 0 || row >= plan.steps.size()) {
-      return;
-    }
-    plan.steps.removeAt(row);
-    refreshList();
-    refreshButtons();
-  });
-
-  QObject::connect(upButton, &QPushButton::clicked, &dialog, [this, planForEntity, stepsList, refreshList, refreshButtons]() {
-    EntityPlan& plan = planForEntity();
-    if (plan.running) {
-      if (this->_ui && this->_ui->statusLabel) {
-        this->_ui->statusLabel->setText(
-            QStringLiteral("No puedes editar steps mientras el plan esta en ejecucion."));
-      }
-      refreshButtons();
-      return;
-    }
-
-    const int row = stepsList->currentRow();
-    if (row <= 0 || row >= plan.steps.size()) {
-      return;
-    }
-    plan.steps.swapItemsAt(row, row - 1);
-    refreshList();
-    stepsList->setCurrentRow(row - 1);
-    refreshButtons();
-  });
-
-  QObject::connect(downButton, &QPushButton::clicked, &dialog, [this, planForEntity, stepsList, refreshList, refreshButtons]() {
-    EntityPlan& plan = planForEntity();
-    if (plan.running) {
-      if (this->_ui && this->_ui->statusLabel) {
-        this->_ui->statusLabel->setText(
-            QStringLiteral("No puedes editar steps mientras el plan esta en ejecucion."));
-      }
-      refreshButtons();
-      return;
-    }
-
-    const int row = stepsList->currentRow();
-    if (row < 0 || row >= plan.steps.size() - 1) {
-      return;
-    }
-    plan.steps.swapItemsAt(row, row + 1);
-    refreshList();
-    stepsList->setCurrentRow(row + 1);
-    refreshButtons();
-  });
-
-  QObject::connect(runButton, &QPushButton::clicked, &dialog, [this, entityName, refreshList, refreshButtons]() {
-    if (!this->startEntityPlan(entityName)) {
-      return;
-    }
-    this->syncScenarioStateToUi();
-    refreshList();
-    refreshButtons();
-  });
-
-  QObject::connect(stopButton, &QPushButton::clicked, &dialog, [this, entityName, refreshList, refreshButtons]() {
-    this->stopEntityPlan(entityName, true);
-    this->appendLogMessage(QStringLiteral("Plan stopped for %1").arg(entityName));
-    this->_ui->statusLabel->setText(QStringLiteral("Plan detenido para %1.").arg(entityName));
-    refreshList();
-    refreshButtons();
-  });
-
-  QObject::connect(closeButton, &QPushButton::clicked, &dialog, &QDialog::accept);
-
-  QTimer refreshTimer(&dialog);
-  refreshTimer.setInterval(250);
-  QObject::connect(&refreshTimer, &QTimer::timeout, &dialog, [refreshList, refreshButtons]() {
-    refreshList();
-    refreshButtons();
-  });
-  refreshTimer.start();
-
-  QEventLoop loop;
-  QObject::connect(&dialog, &QDialog::accepted, &loop, [&loop]() {
-    if (loop.isRunning()) {
-      loop.quit();
-    }
-  });
-  QObject::connect(&dialog, &QDialog::rejected, &loop, [&loop]() {
-    if (loop.isRunning()) {
-      loop.quit();
-    }
-  });
-  QObject::connect(&dialog, &QObject::destroyed, &loop, [&loop]() {
-    if (loop.isRunning()) {
-      loop.quit();
-    }
-  });
-
-  refreshList();
-  refreshButtons();
-  dialog.show();
-  dialog.raise();
-  dialog.activateWindow();
-  loop.exec();
+  dialog->show();
+  dialog->raise();
+  dialog->activateWindow();
 }
 
 void MainWindow::clearSelectedTask() {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty() || this->selectedEntityIsDestroyed()) {
-    return;
-  }
-
-  if (this->_scenarioState->clearTask(entityName)) {
-    this->appendLogMessage(QStringLiteral("Task cleared for %1").arg(entityName));
-    this->syncScenarioStateToUi();
-  }
+  this->_scenarioObjectEditorController->clearSelectedTask();
 }
 
 void MainWindow::deleteSelectedEntity() {
-  const QString objectName = this->selectedObjectName();
-  if (objectName.isEmpty()) {
-    return;
-  }
-
-  const QVariantMap summary = this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  const QString type = summary.value(QStringLiteral("type")).toString();
-
-  bool removed = false;
-  QString label = QStringLiteral("Object");
-  if (this->currentSelectionIsEntity()) {
-    removed = this->_scenarioState->removeEntity(objectName);
-    label = QStringLiteral("Entity");
-  } else if (type == QStringLiteral("Waypoint")) {
-    removed = this->_scenarioState->removeWaypoint(objectName);
-    label = QStringLiteral("Waypoint");
-  } else if (type == QStringLiteral("Route")) {
-    removed = this->_scenarioState->removeRoute(objectName);
-    label = QStringLiteral("Route");
-  } else if (type == QStringLiteral("Area")) {
-    removed = this->_scenarioState->removeArea(objectName);
-    label = QStringLiteral("Area");
-  }
-
-  QString cleanupStatusMessage;
-  if (removed) {
-    if (label == QStringLiteral("Entity")) {
-      cleanupStatusMessage = this->cleanupRuntimeReferencesForRemovedEntity(objectName);
-    }
-    this->appendLogMessage(QStringLiteral("%1 deleted: %2").arg(label, objectName));
-    this->removeTrackFromMap(objectName);
-    this->syncScenarioStateToUi();
-    this->_ui->statusLabel->setText(
-        cleanupStatusMessage.isEmpty()
-            ? QStringLiteral("%1 eliminado: %2").arg(label, objectName)
-            : cleanupStatusMessage);
-  }
+  this->_scenarioObjectEditorController->deleteSelected();
 }
 
 void MainWindow::selectObjectByName(const QString& trackName, bool notifyMap) {
@@ -5553,36 +2403,13 @@ void MainWindow::queuePendingBombRelease(
     const QString& targetEntityName,
     bool logQueued,
     bool focusLauncher) {
-  this->_pendingBombRelease.launcherEntityName = launcherEntityName.trimmed();
-  this->_pendingBombRelease.targetEntityName = targetEntityName.trimmed();
-  this->_pendingBombRelease.targetLatitude = targetLatitude;
-  this->_pendingBombRelease.targetLongitude = targetLongitude;
-  this->_pendingBombRelease.targetAltitudeMeters = targetAltitudeMeters;
-  this->_pendingBombRelease.targetLabel = targetLabel.trimmed();
-  this->_pendingBombRelease.sourceDescription = sourceDescription.trimmed();
-  this->_pendingBombRelease.pending = true;
-  this->_pendingBombRelease.releaseCommandIssued = false;
-
-  if (logQueued) {
-    this->appendLogMessage(
-        QStringLiteral("Bomb release queued for %1 on %2 (%3)")
-            .arg(
-                this->_pendingBombRelease.launcherEntityName,
-                this->_pendingBombRelease.targetLabel,
-                this->_pendingBombRelease.sourceDescription));
-  }
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Bomb release armed for %1 on %2.")
-          .arg(
-              this->_pendingBombRelease.launcherEntityName,
-              this->_pendingBombRelease.targetLabel));
-  if (focusLauncher) {
-    this->selectObjectByName(this->_pendingBombRelease.launcherEntityName, true);
-  }
+  this->_bombReleaseController->queue(
+      launcherEntityName, targetLatitude, targetLongitude, targetAltitudeMeters,
+      targetLabel, sourceDescription, targetEntityName, logQueued, focusLauncher);
 }
 
 void MainWindow::clearPendingBombRelease() {
-  this->_pendingBombRelease = PendingBombRelease{};
+  this->_bombReleaseController->clear();
 }
 
 QString MainWindow::cleanupRuntimeReferencesForRemovedEntity(const QString& entityName) {
@@ -5591,710 +2418,76 @@ QString MainWindow::cleanupRuntimeReferencesForRemovedEntity(const QString& enti
     return QString();
   }
 
-  this->_autoBombReleaseCooldownSeconds.remove(removedEntityName);
-  this->_attackAirElapsedSeconds.remove(removedEntityName);
-  this->_attackAirMissileCooldownSeconds.remove(removedEntityName);
+  this->_attackTaskProcessor->removeEntity(removedEntityName);
 
-  if (this->_bombTargetPickLauncherName.compare(
-          removedEntityName,
-          Qt::CaseInsensitive) == 0) {
-    this->_isPickingBombTarget = false;
-    this->_bombTargetPickLauncherName.clear();
-  }
-
-  if (!this->_pendingBombRelease.pending) {
-    return QString();
-  }
-
-  const bool launcherRemoved =
-      this->_pendingBombRelease.launcherEntityName.compare(
-          removedEntityName,
-          Qt::CaseInsensitive) == 0;
-  const bool targetRemoved =
-      !this->_pendingBombRelease.targetEntityName.trimmed().isEmpty() &&
-      this->_pendingBombRelease.targetEntityName.compare(
-          removedEntityName,
-          Qt::CaseInsensitive) == 0;
-  if (!launcherRemoved && !targetRemoved) {
-    return QString();
-  }
-
-  const QString reason = targetRemoved
-      ? QStringLiteral("target removed")
-      : QStringLiteral("launcher removed");
-  this->clearPendingBombRelease();
-  this->removeTrackFromMap(QStringLiteral("Bomb Target"));
-  this->removeTrackFromMap(QStringLiteral("Bomb Target Line"));
-  const QString message =
-      QStringLiteral("Pending bomb release cancelled: %1").arg(reason);
-  this->appendLogMessage(message);
-  return message;
+  return this->_bombReleaseController->handleRemovedEntity(removedEntityName);
 }
 
-void MainWindow::validatePendingBombRelease() {
-  if (!this->_pendingBombRelease.pending) {
-    return;
-  }
 
-  const Entity* launcher =
-      this->findEntityByName(this->_pendingBombRelease.launcherEntityName);
-  if (!launcher || launcher->destroyed) {
-    const QString launcherName = this->_pendingBombRelease.launcherEntityName;
-    this->clearPendingBombRelease();
-    if (!launcherName.trimmed().isEmpty()) {
-      this->_ui->statusLabel->setText(
-          QStringLiteral("Bomb release cleared for %1.").arg(launcherName));
-    }
-  }
+void MainWindow::validatePendingBombRelease() {
+  this->_bombReleaseController->validate();
 }
 
 void MainWindow::processAttackTasks(double deltaSeconds) {
-  if (!this->_simulationRunning) {
-    return;
-  }
-
-  if (deltaSeconds > 0.0) {
-    for (auto it = this->_attackAirMissileCooldownSeconds.begin();
-         it != this->_attackAirMissileCooldownSeconds.end();) {
-      it.value() = qMax(0.0, it.value() - deltaSeconds);
-      if (it.value() <= 0.0) {
-        it = this->_attackAirMissileCooldownSeconds.erase(it);
-        continue;
-      }
-      ++it;
-    }
-  }
-
-  QStringList taskEntityNames;
-  for (const Entity& entity : this->_scenarioState->entities()) {
-    const QString taskType = entity.currentTask.taskType.trimmed();
-    const QString taskStatus = entity.currentTask.status.trimmed();
-    if (entity.destroyed) {
-      this->_attackAirElapsedSeconds.remove(entity.name);
-      this->_attackAirMissileCooldownSeconds.remove(entity.name);
-    }
-    if (taskType == QStringLiteral("AttackAir") && attackTaskStatusIsTerminal(taskStatus)) {
-      this->_attackAirElapsedSeconds.remove(entity.name);
-      this->_attackAirMissileCooldownSeconds.remove(entity.name);
-    }
-    if (!entity.currentTask.enabled ||
-        entity.destroyed ||
-        (taskType != QStringLiteral("AttackAir") &&
-         taskType != QStringLiteral("AttackSurface")) ||
-        attackTaskStatusIsTerminal(taskStatus)) {
-      continue;
-    }
-    taskEntityNames.push_back(entity.name);
-  }
-
-  for (const QString& entityName : taskEntityNames) {
-    const Entity* entity = this->findEntityByName(entityName);
-    if (!entity || entity->destroyed) {
-      this->setEntityTaskStatus(entityName, QStringLiteral("Target unavailable"));
-      continue;
-    }
-
-    const QString taskType = entity->currentTask.taskType.trimmed();
-    if (taskType == QStringLiteral("AttackAir")) {
-      this->processAttackAirTask(entityName, deltaSeconds);
-    } else if (taskType == QStringLiteral("AttackSurface")) {
-      this->processAttackSurfaceTask(entityName);
-    }
-  }
-}
-
-bool MainWindow::processAttackAirTask(const QString& entityName, double deltaSeconds) {
-  const Entity* launcher = this->findEntityByName(entityName);
-  if (!launcher || launcher->destroyed) {
-    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-  }
-
-  const QString targetName = launcher->currentTask.targetEntityName.trimmed();
-  if (targetName.isEmpty()) {
-    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-  }
-
-  const Entity* target = this->findEntityByName(targetName);
-  if (target && target->destroyed) {
-    this->setEntityTaskStatus(entityName, QStringLiteral("Completed"));
-    this->_attackAirElapsedSeconds.remove(entityName);
-    this->_attackAirMissileCooldownSeconds.remove(entityName);
-    this->appendLogMessage(
-        QStringLiteral("Attack Air task completed for %1: target %2 destroyed.")
-            .arg(entityName, targetName));
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Attack Air completado para %1: target destruido.").arg(entityName));
-    return true;
-  }
-  if (!target || target->name == launcher->name) {
-    this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-    this->_attackAirElapsedSeconds.remove(entityName);
-    this->_attackAirMissileCooldownSeconds.remove(entityName);
-    this->appendLogMessage(
-        QStringLiteral("Attack Air task failed for %1: target no longer valid.")
-            .arg(entityName));
-    return true;
-  }
-  if (target->forceIdentifier == launcher->forceIdentifier ||
-      target->domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
-    this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-    this->_attackAirElapsedSeconds.remove(entityName);
-    this->_attackAirMissileCooldownSeconds.remove(entityName);
-    return true;
-  }
-
-  this->_attackAirElapsedSeconds[entityName] =
-      this->_attackAirElapsedSeconds.value(entityName, 0.0) + qMax(0.0, deltaSeconds);
-  if (this->_attackAirElapsedSeconds.value(entityName) >= kAttackAirTimeoutSeconds) {
-    this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-    this->_attackAirElapsedSeconds.remove(entityName);
-    this->_attackAirMissileCooldownSeconds.remove(entityName);
-    this->appendLogMessage(
-        QStringLiteral("Attack Air task failed for %1: timeout against %2.")
-            .arg(entityName, targetName));
-    return true;
-  }
-
-  Entity* mutableLauncher = nullptr;
-  for (Entity& entity : this->_scenarioState->entitiesMutable()) {
-    if (entity.name == entityName) {
-      mutableLauncher = &entity;
-      break;
-    }
-  }
-  if (!mutableLauncher) {
-    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-  }
-
-  const double desiredHeadingDegrees = bearingDegrees(
-      launcher->latitude,
-      launcher->longitude,
-      target->latitude,
-      target->longitude);
-  const double desiredSpeedKnots = qMax(
-      kAttackAirMinimumPursuitSpeedKnots,
-      target->speedKnots + kAttackAirTargetSpeedMarginKnots);
-  mutableLauncher->currentTask.targetLatitude = target->latitude;
-  mutableLauncher->currentTask.targetLongitude = target->longitude;
-  mutableLauncher->currentTask.targetAltitudeMeters = target->altitude;
-  mutableLauncher->currentTask.targetHeadingDegrees = desiredHeadingDegrees;
-  mutableLauncher->currentTask.targetSpeedKnots = desiredSpeedKnots;
-  mutableLauncher->currentTask.status = QStringLiteral("Running");
-
-  const bool activeMissile =
-      activeMissileInFlightForTarget(this->_scenarioState, entityName, targetName);
-  if (weaponQuantity(*launcher, QStringLiteral("Missile")) <= 0) {
-    if (!activeMissile) {
-      this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-      this->_attackAirElapsedSeconds.remove(entityName);
-      this->_attackAirMissileCooldownSeconds.remove(entityName);
-      this->appendLogMessage(
-          QStringLiteral("Attack Air task failed for %1: no missiles remaining.")
-              .arg(entityName));
-      return true;
-    }
-    return false;
-  }
-
-  if (activeMissile) {
-    return false;
-  }
-
-  if (this->_attackAirMissileCooldownSeconds.value(entityName, 0.0) > 0.0) {
-    return false;
-  }
-
-  if (this->_scenarioState->launchMissileAt(entityName, targetName)) {
-    this->_attackAirMissileCooldownSeconds[entityName] =
-        kAttackAirMissileCooldownSeconds;
-    this->appendLogMessage(
-        QStringLiteral("Attack Air task launched missile from %1 at %2")
-            .arg(entityName, targetName));
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Attack Air: %1 persiguiendo y atacando %2.")
-            .arg(entityName, targetName));
-    return true;
-  }
-
-  return false;
-}
-
-bool MainWindow::processAttackSurfaceTask(const QString& entityName) {
-  const Entity* launcher = this->findEntityByName(entityName);
-  if (!launcher || launcher->destroyed) {
-    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-  }
-
-  if (weaponQuantity(*launcher, QStringLiteral("Bomb")) <= 0) {
-    return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-  }
-
-  this->setEntityTaskStatus(entityName, QStringLiteral("Running"));
-
-  if (this->_pendingBombRelease.pending) {
-    if (this->_pendingBombRelease.launcherEntityName.compare(
-            entityName,
-            Qt::CaseInsensitive) == 0) {
-      return this->setEntityTaskStatus(entityName, QStringLiteral("Completed"));
-    }
-    this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-    return false;
-  }
-
-  const EntityTask task = launcher->currentTask;
-  const QString targetName = task.targetEntityName.trimmed();
-  QString targetLabel;
-  QString targetEntityName;
-  double targetLatitude = task.targetLatitude;
-  double targetLongitude = task.targetLongitude;
-  double targetAltitudeMeters = static_cast<double>(task.targetAltitudeMeters);
-
-  if (!targetName.isEmpty()) {
-    const Entity* target = this->findEntityByName(targetName);
-    if (!target || target->destroyed) {
-      this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-      this->appendLogMessage(
-          QStringLiteral("Attack Surface task failed for %1: target no longer valid.")
-              .arg(entityName));
-      return true;
-    }
-    if (target->name == launcher->name ||
-        target->forceIdentifier == launcher->forceIdentifier ||
-        target->domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
-      return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-    }
-
-    targetLatitude = target->latitude;
-    targetLongitude = target->longitude;
-    targetAltitudeMeters = static_cast<double>(target->altitude);
-    targetLabel = target->name;
-    targetEntityName = target->name;
-  } else {
-    if (!attackSurfaceCoordinatesAreUsable(targetLatitude, targetLongitude)) {
-      return this->setEntityTaskStatus(entityName, QStringLiteral("Failed"));
-    }
-    targetLabel = attackPointLabel(targetLatitude, targetLongitude);
-  }
-
-  this->queuePendingBombRelease(
-      entityName,
-      targetLatitude,
-      targetLongitude,
-      targetAltitudeMeters,
-      targetLabel,
-      QStringLiteral("Attack Surface Task"),
-      targetEntityName,
-      false,
-      false);
-  this->setEntityTaskStatus(entityName, QStringLiteral("Completed"));
-  this->appendLogMessage(
-      QStringLiteral("Attack Surface task armed bomb release for %1 at %2")
-          .arg(entityName, targetLabel));
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Attack Surface armado para %1.").arg(entityName));
-  return true;
-}
-
-bool MainWindow::setEntityTaskStatus(const QString& entityName, const QString& status) {
-  for (Entity& entity : this->_scenarioState->entitiesMutable()) {
-    if (entity.name != entityName) {
-      continue;
-    }
-    if (entity.currentTask.status == status) {
-      return true;
-    }
-    entity.currentTask.status = status;
-    this->_scenarioState->save();
-    return true;
-  }
-  return false;
+  _attackTaskProcessor->processAttackTasks(deltaSeconds, _simulationRunning);
 }
 
 void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
-  if (deltaSeconds > 0.0) {
-    for (auto it = this->_autoBombReleaseCooldownSeconds.begin();
-         it != this->_autoBombReleaseCooldownSeconds.end();) {
-      it.value() = qMax(0.0, it.value() - deltaSeconds);
-      if (it.value() <= 0.0) {
-        it = this->_autoBombReleaseCooldownSeconds.erase(it);
-        continue;
-      }
-      ++it;
-    }
-  }
-
-  if (!this->_simulationRunning || this->_pendingBombRelease.pending) {
-    return;
-  }
-
-  for (const Entity& launcher : this->_scenarioState->entities()) {
-    const QString taskType = launcher.currentTask.taskType.trimmed();
-    if (launcher.currentTask.enabled &&
-        (taskType == QStringLiteral("AttackAir") ||
-         taskType == QStringLiteral("AttackSurface"))) {
-      continue;
-    }
-
-    const QString behaviorMode = launcher.behaviorMode.trimmed().isEmpty()
-        ? QStringLiteral("Manual")
-        : launcher.behaviorMode.trimmed();
-    if (behaviorMode.compare(QStringLiteral("Aggressive"), Qt::CaseInsensitive) != 0 ||
-        launcher.destroyed ||
-        launcher.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0 ||
-        weaponQuantity(launcher, QStringLiteral("Bomb")) <= 0) {
-      this->_autoBehaviorDamageReactionLevel.remove(launcher.name);
-      continue;
-    }
-
-    const int damageReactionLevel = autoBehaviorDamageReactionLevel(launcher);
-    const int previousReactionLevel =
-        this->_autoBehaviorDamageReactionLevel.value(launcher.name, -1);
-    if (damageReactionLevel != previousReactionLevel) {
-      this->_autoBehaviorDamageReactionLevel.insert(launcher.name, damageReactionLevel);
-      if (damageReactionLevel >= 2) {
-        this->appendLogMessage(
-            QStringLiteral("%1 auto bombing blocked: critical damage (%2%).")
-                .arg(launcher.name)
-                .arg(launcher.damagePercent, 0, 'f', 0));
-      } else if (damageReactionLevel >= 1) {
-        this->appendLogMessage(
-            QStringLiteral("%1 auto bombing blocked: damage threshold reached (%2%).")
-                .arg(launcher.name)
-                .arg(launcher.damagePercent, 0, 'f', 0));
-      } else {
-        this->appendLogMessage(
-            QStringLiteral("%1 auto bombing re-enabled by damage state (%2%).")
-                .arg(launcher.name)
-                .arg(launcher.damagePercent, 0, 'f', 0));
-      }
-    }
-    if (!autoBehaviorCanEngageByDamage(launcher)) {
-      continue;
-    }
-
-    const auto cooldownIt =
-        this->_autoBombReleaseCooldownSeconds.constFind(launcher.name);
-    if (cooldownIt != this->_autoBombReleaseCooldownSeconds.constEnd() &&
-        cooldownIt.value() > 0.0) {
-      continue;
-    }
-
-    const Entity* target =
-        bestDetectedSurfaceBombTarget(this->_scenarioState, launcher);
-    if (!target) {
-      continue;
-    }
-
-    this->queuePendingBombRelease(
-        launcher.name,
-        target->latitude,
-        target->longitude,
-        static_cast<double>(target->altitude),
-        target->name,
-        QStringLiteral("Auto Behavior"),
-        target->name,
-        false,
-        false);
-    this->_autoBombReleaseCooldownSeconds.insert(
-        launcher.name,
-        kAutoBombReleaseCooldownSeconds);
-    this->appendLogMessage(
-        QStringLiteral("%1 auto-armed bomb release at %2")
-            .arg(launcher.name, target->name));
-    this->_ui->statusLabel->setText(
-        QStringLiteral("%1 auto-armed bomb release at %2.")
-            .arg(launcher.name, target->name));
-    return;
-  }
+  _attackTaskProcessor->processAutoBombing(deltaSeconds, _simulationRunning);
 }
 
 void MainWindow::processPendingBombRelease() {
-  if (!this->_pendingBombRelease.pending) {
-    return;
-  }
-
-  const Entity* launcher =
-      this->findEntityByName(this->_pendingBombRelease.launcherEntityName);
-  if (!launcher || launcher->destroyed) {
-    this->validatePendingBombRelease();
-    return;
-  }
-
-  const int bombCount = weaponQuantity(*launcher, QStringLiteral("Bomb"));
-  if (bombCount <= 0) {
-    const QString launcherName = this->_pendingBombRelease.launcherEntityName;
-    this->clearPendingBombRelease();
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Bomb release cleared for %1. No bombs available.")
-            .arg(launcherName));
-    return;
-  }
-
-  const BombReleaseGateEvaluation evaluation = evaluateBombReleaseGate(
-      *launcher,
-      this->_pendingBombRelease.targetLatitude,
-      this->_pendingBombRelease.targetLongitude,
-      this->_pendingBombRelease.targetAltitudeMeters);
-  if (!evaluation.readyToRelease()) {
-    return;
-  }
-  if (this->_pendingBombRelease.releaseCommandIssued) {
-    return;
-  }
-  this->_pendingBombRelease.releaseCommandIssued = true;
-
-  const QString launcherName = this->_pendingBombRelease.launcherEntityName;
-  const QString targetLabel = this->_pendingBombRelease.targetLabel;
-  const QString sourceDescription = this->_pendingBombRelease.sourceDescription;
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Bomb release window reached for %1 on %2.")
-          .arg(launcherName, targetLabel));
-  QTimer::singleShot(0, this, [this, launcherName, targetLabel, sourceDescription]() {
-    if (!this->_pendingBombRelease.pending ||
-        this->_pendingBombRelease.launcherEntityName != launcherName) {
-      return;
-    }
-    if (!this->_scenarioState->releaseBomb(launcherName)) {
-      this->clearPendingBombRelease();
-      this->_ui->statusLabel->setText(
-          QStringLiteral("No se pudo soltar una bomba desde %1.")
-              .arg(launcherName));
-      this->syncScenarioStateToUi();
-      return;
-    }
-
-    this->appendLogMessage(
-        QStringLiteral("Bomb released from %1 at %2 (%3)")
-            .arg(
-                launcherName,
-                targetLabel,
-                sourceDescription));
-    this->clearPendingBombRelease();
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Bomba soltada desde %1 sobre %2.")
-            .arg(launcherName, targetLabel));
-    this->syncScenarioStateToUi();
-  });
+  this->_bombReleaseController->process();
 }
 
 void MainWindow::releaseBombAtSurfaceEntity() {
-  this->clearPendingBombRelease();
+  this->_bombReleaseActionsController->releaseBombAtSurfaceEntity();
+}
 
-  const QString launcherName = this->selectedEntityName();
-  if (launcherName.isEmpty()) {
-    return;
-  }
-
-  const Entity* launcher = this->findEntityByName(launcherName);
-  const int bombCount =
-      launcher ? weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
-  if (!launcher || bombCount <= 0) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay bombas disponibles en %1.").arg(launcherName));
-    return;
-  }
-
-  if (!this->_simulationRunning) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Arranca la simulacion para programar el release de la bomba."));
-    return;
-  }
-
-  const QVector<const Entity*> targets =
-      validBombReleaseTargets(this->_scenarioState, *launcher);
-  if (targets.isEmpty()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay surface targets validos para %1.")
-            .arg(launcherName));
-    return;
-  }
-
-  QStringList options;
-  QHash<QString, QString> targetNameByOption;
-  for (const Entity* target : targets) {
-    if (!target) {
-      continue;
-    }
-    const QString option = bombTargetDisplayLabel(*target);
-    options.push_back(option);
-    targetNameByOption.insert(option, target->name);
-  }
-
-  bool ok = false;
-  const QString selectedOption = QInputDialog::getItem(
-      this,
-      QStringLiteral("Release Bomb At"),
-      QStringLiteral("Surface Target"),
-      options,
-      0,
-      false,
-      &ok);
-  if (!ok || selectedOption.trimmed().isEmpty()) {
-    this->clearPendingBombRelease();
-    return;
-  }
-
-  const QString targetName = targetNameByOption.value(selectedOption).trimmed();
-  const Entity* target = this->findEntityByName(targetName);
-  if (!target) {
-    this->clearPendingBombRelease();
-    return;
-  }
-
-  this->queuePendingBombRelease(
+void MainWindow::queueBombReleaseAtEntity(const QString& launcherName, const Entity& target) {
+  this->_bombReleaseController->queue(
       launcherName,
-      target->latitude,
-      target->longitude,
-      static_cast<double>(target->altitude),
-      target->name,
+      target.latitude,
+      target.longitude,
+      static_cast<double>(target.altitude),
+      target.name,
       QStringLiteral("Surface Entity"),
-      target->name);
+      target.name);
 }
 
 void MainWindow::releaseBombAtCustomCoordinates() {
-  this->clearPendingBombRelease();
-  this->_isPickingBombTarget = false;
-  this->_bombTargetPickLauncherName.clear();
-
-  const QString launcherName = this->selectedEntityName();
-  if (launcherName.isEmpty()) {
-    return;
-  }
-
-  const Entity* launcher = this->findEntityByName(launcherName);
-  const int bombCount =
-      launcher ? weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
-  if (!launcher || bombCount <= 0) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No hay bombas disponibles en %1.").arg(launcherName));
-    return;
-  }
-
-  if (!this->_simulationRunning) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Arranca la simulacion para programar el release de la bomba."));
-    return;
-  }
-
-  if (!this->_pendingGraphicMode.trimmed().isEmpty()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Termina antes la captura de coordenadas que ya esta activa."));
-    return;
-  }
-
-  this->_isPickingBombTarget = true;
-  this->_bombTargetPickLauncherName = launcherName;
-  this->beginTaskCoordinatePick();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Haz clic en el mapa para fijar el punto de ataque de %1.")
-          .arg(launcherName));
+  this->_bombReleaseActionsController->releaseBombAtCustomCoordinates();
 }
 
 void MainWindow::cancelPendingBombRelease() {
-  if (!this->_pendingBombRelease.pending) {
-    this->_ui->statusLabel->setText(QStringLiteral("No hay release de bomba pendiente."));
-    return;
-  }
-
-  const QString launcherName = this->_pendingBombRelease.launcherEntityName;
-  const QString targetLabel = this->_pendingBombRelease.targetLabel;
-  this->_isPickingBombTarget = false;
-  this->_bombTargetPickLauncherName.clear();
-  this->clearPendingBombRelease();
-  this->appendLogMessage(
-      QStringLiteral("Bomb release canceled for %1 on %2")
-          .arg(launcherName, targetLabel));
-  this->syncScenarioStateToUi();
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Release de bomba cancelado para %1.").arg(launcherName));
+  this->_bombReleaseActionsController->cancelPendingBombRelease();
 }
 
 void MainWindow::openAssignTaskDialog(const QString& initialTaskType) {
-  const QString entityName = this->selectedEntityName();
-  if (entityName.isEmpty()) {
-    return;
-  }
-
-  if (!this->currentSelectionIsOperableEntity()) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("La entidad seleccionada no esta operable."));
-    return;
-  }
-
-  const auto planIt = this->_entityPlans.constFind(entityName);
-  if (planIt != this->_entityPlans.constEnd() && planIt->running) {
-    this->_ui->statusLabel->setText(
-        QStringLiteral("No puedes editar la task mientras el plan esta en ejecucion."));
-    return;
-  }
-
-  const QVariantMap currentSummary =
-      this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
-  EntityTask currentTask;
-  currentTask.taskType = currentSummary.value(QStringLiteral("taskType")).toString();
-  currentTask.enabled = currentSummary.value(QStringLiteral("taskEnabled")).toBool();
-  currentTask.status = currentSummary.value(QStringLiteral("taskStatus")).toString();
-  currentTask.targetHeadingDegrees = currentSummary.value(QStringLiteral("taskTargetHeadingDegrees")).toDouble();
-  currentTask.targetAltitudeMeters = currentSummary.value(QStringLiteral("taskTargetAltitudeMeters")).toInt();
-  currentTask.targetSpeedKnots = currentSummary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble();
-  currentTask.targetLatitude = currentSummary.value(QStringLiteral("taskTargetLatitude")).toDouble();
-  currentTask.targetLongitude = currentSummary.value(QStringLiteral("taskTargetLongitude")).toDouble();
-  currentTask.targetEntityName = currentSummary.value(QStringLiteral("taskTargetEntityName")).toString();
-  currentTask.targetWaypointName = currentSummary.value(QStringLiteral("taskTargetWaypointName")).toString();
-  currentTask.targetRouteName = currentSummary.value(QStringLiteral("taskTargetRouteName")).toString();
-  currentTask.targetAreaName = currentSummary.value(QStringLiteral("taskTargetAreaName")).toString();
-  currentTask.targetAreaRadiusMeters = currentSummary.value(QStringLiteral("taskTargetAreaRadiusMeters")).toDouble();
-
-  EntityTask configuredTask;
-  if (!this->captureTaskConfiguration(entityName, currentTask, initialTaskType, configuredTask)) {
-    return;
-  }
-
-  this->applyEntityTask(entityName, configuredTask);
+  this->_assignTaskController->open(initialTaskType);
 }
 
 void MainWindow::populateTaskCommands() {
   this->_ui->tasksListWidget->clear();
 
-  auto* flyItem = new QListWidgetItem(QStringLiteral("Movement: Fly Heading / Altitude / Speed..."));
-  flyItem->setData(Qt::UserRole, QStringLiteral("FlyHeadingAltitudeSpeed"));
-  this->_ui->tasksListWidget->addItem(flyItem);
+  static const struct { const char* label; const char* type; } kTaskEntries[] = {
+      { "Movement: Fly Heading / Altitude / Speed...", "FlyHeadingAltitudeSpeed" },
+      { "Movement: Move To Location...",               "MoveToLocation"          },
+      { "Movement: Move To Waypoint...",               "MoveToWaypoint"          },
+      { "Movement: Move Along Route...",               "MoveAlongRoute"          },
+      { "Movement: Patrol Area...",                    "PatrolArea"              },
+      { "Movement: Orbit Area...",                     "OrbitArea"               },
+      { "Movement: Follow Entity...",                  "FollowEntity"            },
+      { "Attack: Attack Air...",                       "AttackAir"               },
+      { "Attack: Attack Surface...",                   "AttackSurface"           },
+      { "Other: Clear Current Task",                   "ClearTask"               },
+  };
 
-  auto* moveItem = new QListWidgetItem(QStringLiteral("Movement: Move To Location..."));
-  moveItem->setData(Qt::UserRole, QStringLiteral("MoveToLocation"));
-  this->_ui->tasksListWidget->addItem(moveItem);
-
-  auto* waypointItem = new QListWidgetItem(QStringLiteral("Movement: Move To Waypoint..."));
-  waypointItem->setData(Qt::UserRole, QStringLiteral("MoveToWaypoint"));
-  this->_ui->tasksListWidget->addItem(waypointItem);
-
-  auto* routeItem = new QListWidgetItem(QStringLiteral("Movement: Move Along Route..."));
-  routeItem->setData(Qt::UserRole, QStringLiteral("MoveAlongRoute"));
-  this->_ui->tasksListWidget->addItem(routeItem);
-
-  auto* patrolAreaItem = new QListWidgetItem(QStringLiteral("Movement: Patrol Area..."));
-  patrolAreaItem->setData(Qt::UserRole, QStringLiteral("PatrolArea"));
-  this->_ui->tasksListWidget->addItem(patrolAreaItem);
-
-  auto* orbitAreaItem = new QListWidgetItem(QStringLiteral("Movement: Orbit Area..."));
-  orbitAreaItem->setData(Qt::UserRole, QStringLiteral("OrbitArea"));
-  this->_ui->tasksListWidget->addItem(orbitAreaItem);
-
-  auto* followItem = new QListWidgetItem(QStringLiteral("Movement: Follow Entity..."));
-  followItem->setData(Qt::UserRole, QStringLiteral("FollowEntity"));
-  this->_ui->tasksListWidget->addItem(followItem);
-
-  auto* attackAirItem = new QListWidgetItem(QStringLiteral("Attack: Attack Air..."));
-  attackAirItem->setData(Qt::UserRole, QStringLiteral("AttackAir"));
-  this->_ui->tasksListWidget->addItem(attackAirItem);
-
-  auto* attackSurfaceItem = new QListWidgetItem(QStringLiteral("Attack: Attack Surface..."));
-  attackSurfaceItem->setData(Qt::UserRole, QStringLiteral("AttackSurface"));
-  this->_ui->tasksListWidget->addItem(attackSurfaceItem);
-
-  auto* clearItem = new QListWidgetItem(QStringLiteral("Other: Clear Current Task"));
-  clearItem->setData(Qt::UserRole, QStringLiteral("ClearTask"));
-  this->_ui->tasksListWidget->addItem(clearItem);
+  for (const auto& entry : kTaskEntries) {
+    auto* item = new QListWidgetItem(QString::fromLatin1(entry.label));
+    item->setData(Qt::UserRole, QString::fromLatin1(entry.type));
+    this->_ui->tasksListWidget->addItem(item);
+  }
 }
 
 void MainWindow::rebuildTacticalGraphicsTree() {
@@ -6305,79 +2498,23 @@ void MainWindow::rebuildTacticalGraphicsTree() {
   this->_tacticalGraphicsRootItem->removeRows(0, this->_tacticalGraphicsRootItem->rowCount());
 
   for (const Waypoint& waypoint : this->_scenarioState->waypoints()) {
-    QVariantMap waypointSummary = makeTrackSummary(
-        waypoint.name,
-        QStringLiteral("Waypoint"),
-        QStringLiteral("Graphic"),
-        QStringLiteral("%1 m").arg(waypoint.altitudeMeters, 0, 'f', 0),
-        formatPosition(waypoint.latitude, waypoint.longitude),
-        QStringLiteral("Ready"),
-        waypoint.latitude,
-        waypoint.longitude);
-    waypointSummary.insert(QStringLiteral("type"), QStringLiteral("Waypoint"));
     auto* waypointItem = new QStandardItem(waypoint.name);
-    waypointItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Waypoint")));
-    setTrackData(waypointItem, waypointSummary);
+    waypointItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Waypoint")));
+    setTrackData(waypointItem, presentation::makeWaypointTrackSummary(waypoint));
     this->_tacticalGraphicsRootItem->appendRow(waypointItem);
   }
 
   for (const RouteGraphic& route : this->_scenarioState->routes()) {
-    QVariantList points;
-    for (const RoutePoint& point : route.points) {
-      points.push_back(QVariantMap{
-          {QStringLiteral("latitude"), point.latitude},
-          {QStringLiteral("longitude"), point.longitude},
-          {QStringLiteral("altitudeMeters"), point.altitudeMeters},
-      });
-    }
-    const RoutePoint firstPoint = route.points.isEmpty() ? RoutePoint{} : route.points.first();
-    QVariantMap routeSummary = makeTrackSummary(
-        route.name,
-        QStringLiteral("Route"),
-        QStringLiteral("Graphic"),
-        QStringLiteral("-"),
-        route.points.isEmpty() ? QStringLiteral("-") : formatPosition(firstPoint.latitude, firstPoint.longitude),
-        QStringLiteral("%1 points").arg(route.points.size()),
-        firstPoint.latitude,
-        firstPoint.longitude);
-    routeSummary.insert(QStringLiteral("type"), QStringLiteral("Route"));
-    routeSummary.insert(QStringLiteral("routePoints"), points);
     auto* routeItem = new QStandardItem(route.name);
-    routeItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Route")));
-    setTrackData(routeItem, routeSummary);
+    routeItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Route")));
+    setTrackData(routeItem, presentation::makeRouteTrackSummary(route));
     this->_tacticalGraphicsRootItem->appendRow(routeItem);
   }
 
   for (const AreaDefinition& area : this->_scenarioState->areas()) {
-    QVariantMap areaSummary = makeTrackSummary(
-        area.name,
-        QStringLiteral("Area"),
-        QStringLiteral("Graphic"),
-        QStringLiteral("%1 m").arg(area.centerAltitudeMeters, 0, 'f', 0),
-        formatPosition(area.centerLatitude, area.centerLongitude),
-        QStringLiteral("%1").arg(area.areaType),
-        area.centerLatitude,
-        area.centerLongitude);
-    areaSummary.insert(QStringLiteral("type"), QStringLiteral("Area"));
-    areaSummary.insert(QStringLiteral("areaType"), area.areaType);
-    areaSummary.insert(QStringLiteral("radiusMeters"), area.radiusMeters);
-    areaSummary.insert(QStringLiteral("semiMajorAxisMeters"), area.semiMajorAxisMeters);
-    areaSummary.insert(QStringLiteral("semiMinorAxisMeters"), area.semiMinorAxisMeters);
-    areaSummary.insert(QStringLiteral("rotationDegrees"), area.rotationDegrees);
-    QVariantList areaPoints;
-    for (const RoutePoint& point : area.points) {
-      areaPoints.push_back(QVariantMap{
-          {QStringLiteral("latitude"), point.latitude},
-          {QStringLiteral("longitude"), point.longitude},
-          {QStringLiteral("altitudeMeters"), point.altitudeMeters},
-      });
-    }
-    areaSummary.insert(QStringLiteral("areaPoints"), areaPoints);
-    areaSummary.insert(QStringLiteral("minAltitudeMeters"), area.minAltitudeMeters);
-    areaSummary.insert(QStringLiteral("maxAltitudeMeters"), area.maxAltitudeMeters);
     auto* areaItem = new QStandardItem(area.name);
-    areaItem->setIcon(makeTacticalGraphicIcon(QStringLiteral("Engagement Area")));
-    setTrackData(areaItem, areaSummary);
+    areaItem->setIcon(presentation::makeTacticalGraphicIcon(QStringLiteral("Engagement Area")));
+    setTrackData(areaItem, presentation::makeAreaTrackSummary(area));
     this->_tacticalGraphicsRootItem->appendRow(areaItem);
   }
 
@@ -6414,169 +2551,15 @@ void MainWindow::beginGraphicCoordinatePick() {
 }
 
 void MainWindow::openAddWaypointDialog() {
-  bool ok = false;
-  const QString name = QInputDialog::getText(
-      this,
-      QStringLiteral("Add Waypoint"),
-      QStringLiteral("Waypoint name"),
-      QLineEdit::Normal,
-      QStringLiteral("Waypoint %1").arg(this->_scenarioState->waypoints().size() + 1),
-      &ok).trimmed();
-  if (!ok || name.isEmpty()) {
-    return;
-  }
-  _pendingGraphicMode = QStringLiteral("Waypoint");
-  _pendingGraphicName = name;
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Creando waypoint %1. Haz clic una vez en el mapa para fijar su posicion.")
-          .arg(name));
-  this->beginGraphicCoordinatePick();
+  this->_tacticalGraphicsEditorController->openAddWaypointDialog();
 }
 
 void MainWindow::openAddRouteDialog() {
-  bool ok = false;
-  const QString name = QInputDialog::getText(
-      this,
-      QStringLiteral("Add Route"),
-      QStringLiteral("Route name"),
-      QLineEdit::Normal,
-      QStringLiteral("Route %1").arg(this->_scenarioState->routes().size() + 1),
-      &ok).trimmed();
-  if (!ok || name.isEmpty()) {
-    return;
-  }
-  _pendingGraphicMode = QStringLiteral("Route");
-  _pendingGraphicName = name;
-  _pendingRoutePoints.clear();
-  this->clearDraftGraphicFromMap(name + QStringLiteral(" (draft)"));
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Creando route %1. Haz clic en el primer punto de la ruta en el mapa.")
-          .arg(name));
-  this->beginGraphicCoordinatePick();
+  this->_tacticalGraphicsEditorController->openAddRouteDialog();
 }
 
 void MainWindow::openAddAreaDialog() {
-  bool ok = false;
-  const QString name = QInputDialog::getText(
-      this,
-      QStringLiteral("Add Area"),
-      QStringLiteral("Area name"),
-      QLineEdit::Normal,
-      QStringLiteral("Area %1").arg(this->_scenarioState->areas().size() + 1),
-      &ok).trimmed();
-  if (!ok || name.isEmpty()) {
-    return;
-  }
-
-  const QStringList areaTypes = {
-      QStringLiteral("Circle"),
-      QStringLiteral("Ellipse"),
-      QStringLiteral("Polygon"),
-  };
-  const QString areaType = QInputDialog::getItem(
-      this,
-      QStringLiteral("Area Type"),
-      QStringLiteral("Type"),
-      areaTypes,
-      0,
-      false,
-      &ok);
-  if (!ok) {
-    return;
-  }
-
-  _pendingAreaType = areaType;
-  _pendingGraphicName = name;
-  _pendingAreaPoints.clear();
-  this->clearDraftGraphicFromMap(name + QStringLiteral(" (draft)"));
-  const double areaAltitudeMeters = QInputDialog::getDouble(
-      this,
-      QStringLiteral("Area Altitude"),
-      QStringLiteral("Center altitude (m)"),
-      0.0,
-      -1000.0,
-      80000.0,
-      1,
-      &ok);
-  if (!ok) {
-    return;
-  }
-  _pendingAreaAltitudeMeters = areaAltitudeMeters;
-  if (areaType == QStringLiteral("Circle")) {
-    const double radiusMeters = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Area Radius"),
-        QStringLiteral("Radius (m)"),
-        5000.0,
-        50.0,
-        500000.0,
-        0,
-        &ok);
-    if (!ok) {
-      return;
-    }
-    _pendingGraphicMode = QStringLiteral("Area");
-    _pendingAreaRadiusMeters = radiusMeters;
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Creando area circular %1. Haz clic en el mapa para fijar el centro.")
-            .arg(name));
-    this->beginGraphicCoordinatePick();
-    return;
-  }
-
-  if (areaType == QStringLiteral("Ellipse")) {
-    const double semiMajorMeters = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Ellipse Semi-major Axis"),
-        QStringLiteral("Semi-major axis (m)"),
-        6000.0,
-        50.0,
-        500000.0,
-        0,
-        &ok);
-    if (!ok) {
-      return;
-    }
-    const double semiMinorMeters = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Ellipse Semi-minor Axis"),
-        QStringLiteral("Semi-minor axis (m)"),
-        3000.0,
-        50.0,
-        500000.0,
-        0,
-        &ok);
-    if (!ok) {
-      return;
-    }
-    const double rotationDegrees = QInputDialog::getDouble(
-        this,
-        QStringLiteral("Ellipse Rotation"),
-        QStringLiteral("Rotation (deg)"),
-        0.0,
-        -360.0,
-        360.0,
-        1,
-        &ok);
-    if (!ok) {
-      return;
-    }
-    _pendingGraphicMode = QStringLiteral("Area");
-    _pendingAreaSemiMajorMeters = semiMajorMeters;
-    _pendingAreaSemiMinorMeters = semiMinorMeters;
-    _pendingAreaRotationDegrees = rotationDegrees;
-    this->_ui->statusLabel->setText(
-        QStringLiteral("Creando area eliptica %1. Haz clic en el mapa para fijar el centro.")
-            .arg(name));
-    this->beginGraphicCoordinatePick();
-    return;
-  }
-
-  _pendingGraphicMode = QStringLiteral("AreaPolygon");
-  this->_ui->statusLabel->setText(
-      QStringLiteral("Creando polygon %1. Anade puntos en el mapa; para cerrar, pincha cerca del primer punto.")
-          .arg(name));
-  this->beginGraphicCoordinatePick();
+  this->_tacticalGraphicsEditorController->openAddAreaDialog();
 }
 
 void MainWindow::updateSimulationControls() {

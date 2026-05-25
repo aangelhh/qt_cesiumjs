@@ -2,6 +2,8 @@
 
 #include <QMainWindow>
 #include <QHash>
+#include <QHBoxLayout>
+#include <QFrame>
 #include <QList>
 #include <QModelIndex>
 #include <QPointer>
@@ -10,7 +12,23 @@
 #include <QVariantMap>
 #include <QVector>
 
+#include <memory>
+
+#include "application/AttackTaskProcessor.h"
 #include "application/SimulationEngine.h"
+#include "presentation/BombReleaseController.h"
+#include "presentation/EntityPlanExecutor.h"
+#include "presentation/GraphicPickCoordinator.h"
+#include "presentation/PlanStepConfigurator.h"
+#include "presentation/PlanTypes.h"
+#include "presentation/AssignTaskController.h"
+#include "presentation/BombReleaseActionsController.h"
+#include "presentation/EntityStateActionsController.h"
+#include "presentation/ScenarioObjectEditorController.h"
+#include "presentation/SimulationLifecycleController.h"
+#include "presentation/TacticalGraphicsEditorController.h"
+#include "presentation/TaskAssignmentController.h"
+#include "presentation/WeaponActionsController.h"
 
 class QAction;
 class AddEntityDialog;
@@ -32,6 +50,16 @@ struct AreaDefinition;
 struct RouteGraphic;
 struct Waypoint;
 
+namespace presentation {
+class BombReleaseController;
+class EntityHomePositionTracker;
+class EntityPlanDialog;
+class EntityPlanExecutor;
+class EntityVisualStateManager;
+class GraphicPickCoordinator;
+class PlanStepConfigurator;
+}
+
 namespace Ui {
 class MainWindow;
 }
@@ -48,8 +76,10 @@ protected:
 
 private slots:
   void openAddEntityDialog();
+  void onEntityDialogAccepted(const struct Entity& entity);
   void beginEntityCoordinatePick();
   void reportPickedCoordinate(double longitude, double latitude, double height);
+  void handleBombPickCoordinate(double longitude, double latitude);
   void reportMapStatus(const QString& message);
   void updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex& previous);
   void handleDetectedContactSelection(const QModelIndex& current, const QModelIndex& previous);
@@ -81,8 +111,10 @@ private slots:
   void addBombToSelectedEntity();
   void launchMissileFromSelectedEntity();
   void launchMissileAtSelectedEntity();
+  void executeMissileLaunch(const QString& launcherName, const QString& targetName, int previousMissileCount);
   void releaseBombFromSelectedEntity();
   void releaseBombAtSurfaceEntity();
+  void queueBombReleaseAtEntity(const QString& launcherName, const struct Entity& target);
   void releaseBombAtCustomCoordinates();
   void cancelPendingBombRelease();
   void clearSelectedTask();
@@ -95,60 +127,13 @@ private slots:
   void stopSimulation();
 
 private:
-  struct EntityVisualState {
-    bool hidden = false;
-    bool radarCoverageVisible = false;
-    bool trackHistoryVisible = false;
-  };
-
-  struct EntityHomePosition {
-    double latitude = 0.0;
-    double longitude = 0.0;
-    int altitudeMeters = 0;
-    bool valid = false;
-  };
-
-  struct PendingBombRelease {
-    QString launcherEntityName;
-    QString targetEntityName;
-    double targetLatitude = 0.0;
-    double targetLongitude = 0.0;
-    double targetAltitudeMeters = 0.0;
-    QString targetLabel;
-    QString sourceDescription;
-    bool pending = false;
-    bool releaseCommandIssued = false;
-  };
-
-  enum class PlanStepKind {
-    MoveToLocation,
-    MoveToWaypoint,
-    MoveAlongRoute,
-    PatrolArea,
-    FlyHeadingAltitudeSpeed,
-    OrbitHoldLocation,
-    ReturnToBase,
-    AttackAir,
-    AttackSurface,
-  };
-
-  struct PlanStep {
-    PlanStepKind kind = PlanStepKind::MoveToLocation;
-    EntityTask task;
-    QString label;
-    QString status = QStringLiteral("NotStarted");
-  };
-
-  struct EntityPlan {
-    QVector<PlanStep> steps;
-    int currentStepIndex = -1;
-    bool running = false;
-    int currentStableTicks = 0;
-    QString status = QStringLiteral("NotStarted");
-  };
+  // PendingBombRelease, PlanStepKind, PlanStep, EntityPlan now in
+  // presentation/PlanTypes.h
 
   void initializeModels();
-  void appendEntityToUi(const class Entity& entity);
+  void initializeObjectTreeModel();
+  void initializeContactsTableModel();
+  void appendEntityToUi(const struct Entity& entity);
   QStandardItem* rootItemForForceIdentifier(int forceIdentifier) const;
   QStandardItem* ensureGroupItem(QStandardItem* parent, const QString& label, const QVariantMap& summary);
   void rebuildTacticalGraphicsTree();
@@ -156,7 +141,7 @@ private:
   void setSelectedTrackDetails(const QVariantMap& summary);
   QString buildSelectedEntityOperationalStatus(
       const QVariantMap& summary,
-      const class Entity* entity) const;
+      const struct Entity* entity) const;
   void sendTrackToMap(const QVariantMap& summary, bool focus = false);
   void removeTrackFromMap(const QString& trackName);
   void sendDraftGraphicToMap(const QVariantMap& summary);
@@ -165,9 +150,14 @@ private:
   void syncTracksToMap();
   void syncDetectedContactsToUi();
   void syncScenarioStateToUi();
+  /// Helpers called by syncScenarioStateToUi:
+  bool syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync);
+  void syncActiveMunitionTracksToMap();
+  void syncTransientEffectsToMap();
+  void syncPendingBombTargetToMap();
   void selectObjectByName(const QString& trackName, bool notifyMap);
   QStandardItem* findTrackItemByName(QStandardItem* parent, const QString& trackName) const;
-  const class Entity* findEntityByName(const QString& entityName) const;
+  const struct Entity* findEntityByName(const QString& entityName) const;
   QString selectedEntityName() const;
   QString selectedObjectName() const;
   bool currentSelectionIsEntity() const;
@@ -188,9 +178,6 @@ private:
   QString cleanupRuntimeReferencesForRemovedEntity(const QString& entityName);
   void validatePendingBombRelease();
   void processAttackTasks(double deltaSeconds);
-  bool processAttackAirTask(const QString& entityName, double deltaSeconds);
-  bool processAttackSurfaceTask(const QString& entityName);
-  bool setEntityTaskStatus(const QString& entityName, const QString& status);
   void processAutoBombingBehaviors(double deltaSeconds);
   void processPendingBombRelease();
   void openAssignTaskDialog(const QString& initialTaskType);
@@ -199,14 +186,12 @@ private:
   void beginGraphicCoordinatePick();
   void updateSimulationControls();
   void createTaskQuickBar();
+  void populateTaskQuickBarButtons(QFrame* panel, QHBoxLayout* layout);
   void positionTaskQuickBar();
   void updateTaskQuickBarState();
   void showTaskQuickPlaceholder(const QString& actionName);
   void populateEntityContextMenu(QMenu& menu);
-  QVariantMap makeEntityTrackSummary(const class Entity& entity) const;
-  EntityVisualState entityVisualStateFor(const QString& entityName) const;
-  EntityVisualState& ensureEntityVisualState(const QString& entityName);
-  EntityHomePosition entityHomePositionFor(const QString& entityName) const;
+  QVariantMap makeEntityTrackSummary(const struct Entity& entity) const;
   const Waypoint* findWaypointByName(const QString& waypointName) const;
   const RouteGraphic* findRouteByName(const QString& routeName) const;
   const AreaDefinition* findAreaByNameOrId(const QString& areaNameOrId) const;
@@ -214,33 +199,16 @@ private:
   QStringList availableRouteNames(bool requirePoints) const;
   QStringList availableAreaNames() const;
   EntityPlan& ensureEntityPlan(const QString& entityName);
-  void rememberEntityHomePosition(const class Entity& entity);
-  QString entityVisualStatePath() const;
-  void loadEntityVisualStates();
-  void saveEntityVisualStates() const;
-  void pruneEntityVisualStates();
-  void pruneEntityHomePositions();
   void pruneEntityPlans();
-  QString planStepDisplayLabel(const PlanStep& step) const;
   bool captureTaskConfiguration(
       const QString& entityName,
       const EntityTask& initialTask,
       const QString& initialTaskType,
       EntityTask& outTask);
   bool configurePlanStep(const QString& entityName, PlanStepKind kind, PlanStep& step);
-  bool validatePlanStepForExecution(const PlanStep& step, QString* reason) const;
-  bool activeTaskMatchesPlanStep(const class Entity& entity, const PlanStep& step) const;
   bool startEntityPlan(const QString& entityName);
   void stopEntityPlan(const QString& entityName, bool clearCurrentTask);
   void advanceEntityPlans();
-  bool activePlanStepCompleted(const class Entity& entity, EntityPlan& plan) const;
-  bool startPlanStepTask(const QString& entityName, EntityPlan& plan);
-  void failRunningPlan(
-      const QString& entityName,
-      EntityPlan& plan,
-      const QString& logMessage = QString(),
-      const QString& statusMessage = QString());
-  void completeRunningPlan(const QString& entityName, EntityPlan& plan, const QString& completedLabel);
   bool applyEntityTask(
       const QString& entityName,
       const EntityTask& task,
@@ -273,36 +241,33 @@ private:
   QStandardItem* _tacticalGraphicsRootItem;
   QPointer<AddEntityDialog> _entityDialog;
   QPointer<AssignTaskDialog> _taskDialog;
+  QPointer<presentation::EntityPlanDialog> _entityPlanDialog;
+  QString _entityPlanDialogEntityName;
   QAction* _addWaypointAction;
   QAction* _addRouteAction;
   QAction* _addAreaAction;
   QTimer* _simulationTimer;
   bool _applyingMapSelection;
   bool _simulationRunning;
-  bool _isPickingBombTarget;
-  QString _pendingGraphicMode;
-  QString _pendingGraphicName;
-  QString _bombTargetPickLauncherName;
-  QVector<QVariantMap> _pendingRoutePoints;
-  QString _pendingAreaType;
-  double _pendingAreaRadiusMeters;
-  double _pendingAreaAltitudeMeters;
-  double _pendingAreaSemiMajorMeters;
-  double _pendingAreaSemiMinorMeters;
-  double _pendingAreaRotationDegrees;
-  QVector<QVariantMap> _pendingAreaPoints;
   QList<QToolButton*> _taskQuickButtons;
   QSet<QString> _activeMunitionTrackNames;
   QSet<QString> _activeEffectTrackNames;
-  QHash<QString, EntityVisualState> _entityVisualStates;
-  QHash<QString, EntityHomePosition> _entityHomePositions;
-  QHash<QString, double> _autoBombReleaseCooldownSeconds;
-  QHash<QString, int> _autoBehaviorDamageReactionLevel;
-  QHash<QString, double> _attackAirElapsedSeconds;
-  QHash<QString, double> _attackAirMissileCooldownSeconds;
-  QHash<QString, EntityPlan> _entityPlans;
-  PendingBombRelease _pendingBombRelease;
   application::SimulationEngine* m_simulationEngine;
+  std::unique_ptr<presentation::BombReleaseController> _bombReleaseController;
+  std::unique_ptr<application::AttackTaskProcessor> _attackTaskProcessor;
+  std::unique_ptr<presentation::EntityPlanExecutor> _planExecutor;
+  std::unique_ptr<presentation::EntityVisualStateManager> _entityVisualStateManager;
+  std::unique_ptr<presentation::EntityHomePositionTracker> _entityHomePositionTracker;
+  std::unique_ptr<presentation::GraphicPickCoordinator> _graphicPickCoordinator;
+  std::unique_ptr<presentation::PlanStepConfigurator> _planStepConfigurator;
+  std::unique_ptr<presentation::WeaponActionsController> _weaponActionsController;
+  std::unique_ptr<presentation::EntityStateActionsController> _entityStateActionsController;
+  std::unique_ptr<presentation::TaskAssignmentController> _taskAssignmentController;
+  std::unique_ptr<presentation::TacticalGraphicsEditorController> _tacticalGraphicsEditorController;
+  std::unique_ptr<presentation::BombReleaseActionsController> _bombReleaseActionsController;
+  std::unique_ptr<presentation::ScenarioObjectEditorController> _scenarioObjectEditorController;
+  std::unique_ptr<presentation::SimulationLifecycleController> _simulationLifecycleController;
+  std::unique_ptr<presentation::AssignTaskController> _assignTaskController;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   QWebEngineView* _webView;
 #endif

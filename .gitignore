@@ -84,4 +84,10 @@ CMakeLists.txt.user*
 /.qtcreator/
 
 
+# Local secrets / config: keep cesium.conf untracked so credentials don't get
+# committed by accident. The committed file remains for backwards compatibility
+# but should be replaced with cesium.conf.template going forward.
+/cesium.conf
+/.cesium.token
+
 !src/infrastructure/hla/lib/linux/*

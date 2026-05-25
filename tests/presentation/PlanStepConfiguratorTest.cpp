@@ -1,0 +1,237 @@
+#include <gtest/gtest.h>
+#include "presentation/PlanStepConfigurator.h"
+#include "presentation/EntityHomePositionTracker.h"
+#include "domain/Entity.h"
+#include "domain/GeoMath.h"
+
+#include <QCoreApplication>
+
+namespace {
+
+// Default stubs — typed to match PlanStepConfigurator callback signatures
+presentation::PlanStepConfigurator::CaptureFn alwaysAcceptCapture =
+    [](const QString&, const EntityTask& init, const QString&, EntityTask& out) -> bool {
+  out = init;
+  return true;
+};
+presentation::PlanStepConfigurator::CaptureFn alwaysCancelCapture =
+    [](const QString&, const EntityTask&, const QString&, EntityTask&) -> bool {
+  return false;
+};
+presentation::PlanStepConfigurator::FindAreaFn noArea =
+    [](const QString&) -> const AreaDefinition* { return nullptr; };
+presentation::PlanStepConfigurator::HomePosFn noHome =
+    [](const QString&) -> presentation::EntityHomePosition {
+  return {0.0, 0.0, 0, false};
+};
+presentation::PlanStepConfigurator::AskItemFn acceptItem =
+    [](const QString&, const QString&, const QStringList& items, bool& ok) -> QString {
+  ok = true;
+  return items.isEmpty() ? QString() : items.first();
+};
+presentation::PlanStepConfigurator::AskItemFn cancelItem =
+    [](const QString&, const QString&, const QStringList&, bool& ok) -> QString {
+  ok = false;
+  return {};
+};
+presentation::PlanStepConfigurator::AskDoubleFn acceptDouble =
+    [](const QString&, const QString&, double def, double, double, bool& ok) -> double {
+  ok = true;
+  return def;
+};
+
+Entity makeAirEntity(const QString& name) {
+  Entity e;
+  e.name         = name;
+  e.category     = QStringLiteral("Air");
+  e.domain       = QStringLiteral("Air");
+  e.latitude     = 40.0;
+  e.longitude    = -3.0;
+  e.altitude     = 3000;
+  e.speedKnots   = 300.0;
+  e.headingDegrees = 90.0;
+  return e;
+}
+
+class PlanStepConfiguratorTest : public ::testing::Test {};
+
+// ── Cancellation ─────────────────────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, MoveToLocation_CancelReturnsFalse) {
+  presentation::PlanStepConfigurator cfg(
+      alwaysCancelCapture, noArea, noHome, acceptItem, acceptDouble);
+  Entity entity = makeAirEntity("Alpha");
+  PlanStep step;
+  EXPECT_FALSE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::MoveToLocation, step));
+}
+
+TEST_F(PlanStepConfiguratorTest, OrbitHoldLocation_CancelItemReturnsFalse) {
+  presentation::PlanStepConfigurator cfg(
+      alwaysAcceptCapture, noArea, noHome, cancelItem, acceptDouble);
+  Entity entity = makeAirEntity("Beta");
+  PlanStep step;
+  EXPECT_FALSE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::OrbitHoldLocation, step));
+}
+
+// ── MoveToLocation ────────────────────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, MoveToLocation_Label) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString&, EntityTask& out) {
+        out = init;
+        out.targetLatitude  = 41.5;
+        out.targetLongitude = -4.2;
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Gamma");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::MoveToLocation, step));
+  EXPECT_EQ(step.kind, PlanStepKind::MoveToLocation);
+  EXPECT_TRUE(step.label.startsWith(QStringLiteral("Move To")));
+  EXPECT_TRUE(step.task.enabled);
+}
+
+// ── MoveToWaypoint ────────────────────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, MoveToWaypoint_Label) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString&, EntityTask& out) {
+        out = init;
+        out.targetWaypointName = QStringLiteral("WP1");
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Delta");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::MoveToWaypoint, step));
+  EXPECT_EQ(step.label, QStringLiteral("Move To Waypoint: WP1"));
+}
+
+// ── FlyHeadingAltitudeSpeed ───────────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, FlyHeadingAltitudeSpeed_Label) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString&, EntityTask& out) {
+        out = init;
+        out.targetHeadingDegrees = 270.0;
+        out.targetAltitudeMeters = 5000;
+        out.targetSpeedKnots     = 450.0;
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Epsilon");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 90.0, 3000, 300.0, PlanStepKind::FlyHeadingAltitudeSpeed, step));
+  EXPECT_TRUE(step.label.contains(QStringLiteral("270")));
+  EXPECT_TRUE(step.label.contains(QStringLiteral("5000")));
+  EXPECT_TRUE(step.label.contains(QStringLiteral("450")));
+}
+
+// ── ReturnToBase (no recorded home) ──────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, ReturnToBase_NoHome_FallsBackToEntityPos) {
+  presentation::PlanStepConfigurator cfg(
+      alwaysAcceptCapture, noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Zeta");
+  entity.latitude  = 38.7;
+  entity.longitude = -9.1;
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::ReturnToBase, step));
+  EXPECT_EQ(step.label, QStringLiteral("Return To Base"));
+  EXPECT_DOUBLE_EQ(step.task.targetLatitude,  38.7);
+  EXPECT_DOUBLE_EQ(step.task.targetLongitude, -9.1);
+}
+
+// ── ReturnToBase (with home position) ────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, ReturnToBase_WithHome_UsesHomePos) {
+  auto withHome = [](const QString&) -> presentation::EntityHomePosition {
+    return {50.0, 8.0, 100, true};
+  };
+  presentation::PlanStepConfigurator cfg(
+      alwaysAcceptCapture, noArea, withHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Eta");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::ReturnToBase, step));
+  EXPECT_DOUBLE_EQ(step.task.targetLatitude,  50.0);
+  EXPECT_DOUBLE_EQ(step.task.targetLongitude, 8.0);
+  EXPECT_EQ(step.task.targetAltitudeMeters, 100);
+}
+
+// ── OrbitHoldLocation ─────────────────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, OrbitHoldLocation_CurrentPosition_UsesEntityPos) {
+  presentation::PlanStepConfigurator cfg(
+      alwaysAcceptCapture, noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Theta");
+  entity.latitude  = 48.8;
+  entity.longitude = 2.3;
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::OrbitHoldLocation, step));
+  EXPECT_EQ(step.task.taskType, QStringLiteral("OrbitArea"));
+  EXPECT_DOUBLE_EQ(step.task.targetLatitude,  48.8);
+  EXPECT_DOUBLE_EQ(step.task.targetLongitude, 2.3);
+  EXPECT_GT(step.task.targetAreaRadiusMeters, 0.0);
+}
+
+// ── PatrolArea (area not found) ───────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, PatrolArea_AreaNotFound_StillSucceeds) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString&, EntityTask& out) {
+        out = init;
+        out.targetAreaName = QStringLiteral("ZoneA");
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Iota");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::PatrolArea, step));
+  EXPECT_EQ(step.label, QStringLiteral("Patrol Area: ZoneA"));
+}
+
+// ── AttackAir ─────────────────────────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, AttackAir_Label) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString&, EntityTask& out) {
+        out = init;
+        out.targetEntityName = QStringLiteral("Target1");
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Kappa");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::AttackAir, step));
+  EXPECT_EQ(step.label, QStringLiteral("Attack Air: Target1"));
+}
+
+// ── AttackSurface ─────────────────────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, AttackSurface_ByCoordinate_Label) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString&, EntityTask& out) {
+        out = init;
+        out.targetEntityName.clear();
+        out.targetLatitude  = 36.5;
+        out.targetLongitude = -6.2;
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Lambda");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::AttackSurface, step));
+  EXPECT_TRUE(step.label.startsWith(QStringLiteral("Attack Surface:")));
+}
+
+} // namespace

@@ -2,62 +2,9 @@
     "areas": [
     ],
     "entities": [
-        {
-            "altitude": 12000,
-            "callsign": "",
-            "category": "Fighter",
-            "currentTask": {
-                "enabled": true,
-                "status": "Queued",
-                "targetAltitudeMeters": 0,
-                "targetAreaName": "",
-                "targetAreaRadiusMeters": 0,
-                "targetEntityName": "",
-                "targetHeadingDegrees": 0,
-                "targetLatitude": 50.803760654847984,
-                "targetLongitude": -130.10568305000535,
-                "targetRouteName": "",
-                "targetSpeedKnots": 320,
-                "targetWaypointName": "Waypoint 1",
-                "taskType": "MoveToWaypoint"
-            },
-            "domain": "Air",
-            "entityCategory": 1,
-            "entityCountry": 71,
-            "entityDomain": 2,
-            "entityExtra": 0,
-            "entityKind": 1,
-            "entitySpecific": 1,
-            "entitySubcategory": 4,
-            "entityTypeCode": "1:2:71:1:4:1:0",
-            "flightDynamicsEnabled": true,
-            "flightDynamicsMode": "jsbsim",
-            "forceIdentifier": 1,
-            "groundHeight": 956.48,
-            "headingDegrees": 0,
-            "jsbsimAircraftModel": "f22",
-            "latitude": 48.968029,
-            "longitude": -112.605444,
-            "modelName": "Mirage 2000 (Generic)",
-            "modelUri": "file:///Users/angelconde/mi-proyecto/qttest/models/Air/Fighter/dassault_mirage_2000.glb",
-            "name": "mirage200",
-            "sensorContacts": [
-            ],
-            "sensors": [
-            ],
-            "speedKnots": 0,
-            "type": "Mirage 2000 (Generic)",
-            "verticalSpeedMetersPerSecond": 0
-        }
     ],
     "routes": [
     ],
     "waypoints": [
-        {
-            "altitudeMeters": 0,
-            "latitude": 50.803760654847984,
-            "longitude": -130.10568305000535,
-            "name": "Waypoint 1"
-        }
     ]
 }

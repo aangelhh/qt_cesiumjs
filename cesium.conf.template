@@ -1,0 +1,12 @@
+# Local Cesium runtime configuration.
+#
+# Copy this file to `cesium.conf` and fill in your own values. The real
+# `cesium.conf` is gitignored so secrets stay out of version control.
+#
+# You can also supply the access token via the CESIUM_ION_TOKEN environment
+# variable, which takes precedence over this file.
+
+ion_access_token='YOUR_CESIUM_ION_TOKEN_HERE'
+
+# Example:
+# ion_asset_id=1

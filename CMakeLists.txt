@@ -43,6 +43,21 @@ qt_add_executable(qttest
     src/infrastructure/ModelCatalog.h
     src/application/ScenarioState.cpp
     src/application/ScenarioState.h
+    src/application/TacticalGraphicRepository.cpp
+    src/application/TacticalGraphicRepository.h
+    src/application/ScenarioSerializer.cpp
+    src/application/ScenarioSerializer.h
+    src/application/BehaviorEngine.cpp
+    src/application/BehaviorEngine.h
+    src/application/MunitionSimulator.cpp
+    src/application/MunitionSimulator.h
+    src/application/ScenarioQueries.cpp
+    src/application/ScenarioQueries.h
+    src/application/AttackTaskProcessor.cpp
+    src/application/AttackTaskProcessor.h
+    src/application/TaskApplicator.cpp
+    src/application/TaskApplicator.h
+    src/application/Command.cpp
     src/application/Command.h
     src/application/Event.h
     src/application/EventBus.h
@@ -52,12 +67,68 @@ qt_add_executable(qttest
     src/application/FlightDynamicsEngine.h
     src/application/SensorEngine.cpp
     src/application/SensorEngine.h
+    src/domain/BombReleaseGate.cpp
+    src/domain/BombReleaseGate.h
+    src/domain/CombatRules.cpp
+    src/domain/CombatRules.h
     src/domain/Entity.h
+    src/domain/GeoMath.cpp
+    src/domain/GeoMath.h
     src/domain/Sensor.h
     src/domain/Task.cpp
     src/domain/Task.h
+    src/presentation/AssignTaskController.cpp
+    src/presentation/AssignTaskController.h
+    src/presentation/BombReleaseController.cpp
+    src/presentation/BombReleaseController.h
+    src/presentation/BombReleaseActionsController.cpp
+    src/presentation/BombReleaseActionsController.h
+    src/presentation/EntityDefaultsResolver.cpp
+    src/presentation/EntityDefaultsResolver.h
+    src/presentation/MapBridgeScripts.cpp
+    src/presentation/MapBridgeScripts.h
+    src/presentation/EntityStateActionsController.cpp
+    src/presentation/EntityStateActionsController.h
+    src/presentation/ScenarioObjectEditorController.cpp
+    src/presentation/ScenarioObjectEditorController.h
+    src/presentation/SimulationLifecycleController.cpp
+    src/presentation/SimulationLifecycleController.h
+    src/presentation/TacticalGraphicsEditorController.cpp
+    src/presentation/TacticalGraphicsEditorController.h
+    src/presentation/TaskAssignmentController.cpp
+    src/presentation/TaskAssignmentController.h
+    src/presentation/WeaponActionsController.cpp
+    src/presentation/WeaponActionsController.h
+    src/presentation/GraphicPickCoordinator.cpp
+    src/presentation/GraphicPickCoordinator.h
+    src/presentation/PlanStepConfigurator.cpp
+    src/presentation/PlanStepConfigurator.h
+    src/presentation/DetectedContactsPresenter.cpp
+    src/presentation/DetectedContactsPresenter.h
+    src/presentation/EntityContextMenuBuilder.cpp
+    src/presentation/EntityContextMenuBuilder.h
+    src/presentation/EntityContextMenuStateBuilder.cpp
+    src/presentation/EntityContextMenuStateBuilder.h
+    src/presentation/TrackSetSyncer.h
+    src/presentation/BombTargetMapSync.cpp
+    src/presentation/BombTargetMapSync.h
+    src/presentation/EntityPlanDialog.cpp
+    src/presentation/EntityPlanDialog.h
+    src/presentation/EntityHomePositionTracker.cpp
+    src/presentation/EntityHomePositionTracker.h
+    src/presentation/EntityPlanExecutor.cpp
+    src/presentation/EntityPlanExecutor.h
+    src/presentation/EntityStatusFormatter.cpp
+    src/presentation/EntityStatusFormatter.h
     src/presentation/EntityTextFormatter.cpp
     src/presentation/EntityTextFormatter.h
+    src/presentation/EntityVisualStateManager.cpp
+    src/presentation/EntityVisualStateManager.h
+    src/presentation/PlanTypes.h
+    src/presentation/TrackIconProvider.cpp
+    src/presentation/TrackIconProvider.h
+    src/presentation/TrackSummaryBuilder.cpp
+    src/presentation/TrackSummaryBuilder.h
 )
 
 target_link_libraries(qttest
@@ -104,3 +175,24 @@ install(TARGETS qttest
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+# ---------------------------------------------------------------------------
+# Warning flags
+# ---------------------------------------------------------------------------
+if(MSVC)
+    target_compile_options(qttest PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(qttest PRIVATE
+        -Wall -Wextra -Wpedantic
+        -Wno-unused-parameter
+    )
+endif()
+
+# ---------------------------------------------------------------------------
+# Tests (opt-in)
+# ---------------------------------------------------------------------------
+option(QTTEST_BUILD_TESTS "Build qttest unit tests" ON)
+if(QTTEST_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
