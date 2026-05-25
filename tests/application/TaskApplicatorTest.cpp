@@ -221,6 +221,55 @@ TEST_F(TaskApplicatorTest, MoveAlongRouteFallsBackToMoveToLocation) {
   EXPECT_FALSE(stack->isEmpty());
 }
 
+TEST_F(TaskApplicatorTest, AssignsFollowRouteTask) {
+  state->addEntity(makeAirEntity("RouteRunner"));
+  RouteGraphic route;
+  route.name = QStringLiteral("Route1");
+  RoutePoint p1; p1.latitude = 40.0; p1.longitude = -3.0; p1.altitudeMeters = 5000.0; p1.altitudeMetersSet = true;
+  RoutePoint p2; p2.latitude = 40.1; p2.longitude = -3.1; p2.altitudeMeters = 8000.0; p2.altitudeMetersSet = true;
+  route.points = {p1, p2};
+  state->addRoute(route);
+
+  EntityTask task;
+  task.taskType = "FollowRoute";
+  task.targetRouteName = "Route1";
+  task.targetSpeedKnots = 300.0;
+  task.arrivalToleranceMeters = 500.0;
+
+  const bool result = application::applyEntityTask(
+      "RouteRunner", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {});
+
+  EXPECT_TRUE(result);
+  const domain::TaskStack* stack = state->getTaskStack("RouteRunner");
+  ASSERT_NE(stack, nullptr);
+  EXPECT_FALSE(stack->isEmpty());
+  EXPECT_NE(dynamic_cast<domain::RouteTask*>(stack->top()), nullptr);
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("FollowRoute"));
+  EXPECT_EQ(state->entities().front().currentTask.routeTotalWaypoints, 2);
+}
+
+TEST_F(TaskApplicatorTest, FollowRouteWithMissingRouteCreatesFailingRouteTask) {
+  state->addEntity(makeAirEntity("RouteRunner"));
+  EntityTask task;
+  task.taskType = "FollowRoute";
+  task.targetRouteName = "Missing";
+  task.targetSpeedKnots = 300.0;
+
+  const bool result = application::applyEntityTask(
+      "RouteRunner", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {});
+
+  EXPECT_TRUE(result);
+  const domain::TaskStack* stack = state->getTaskStack("RouteRunner");
+  ASSERT_NE(stack, nullptr);
+  EXPECT_FALSE(stack->isEmpty());
+  EXPECT_NE(dynamic_cast<domain::RouteTask*>(stack->top()), nullptr);
+}
+
 } // namespace
 
 // ── resolveTaskCoordinates ────────────────────────────────────────────────────
@@ -257,6 +306,7 @@ TEST(ResolveTaskCoordinates, MoveToWaypointHydratesCoords) {
   Waypoint wp;
   wp.name = QStringLiteral("Alpha");
   wp.latitude = 48.0; wp.longitude = 2.0; wp.altitudeMeters = 5000.0;
+  wp.altitudeMetersSet = true;
   QVector<Waypoint> waypoints = {wp};
 
   application::resolveTaskCoordinates(entity, waypoints, {}, {});
@@ -291,6 +341,8 @@ TEST(ResolveTaskCoordinates, MoveAlongRouteTakesLastPoint) {
   route.name = QStringLiteral("Route-1");
   RoutePoint p1; p1.latitude = 10.0; p1.longitude = 20.0; p1.altitudeMeters = 3000.0;
   RoutePoint p2; p2.latitude = 15.0; p2.longitude = 25.0; p2.altitudeMeters = 4000.0;
+  p1.altitudeMetersSet = true;
+  p2.altitudeMetersSet = true;
   route.points = {p1, p2};
 
   application::resolveTaskCoordinates(entity, {}, {route}, {});
@@ -298,6 +350,47 @@ TEST(ResolveTaskCoordinates, MoveAlongRouteTakesLastPoint) {
   EXPECT_NEAR(entity.currentTask.targetLatitude, 15.0, 0.001);
   EXPECT_NEAR(entity.currentTask.targetLongitude, 25.0, 0.001);
   EXPECT_EQ(entity.currentTask.targetAltitudeMeters, 4000);
+}
+
+TEST(ResolveTaskCoordinates, MoveToWaypointLegacyAirAltitudeFallsBackToCurrentAltitude) {
+  Entity entity = makeAirEntity(QStringLiteral("E1"));
+  entity.altitude = 3000;
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveToWaypoint");
+  task.targetWaypointName = QStringLiteral("Legacy");
+  task.enabled = true;
+  entity.currentTask = task;
+
+  Waypoint wp;
+  wp.name = QStringLiteral("Legacy");
+  wp.latitude = 48.0;
+  wp.longitude = 2.0;
+  wp.altitudeMeters = 0.0;
+  wp.altitudeMetersSet = false;
+
+  application::resolveTaskCoordinates(entity, {wp}, {}, {});
+
+  EXPECT_EQ(entity.currentTask.targetAltitudeMeters, 3000);
+}
+
+TEST(ResolveTaskCoordinates, GroundRouteAltitudeIsForcedToZero) {
+  Entity entity = makeGroundEntity(QStringLiteral("G1"));
+  entity.altitude = 1000;
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveAlongRoute");
+  task.targetRouteName = QStringLiteral("GroundRoute");
+  task.enabled = true;
+  entity.currentTask = task;
+
+  RouteGraphic route;
+  route.name = QStringLiteral("GroundRoute");
+  RoutePoint p1; p1.latitude = 10.0; p1.longitude = 20.0; p1.altitudeMeters = 3000.0; p1.altitudeMetersSet = true;
+  RoutePoint p2; p2.latitude = 15.0; p2.longitude = 25.0; p2.altitudeMeters = 4000.0; p2.altitudeMetersSet = true;
+  route.points = {p1, p2};
+
+  application::resolveTaskCoordinates(entity, {}, {route}, {});
+
+  EXPECT_EQ(entity.currentTask.targetAltitudeMeters, 0);
 }
 
 TEST(ResolveTaskCoordinates, PatrolAreaHydratesCenter) {

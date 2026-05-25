@@ -38,6 +38,8 @@ struct Fixture {
   double        askDoubleReturn = 0.0;
   int           askDoubleCallCount = 0;
   bool          askDoubleOk   = true;
+  double        defaultAltitude = 3000.0;
+  bool          groundContext = false;
 
   // Multiple doubles can be returned in sequence
   QVector<double> askDoubleQueue;
@@ -61,6 +63,8 @@ struct Fixture {
         [this]() { return static_cast<int>(state.waypoints().size()); },
         [this]() { return static_cast<int>(state.routes().size()); },
         [this]() { return static_cast<int>(state.areas().size()); },
+        [this]() { return defaultAltitude; },
+        [this]() { return groundContext; },
         [this](const QString&, const QString&,
                const QString&, bool& ok) -> QString {
           ok = askTextOk;
@@ -86,6 +90,7 @@ TEST(TacticalGraphicsEditorController, waypointPickStartedWithName) {
   Fixture f;
   f.askTextReturn = QStringLiteral("WP1");
   f.askTextOk     = true;
+  f.askDoubleReturn = 5000.0;
   auto* state   = &f.state;
   auto* coord   = f.spy.makeCoordinator(state);
   auto* ctrl    = f.makeController(coord);
@@ -93,6 +98,25 @@ TEST(TacticalGraphicsEditorController, waypointPickStartedWithName) {
   ctrl->openAddWaypointDialog();
 
   EXPECT_TRUE(coord->isPending());
+  EXPECT_TRUE(coord->handleCoordinate(5.0, 40.0, 0.0));
+  ASSERT_EQ(f.state.waypoints().size(), 1);
+  EXPECT_DOUBLE_EQ(f.state.waypoints().first().altitudeMeters, 5000.0);
+  EXPECT_TRUE(f.state.waypoints().first().altitudeMetersSet);
+  delete ctrl;
+  delete coord;
+}
+
+TEST(TacticalGraphicsEditorController, waypointPickCancelledWhenAltitudeCancelled) {
+  Fixture f;
+  f.askTextReturn = QStringLiteral("WP1");
+  f.askTextOk = true;
+  f.askDoubleOk = false;
+  auto* coord = f.spy.makeCoordinator(&f.state);
+  auto* ctrl = f.makeController(coord);
+
+  ctrl->openAddWaypointDialog();
+
+  EXPECT_FALSE(coord->isPending());
   delete ctrl;
   delete coord;
 }
@@ -130,12 +154,40 @@ TEST(TacticalGraphicsEditorController, routePickStartedWithName) {
   Fixture f;
   f.askTextReturn = QStringLiteral("Route Alpha");
   f.askTextOk     = true;
+  f.askDoubleQueue = {5000.0, 8000.0};
+  f.askDoubleOkQueue = {true, true};
   auto* coord = f.spy.makeCoordinator(&f.state);
   auto* ctrl  = f.makeController(coord);
 
   ctrl->openAddRouteDialog();
 
   EXPECT_TRUE(coord->isPending());
+  EXPECT_TRUE(coord->handleCoordinate(1.0, 10.0, 0.0));
+  EXPECT_TRUE(coord->handleCoordinate(2.0, 11.0, 0.0));
+  ASSERT_EQ(f.state.routes().size(), 1);
+  ASSERT_EQ(f.state.routes().first().points.size(), 2);
+  EXPECT_DOUBLE_EQ(f.state.routes().first().points.at(0).altitudeMeters, 5000.0);
+  EXPECT_DOUBLE_EQ(f.state.routes().first().points.at(1).altitudeMeters, 8000.0);
+  delete ctrl;
+  delete coord;
+}
+
+TEST(TacticalGraphicsEditorController, groundRouteUsesZeroAltitudeWithoutPrompt) {
+  Fixture f;
+  f.askTextReturn = QStringLiteral("Ground Route");
+  f.askTextOk = true;
+  f.groundContext = true;
+  f.askDoubleReturn = 9000.0;
+  auto* coord = f.spy.makeCoordinator(&f.state);
+  auto* ctrl = f.makeController(coord);
+
+  ctrl->openAddRouteDialog();
+
+  EXPECT_TRUE(coord->handleCoordinate(1.0, 10.0, 100.0));
+  EXPECT_TRUE(coord->handleCoordinate(2.0, 11.0, 200.0));
+  ASSERT_EQ(f.state.routes().size(), 1);
+  EXPECT_DOUBLE_EQ(f.state.routes().first().points.at(0).altitudeMeters, 0.0);
+  EXPECT_DOUBLE_EQ(f.state.routes().first().points.at(1).altitudeMeters, 0.0);
   delete ctrl;
   delete coord;
 }

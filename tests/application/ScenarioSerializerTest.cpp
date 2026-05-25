@@ -129,6 +129,7 @@ TEST(ScenarioSerializer, RoundTripWaypoints) {
   wp.latitude = 10.0;
   wp.longitude = 20.0;
   wp.altitudeMeters = 5000.0;
+  wp.altitudeMetersSet = true;
   snapshot.waypoints.push_back(wp);
 
   const QString path = tempFilePath();
@@ -140,6 +141,28 @@ TEST(ScenarioSerializer, RoundTripWaypoints) {
   EXPECT_EQ(loaded.waypoints.at(0).name, QStringLiteral("Alpha"));
   EXPECT_NEAR(loaded.waypoints.at(0).latitude, 10.0, 0.0001);
   EXPECT_NEAR(loaded.waypoints.at(0).altitudeMeters, 5000.0, 0.1);
+  EXPECT_TRUE(loaded.waypoints.at(0).altitudeMetersSet);
+}
+
+TEST(ScenarioSerializer, LegacyWaypointWithoutAltitudeKeepsAltitudeUnset) {
+  QTemporaryFile file;
+  ASSERT_TRUE(file.open());
+  file.write(R"({
+    "waypoints": [
+      {"name": "Legacy", "latitude": 10.0, "longitude": 20.0}
+    ],
+    "routes": [],
+    "areas": [],
+    "entities": []
+  })");
+  file.close();
+
+  const ScenarioSnapshot loaded = loadScenario(file.fileName());
+
+  ASSERT_EQ(loaded.waypoints.size(), 1);
+  EXPECT_EQ(loaded.waypoints.at(0).name, QStringLiteral("Legacy"));
+  EXPECT_DOUBLE_EQ(loaded.waypoints.at(0).altitudeMeters, 0.0);
+  EXPECT_FALSE(loaded.waypoints.at(0).altitudeMetersSet);
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -150,6 +173,7 @@ TEST(ScenarioSerializer, RoundTripRoutes) {
   route.name = QStringLiteral("Route-Alpha");
   RoutePoint p;
   p.latitude = 5.0; p.longitude = 10.0; p.altitudeMeters = 3000.0;
+  p.altitudeMetersSet = true;
   route.points.push_back(p);
   snapshot.routes.push_back(route);
 
@@ -162,6 +186,8 @@ TEST(ScenarioSerializer, RoundTripRoutes) {
   EXPECT_EQ(loaded.routes.at(0).name, QStringLiteral("Route-Alpha"));
   ASSERT_EQ(loaded.routes.at(0).points.size(), 1);
   EXPECT_NEAR(loaded.routes.at(0).points.at(0).latitude, 5.0, 0.0001);
+  EXPECT_NEAR(loaded.routes.at(0).points.at(0).altitudeMeters, 3000.0, 0.1);
+  EXPECT_TRUE(loaded.routes.at(0).points.at(0).altitudeMetersSet);
 }
 
 // ── Areas ─────────────────────────────────────────────────────────────────────

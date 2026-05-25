@@ -50,7 +50,8 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
   switch (step.kind) {
     case PlanStepKind::MoveToLocation:       return QStringLiteral("Move To Location");
     case PlanStepKind::MoveToWaypoint:       return QStringLiteral("Move To Waypoint");
-    case PlanStepKind::MoveAlongRoute:       return QStringLiteral("Move Along Route");
+    case PlanStepKind::FollowRoute:
+    case PlanStepKind::MoveAlongRoute:       return QStringLiteral("Follow Route");
     case PlanStepKind::PatrolArea:           return QStringLiteral("Patrol Area");
     case PlanStepKind::FlyHeadingAltitudeSpeed: return QStringLiteral("Fly Heading / Altitude / Speed");
     case PlanStepKind::OrbitHoldLocation:    return QStringLiteral("Orbit / Hold (Location)");
@@ -181,6 +182,42 @@ void EntityPlanExecutor::advancePlans() {
       continue;
     }
 
+    if (activePlanStepCompleted(*entity, plan)) {
+      const QString completedLabel = planStepDisplayLabel(activeStep);
+      activeStep.status = QString(plan_status::Completed);
+      ++plan.currentStepIndex;
+      plan.currentStableTicks = 0;
+
+      if (plan.currentStepIndex >= plan.steps.size()) {
+        completeRunningPlan(entityName, plan, completedLabel);
+        continue;
+      }
+
+      PlanStep& nextStep = plan.steps[plan.currentStepIndex];
+      QString nextInvalidReason;
+      if (!validatePlanStep(nextStep, &nextInvalidReason)) {
+        failRunningPlan(
+            entityName, plan,
+            QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
+                .arg(entityName, planStepDisplayLabel(nextStep), nextInvalidReason),
+            QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
+        continue;
+      }
+
+      const QString nextLabel = planStepDisplayLabel(nextStep);
+      if (!startPlanStepTask(entityName, plan)) {
+        failRunningPlan(
+            entityName, plan,
+            QStringLiteral("Plan halted for %1 while starting step %2.").arg(entityName, nextLabel),
+            QStringLiteral("Plan fallido para %1: no se pudo arrancar step %2.")
+                .arg(entityName, nextLabel));
+        continue;
+      }
+
+      _log(QStringLiteral("Plan advanced for %1: %2").arg(entityName, nextLabel));
+      continue;
+    }
+
     const bool taskFailedForStep =
         entity->currentTask.status == QStringLiteral("Target unavailable") ||
         entity->currentTask.status == QStringLiteral("Failed");
@@ -218,42 +255,6 @@ void EntityPlanExecutor::advancePlans() {
 
       _log(QStringLiteral("Plan continued for %1 after failed step %2; next step: %3")
                .arg(entityName, failedLabel, nextLabel));
-      continue;
-    }
-
-    if (activePlanStepCompleted(*entity, plan)) {
-      const QString completedLabel = planStepDisplayLabel(activeStep);
-      activeStep.status = QString(plan_status::Completed);
-      ++plan.currentStepIndex;
-      plan.currentStableTicks = 0;
-
-      if (plan.currentStepIndex >= plan.steps.size()) {
-        completeRunningPlan(entityName, plan, completedLabel);
-        continue;
-      }
-
-      PlanStep& nextStep = plan.steps[plan.currentStepIndex];
-      QString nextInvalidReason;
-      if (!validatePlanStep(nextStep, &nextInvalidReason)) {
-        failRunningPlan(
-            entityName, plan,
-            QStringLiteral("Plan halted for %1 because step %2 is no longer valid: %3.")
-                .arg(entityName, planStepDisplayLabel(nextStep), nextInvalidReason),
-            QStringLiteral("Plan detenido para %1: step invalido.").arg(entityName));
-        continue;
-      }
-
-      const QString nextLabel = planStepDisplayLabel(nextStep);
-      if (!startPlanStepTask(entityName, plan)) {
-        failRunningPlan(
-            entityName, plan,
-            QStringLiteral("Plan halted for %1 while starting step %2.").arg(entityName, nextLabel),
-            QStringLiteral("Plan fallido para %1: no se pudo arrancar step %2.")
-                .arg(entityName, nextLabel));
-        continue;
-      }
-
-      _log(QStringLiteral("Plan advanced for %1: %2").arg(entityName, nextLabel));
       continue;
     }
 
@@ -346,10 +347,14 @@ bool EntityPlanExecutor::activePlanStepCompleted(
   switch (step.kind) {
     case PlanStepKind::MoveToLocation:
     case PlanStepKind::MoveToWaypoint:
-    case PlanStepKind::MoveAlongRoute:
     case PlanStepKind::ReturnToBase:
       plan.currentStableTicks = 0;
       return entity.currentTask.status == QStringLiteral("On target");
+    case PlanStepKind::FollowRoute:
+    case PlanStepKind::MoveAlongRoute:
+      plan.currentStableTicks = 0;
+      return entity.currentTask.status == QStringLiteral("Completed") ||
+             entity.currentTask.status == QStringLiteral("On target");
 
     case PlanStepKind::PatrolArea: {
       const double distanceToCenterMeters = domain::distanceMeters(
@@ -430,6 +435,7 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
       return true;
     }
 
+    case PlanStepKind::FollowRoute:
     case PlanStepKind::MoveAlongRoute: {
       if (step.task.targetRouteName.trimmed().isEmpty()) {
         return setReason(QStringLiteral("route is not set"));
@@ -442,9 +448,9 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
         return setReason(
             QStringLiteral("route '%1' no longer exists").arg(step.task.targetRouteName));
       }
-      if (route->points.isEmpty()) {
+      if (route->points.size() < 2) {
         return setReason(
-            QStringLiteral("route '%1' has no points").arg(step.task.targetRouteName));
+            QStringLiteral("route '%1' has fewer than two points").arg(step.task.targetRouteName));
       }
       return true;
     }
@@ -541,9 +547,14 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
            taskType == QStringLiteral("InterceptEntity2D") ||
            taskType == QStringLiteral("InterceptEntity3D");
   };
+  const auto isRouteType = [](const QString& taskType) {
+    return taskType == QStringLiteral("FollowRoute") ||
+           taskType == QStringLiteral("MoveAlongRoute");
+  };
 
   if (currentTask.taskType != step.task.taskType &&
-      !(isInterceptType(currentTask.taskType) && isInterceptType(step.task.taskType))) {
+      !(isInterceptType(currentTask.taskType) && isInterceptType(step.task.taskType)) &&
+      !(isRouteType(currentTask.taskType) && isRouteType(step.task.taskType))) {
     return false;
   }
 
@@ -563,9 +574,12 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
       return currentTask.targetWaypointName == step.task.targetWaypointName &&
              nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
 
+    case PlanStepKind::FollowRoute:
     case PlanStepKind::MoveAlongRoute:
       return currentTask.targetRouteName == step.task.targetRouteName &&
-             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1) &&
+             nearlyEqual(currentTask.arrivalToleranceMeters, step.task.arrivalToleranceMeters, 1.0) &&
+             nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
 
     case PlanStepKind::PatrolArea:
       return currentTask.targetAreaName == step.task.targetAreaName &&

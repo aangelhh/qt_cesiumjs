@@ -58,6 +58,16 @@ TEST_F(GraphicPickCoordinatorTest, WaypointPickCreatesWaypoint) {
   EXPECT_DOUBLE_EQ(state->waypoints().first().longitude, 5.0);
   EXPECT_DOUBLE_EQ(state->waypoints().first().latitude, 40.0);
   EXPECT_DOUBLE_EQ(state->waypoints().first().altitudeMeters, 250.0);  // 200 + 50 offset
+  EXPECT_FALSE(state->waypoints().first().altitudeMetersSet);
+}
+
+TEST_F(GraphicPickCoordinatorTest, WaypointPickUsesConfiguredAltitude) {
+  coordinator->beginWaypointPick(QStringLiteral("WP1"), 5000.0);
+  EXPECT_TRUE(coordinator->handleCoordinate(5.0, 40.0, 200.0));
+
+  ASSERT_EQ(state->waypoints().size(), 1);
+  EXPECT_DOUBLE_EQ(state->waypoints().first().altitudeMeters, 5000.0);
+  EXPECT_TRUE(state->waypoints().first().altitudeMetersSet);
 }
 
 TEST_F(GraphicPickCoordinatorTest, RoutePickNeedsTwoPoints) {
@@ -77,6 +87,20 @@ TEST_F(GraphicPickCoordinatorTest, RoutePickNeedsTwoPoints) {
   EXPECT_EQ(state->routes().size(), 1);
   EXPECT_EQ(state->routes().first().name, QStringLiteral("R1"));
   EXPECT_EQ(state->routes().first().points.size(), 2);
+}
+
+TEST_F(GraphicPickCoordinatorTest, RoutePickUsesConfiguredPointAltitudes) {
+  coordinator->beginRoutePick(QStringLiteral("R1"), 5000.0, 8000.0);
+
+  EXPECT_TRUE(coordinator->handleCoordinate(1.0, 10.0, 100.0));
+  EXPECT_TRUE(coordinator->handleCoordinate(2.0, 11.0, 200.0));
+
+  ASSERT_EQ(state->routes().size(), 1);
+  ASSERT_EQ(state->routes().first().points.size(), 2);
+  EXPECT_DOUBLE_EQ(state->routes().first().points.at(0).altitudeMeters, 5000.0);
+  EXPECT_TRUE(state->routes().first().points.at(0).altitudeMetersSet);
+  EXPECT_DOUBLE_EQ(state->routes().first().points.at(1).altitudeMeters, 8000.0);
+  EXPECT_TRUE(state->routes().first().points.at(1).altitudeMetersSet);
 }
 
 TEST_F(GraphicPickCoordinatorTest, AreaCirclePickCreatesArea) {

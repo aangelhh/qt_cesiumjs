@@ -28,7 +28,20 @@ GraphicPickCoordinator::GraphicPickCoordinator(
 void GraphicPickCoordinator::beginWaypointPick(const QString& name) {
   _mode = QStringLiteral("Waypoint");
   _name = name;
+  _waypointAltitudeConfigured = false;
+  _waypointAltitudeMeters = 0.0;
   _status(QStringLiteral("Creando waypoint %1. Haz clic una vez en el mapa para fijar su posicion.").arg(name));
+  _beginPick();
+}
+
+void GraphicPickCoordinator::beginWaypointPick(const QString& name, double altitudeMeters) {
+  _mode = QStringLiteral("Waypoint");
+  _name = name;
+  _waypointAltitudeConfigured = true;
+  _waypointAltitudeMeters = qMax(0.0, altitudeMeters);
+  _status(QStringLiteral("Creando waypoint %1 a %2 m. Haz clic una vez en el mapa para fijar su posicion.")
+      .arg(name)
+      .arg(_waypointAltitudeMeters, 0, 'f', 0));
   _beginPick();
 }
 
@@ -36,6 +49,23 @@ void GraphicPickCoordinator::beginRoutePick(const QString& name) {
   _mode = QStringLiteral("Route");
   _name = name;
   _routePoints.clear();
+  _routePointAltitudesMeters.clear();
+  _clearDraft(name + QStringLiteral(" (draft)"));
+  _status(QStringLiteral("Creando route %1. Haz clic en el primer punto de la ruta en el mapa.").arg(name));
+  _beginPick();
+}
+
+void GraphicPickCoordinator::beginRoutePick(
+    const QString& name,
+    double firstAltitudeMeters,
+    double secondAltitudeMeters) {
+  _mode = QStringLiteral("Route");
+  _name = name;
+  _routePoints.clear();
+  _routePointAltitudesMeters = {
+      qMax(0.0, firstAltitudeMeters),
+      qMax(0.0, secondAltitudeMeters),
+  };
   _clearDraft(name + QStringLiteral(" (draft)"));
   _status(QStringLiteral("Creando route %1. Haz clic en el primer punto de la ruta en el mapa.").arg(name));
   _beginPick();
@@ -90,43 +120,54 @@ bool GraphicPickCoordinator::handleCoordinate(double longitude, double latitude,
   const double graphicAltitude = qMax(0.0, height + kGraphicAltitudeOffsetMeters);
 
   if (_mode == QStringLiteral("Waypoint")) {
+    const double waypointAltitude = _waypointAltitudeConfigured
+        ? _waypointAltitudeMeters
+        : graphicAltitude;
     Waypoint waypoint;
-    waypoint.name          = _name;
-    waypoint.longitude     = longitude;
-    waypoint.latitude      = latitude;
-    waypoint.altitudeMeters= graphicAltitude;
+    waypoint.name              = _name;
+    waypoint.longitude         = longitude;
+    waypoint.latitude          = latitude;
+    waypoint.altitudeMeters    = waypointAltitude;
+    waypoint.altitudeMetersSet = _waypointAltitudeConfigured;
     _state->addWaypoint(waypoint);
     _status(QStringLiteral("Waypoint %1 creado en lat %2, lon %3, alt %4 m.")
         .arg(_name)
         .arg(latitude,      0, 'f', 5)
         .arg(longitude,     0, 'f', 5)
-        .arg(graphicAltitude,0,'f', 0));
+        .arg(waypointAltitude,0,'f', 0));
     clearState();
     _syncUi();
     return true;
   }
 
   if (_mode == QStringLiteral("Route")) {
+    const int pointIndex = _routePoints.size();
+    const bool routeAltitudeConfigured = pointIndex < _routePointAltitudesMeters.size();
+    const double routePointAltitude = routeAltitudeConfigured
+        ? _routePointAltitudesMeters.at(pointIndex)
+        : graphicAltitude;
     _routePoints.push_back(QVariantMap{
         {QStringLiteral("longitude"),     longitude},
         {QStringLiteral("latitude"),      latitude},
-        {QStringLiteral("altitudeMeters"),graphicAltitude},
+        {QStringLiteral("altitudeMeters"),routePointAltitude},
+        {QStringLiteral("altitudeMetersSet"),routeAltitudeConfigured},
     });
     if (_routePoints.size() >= 2) {
       RouteGraphic route;
       route.name = _name;
       for (const QVariantMap& pt : _routePoints) {
         RoutePoint rp;
-        rp.longitude     = pt.value(QStringLiteral("longitude")).toDouble();
-        rp.latitude      = pt.value(QStringLiteral("latitude")).toDouble();
-        rp.altitudeMeters= pt.value(QStringLiteral("altitudeMeters")).toDouble();
+        rp.longitude         = pt.value(QStringLiteral("longitude")).toDouble();
+        rp.latitude          = pt.value(QStringLiteral("latitude")).toDouble();
+        rp.altitudeMeters    = pt.value(QStringLiteral("altitudeMeters")).toDouble();
+        rp.altitudeMetersSet = pt.contains(QStringLiteral("altitudeMetersSet")) &&
+            pt.value(QStringLiteral("altitudeMetersSet")).toBool();
         route.points.push_back(rp);
       }
       _state->addRoute(route);
-      _status(QStringLiteral("Route %1 creada con %2 puntos. Ajustada a +%3 m sobre el terreno.")
+      _status(QStringLiteral("Route %1 creada con %2 puntos.")
           .arg(_name)
-          .arg(route.points.size())
-          .arg(kGraphicAltitudeOffsetMeters, 0, 'f', 0));
+          .arg(route.points.size()));
       _clearDraft(_name + QStringLiteral(" (draft)"));
       clearState();
       _syncUi();
@@ -135,7 +176,7 @@ bool GraphicPickCoordinator::handleCoordinate(double longitude, double latitude,
           _name + QStringLiteral(" (draft)"),
           QStringLiteral("Route"),
           QStringLiteral("Graphic"),
-          QStringLiteral("%1 m").arg(graphicAltitude, 0, 'f', 0),
+          QStringLiteral("%1 m").arg(routePointAltitude, 0, 'f', 0),
           domain::formatPosition(latitude, longitude),
           QStringLiteral("Route draft"),
           latitude, longitude);
@@ -180,6 +221,7 @@ bool GraphicPickCoordinator::handleCoordinate(double longitude, double latitude,
         {QStringLiteral("longitude"),     longitude},
         {QStringLiteral("latitude"),      latitude},
         {QStringLiteral("altitudeMeters"),graphicAltitude},
+        {QStringLiteral("altitudeMetersSet"),true},
     };
 
     if (_areaPoints.size() >= 3) {
@@ -202,6 +244,8 @@ bool GraphicPickCoordinator::handleCoordinate(double longitude, double latitude,
           rp.longitude     = pt.value(QStringLiteral("longitude")).toDouble();
           rp.latitude      = pt.value(QStringLiteral("latitude")).toDouble();
           rp.altitudeMeters= pt.value(QStringLiteral("altitudeMeters")).toDouble();
+          rp.altitudeMetersSet = pt.contains(QStringLiteral("altitudeMetersSet")) &&
+              pt.value(QStringLiteral("altitudeMetersSet")).toBool();
           area.points.push_back(rp);
         }
         _state->addArea(area);
@@ -258,6 +302,9 @@ void GraphicPickCoordinator::clearState() {
   _routePoints.clear();
   _areaPoints.clear();
   _areaType.clear();
+  _waypointAltitudeConfigured = false;
+  _waypointAltitudeMeters = 0.0;
+  _routePointAltitudesMeters.clear();
   _areaAltitudeMeters  = 0.0;
   _areaRadiusMeters    = 0.0;
   _areaSemiMajorMeters = 0.0;

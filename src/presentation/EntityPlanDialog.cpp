@@ -154,7 +154,7 @@ void EntityPlanDialog::onAdd() {
   static const Item items[] = {
       {"Move To Location",              PlanStepKind::MoveToLocation,           false},
       {"Move To Waypoint",              PlanStepKind::MoveToWaypoint,           false},
-      {"Move Along Route",              PlanStepKind::MoveAlongRoute,           false},
+      {"Follow Route",                  PlanStepKind::FollowRoute,              false},
       {"Patrol Area",                   PlanStepKind::PatrolArea,               false},
       {"Fly Heading / Altitude / Speed",PlanStepKind::FlyHeadingAltitudeSpeed,  false},
       {"Orbit / Hold (Location)",       PlanStepKind::OrbitHoldLocation,        false},

@@ -38,7 +38,7 @@ void populateEntityContextMenu(
       actions.assignMoveToLocationTask);
   addSlotAction(movementMenu, QStringLiteral("Move To Waypoint..."),
       actions.assignMoveToWaypointTask);
-  addSlotAction(movementMenu, QStringLiteral("Move Along Route..."),
+  addSlotAction(movementMenu, QStringLiteral("Follow Route..."),
       actions.assignMoveAlongRouteTask);
   addSlotAction(movementMenu, QStringLiteral("Patrol Route..."),
       actions.assignPatrolRouteTask);

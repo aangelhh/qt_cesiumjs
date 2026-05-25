@@ -32,7 +32,9 @@ public:
 
   // ── Setup methods (called from the "Add …" dialog handlers) ──────────
   void beginWaypointPick(const QString& name);
+  void beginWaypointPick(const QString& name, double altitudeMeters);
   void beginRoutePick(const QString& name);
+  void beginRoutePick(const QString& name, double firstAltitudeMeters, double secondAltitudeMeters);
 
   struct AreaCircleParams  { double altitudeMeters; double radiusMeters; };
   struct AreaEllipseParams { double altitudeMeters; double semiMajorMeters;
@@ -55,6 +57,9 @@ private:
   QVector<QVariantMap> _routePoints;
   QVector<QVariantMap> _areaPoints;
   QString              _areaType;
+  bool                 _waypointAltitudeConfigured{false};
+  double               _waypointAltitudeMeters{0.0};
+  QVector<double>      _routePointAltitudesMeters;
   double               _areaAltitudeMeters{0.0};
   double               _areaRadiusMeters{0.0};
   double               _areaSemiMajorMeters{0.0};

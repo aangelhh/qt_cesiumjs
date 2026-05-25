@@ -72,18 +72,25 @@ bool PlanStepConfigurator::configure(
       return true;
     }
 
+    case PlanStepKind::FollowRoute:
     case PlanStepKind::MoveAlongRoute: {
       EntityTask initial;
-      initial.taskType             = QStringLiteral("MoveAlongRoute");
+      initial.taskType             = QStringLiteral("FollowRoute");
       initial.enabled              = true;
       initial.status               = QStringLiteral("Queued");
       initial.targetAltitudeMeters = defaultAltitudeMeters;
       initial.targetSpeedKnots     = defaultSpeedKnots;
-      if (!_capture(entity.name, initial, QStringLiteral("MoveAlongRoute"), step.task)) {
+      initial.arrivalToleranceMeters =
+          entity.domain.compare(QStringLiteral("Ground"), Qt::CaseInsensitive) == 0
+          ? 500.0
+          : 1000.0;
+      initial.timeoutSeconds = 120.0;
+      if (!_capture(entity.name, initial, QStringLiteral("FollowRoute"), step.task)) {
         return false;
       }
       step.task.enabled = true;
-      step.label = QStringLiteral("Move Along Route: %1").arg(step.task.targetRouteName);
+      step.task.taskType = QStringLiteral("FollowRoute");
+      step.label = QStringLiteral("Follow Route: %1").arg(step.task.targetRouteName);
       return true;
     }
 

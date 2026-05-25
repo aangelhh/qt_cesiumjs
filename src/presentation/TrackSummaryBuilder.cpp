@@ -295,6 +295,8 @@ QVariantMap makeEntityTrackSummary(
   summary.insert(QStringLiteral("taskArrivalToleranceMeters"),  entity.currentTask.arrivalToleranceMeters);
   summary.insert(QStringLiteral("taskDurationSeconds"),         entity.currentTask.durationSeconds);
   summary.insert(QStringLiteral("taskElapsedSeconds"),          entity.currentTask.elapsedSeconds);
+  summary.insert(QStringLiteral("taskRouteCurrentWaypointIndex"), entity.currentTask.routeCurrentWaypointIndex);
+  summary.insert(QStringLiteral("taskRouteTotalWaypoints"),       entity.currentTask.routeTotalWaypoints);
   summary.insert(QStringLiteral("taskInterceptDistanceMeters"), entity.currentTask.interceptDistanceMeters);
   summary.insert(QStringLiteral("taskAltitudeToleranceMeters"), entity.currentTask.altitudeToleranceMeters);
   summary.insert(QStringLiteral("taskTimeoutSeconds"),          entity.currentTask.timeoutSeconds);
@@ -364,6 +366,8 @@ QVariantMap makeWaypointTrackSummary(const Waypoint& waypoint) {
       waypoint.latitude,
       waypoint.longitude);
   summary.insert(QStringLiteral("type"), QStringLiteral("Waypoint"));
+  summary.insert(QStringLiteral("altitudeMeters"), waypoint.altitudeMeters);
+  summary.insert(QStringLiteral("altitudeMetersSet"), waypoint.altitudeMetersSet);
   return summary;
 }
 
@@ -374,6 +378,7 @@ QVariantMap makeRouteTrackSummary(const RouteGraphic& route) {
         {QStringLiteral("latitude"), point.latitude},
         {QStringLiteral("longitude"), point.longitude},
         {QStringLiteral("altitudeMeters"), point.altitudeMeters},
+        {QStringLiteral("altitudeMetersSet"), point.altitudeMetersSet},
     });
   }
   const RoutePoint firstPoint = route.points.isEmpty() ? RoutePoint{} : route.points.first();
@@ -415,6 +420,7 @@ QVariantMap makeAreaTrackSummary(const AreaDefinition& area) {
         {QStringLiteral("latitude"), point.latitude},
         {QStringLiteral("longitude"), point.longitude},
         {QStringLiteral("altitudeMeters"), point.altitudeMeters},
+        {QStringLiteral("altitudeMetersSet"), point.altitudeMetersSet},
     });
   }
   summary.insert(QStringLiteral("areaPoints"), areaPoints);

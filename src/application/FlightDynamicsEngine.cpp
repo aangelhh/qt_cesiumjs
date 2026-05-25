@@ -102,12 +102,18 @@ bool isMovementTaskType(const QString& taskType) {
   return taskType == QStringLiteral("MoveToLocation") ||
          taskType == QStringLiteral("MoveToWaypoint") ||
          taskType == QStringLiteral("MoveAlongRoute") ||
+         taskType == QStringLiteral("FollowRoute") ||
          taskType == QStringLiteral("PatrolArea") ||
          taskType == QStringLiteral("OrbitArea") ||
          taskType == QStringLiteral("FollowEntity") ||
          isInterceptEntityTaskType(taskType) ||
          taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
          taskType == QStringLiteral("AttackAir");
+}
+
+bool isRouteTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("MoveAlongRoute") ||
+         taskType == QStringLiteral("FollowRoute");
 }
 
 bool taskStatusIsTerminal(const QString& status) {
@@ -390,6 +396,15 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
       entity.currentTask.targetHeadingDegrees = desired.targetHeadingDegrees;
       entity.currentTask.targetAltitudeMeters = static_cast<int>(desired.targetAltitudeMeters);
       entity.currentTask.targetSpeedKnots = desired.targetSpeedKnots;
+      if (auto* routeTask = dynamic_cast<domain::RouteTask*>(topTask)) {
+          const RoutePoint targetPoint = routeTask->currentTargetPoint();
+          entity.currentTask.targetLatitude = targetPoint.latitude;
+          entity.currentTask.targetLongitude = targetPoint.longitude;
+          entity.currentTask.routeTotalWaypoints = routeTask->totalPoints();
+          entity.currentTask.routeCurrentWaypointIndex = routeTask->totalPoints() > 0
+              ? qMin(routeTask->currentPointIndex() + 1, routeTask->totalPoints())
+              : 0;
+      }
       
       if (entity.currentTask.taskType == QStringLiteral("FollowEntity") &&
           entity.currentTask.durationSeconds > 0.0) {
@@ -406,16 +421,26 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
               evaluatedState = domain::ITask::State::Failed;
           }
       }
+      if (isRouteTaskType(entity.currentTask.taskType) &&
+          entity.currentTask.timeoutSeconds > 0.0 &&
+          evaluatedState != domain::ITask::State::Completed) {
+          entity.currentTask.elapsedSeconds += qMax(0.0, deltaSeconds);
+          if (entity.currentTask.elapsedSeconds >= entity.currentTask.timeoutSeconds) {
+              evaluatedState = domain::ITask::State::Failed;
+          }
+      }
 
       if (evaluatedState == domain::ITask::State::Completed) {
           entity.currentTask.status =
               (entity.currentTask.taskType == QStringLiteral("FollowEntity") ||
-               isInterceptEntityTaskType(entity.currentTask.taskType))
+               isInterceptEntityTaskType(entity.currentTask.taskType) ||
+               isRouteTaskType(entity.currentTask.taskType))
               ? QStringLiteral("Completed")
               : QStringLiteral("On target");
       } else if (evaluatedState == domain::ITask::State::Failed) {
           entity.currentTask.status =
-              isInterceptEntityTaskType(entity.currentTask.taskType)
+              (isInterceptEntityTaskType(entity.currentTask.taskType) ||
+               isRouteTaskType(entity.currentTask.taskType))
               ? QStringLiteral("Failed")
               : QStringLiteral("Target unavailable");
       } else {
@@ -450,6 +475,7 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
   if (entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
       entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
       entity.currentTask.taskType == QStringLiteral("MoveAlongRoute") ||
+      entity.currentTask.taskType == QStringLiteral("FollowRoute") ||
       isAttackAirTask) {
     entity.currentTask.targetHeadingDegrees = bearingDegrees(
         entity.latitude,
@@ -820,6 +846,7 @@ void FlightDynamicsEngine::advanceEntity(
       entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
       entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
       entity.currentTask.taskType == QStringLiteral("MoveAlongRoute") ||
+      entity.currentTask.taskType == QStringLiteral("FollowRoute") ||
       entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
       entity.currentTask.taskType == QStringLiteral("OrbitArea") ||
       entity.currentTask.taskType == QStringLiteral("FollowEntity") ||

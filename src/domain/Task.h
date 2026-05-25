@@ -47,15 +47,27 @@ private:
 
 class RouteTask : public ITask {
 public:
-    RouteTask(const QVector<RoutePoint>& points, double targetSpeedKnots);
+    RouteTask(
+        const QVector<RoutePoint>& points,
+        double targetSpeedKnots,
+        double arrivalToleranceMeters = 500.0);
 
     State getState() const override;
     DesiredState evaluate(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt) override;
+    int currentPointIndex() const;
+    int totalPoints() const;
+    RoutePoint currentTargetPoint() const;
 
 private:
+    bool currentPointReached(double distanceToPoint);
+    void resetCurrentPointTracking();
+
     QVector<RoutePoint> m_points;
     double m_targetSpeed;
+    double m_arrivalToleranceMeters;
     int m_currentPointIndex = 0;
+    int m_trackedPointIndex = -1;
+    double m_bestDistanceToCurrentPointMeters = 1.0e12;
     State m_state = State::NotStarted;
 };
 
@@ -222,6 +234,8 @@ struct EntityTask {
   double arrivalToleranceMeters = 100.0;
   double durationSeconds = 0.0;
   double elapsedSeconds = 0.0;
+  int routeCurrentWaypointIndex = 0;
+  int routeTotalWaypoints = 0;
   double interceptDistanceMeters = 500.0;
   double altitudeToleranceMeters = 250.0;
   double timeoutSeconds = 120.0;

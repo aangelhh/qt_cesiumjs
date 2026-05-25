@@ -20,12 +20,54 @@ bool isMovementTaskType(const QString& taskType) {
   return taskType == QStringLiteral("MoveToLocation") ||
          taskType == QStringLiteral("MoveToWaypoint") ||
          taskType == QStringLiteral("MoveAlongRoute") ||
+         taskType == QStringLiteral("FollowRoute") ||
          taskType == QStringLiteral("PatrolArea") ||
          taskType == QStringLiteral("OrbitArea") ||
          taskType == QStringLiteral("FollowEntity") ||
          isInterceptEntityTaskType(taskType) ||
          taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
          taskType == QStringLiteral("AttackAir");
+}
+
+bool isRouteTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("MoveAlongRoute") ||
+         taskType == QStringLiteral("FollowRoute");
+}
+
+bool entityIsGround(const Entity& entity) {
+  return entity.domain.compare(QStringLiteral("Ground"), Qt::CaseInsensitive) == 0;
+}
+
+double defaultRouteArrivalToleranceMeters(const Entity& entity) {
+  return entityIsGround(entity) ? 500.0 : 1000.0;
+}
+
+double waypointAltitudeForEntity(const Waypoint& waypoint, const Entity& entity) {
+  if (entityIsGround(entity)) {
+    return 0.0;
+  }
+  return waypoint.altitudeMetersSet
+      ? waypoint.altitudeMeters
+      : static_cast<double>(entity.altitude);
+}
+
+QVector<RoutePoint> routePointsForEntity(const RouteGraphic& route, const Entity& entity) {
+  QVector<RoutePoint> points;
+  points.reserve(route.points.size());
+  double fallbackAltitudeMeters = entityIsGround(entity)
+      ? 0.0
+      : static_cast<double>(entity.altitude);
+  for (RoutePoint point : route.points) {
+    if (entityIsGround(entity)) {
+      point.altitudeMeters = 0.0;
+      point.altitudeMetersSet = true;
+    } else if (!point.altitudeMetersSet) {
+      point.altitudeMeters = fallbackAltitudeMeters;
+    }
+    fallbackAltitudeMeters = point.altitudeMeters;
+    points.push_back(point);
+  }
+  return points;
 }
 
 } // namespace
@@ -45,19 +87,20 @@ void resolveTaskCoordinates(
       if (wp.name == task.targetWaypointName) {
         task.targetLatitude = wp.latitude;
         task.targetLongitude = wp.longitude;
-        task.targetAltitudeMeters = static_cast<int>(qRound(wp.altitudeMeters));
+        task.targetAltitudeMeters = static_cast<int>(qRound(waypointAltitudeForEntity(wp, entity)));
         break;
       }
     }
   }
 
-  if (task.taskType == QStringLiteral("MoveAlongRoute") &&
+  if (isRouteTaskType(task.taskType) &&
       !task.targetRouteName.trimmed().isEmpty()) {
     for (const RouteGraphic& route : routes) {
       if (route.name != task.targetRouteName || route.points.isEmpty()) {
         continue;
       }
-      const RoutePoint& endPoint = route.points.last();
+      const QVector<RoutePoint> routePoints = routePointsForEntity(route, entity);
+      const RoutePoint& endPoint = routePoints.last();
       task.targetLatitude = endPoint.latitude;
       task.targetLongitude = endPoint.longitude;
       task.targetAltitudeMeters = static_cast<int>(qRound(endPoint.altitudeMeters));
@@ -98,7 +141,7 @@ void resolveTaskCoordinates(
     const bool isSpatialMovement =
         task.taskType == QStringLiteral("MoveToLocation") ||
         task.taskType == QStringLiteral("MoveToWaypoint") ||
-        task.taskType == QStringLiteral("MoveAlongRoute") ||
+        isRouteTaskType(task.taskType) ||
         task.taskType == QStringLiteral("PatrolArea") ||
         task.taskType == QStringLiteral("OrbitArea") ||
         task.taskType == QStringLiteral("FollowEntity") ||
@@ -146,6 +189,19 @@ bool applyEntityTask(
       taskToApply.timeoutSeconds = 120.0;
     }
   }
+  if (isRouteTaskType(taskToApply.taskType)) {
+    if (taskToApply.arrivalToleranceMeters <= 0.0) {
+      for (const Entity& entity : state->entities()) {
+        if (entity.name == entityName) {
+          taskToApply.arrivalToleranceMeters = defaultRouteArrivalToleranceMeters(entity);
+          break;
+        }
+      }
+      if (taskToApply.arrivalToleranceMeters <= 0.0) {
+        taskToApply.arrivalToleranceMeters = 1000.0;
+      }
+    }
+  }
 
   if (!state->assignTask(entityName, taskToApply)) {
     return false;
@@ -167,6 +223,15 @@ bool applyEntityTask(
     return false;
   }
 
+  auto updateAppliedTask = [&](const EntityTask& updatedTask) {
+    for (Entity& entity : state->entitiesMutable()) {
+      if (entity.name == entityName) {
+        entity.currentTask = updatedTask;
+        break;
+      }
+    }
+  };
+
   if (domain::TaskStack* stack = state->getTaskStack(entityName)) {
     while (!stack->isEmpty()) {
       stack->pop();
@@ -181,31 +246,42 @@ bool applyEntityTask(
           if (waypoint.name == taskToApply.targetWaypointName) {
             targetLat = waypoint.latitude;
             targetLon = waypoint.longitude;
-            targetAlt = waypoint.altitudeMeters;
+            targetAlt = waypointAltitudeForEntity(waypoint, resolvedEntity);
             break;
           }
         }
       }
       stack->push(std::make_unique<domain::MoveToLocationTask>(
           targetLat, targetLon, targetAlt, targetSpeed));
-    } else if (taskToApply.taskType == "MoveAlongRoute") {
+    } else if (isRouteTaskType(taskToApply.taskType)) {
       bool createdRouteTask = false;
       for (const RouteGraphic& route : state->routes()) {
         if (route.name != resolvedEntity.currentTask.targetRouteName ||
             route.points.isEmpty()) {
           continue;
         }
+        const QVector<RoutePoint> points = routePointsForEntity(route, resolvedEntity);
+        resolvedEntity.currentTask.routeTotalWaypoints = points.size();
+        resolvedEntity.currentTask.routeCurrentWaypointIndex = points.isEmpty() ? 0 : 1;
+        updateAppliedTask(resolvedEntity.currentTask);
         stack->push(std::make_unique<domain::RouteTask>(
-            route.points, resolvedEntity.currentTask.targetSpeedKnots));
+            points,
+            resolvedEntity.currentTask.targetSpeedKnots,
+            resolvedEntity.currentTask.arrivalToleranceMeters));
         createdRouteTask = true;
         break;
       }
-      if (!createdRouteTask) {
+      if (!createdRouteTask && taskToApply.taskType == QStringLiteral("MoveAlongRoute")) {
         stack->push(std::make_unique<domain::MoveToLocationTask>(
             resolvedEntity.currentTask.targetLatitude,
             resolvedEntity.currentTask.targetLongitude,
             resolvedEntity.currentTask.targetAltitudeMeters,
             resolvedEntity.currentTask.targetSpeedKnots));
+      } else if (!createdRouteTask) {
+        stack->push(std::make_unique<domain::RouteTask>(
+            QVector<RoutePoint>{},
+            resolvedEntity.currentTask.targetSpeedKnots,
+            resolvedEntity.currentTask.arrivalToleranceMeters));
       }
     } else if (taskToApply.taskType == "FlyHeadingAltitudeSpeed") {
       stack->push(std::make_unique<domain::FlyHeadingAltitudeSpeedTask>(
