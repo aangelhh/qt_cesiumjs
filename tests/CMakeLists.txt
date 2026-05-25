@@ -32,6 +32,7 @@ add_executable(qttest_unit_tests
     application/ScenarioQueriesTest.cpp
     application/ScenarioSerializerTest.cpp
     application/TacticalGraphicRepositoryTest.cpp
+    infrastructure/CesiumScenePageTest.cpp
     presentation/EntityVisualStateManagerTest.cpp
     presentation/EntityHomePositionTrackerTest.cpp
     presentation/TrackIconProviderTest.cpp
@@ -69,6 +70,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/application/AttackTaskProcessor.cpp
     ${CMAKE_SOURCE_DIR}/src/application/TaskApplicator.cpp
     ${CMAKE_SOURCE_DIR}/src/application/Command.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/CesiumScenePage.cpp
     ${CMAKE_SOURCE_DIR}/src/application/SimulationEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/application/SensorEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/application/FlightDynamicsEngine.cpp

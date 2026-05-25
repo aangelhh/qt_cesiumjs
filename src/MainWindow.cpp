@@ -37,6 +37,7 @@
 #include <QAbstractItemView>
 #include <QAction>
 #include <QActionGroup>
+#include <QApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QEvent>
@@ -562,12 +563,7 @@ MainWindow::MainWindow(QWidget* parent)
         }
       });
 
-  const QString accessToken = []() {
-    const QString configured =
-        CesiumScenePage::readConfigValue(QStringLiteral("ion_access_token"));
-    return configured.isEmpty() ? CesiumScenePage::defaultAccessToken()
-                                : configured;
-  }();
+  const QString accessToken = CesiumScenePage::defaultAccessToken();
   const QString assetId = []() {
     const QString configured =
         CesiumScenePage::readConfigValue(QStringLiteral("ion_asset_id"));
@@ -1020,6 +1016,11 @@ bool MainWindow::captureTaskConfiguration(
   const QStringList availableRoutes = this->availableRouteNames(false);
   const QStringList availableAreas = this->availableAreaNames();
 
+  QWidget* dialogParent = QApplication::activeModalWidget();
+  if (!dialogParent) {
+    dialogParent = this;
+  }
+
   QPointer<AssignTaskDialog> dialog = new AssignTaskDialog(
       entityName,
       availableTargets,
@@ -1028,9 +1029,9 @@ bool MainWindow::captureTaskConfiguration(
       availableAreas,
       initialTask,
       initialTaskType,
-      this);
+      dialogParent);
   dialog->setAttribute(Qt::WA_DeleteOnClose, false);
-  dialog->setWindowModality(Qt::NonModal);
+  dialog->setWindowModality(dialogParent == this ? Qt::NonModal : Qt::WindowModal);
   this->_taskDialog = dialog;
 
   QEventLoop loop;
@@ -2231,7 +2232,19 @@ void MainWindow::openEntityPlanDialog() {
     return;
   }
 
-  presentation::EntityPlanDialog dialog(
+  if (this->_entityPlanDialog) {
+    if (this->_entityPlanDialogEntityName == entityName) {
+      this->_entityPlanDialog->show();
+      this->_entityPlanDialog->raise();
+      this->_entityPlanDialog->activateWindow();
+      return;
+    }
+    this->_entityPlanDialog->close();
+    this->_entityPlanDialog = nullptr;
+    this->_entityPlanDialogEntityName.clear();
+  }
+
+  auto* dialog = new presentation::EntityPlanDialog(
       entityName,
       this->_scenarioState,
       this->_planExecutor.get(),
@@ -2242,8 +2255,24 @@ void MainWindow::openEntityPlanDialog() {
       [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
       [this]() { this->syncScenarioStateToUi(); },
       this);
+  dialog->setAttribute(Qt::WA_DeleteOnClose);
+  this->_entityPlanDialog = dialog;
+  this->_entityPlanDialogEntityName = entityName;
 
-  dialog.exec();
+  QObject::connect(
+      dialog,
+      &QObject::destroyed,
+      this,
+      [this, dialog]() {
+        if (this->_entityPlanDialog == dialog) {
+          this->_entityPlanDialog = nullptr;
+          this->_entityPlanDialogEntityName.clear();
+        }
+      });
+
+  dialog->show();
+  dialog->raise();
+  dialog->activateWindow();
 }
 
 void MainWindow::clearSelectedTask() {

@@ -18,8 +18,18 @@ void populateEntityContextMenu(
   auto addSlotAction = [](QMenu* m, const QString& text,
                           const std::function<void()>& fn) {
     QAction* a = m->addAction(text);
-    QObject::connect(a, &QAction::triggered, m, [fn]() { fn(); });
+    if (fn) {
+      QObject::connect(a, &QAction::triggered, m, [fn]() { fn(); });
+    } else {
+      a->setEnabled(false);
+    }
     return a;
+  };
+
+  auto setCheckedWithoutNotify = [](QAction* action, bool checked) {
+    const bool oldBlocked = action->blockSignals(true);
+    action->setChecked(checked);
+    action->blockSignals(oldBlocked);
   };
 
   addSlotAction(movementMenu, QStringLiteral("Fly Heading / Altitude / Speed..."),
@@ -71,11 +81,17 @@ void populateEntityContextMenu(
   for (const QString& mode : s.behaviorModeOptions) {
     QAction* action = behaviorMenu->addAction(mode);
     action->setCheckable(true);
-    action->setChecked(
+    setCheckedWithoutNotify(
+        action,
         mode.compare(s.currentBehaviorMode, Qt::CaseInsensitive) == 0);
     behaviorGroup->addAction(action);
-    QObject::connect(action, &QAction::triggered, behaviorMenu,
-        [&actions, mode]() { actions.setSelectedEntityBehaviorMode(mode); });
+    const auto setBehaviorMode = actions.setSelectedEntityBehaviorMode;
+    if (setBehaviorMode) {
+      QObject::connect(action, &QAction::triggered, behaviorMenu,
+          [setBehaviorMode, mode]() { setBehaviorMode(mode); });
+    } else {
+      action->setEnabled(false);
+    }
   }
   behaviorMenu->setEnabled(!s.entityDestroyed && !s.entityName.isEmpty());
 
@@ -143,9 +159,14 @@ void populateEntityContextMenu(
 
   QAction* hideAction = menu.addAction(QStringLiteral("Hide"));
   hideAction->setCheckable(true);
-  hideAction->setChecked(s.hidden);
-  QObject::connect(hideAction, &QAction::toggled, &menu,
-      [&actions](bool hidden) { actions.setSelectedEntityHidden(hidden); });
+  setCheckedWithoutNotify(hideAction, s.hidden);
+  const auto setHidden = actions.setSelectedEntityHidden;
+  if (setHidden) {
+    QObject::connect(hideAction, &QAction::toggled, &menu,
+        [setHidden](bool hidden) { setHidden(hidden); });
+  } else {
+    hideAction->setEnabled(false);
+  }
 
   if (s.entityDestroyed) {
     addSlotAction(&menu, QStringLiteral("Restore"),
@@ -159,15 +180,25 @@ void populateEntityContextMenu(
 
   QAction* radarAction = menu.addAction(QStringLiteral("Show Radar Coverage"));
   radarAction->setCheckable(true);
-  radarAction->setChecked(s.radarCoverageVisible);
-  QObject::connect(radarAction, &QAction::toggled, &menu,
-      [&actions](bool visible) { actions.setSelectedEntityRadarCoverageVisible(visible); });
+  setCheckedWithoutNotify(radarAction, s.radarCoverageVisible);
+  const auto setRadarCoverageVisible = actions.setSelectedEntityRadarCoverageVisible;
+  if (setRadarCoverageVisible) {
+    QObject::connect(radarAction, &QAction::toggled, &menu,
+        [setRadarCoverageVisible](bool visible) { setRadarCoverageVisible(visible); });
+  } else {
+    radarAction->setEnabled(false);
+  }
 
   QAction* historyAction = menu.addAction(QStringLiteral("Show Track History"));
   historyAction->setCheckable(true);
-  historyAction->setChecked(s.trackHistoryVisible);
-  QObject::connect(historyAction, &QAction::toggled, &menu,
-      [&actions](bool visible) { actions.setSelectedEntityTrackHistoryVisible(visible); });
+  setCheckedWithoutNotify(historyAction, s.trackHistoryVisible);
+  const auto setTrackHistoryVisible = actions.setSelectedEntityTrackHistoryVisible;
+  if (setTrackHistoryVisible) {
+    QObject::connect(historyAction, &QAction::toggled, &menu,
+        [setTrackHistoryVisible](bool visible) { setTrackHistoryVisible(visible); });
+  } else {
+    historyAction->setEnabled(false);
+  }
 }
 
 } // namespace presentation

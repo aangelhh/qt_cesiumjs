@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonValue>
 #include <QProcessEnvironment>
@@ -19,25 +20,21 @@ QString trimCopy(const QString& value) {
 }
 
 // Serialise a string as a safe JavaScript string literal (including surrounding
-// single quotes). Using QJsonDocument guarantees correct escaping of quotes,
+// quotes). Using QJsonDocument guarantees correct escaping of quotes,
 // backslashes, control characters and unicode; this prevents JS/HTML injection
 // when the value is interpolated into the embedded Cesium HTML page.
 QString jsStringLiteral(const QString& value) {
-  const QByteArray jsonEncoded =
-      QJsonDocument::fromVariant(QVariant(value)).toJson(QJsonDocument::Compact);
-  // toJson on a string variant produces `"the\nvalue"` (double-quoted). The
-  // template uses single quotes, so unwrap and re-quote with single quotes,
-  // escaping any embedded single quote and backslash.
-  QString s = QString::fromUtf8(jsonEncoded);
-  if (s.size() >= 2 && s.startsWith('"') && s.endsWith('"')) {
+  QJsonArray wrapper;
+  wrapper.append(value);
+
+  QString s = QString::fromUtf8(
+      QJsonDocument(wrapper).toJson(QJsonDocument::Compact));
+  if (s.size() >= 2 && s.startsWith('[') && s.endsWith(']')) {
     s = s.mid(1, s.size() - 2);
   }
-  s.replace(QStringLiteral("\\\""), QStringLiteral("\""));
-  s.replace(QStringLiteral("\\"), QStringLiteral("\\\\"));
-  s.replace(QStringLiteral("'"), QStringLiteral("\\'"));
   // Belt-and-suspenders: forbid </script> sequences breaking out of the tag.
   s.replace(QStringLiteral("</"), QStringLiteral("<\\/"));
-  return QStringLiteral("'") + s + QStringLiteral("'");
+  return s;
 }
 
 QString readConfigValueFromPath(const QString& path, const QString& key) {
@@ -108,7 +105,12 @@ QString CesiumScenePage::defaultAccessToken() {
     return envToken;
   }
 
-  // Next, an optional local file outside source control.
+  const QString configuredToken = readConfigValue(QStringLiteral("ion_access_token"));
+  if (!configuredToken.isEmpty()) {
+    return configuredToken;
+  }
+
+  // Finally, an optional local file outside source control.
 #ifdef QTTEST_SOURCE_DIR
   const QString sourceTokenPath =
       QDir(QString::fromUtf8(QTTEST_SOURCE_DIR)).absoluteFilePath(
@@ -124,7 +126,7 @@ QString CesiumScenePage::defaultAccessToken() {
 #endif
 
   // No baked-in default: callers must provide a token via env var,
-  // .cesium.token, or cesium.conf. Returning an empty string causes the page
+  // cesium.conf, or .cesium.token. Returning an empty string causes the page
   // to surface a clear error instead of using a leaked credential.
   return {};
 }
@@ -962,6 +964,16 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         if (bundle.trackHistory) {
           viewer.entities.remove(bundle.trackHistory);
           bundle.trackHistory = null;
+        }
+      }
+
+      function removeTrackHistoryEntityById(entityId) {
+        if (!viewer || !entityId) {
+          return;
+        }
+        const staleHistory = viewer.entities.getById(entityId + ':history');
+        if (staleHistory) {
+          viewer.entities.remove(staleHistory);
         }
       }
 
@@ -2529,7 +2541,14 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
 
         if (trackHistoryShouldRender(track)) {
           appendTrackHistorySample(overlayBundle, position);
-          if (!overlayBundle.trackHistory) {
+          const historyPositions = Array.isArray(overlayBundle.trackHistoryPositions)
+            ? overlayBundle.trackHistoryPositions
+            : [];
+          if (historyPositions.length < 2) {
+            removeTrackHistoryEntityById(entityId);
+            overlayBundle.trackHistory = null;
+          } else if (!overlayBundle.trackHistory) {
+            removeTrackHistoryEntityById(entityId);
             overlayBundle.trackHistory = viewer.entities.add({
               id: entityId + ':history',
               polyline: {

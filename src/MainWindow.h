@@ -53,6 +53,7 @@ struct Waypoint;
 namespace presentation {
 class BombReleaseController;
 class EntityHomePositionTracker;
+class EntityPlanDialog;
 class EntityPlanExecutor;
 class EntityVisualStateManager;
 class GraphicPickCoordinator;
@@ -240,6 +241,8 @@ private:
   QStandardItem* _tacticalGraphicsRootItem;
   QPointer<AddEntityDialog> _entityDialog;
   QPointer<AssignTaskDialog> _taskDialog;
+  QPointer<presentation::EntityPlanDialog> _entityPlanDialog;
+  QString _entityPlanDialogEntityName;
   QAction* _addWaypointAction;
   QAction* _addRouteAction;
   QAction* _addAreaAction;
