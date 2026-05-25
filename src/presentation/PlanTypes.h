@@ -39,6 +39,7 @@ enum class PlanStepKind {
   OrbitHoldLocation,
   FollowEntity,
   InterceptEntity2D,
+  InterceptEntity3D,
   ReturnToBase,
   AttackAir,
   AttackSurface,

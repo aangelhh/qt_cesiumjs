@@ -273,6 +273,58 @@ DesiredState InterceptEntity2DTask::evaluate(
     return {targetHeading, currentAlt, m_speedKnots};
 }
 
+// --- InterceptEntity3DTask ---
+
+InterceptEntity3DTask::InterceptEntity3DTask(
+    double speedKnots,
+    double interceptDistanceMeters,
+    double altitudeToleranceMeters)
+    : m_speedKnots(speedKnots),
+      m_interceptDistanceMeters(std::max(1.0, interceptDistanceMeters)),
+      m_altitudeToleranceMeters(std::max(0.0, altitudeToleranceMeters))
+{
+}
+
+void InterceptEntity3DTask::updateTargetLocation(double targetLat, double targetLon, double targetAlt)
+{
+    m_targetLat = targetLat;
+    m_targetLon = targetLon;
+    m_targetAlt = targetAlt;
+    m_hasTargetData = true;
+}
+
+ITask::State InterceptEntity3DTask::getState() const
+{
+    return m_state;
+}
+
+DesiredState InterceptEntity3DTask::evaluate(
+    double currentLat,
+    double currentLon,
+    double currentAlt,
+    double currentHeading,
+    double dt)
+{
+    (void)dt;
+
+    if (!m_hasTargetData) {
+        m_state = State::Failed;
+        return {currentHeading, currentAlt, 0.0};
+    }
+
+    const double horizontalDistance = distanceMeters(currentLat, currentLon, m_targetLat, m_targetLon);
+    const double altitudeError = std::abs(currentAlt - m_targetAlt);
+    if (horizontalDistance <= m_interceptDistanceMeters &&
+        altitudeError <= m_altitudeToleranceMeters) {
+        m_state = State::Completed;
+        return {currentHeading, m_targetAlt, 0.0};
+    }
+
+    m_state = State::Running;
+    const double targetHeading = bearingDegrees(currentLat, currentLon, m_targetLat, m_targetLon);
+    return {targetHeading, m_targetAlt, m_speedKnots};
+}
+
 // --- OrbitAreaTask ---
 
 OrbitAreaTask::OrbitAreaTask(double centerLat, double centerLon, double radiusMeters, double targetAlt, double targetSpeedKnots, bool isPatrol)

@@ -137,6 +137,27 @@ TEST_F(TaskApplicatorTest, AssignsInterceptEntity2DTask) {
   EXPECT_FALSE(stack->isEmpty());
 }
 
+TEST_F(TaskApplicatorTest, AssignsInterceptEntity3DTask) {
+  state->addEntity(makeAirEntity("Interceptor3D"));
+  EntityTask task;
+  task.taskType = "InterceptEntity3D";
+  task.targetEntityName = "Target1";
+  task.targetSpeedKnots = 420.0;
+  task.interceptDistanceMeters = 500.0;
+  task.altitudeToleranceMeters = 250.0;
+  task.timeoutSeconds = 120.0;
+
+  const bool result = application::applyEntityTask(
+      "Interceptor3D", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {});
+
+  EXPECT_TRUE(result);
+  const domain::TaskStack* stack = state->getTaskStack("Interceptor3D");
+  ASSERT_NE(stack, nullptr);
+  EXPECT_FALSE(stack->isEmpty());
+}
+
 // syncUi callback is called only when syncUi==true
 TEST_F(TaskApplicatorTest, SyncUiCallbackCalledOnlyWhenRequested) {
   state->addEntity(makeAirEntity("Delta"));

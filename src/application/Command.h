@@ -111,6 +111,31 @@ struct CmdAssignInterceptEntity2DTask : public ICommand {
     void apply(ScenarioState& scenario) const override;
 };
 
+struct CmdAssignInterceptEntity3DTask : public ICommand {
+    QString targetEntityName;
+    QString interceptEntityName;
+    double targetSpeedKnots;
+    double interceptDistanceMeters;
+    double altitudeToleranceMeters;
+    double timeoutSeconds;
+
+    CmdAssignInterceptEntity3DTask(
+        const QString& name,
+        const QString& interceptName,
+        double speed,
+        double distance,
+        double altitudeTolerance,
+        double timeout)
+        : targetEntityName(name),
+          interceptEntityName(interceptName),
+          targetSpeedKnots(speed),
+          interceptDistanceMeters(distance),
+          altitudeToleranceMeters(altitudeTolerance),
+          timeoutSeconds(timeout) {}
+
+    void apply(ScenarioState& scenario) const override;
+};
+
 struct CmdAssignOrbitTask : public ICommand {
     QString targetEntityName;
     QString targetAreaName;

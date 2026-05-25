@@ -556,6 +556,8 @@ MainWindow::MainWindow(QWidget* parent)
           this->assignFollowEntityTask();
         } else if (taskType == QStringLiteral("InterceptEntity2D")) {
           this->assignInterceptEntity2DTask();
+        } else if (taskType == QStringLiteral("InterceptEntity3D")) {
+          this->assignInterceptEntity3DTask();
         } else if (taskType == QStringLiteral("AttackAir")) {
           this->assignAttackAirTask();
         } else if (taskType == QStringLiteral("AttackSurface")) {
@@ -1941,6 +1943,7 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   actions.assignOrbitAreaTask               = [this]() { this->assignOrbitAreaTask(); };
   actions.assignFollowEntityTask            = [this]() { this->assignFollowEntityTask(); };
   actions.assignInterceptEntity2DTask       = [this]() { this->assignInterceptEntity2DTask(); };
+  actions.assignInterceptEntity3DTask       = [this]() { this->assignInterceptEntity3DTask(); };
   actions.assignAttackAirTask               = [this]() { this->assignAttackAirTask(); };
   actions.assignAttackSurfaceTask           = [this]() { this->assignAttackSurfaceTask(); };
   actions.clearSelectedTask                 = [this]() { this->clearSelectedTask(); };
@@ -2225,6 +2228,10 @@ void MainWindow::assignInterceptEntity2DTask() {
   this->_taskAssignmentController->assignInterceptEntity2D();
 }
 
+void MainWindow::assignInterceptEntity3DTask() {
+  this->_taskAssignmentController->assignInterceptEntity3D();
+}
+
 void MainWindow::assignAttackAirTask() {
   this->_taskAssignmentController->assignAttackAir();
 }
@@ -2486,6 +2493,7 @@ void MainWindow::populateTaskCommands() {
       { "Movement: Orbit Area...",                     "OrbitArea"               },
       { "Movement: Follow Entity...",                  "FollowEntity"            },
       { "Movement: Intercept Entity 2D...",            "InterceptEntity2D"        },
+      { "Movement: Intercept Entity 3D...",            "InterceptEntity3D"        },
       { "Attack: Attack Air...",                       "AttackAir"               },
       { "Attack: Attack Surface...",                   "AttackSurface"           },
       { "Other: Clear Current Task",                   "ClearTask"               },

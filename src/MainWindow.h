@@ -99,6 +99,7 @@ private slots:
   void assignOrbitHoldLocationTask();
   void assignFollowEntityTask();
   void assignInterceptEntity2DTask();
+  void assignInterceptEntity3DTask();
   void assignAttackAirTask();
   void assignAttackSurfaceTask();
   void openEntityPlanDialog();

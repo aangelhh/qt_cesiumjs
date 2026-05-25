@@ -18,6 +18,7 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("OrbitArea") ||
          taskType == QStringLiteral("FollowEntity") ||
          taskType == QStringLiteral("InterceptEntity2D") ||
+         taskType == QStringLiteral("InterceptEntity3D") ||
          taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
          taskType == QStringLiteral("AttackAir");
 }
@@ -96,9 +97,11 @@ void resolveTaskCoordinates(
         task.taskType == QStringLiteral("PatrolArea") ||
         task.taskType == QStringLiteral("OrbitArea") ||
         task.taskType == QStringLiteral("FollowEntity") ||
-        task.taskType == QStringLiteral("InterceptEntity2D");
+        task.taskType == QStringLiteral("InterceptEntity2D") ||
+        task.taskType == QStringLiteral("InterceptEntity3D");
     if ((task.taskType == QStringLiteral("FollowEntity") ||
-         task.taskType == QStringLiteral("InterceptEntity2D")) &&
+         task.taskType == QStringLiteral("InterceptEntity2D") ||
+         task.taskType == QStringLiteral("InterceptEntity3D")) &&
         task.targetSpeedKnots <= 0.0) {
       task.targetSpeedKnots = entity.speedKnots > 0.0
           ? entity.speedKnots
@@ -202,6 +205,11 @@ bool applyEntityTask(
       stack->push(std::make_unique<domain::InterceptEntity2DTask>(
           resolvedEntity.currentTask.targetSpeedKnots,
           resolvedEntity.currentTask.interceptDistanceMeters));
+    } else if (task.taskType == "InterceptEntity3D") {
+      stack->push(std::make_unique<domain::InterceptEntity3DTask>(
+          resolvedEntity.currentTask.targetSpeedKnots,
+          resolvedEntity.currentTask.interceptDistanceMeters,
+          resolvedEntity.currentTask.altitudeToleranceMeters));
     } else if (task.taskType == "PatrolArea") {
       for (const AreaDefinition& area : state->areas()) {
         if (area.name != resolvedEntity.currentTask.targetAreaName &&
@@ -264,6 +272,14 @@ bool applyEntityTask(
           task.targetEntityName,
           task.targetSpeedKnots,
           task.interceptDistanceMeters,
+          task.timeoutSeconds));
+    } else if (task.taskType == "InterceptEntity3D") {
+      simulationEngine->enqueueCommand(std::make_unique<CmdAssignInterceptEntity3DTask>(
+          entityName,
+          task.targetEntityName,
+          task.targetSpeedKnots,
+          task.interceptDistanceMeters,
+          task.altitudeToleranceMeters,
           task.timeoutSeconds));
     } else if (task.taskType == "PatrolArea" || task.taskType == "OrbitArea") {
       simulationEngine->enqueueCommand(std::make_unique<CmdAssignOrbitTask>(

@@ -100,6 +100,7 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("OrbitArea") ||
          taskType == QStringLiteral("FollowEntity") ||
          taskType == QStringLiteral("InterceptEntity2D") ||
+         taskType == QStringLiteral("InterceptEntity3D") ||
          taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
          taskType == QStringLiteral("AttackAir");
 }
@@ -355,6 +356,22 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
           entity.currentTask.targetLongitude = targetEntity->longitude;
           interceptTask->updateTargetLocation(targetEntity->latitude, targetEntity->longitude);
       }
+      if (auto* interceptTask = dynamic_cast<domain::InterceptEntity3DTask*>(topTask)) {
+          const Entity* targetEntity = findActiveTarget();
+          if (!targetEntity) {
+              entity.currentTask.status = QStringLiteral("Target unavailable");
+              entity.speedKnots = 0.0;
+              entity.verticalSpeedMetersPerSecond = 0.0;
+              return;
+          }
+          entity.currentTask.targetLatitude = targetEntity->latitude;
+          entity.currentTask.targetLongitude = targetEntity->longitude;
+          entity.currentTask.targetAltitudeMeters = targetEntity->altitude;
+          interceptTask->updateTargetLocation(
+              targetEntity->latitude,
+              targetEntity->longitude,
+              static_cast<double>(targetEntity->altitude));
+      }
   
       domain::ITask::State evaluatedState = domain::ITask::State::Running;
       domain::DesiredState desired = it->second.evaluateTop(
@@ -376,7 +393,8 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
               evaluatedState = domain::ITask::State::Completed;
           }
       }
-      if (entity.currentTask.taskType == QStringLiteral("InterceptEntity2D") &&
+      if ((entity.currentTask.taskType == QStringLiteral("InterceptEntity2D") ||
+           entity.currentTask.taskType == QStringLiteral("InterceptEntity3D")) &&
           entity.currentTask.timeoutSeconds > 0.0 &&
           evaluatedState != domain::ITask::State::Completed) {
           entity.currentTask.elapsedSeconds += qMax(0.0, deltaSeconds);
@@ -388,12 +406,14 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
       if (evaluatedState == domain::ITask::State::Completed) {
           entity.currentTask.status =
               (entity.currentTask.taskType == QStringLiteral("FollowEntity") ||
-               entity.currentTask.taskType == QStringLiteral("InterceptEntity2D"))
+               entity.currentTask.taskType == QStringLiteral("InterceptEntity2D") ||
+               entity.currentTask.taskType == QStringLiteral("InterceptEntity3D"))
               ? QStringLiteral("Completed")
               : QStringLiteral("On target");
       } else if (evaluatedState == domain::ITask::State::Failed) {
           entity.currentTask.status =
-              entity.currentTask.taskType == QStringLiteral("InterceptEntity2D")
+              (entity.currentTask.taskType == QStringLiteral("InterceptEntity2D") ||
+               entity.currentTask.taskType == QStringLiteral("InterceptEntity3D"))
               ? QStringLiteral("Failed")
               : QStringLiteral("Target unavailable");
       } else {
@@ -802,6 +822,7 @@ void FlightDynamicsEngine::advanceEntity(
       entity.currentTask.taskType == QStringLiteral("OrbitArea") ||
       entity.currentTask.taskType == QStringLiteral("FollowEntity") ||
       entity.currentTask.taskType == QStringLiteral("InterceptEntity2D") ||
+      entity.currentTask.taskType == QStringLiteral("InterceptEntity3D") ||
       entity.currentTask.taskType == QStringLiteral("AttackAir");
   if (!preferKinematicGuidance &&
       entity.flightDynamicsMode == QStringLiteral("jsbsim") &&

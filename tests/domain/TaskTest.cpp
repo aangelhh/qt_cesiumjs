@@ -166,6 +166,44 @@ TEST(InterceptEntity2DTask, CompletesInsideInterceptDistance) {
     EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 0.0);
 }
 
+// --- InterceptEntity3DTask -------------------------------------------------
+
+TEST(InterceptEntity3DTask, FailsWhenNoTargetEverProvided) {
+    domain::InterceptEntity3DTask task(300.0, 500.0, 250.0);
+    const auto desired = task.evaluate(kOriginLat, kOriginLon, 5000.0, 0.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Failed);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 0.0);
+}
+
+TEST(InterceptEntity3DTask, ChasesTargetAndCommandsTargetAltitude) {
+    domain::InterceptEntity3DTask task(300.0, 500.0, 250.0);
+    task.updateTargetLocation(kOriginLat + kFiveKmNorthDeltaLat, kOriginLon, 6500.0);
+    const auto desired = task.evaluate(kOriginLat, kOriginLon, 5000.0, 90.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_NEAR(desired.targetHeadingDegrees, 0.0, 1.0);
+    EXPECT_DOUBLE_EQ(desired.targetAltitudeMeters, 6500.0);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 300.0);
+}
+
+TEST(InterceptEntity3DTask, KeepsRunningWhenOnlyHorizontalToleranceMet) {
+    domain::InterceptEntity3DTask task(300.0, 500.0, 250.0);
+    task.updateTargetLocation(kOriginLat + kFiveKmNorthDeltaLat / 20.0, kOriginLon, 6500.0);
+    const auto desired = task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_DOUBLE_EQ(desired.targetAltitudeMeters, 6500.0);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 300.0);
+}
+
+TEST(InterceptEntity3DTask, CompletesInsideHorizontalAndVerticalTolerance) {
+    domain::InterceptEntity3DTask task(300.0, 500.0, 250.0);
+    task.updateTargetLocation(kOriginLat + kFiveKmNorthDeltaLat / 20.0, kOriginLon, 5150.0);
+    const auto desired = task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Completed);
+    EXPECT_DOUBLE_EQ(desired.targetHeadingDegrees, 45.0);
+    EXPECT_DOUBLE_EQ(desired.targetAltitudeMeters, 5150.0);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 0.0);
+}
+
 // --- OrbitAreaTask ---------------------------------------------------------
 
 TEST(OrbitAreaTask, DoesNotCompleteWhenOrbiting) {

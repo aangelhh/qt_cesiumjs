@@ -222,6 +222,27 @@ bool PlanStepConfigurator::configure(
       return true;
     }
 
+    case PlanStepKind::InterceptEntity3D: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("InterceptEntity3D");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.targetSpeedKnots = defaultSpeedKnots;
+      initial.interceptDistanceMeters = 500.0;
+      initial.altitudeToleranceMeters = 250.0;
+      initial.timeoutSeconds = 120.0;
+      if (!_capture(entity.name, initial, QStringLiteral("InterceptEntity3D"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.status = QStringLiteral("Queued");
+      step.label = QStringLiteral("Intercept Entity 3D: %1")
+          .arg(step.task.targetEntityName.trimmed().isEmpty()
+               ? QStringLiteral("-")
+               : step.task.targetEntityName.trimmed());
+      return true;
+    }
+
     case PlanStepKind::ReturnToBase: {
       const EntityHomePosition home = _homePos(entity.name);
       step.task.taskType             = QStringLiteral("MoveToLocation");

@@ -216,6 +216,10 @@ void TaskAssignmentController::assignInterceptEntity2D() {
   _openDialog(QStringLiteral("InterceptEntity2D"));
 }
 
+void TaskAssignmentController::assignInterceptEntity3D() {
+  _openDialog(QStringLiteral("InterceptEntity3D"));
+}
+
 void TaskAssignmentController::assignAttackAir() {
   _openDialog(QStringLiteral("AttackAir"));
 }

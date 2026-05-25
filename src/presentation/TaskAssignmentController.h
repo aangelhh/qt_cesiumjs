@@ -64,6 +64,7 @@ public:
   void assignOrbitArea();
   void assignFollowEntity();
   void assignInterceptEntity2D();
+  void assignInterceptEntity3D();
   void assignAttackAir();
   void assignAttackSurface();
 
