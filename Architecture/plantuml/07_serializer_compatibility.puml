@@ -1,0 +1,56 @@
+@startuml
+title Serialization and Legacy Compatibility
+
+skinparam shadowing false
+
+participant ScenarioState
+participant ScenarioSerializer
+database "Data/scenario_state.json" as Json
+participant TaskApplicator
+participant FlightDynamicsEngine
+
+== Save ==
+ScenarioState -> ScenarioSerializer: save(entities, waypoints, routes, plans)
+ScenarioSerializer -> Json: write EntityTask
+ScenarioSerializer -> Json: write Waypoint altitudeMeters when present
+ScenarioSerializer -> Json: write RoutePoint altitudeMeters when present
+
+== Load ==
+ScenarioState -> ScenarioSerializer: load()
+ScenarioSerializer -> Json: read scenario
+
+alt legacy InterceptEntity2D / InterceptEntity3D
+  ScenarioSerializer -> ScenarioSerializer: normalize taskType to InterceptEntity
+else current InterceptEntity
+  ScenarioSerializer -> ScenarioSerializer: preserve task
+end
+
+alt legacy waypoint/route point missing altitudeMeters
+  ScenarioSerializer -> ScenarioSerializer: altitudeMetersSet = false
+else altitudeMeters exists
+  ScenarioSerializer -> ScenarioSerializer: altitudeMetersSet = true
+end
+
+ScenarioSerializer --> ScenarioState: entities, graphics, plans
+
+== Apply / Runtime ==
+ScenarioState -> TaskApplicator: applyEntityTask(...)
+
+alt Air and altitudeMetersSet
+  TaskApplicator -> TaskApplicator: use waypoint/route altitude
+else Air and legacy missing altitude
+  TaskApplicator -> TaskApplicator: use current or previous altitude
+else Ground
+  TaskApplicator -> TaskApplicator: force altitude 0
+end
+
+TaskApplicator -> FlightDynamicsEngine: TaskStack primitives drive runtime ticks
+
+note right of ScenarioSerializer
+Compatibility policy:
+- old plans/scenarios keep loading
+- legacy route points without altitude do not force Air to 0
+- legacy intercept names are accepted
+end note
+
+@enduml

@@ -1,0 +1,58 @@
+@startuml
+title SysML IBD - Runtime Context for Movement Tasks
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+rectangle "movementTaskSystem : MovementTaskSystem" {
+  component "ui : Mission UI" as ui
+  component "planExec : EntityPlanExecutor" as plan
+  component "applicator : TaskApplicator" as app
+  component "state : ScenarioState" as state
+  component "fde : FlightDynamicsEngine" as fde
+  component "stack : TaskStack" as stack
+  component "task : ITask" as task
+  component "serializer : ScenarioSerializer" as ser
+  component "status : Operational Status" as status
+}
+
+interface "taskCommand" as ITaskCmd
+interface "planCommand" as IPlanCmd
+interface "entityState" as IEntityState
+interface "desiredState" as IDesiredState
+interface "scenarioPersistence" as IPersist
+interface "statusView" as IStatus
+
+ui - ITaskCmd
+ITaskCmd - app
+ui - IPlanCmd
+IPlanCmd - plan
+plan - app
+app - state
+app - stack
+state - fde
+fde - stack
+stack - task
+task - IDesiredState
+IDesiredState - fde
+state - IEntityState
+IEntityState - status
+state - IPersist
+IPersist - ser
+status - IStatus
+IStatus - ui
+
+note right of fde
+Converts DesiredState into:
+- heading
+- speed
+- altitude/vertical speed
+- currentTask.status
+end note
+
+note bottom of plan
+Plan progression consumes currentTask.status.
+It does not own kinematics.
+end note
+
+@enduml

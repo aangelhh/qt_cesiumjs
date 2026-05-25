@@ -1,0 +1,94 @@
+@startuml
+title MBSE Requirements Traceability - Movement Tasks
+
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+
+class "REQ-12.6\nAdvanced Movement Tasks" as REQ_126 <<requirement>> {
+  id = "REQ-12.6"
+  text = "System shall support advanced movement tasks for simulated entities."
+}
+
+class "REQ-12.6.1\nFollow Entity" as REQ_Follow <<requirement>> {
+  id = "REQ-12.6.1"
+  text = "Entity shall follow another entity while maintaining configurable distance."
+}
+
+class "REQ-12.6.2\nIntercept Entity" as REQ_Intercept <<requirement>> {
+  id = "REQ-12.6.2"
+  text = "Entity shall intercept another entity in 3D and complete within configured tolerances."
+}
+
+class "REQ-12.6.3\nFollow Route" as REQ_Route <<requirement>> {
+  id = "REQ-12.6.3"
+  text = "Entity shall follow an ordered route of waypoints."
+}
+
+class "REQ-ALT-001\nWaypoint Altitude" as REQ_Alt <<requirement>> {
+  id = "REQ-ALT-001"
+  text = "Waypoints and route points shall support editable altitude."
+}
+
+class "REQ-LEG-001\nLegacy Compatibility" as REQ_Legacy <<requirement>> {
+  id = "REQ-LEG-001"
+  text = "Legacy InterceptEntity2D/3D and route data without altitude shall load safely."
+}
+
+class "REQ-PLAN-001\nPlan Progression" as REQ_Plan <<requirement>> {
+  id = "REQ-PLAN-001"
+  text = "Plan shall advance when active step reaches Completed before considering failures or overrides."
+}
+
+class "REQ-ROUTE-OVR\nRoute Overshoot" as REQ_Overshoot <<requirement>> {
+  id = "REQ-ROUTE-OVR"
+  text = "Route shall not fail when entity safely overshoots a reached waypoint."
+}
+
+class FollowEntityTask <<block>>
+class InterceptEntity3DTask <<block>>
+class RouteTask <<block>>
+class TaskApplicator <<block>>
+class EntityPlanExecutor <<block>>
+class ScenarioSerializer <<block>>
+class GraphicPickCoordinator <<block>>
+class AssignTaskDialog <<block>>
+
+class "TC-FOLLOW-ENTITY" as TC_Follow <<testCase>>
+class "TC-INTERCEPT-3D" as TC_Intercept <<testCase>>
+class "TC-FOLLOW-ROUTE-ALT" as TC_RouteAlt <<testCase>>
+class "TC-ROUTE-OVERSHOOT" as TC_Overshoot <<testCase>>
+class "TC-LEGACY-LOAD" as TC_Legacy <<testCase>>
+class "TC-PLAN-PROGRESSION" as TC_Plan <<testCase>>
+
+REQ_126 *-- REQ_Follow
+REQ_126 *-- REQ_Intercept
+REQ_126 *-- REQ_Route
+REQ_126 *-- REQ_Plan
+REQ_126 *-- REQ_Legacy
+REQ_Route *-- REQ_Alt
+REQ_Route *-- REQ_Overshoot
+
+FollowEntityTask ..> REQ_Follow : <<satisfy>>
+InterceptEntity3DTask ..> REQ_Intercept : <<satisfy>>
+RouteTask ..> REQ_Route : <<satisfy>>
+RouteTask ..> REQ_Overshoot : <<satisfy>>
+GraphicPickCoordinator ..> REQ_Alt : <<satisfy>>
+AssignTaskDialog ..> REQ_Intercept : <<satisfy>>
+TaskApplicator ..> REQ_Legacy : <<satisfy>>
+ScenarioSerializer ..> REQ_Legacy : <<satisfy>>
+EntityPlanExecutor ..> REQ_Plan : <<satisfy>>
+
+TC_Follow ..> REQ_Follow : <<verify>>
+TC_Intercept ..> REQ_Intercept : <<verify>>
+TC_RouteAlt ..> REQ_Alt : <<verify>>
+TC_Overshoot ..> REQ_Overshoot : <<verify>>
+TC_Legacy ..> REQ_Legacy : <<verify>>
+TC_Plan ..> REQ_Plan : <<verify>>
+
+note right of REQ_Intercept
+Intercept Entity does not fire or destroy.
+Combat composition is:
+Intercept Entity -> AttackAir -> ReturnToBase
+end note
+
+@enduml

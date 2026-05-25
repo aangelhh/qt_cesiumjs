@@ -1,0 +1,71 @@
+@startuml
+title Sequence - Follow Route -> Intercept Entity -> Next Step
+
+skinparam shadowing false
+
+actor Operator
+participant MainWindow
+participant EntityPlanExecutor as PlanExec
+participant TaskApplicator
+participant ScenarioState
+participant FlightDynamicsEngine as FDE
+participant RouteTask
+participant InterceptEntity3DTask as InterceptTask
+participant "Next Step Task" as NextTask
+
+Operator -> MainWindow: Start plan\nFollow Route -> Intercept Entity -> ReturnToBase/AttackAir
+MainWindow -> PlanExec: startPlan(entity)
+PlanExec -> TaskApplicator: apply FollowRoute step
+TaskApplicator -> ScenarioState: assign currentTask(FollowRoute)
+TaskApplicator -> RouteTask: create route primitive
+
+loop ticks until route done
+  MainWindow -> ScenarioState: advanceSimulation(dt)
+  ScenarioState -> FDE: advanceEntities(...)
+  FDE -> RouteTask: evaluate own position
+  alt WP reached by tolerance
+    RouteTask -> RouteTask: currentPointIndex++
+  else WP safely overshot
+    RouteTask -> RouteTask: currentPointIndex++
+  else still moving
+    RouteTask --> FDE: heading + waypoint altitude + speed
+  end
+  FDE -> ScenarioState: update task status/progress
+end
+
+RouteTask --> FDE: Completed at final WP
+FDE -> ScenarioState: currentTask.status = Completed
+MainWindow -> PlanExec: advancePlans()
+PlanExec -> PlanExec: mark FollowRoute step Completed
+PlanExec -> TaskApplicator: apply Intercept Entity step
+TaskApplicator -> ScenarioState: assign currentTask(InterceptEntity)
+TaskApplicator -> InterceptTask: create 3D intercept primitive
+
+loop ticks until intercept done
+  MainWindow -> ScenarioState: advanceSimulation(dt)
+  ScenarioState -> FDE: advanceEntities(...)
+  FDE -> ScenarioState: read target entity position/altitude
+  FDE -> InterceptTask: updateTargetLocation(target lat/lon/alt)
+  FDE -> InterceptTask: evaluate own position
+  alt intercept tolerances met
+    InterceptTask --> FDE: Completed
+    FDE -> ScenarioState: currentTask.status = Completed
+  else timeout
+    FDE -> ScenarioState: currentTask.status = Failed
+  else target unavailable
+    FDE -> ScenarioState: currentTask.status = Target unavailable
+  else running
+    InterceptTask --> FDE: heading + target altitude + speed
+  end
+end
+
+MainWindow -> PlanExec: advancePlans()
+alt Intercept Completed
+  PlanExec -> PlanExec: mark Intercept step Completed
+  PlanExec -> TaskApplicator: apply next step
+  TaskApplicator -> NextTask: create primitive/processor state
+else Failed/Target unavailable
+  PlanExec -> PlanExec: mark step Failed and apply plan policy
+end
+
+@enduml

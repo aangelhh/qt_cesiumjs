@@ -1,0 +1,80 @@
+@startuml
+title Task Assignment and Plan Configuration Flow
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+actor Operator
+
+participant MainWindow
+participant EntityContextMenuBuilder
+participant AssignTaskController
+participant TaskAssignmentController
+participant AssignTaskDialog
+participant PlanStepConfigurator
+participant EntityPlanExecutor
+participant TaskApplicator
+participant ScenarioState
+participant TaskStack
+participant FlightDynamicsEngine
+
+Operator -> EntityContextMenuBuilder: Task > Movement
+EntityContextMenuBuilder --> Operator: Follow Entity / Intercept Entity / Follow Route
+
+alt Standalone task
+  Operator -> MainWindow: choose task
+  MainWindow -> AssignTaskController: open(initialTaskType)
+  AssignTaskController -> AssignTaskDialog: capture EntityTask
+  AssignTaskDialog --> AssignTaskController: EntityTask
+  AssignTaskController -> TaskApplicator: applyEntityTask(entity, task)
+else Quick context command
+  Operator -> TaskAssignmentController: assign movement task
+  TaskAssignmentController -> TaskApplicator: applyEntityTask(entity, task)
+else Plan step
+  Operator -> MainWindow: add/configure plan step
+  MainWindow -> PlanStepConfigurator: configure(entity, kind)
+  PlanStepConfigurator -> AssignTaskDialog: capture step.task
+  AssignTaskDialog --> PlanStepConfigurator: EntityTask
+  PlanStepConfigurator --> MainWindow: PlanStep
+  Operator -> MainWindow: start plan
+  MainWindow -> EntityPlanExecutor: startPlan(entity)
+  EntityPlanExecutor -> TaskApplicator: apply current step task
+end
+
+TaskApplicator -> ScenarioState: assignTask(entity, normalized task)
+TaskApplicator -> ScenarioState: getTaskStack(entity)
+TaskApplicator -> TaskStack: clear old task primitives
+
+alt taskType == FollowRoute or MoveAlongRoute
+  TaskApplicator -> ScenarioState: lookup RouteGraphic
+  TaskApplicator -> TaskStack: push RouteTask(route points, speed, tolerance)
+else taskType == InterceptEntity/2D/3D
+  TaskApplicator -> TaskStack: push InterceptEntity3DTask
+else taskType == FollowEntity
+  TaskApplicator -> TaskStack: push FollowEntityTask
+else taskType == MoveToWaypoint/MoveToLocation
+  TaskApplicator -> TaskStack: push MoveToLocationTask
+end
+
+ScenarioState -> FlightDynamicsEngine: advanceSimulation tick later
+
+note right of TaskApplicator
+Normalization:
+- InterceptEntity2D -> InterceptEntity
+- InterceptEntity3D -> InterceptEntity
+- visible label remains "Intercept Entity"
+- MoveAlongRoute remains legacy-compatible
+end note
+
+note right of AssignTaskDialog
+Follow Route exposes:
+- targetRouteName
+- speedKnots
+- arrivalToleranceMeters
+- timeoutSeconds
+
+Route/Waypoint altitude is edited through
+tactical graphics creation/editing.
+end note
+
+@enduml

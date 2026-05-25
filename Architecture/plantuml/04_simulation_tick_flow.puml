@@ -1,0 +1,70 @@
+@startuml
+title Runtime Tick: Simulation and Plan Progression
+
+skinparam shadowing false
+
+participant MainWindow
+participant ScenarioState
+participant FlightDynamicsEngine
+participant TaskStack
+participant "ITask primitive" as Task
+participant EntityPlanExecutor
+participant TaskApplicator
+
+loop UI timer / simulation tick
+  MainWindow -> ScenarioState: advanceSimulation(deltaSeconds)
+  ScenarioState -> FlightDynamicsEngine: advanceEntities(entities, taskStacks, dt)
+
+  loop each entity
+    FlightDynamicsEngine -> TaskStack: top()
+
+    alt FollowEntityTask
+      FlightDynamicsEngine -> ScenarioState: target from entity snapshot
+      FlightDynamicsEngine -> Task: updateTargetLocation(...)
+    else InterceptEntity3DTask
+      FlightDynamicsEngine -> ScenarioState: target from entity snapshot
+      FlightDynamicsEngine -> Task: updateTargetLocation(lat, lon, altitude)
+    else RouteTask
+      FlightDynamicsEngine -> Task: currentTargetPoint()
+    end
+
+    FlightDynamicsEngine -> TaskStack: evaluateTop(lat, lon, alt, heading, dt)
+    TaskStack -> Task: evaluate(...)
+    Task --> TaskStack: DesiredState + State
+    TaskStack --> FlightDynamicsEngine: DesiredState + State
+
+    FlightDynamicsEngine -> FlightDynamicsEngine: update currentTask targets/status
+    FlightDynamicsEngine -> FlightDynamicsEngine: apply kinematics heading/speed/altitude
+  end
+
+  ScenarioState -> ScenarioState: advanceBehaviors()
+  ScenarioState -> ScenarioState: advanceActiveMunitions()
+  ScenarioState -> ScenarioState: advanceTransientEffects()
+
+  MainWindow -> EntityPlanExecutor: advancePlans()
+
+  loop each running plan
+    EntityPlanExecutor -> EntityPlanExecutor: validate current step
+    EntityPlanExecutor -> EntityPlanExecutor: if currentTask.status == Completed
+    EntityPlanExecutor -> EntityPlanExecutor: mark step Completed and advance
+    EntityPlanExecutor -> EntityPlanExecutor: else if Failed/Target unavailable
+    EntityPlanExecutor -> EntityPlanExecutor: mark step Failed / continue or complete with failures
+    EntityPlanExecutor -> EntityPlanExecutor: else check manual override
+
+    alt next step exists
+      EntityPlanExecutor -> TaskApplicator: apply next step task
+    else no next step
+      EntityPlanExecutor -> EntityPlanExecutor: complete plan
+    end
+  end
+end
+
+note right of EntityPlanExecutor
+Hardening order:
+1. real invalid step
+2. Completed -> advance
+3. Failed / Target unavailable
+4. manual override
+end note
+
+@enduml

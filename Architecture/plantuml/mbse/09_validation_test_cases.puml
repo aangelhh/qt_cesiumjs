@@ -1,0 +1,67 @@
+@startuml
+title MBSE Validation Test Cases - Movement Tasks
+
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+
+class "VT-001 Follow Entity Maintains Distance" as VT001 <<testCase>> {
+  setup = A follows B
+  expected = A maintains configured distance
+}
+
+class "VT-002 Intercept Entity Completes In 3D" as VT002 <<testCase>> {
+  setup = A intercepts B at different altitude
+  expected = Completed when horizontal and vertical tolerances met
+}
+
+class "VT-003 Follow Route Uses Waypoint Altitudes" as VT003 <<testCase>> {
+  setup = Air route WP1 5000m, WP2 8000m
+  expected = targetAltitude follows waypoint altitude
+}
+
+class "VT-004 Follow Route Safe Overshoot" as VT004 <<testCase>> {
+  setup = A passes near WP1 then turns to WP2
+  expected = WP1 reached, no Failed
+}
+
+class "VT-005 Plan Progression" as VT005 <<testCase>> {
+  setup = Follow Route -> Intercept Entity -> ReturnToBase
+  expected = plan advances to next step after Completed
+}
+
+class "VT-006 Timeout Failure" as VT006 <<testCase>> {
+  setup = low timeout and distant target/route
+  expected = Failed due only to timeout
+}
+
+class "VT-007 Legacy Load" as VT007 <<testCase>> {
+  setup = InterceptEntity2D/3D and missing altitude legacy data
+  expected = loads safely and displays unified labels
+}
+
+class "REQ-12.6.1 Follow Entity" as R1 <<requirement>>
+class "REQ-12.6.2 Intercept Entity" as R2 <<requirement>>
+class "REQ-12.6.3 Follow Route" as R3 <<requirement>>
+class "REQ-ALT-001 Waypoint Altitude" as R4 <<requirement>>
+class "REQ-ROUTE-OVR Overshoot" as R5 <<requirement>>
+class "REQ-PLAN-001 Plan Progression" as R6 <<requirement>>
+class "REQ-LEG-001 Legacy Compatibility" as R7 <<requirement>>
+
+VT001 ..> R1 : <<verify>>
+VT002 ..> R2 : <<verify>>
+VT003 ..> R3 : <<verify>>
+VT003 ..> R4 : <<verify>>
+VT004 ..> R5 : <<verify>>
+VT005 ..> R6 : <<verify>>
+VT005 ..> R2 : <<verify>>
+VT006 ..> R2 : <<verify>>
+VT006 ..> R3 : <<verify>>
+VT007 ..> R7 : <<verify>>
+
+note bottom
+Technical regression suite currently covers these through
+domain, application and presentation tests. Manual validation
+still exercises full UI/simulation behavior.
+end note
+
+@enduml

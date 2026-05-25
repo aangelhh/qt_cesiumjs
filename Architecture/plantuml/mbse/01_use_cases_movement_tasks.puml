@@ -1,0 +1,69 @@
+@startuml
+title MBSE Use Cases - Advanced Movement Tasks
+
+left to right direction
+skinparam shadowing false
+
+actor "Mission Operator" as Operator
+actor "Simulation Clock" as Clock
+actor "Legacy Scenario File" as Legacy
+
+rectangle "Advanced Movement Task Capability" {
+  usecase "Assign Follow Entity" as UC_FollowEntity
+  usecase "Assign Intercept Entity" as UC_Intercept
+  usecase "Assign Follow Route" as UC_FollowRoute
+  usecase "Build Route With\nWaypoint Altitudes" as UC_BuildRoute
+  usecase "Execute Plan Steps" as UC_ExecutePlan
+  usecase "Advance To Next Step" as UC_Advance
+  usecase "Report Operational Status" as UC_Status
+  usecase "Load Legacy Plans\nand Scenarios" as UC_Legacy
+  usecase "Persist Scenario" as UC_Persist
+
+  usecase "Maintain Follow Distance" as UC_MaintainDistance
+  usecase "Intercept In 3D" as UC_Intercept3D
+  usecase "Navigate Ordered Waypoints" as UC_NavigateRoute
+  usecase "Handle Target Unavailable" as UC_TargetUnavailable
+  usecase "Handle Timeout" as UC_Timeout
+  usecase "Detect Safe Route Overshoot" as UC_Overshoot
+}
+
+Operator --> UC_FollowEntity
+Operator --> UC_Intercept
+Operator --> UC_FollowRoute
+Operator --> UC_BuildRoute
+Operator --> UC_ExecutePlan
+Operator --> UC_Status
+
+Clock --> UC_ExecutePlan
+Clock --> UC_MaintainDistance
+Clock --> UC_Intercept3D
+Clock --> UC_NavigateRoute
+
+Legacy --> UC_Legacy
+Operator --> UC_Persist
+
+UC_FollowEntity .> UC_MaintainDistance : <<include>>
+UC_Intercept .> UC_Intercept3D : <<include>>
+UC_FollowRoute .> UC_NavigateRoute : <<include>>
+UC_FollowRoute .> UC_Overshoot : <<include>>
+UC_ExecutePlan .> UC_Advance : <<include>>
+UC_ExecutePlan .> UC_TargetUnavailable : <<extend>>
+UC_ExecutePlan .> UC_Timeout : <<extend>>
+UC_Legacy .> UC_Intercept : <<include>>
+UC_Legacy .> UC_FollowRoute : <<include>>
+
+note right of UC_Intercept
+Visible user task:
+"Intercept Entity"
+
+No 2D/3D option in UI.
+Runtime behavior is 3D.
+end note
+
+note bottom of UC_BuildRoute
+Air waypoint altitude is editable.
+Ground route altitude is 0 m for now.
+Legacy missing altitude does not force Air to 0.
+end note
+
+@enduml

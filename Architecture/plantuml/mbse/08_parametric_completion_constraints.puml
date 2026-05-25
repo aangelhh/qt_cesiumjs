@@ -1,0 +1,93 @@
+@startuml
+title SysML Parametric - Completion and Failure Constraints
+
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+
+class "InterceptCompletion" as C_Intercept <<constraint>> {
+  horizontalDistance <= interceptDistanceMeters
+  and
+  abs(ownAltitude - targetAltitude) <= altitudeToleranceMeters
+}
+
+class "RouteWaypointReached" as C_Route <<constraint>> {
+  distanceToWaypoint <= arrivalToleranceMeters
+  or
+  (bestDistance <= overshootCloseDistance
+   and distanceToWaypoint > bestDistance + movingAwayDelta)
+}
+
+class "TimeoutFailure" as C_Timeout <<constraint>> {
+  elapsedSeconds >= timeoutSeconds
+  and state != Completed
+}
+
+class "TargetUnavailableFailure" as C_Target <<constraint>> {
+  target not found
+  or
+  target.destroyed == true
+}
+
+class "Distance" as VT_Distance <<valueType>> {
+  unit = m
+}
+
+class "Time" as VT_Time <<valueType>> {
+  unit = s
+}
+
+class "Angle" as VT_Angle <<valueType>> {
+  unit = deg
+}
+
+class "EntityKinematicState" as Own <<block>> {
+  latitude
+  longitude
+  altitude
+  heading
+  speed
+}
+
+class "TargetEntityState" as Target <<block>> {
+  latitude
+  longitude
+  altitude
+  destroyed
+}
+
+class "Intercept Entity Parameters" as P_Intercept <<block>> {
+  interceptDistanceMeters
+  altitudeToleranceMeters
+  timeoutSeconds
+  elapsedSeconds
+}
+
+class "Follow Route Parameters" as P_Route <<block>> {
+  arrivalToleranceMeters
+  bestDistanceToCurrentPointMeters
+  currentWaypointIndex
+  timeoutSeconds
+  elapsedSeconds
+}
+
+Own --> C_Intercept
+Target --> C_Intercept
+P_Intercept --> C_Intercept
+P_Intercept --> C_Timeout
+Target --> C_Target
+
+Own --> C_Route
+P_Route --> C_Route
+P_Route --> C_Timeout
+
+C_Intercept ..> VT_Distance
+C_Route ..> VT_Distance
+C_Timeout ..> VT_Time
+Own ..> VT_Angle
+
+note right of C_Timeout
+Timeout is evaluated only if the task
+has not already completed.
+end note
+
+@enduml

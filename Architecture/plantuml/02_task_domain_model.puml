@@ -1,0 +1,174 @@
+@startuml
+title Task, Plan and Route Domain Model
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+
+class Entity {
+  +QString name
+  +QString domain
+  +double latitude
+  +double longitude
+  +int altitude
+  +double headingDegrees
+  +double speedKnots
+  +bool destroyed
+  +QString behaviorMode
+  +EntityTask currentTask
+}
+
+class EntityTask {
+  +QString taskType
+  +bool enabled
+  +QString status
+  +double targetLatitude
+  +double targetLongitude
+  +int targetAltitudeMeters
+  +double targetSpeedKnots
+  +QString targetEntityName
+  +QString targetWaypointName
+  +QString targetRouteName
+  +double followDistanceMeters
+  +double arrivalToleranceMeters
+  +double interceptDistanceMeters
+  +double altitudeToleranceMeters
+  +double durationSeconds
+  +double timeoutSeconds
+  +double elapsedSeconds
+  +int routeCurrentWaypointIndex
+  +int routeTotalWaypoints
+}
+
+interface ITask {
+  +State getState()
+  +DesiredState evaluate(lat, lon, alt, heading, dt)
+}
+
+class DesiredState {
+  +double targetHeadingDegrees
+  +double targetAltitudeMeters
+  +double targetSpeedKnots
+}
+
+class TaskStack {
+  +push(task)
+  +pop()
+  +top()
+  +evaluateTop(..., evaluatedState)
+}
+
+class MoveToLocationTask
+class RouteTask {
+  -QVector<RoutePoint> points
+  -double arrivalToleranceMeters
+  -int currentPointIndex
+  -double bestDistanceToCurrentPointMeters
+  +currentTargetPoint()
+}
+class FollowEntityTask {
+  +updateTargetLocation(lat, lon, alt, speed)
+}
+class InterceptEntity3DTask {
+  +updateTargetLocation(lat, lon, alt)
+}
+class InterceptEntity2DTask <<legacy/domain primitive>>
+class FlyHeadingAltitudeSpeedTask
+class OrbitAreaTask
+class PatrolAreaTask
+
+class Waypoint {
+  +QString name
+  +double latitude
+  +double longitude
+  +double altitudeMeters
+  +bool altitudeMetersSet
+}
+
+class RoutePoint {
+  +double latitude
+  +double longitude
+  +double altitudeMeters
+  +bool altitudeMetersSet
+}
+
+class RouteGraphic {
+  +QString name
+  +QVector<RoutePoint> points
+}
+
+class AreaDefinition
+
+enum PlanStepKind {
+  MoveToLocation
+  MoveToWaypoint
+  FollowRoute
+  MoveAlongRoute
+  PatrolArea
+  FlyHeadingAltitudeSpeed
+  OrbitHoldLocation
+  FollowEntity
+  InterceptEntity
+  InterceptEntity2D
+  InterceptEntity3D
+  ReturnToBase
+  AttackAir
+  AttackSurface
+}
+
+class PlanStep {
+  +PlanStepKind kind
+  +EntityTask task
+  +QString label
+  +QString status
+}
+
+class EntityPlan {
+  +QVector<PlanStep> steps
+  +int currentStepIndex
+  +bool running
+  +QString status
+}
+
+Entity *-- EntityTask
+TaskStack o-- ITask
+ITask <|.. MoveToLocationTask
+ITask <|.. RouteTask
+ITask <|.. FollowEntityTask
+ITask <|.. InterceptEntity3DTask
+ITask <|.. InterceptEntity2DTask
+ITask <|.. FlyHeadingAltitudeSpeedTask
+ITask <|.. OrbitAreaTask
+ITask <|.. PatrolAreaTask
+ITask ..> DesiredState
+
+RouteTask *-- RoutePoint
+RouteGraphic *-- RoutePoint
+AreaDefinition *-- RoutePoint
+EntityPlan *-- PlanStep
+PlanStep *-- EntityTask
+PlanStep --> PlanStepKind
+
+note right of RouteTask
+Follow Route advances waypoint when:
+- horizontal distance <= tolerance
+- or safe overshoot after close approach
+
+It fails for invalid route or timeout,
+not for moving away from a reached waypoint.
+end note
+
+note right of InterceptEntity3DTask
+Unified visible "Intercept Entity" behavior:
+- horizontal distance <= interceptDistanceMeters
+- vertical difference <= altitudeToleranceMeters
+- timeout -> Failed
+- target gone -> Target unavailable
+end note
+
+note bottom of RoutePoint
+altitudeMetersSet preserves legacy data.
+Air legacy fallback: current/previous altitude.
+Ground routes force altitude 0 for now.
+end note
+
+@enduml

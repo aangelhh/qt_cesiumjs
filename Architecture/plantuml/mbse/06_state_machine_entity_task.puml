@@ -1,0 +1,50 @@
+@startuml
+title State Machine - Entity Task and Plan Step Status
+
+skinparam shadowing false
+
+[*] --> Idle
+Idle --> Queued : task assigned by plan/dialog
+Queued --> Running : TaskStack primitive created
+Running --> Running : tick evaluates DesiredState
+
+Running --> Completed : task completion condition met
+Running --> Failed : timeout / invalid route / severe inconsistent data
+Running --> TargetUnavailable : target missing or destroyed
+Running --> Cancelled : user clears task / plan stops
+
+Completed --> [*]
+Failed --> [*]
+TargetUnavailable --> [*]
+Cancelled --> [*]
+
+state Running {
+  [*] --> Evaluating
+  Evaluating --> FollowEntityMode : taskType == FollowEntity
+  Evaluating --> InterceptEntityMode : taskType == InterceptEntity
+  Evaluating --> FollowRouteMode : taskType == FollowRoute
+  Evaluating --> MoveMode : MoveToLocation/Waypoint/RTB
+
+  FollowEntityMode --> Evaluating : maintain distance
+  InterceptEntityMode --> Evaluating : close horizontal + vertical tolerance
+  FollowRouteMode --> Evaluating : advance waypoint index
+  MoveMode --> Evaluating : navigate to fixed target
+}
+
+note right of Completed
+PlanStep Completed triggers next step.
+For Intercept Entity:
+horizontalDistance <= interceptDistanceMeters
+and verticalDifference <= altitudeToleranceMeters.
+end note
+
+note right of Failed
+Follow Route does not fail because of overshoot.
+Expected route failures:
+- timeout
+- invalid/empty route
+- destroyed/cancelled
+- severe inconsistent data
+end note
+
+@enduml

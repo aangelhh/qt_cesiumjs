@@ -1,0 +1,79 @@
+@startuml
+title Activity - Plan Execution and Step Progression
+
+skinparam shadowing false
+
+start
+:Plan is running;
+:Find entity by plan owner;
+
+if (Entity exists and not destroyed?) then (yes)
+else (no)
+  :Fail running plan;
+  stop
+endif
+
+if (Current step index valid?) then (yes)
+else (no)
+  :Fail running plan;
+  stop
+endif
+
+:Validate active PlanStep;
+if (Step valid?) then (yes)
+else (no)
+  :Fail running plan;
+  stop
+endif
+
+if (currentTask.status == Completed?) then (yes)
+  :Mark active step Completed;
+  :Advance currentStepIndex;
+  if (More steps?) then (yes)
+    :Validate next step;
+    if (Next step valid?) then (yes)
+      :Start next step via TaskApplicator;
+      :Continue plan Running;
+      stop
+    else (no)
+      :Fail running plan;
+      stop
+    endif
+  else (no)
+    :Complete plan;
+    stop
+  endif
+else (no)
+endif
+
+if (currentTask.status == Failed\nor Target unavailable?) then (yes)
+  :Mark active step Failed;
+  :Advance currentStepIndex;
+  if (More steps?) then (yes)
+    :Start next step;
+    :Plan continues with failure recorded;
+    stop
+  else (no)
+    :CompleteWithFailures;
+    stop
+  endif
+else (no)
+endif
+
+if (current task disabled\nor does not match active step?) then (yes)
+  :Treat as manual override;
+  :Fail running plan;
+  stop
+else (no)
+  :Keep active step Running;
+endif
+
+stop
+
+note right
+Important hardening:
+Completed is evaluated before Failed/override.
+This protects Intercept Entity plan progression.
+end note
+
+@enduml

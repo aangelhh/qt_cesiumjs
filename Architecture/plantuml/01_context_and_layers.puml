@@ -1,0 +1,123 @@
+@startuml
+title Current Architecture - Context and Layers
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+actor Operator
+
+package "Presentation / UI" {
+  [MainWindow]
+  [AssignTaskDialog]
+  [EntityPlanDialog]
+  [EntityContextMenuBuilder]
+  [PlanStepConfigurator]
+  [TaskAssignmentController]
+  [AssignTaskController]
+  [TacticalGraphicsEditorController]
+  [GraphicPickCoordinator]
+  [EntityStatusFormatter]
+  [TrackSummaryBuilder]
+}
+
+package "Application" {
+  [ScenarioState]
+  [TaskApplicator]
+  [FlightDynamicsEngine]
+  [ScenarioSerializer]
+  [AttackTaskProcessor]
+  [BehaviorEngine]
+  [MunitionSimulator]
+  [SimulationEngine]
+}
+
+package "Planning" {
+  [EntityPlanExecutor]
+  [PlanTypes]
+}
+
+package "Domain" {
+  [Entity]
+  [EntityTask]
+  [TaskStack]
+  [ITask]
+  [MoveToLocationTask]
+  [FollowEntityTask]
+  [InterceptEntity3DTask]
+  [RouteTask]
+  [Waypoint]
+  [RouteGraphic]
+  [RoutePoint]
+  [AreaDefinition]
+}
+
+package "Persistence" {
+  database "Data/scenario_state.json" as ScenarioJson
+  database "Data/entity_visual_state.json" as VisualJson
+}
+
+Operator --> [MainWindow]
+Operator --> [EntityContextMenuBuilder]
+Operator --> [TacticalGraphicsEditorController]
+
+[MainWindow] --> [AssignTaskDialog]
+[MainWindow] --> [EntityPlanDialog]
+[MainWindow] --> [EntityPlanExecutor]
+[MainWindow] --> [ScenarioState]
+
+[AssignTaskDialog] --> [EntityTask]
+[PlanStepConfigurator] --> [AssignTaskDialog]
+[TaskAssignmentController] --> [TaskApplicator]
+[AssignTaskController] --> [TaskApplicator]
+
+[TacticalGraphicsEditorController] --> [GraphicPickCoordinator]
+[GraphicPickCoordinator] --> [Waypoint]
+[GraphicPickCoordinator] --> [RouteGraphic]
+[GraphicPickCoordinator] --> [AreaDefinition]
+
+[TaskApplicator] --> [ScenarioState]
+[TaskApplicator] --> [TaskStack]
+[TaskApplicator] --> [ITask]
+[TaskApplicator] --> [RouteGraphic]
+[TaskApplicator] --> [Waypoint]
+
+[ScenarioState] --> [Entity]
+[ScenarioState] --> [TaskStack]
+[ScenarioState] --> [Waypoint]
+[ScenarioState] --> [RouteGraphic]
+[ScenarioState] --> [AreaDefinition]
+[ScenarioState] --> [FlightDynamicsEngine]
+[ScenarioState] --> [ScenarioSerializer]
+
+[FlightDynamicsEngine] --> [TaskStack]
+[FlightDynamicsEngine] --> [ITask]
+[FlightDynamicsEngine] --> [EntityTask]
+
+[EntityPlanExecutor] --> [PlanTypes]
+[EntityPlanExecutor] --> [ScenarioState]
+[EntityPlanExecutor] --> [TaskApplicator]
+
+[ScenarioSerializer] --> ScenarioJson
+[ScenarioSerializer] --> [Entity]
+[ScenarioSerializer] --> [EntityTask]
+[ScenarioSerializer] --> [Waypoint]
+[ScenarioSerializer] --> [RouteGraphic]
+
+[EntityStatusFormatter] --> [EntityTask]
+[TrackSummaryBuilder] --> [Entity]
+
+note right of [BehaviorEngine]
+AI/behavior remains separate.
+Advanced movement tasks do not
+activate automatic behavior.
+end note
+
+note right of [InterceptEntity3DTask]
+Visible task is "Intercept Entity".
+Legacy InterceptEntity2D and
+InterceptEntity3D are normalized
+or treated as equivalent.
+end note
+
+@enduml

@@ -1,0 +1,73 @@
+@startuml
+title Follow Route / Trajectory MVP Sequence
+
+skinparam shadowing false
+
+actor Operator
+participant TacticalGraphicsEditorController as RouteUI
+participant GraphicPickCoordinator as Picker
+participant ScenarioState
+participant AssignTaskDialog
+participant TaskApplicator
+participant RouteTask
+participant FlightDynamicsEngine as FDE
+participant EntityPlanExecutor as PlanExec
+
+Operator -> RouteUI: create/edit route
+RouteUI -> Picker: beginRoutePick(name, default altitude)
+
+loop each route point
+  Operator -> Picker: click map coordinate
+  alt Air route
+    Picker -> Operator: prompt altitudeMeters
+    Operator --> Picker: altitudeMeters
+  else Ground route
+    Picker -> Picker: altitudeMeters = 0
+  end
+  Picker -> ScenarioState: add/update RouteGraphic(RoutePoint lat/lon/alt)
+end
+
+Operator -> AssignTaskDialog: Task > Movement > Follow Route
+AssignTaskDialog --> TaskApplicator: EntityTask(FollowRoute, targetRouteName, tolerance, timeout)
+TaskApplicator -> ScenarioState: lookup route points
+TaskApplicator -> RouteTask: create(points, speed, arrivalTolerance)
+
+loop simulation ticks
+  FDE -> RouteTask: evaluate(entity position)
+
+  alt current waypoint reached
+    RouteTask -> RouteTask: distance <= arrivalTolerance
+    RouteTask -> RouteTask: advance to next waypoint
+  else safe overshoot
+    RouteTask -> RouteTask: was close, now distance grows
+    RouteTask -> RouteTask: mark waypoint reached
+  else still en route
+    RouteTask --> FDE: heading to current waypoint, waypoint altitude, speed
+  end
+
+  alt last waypoint completed
+    RouteTask --> FDE: State Completed
+    FDE -> ScenarioState: currentTask.status = Completed
+    PlanExec -> PlanExec: mark step Completed
+    PlanExec -> TaskApplicator: start next step
+  else timeout
+    FDE -> ScenarioState: currentTask.status = Failed
+  end
+end
+
+note right of RouteTask
+Overshoot is not failure.
+It only advances if the entity
+was close enough to the waypoint.
+
+This prevents skipping far waypoints.
+end note
+
+note right of TaskApplicator
+Altitude rules:
+- Air: route point altitude if set
+- Air legacy missing altitude: current/previous altitude
+- Ground: 0 m
+end note
+
+@enduml

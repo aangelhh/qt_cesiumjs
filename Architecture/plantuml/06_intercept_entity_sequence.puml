@@ -1,0 +1,67 @@
+@startuml
+title Unified Intercept Entity Sequence
+
+skinparam shadowing false
+
+actor Operator
+participant AssignTaskDialog
+participant PlanStepConfigurator
+participant TaskApplicator
+participant ScenarioState
+participant InterceptEntity3DTask as InterceptTask
+participant FlightDynamicsEngine as FDE
+participant EntityPlanExecutor as PlanExec
+
+alt standalone task
+  Operator -> AssignTaskDialog: Task > Movement > Intercept Entity
+  AssignTaskDialog --> TaskApplicator: EntityTask(InterceptEntity)
+else plan step
+  Operator -> PlanStepConfigurator: add Intercept Entity step
+  PlanStepConfigurator -> AssignTaskDialog: capture Intercept Entity params
+  AssignTaskDialog --> PlanStepConfigurator: EntityTask(InterceptEntity)
+  PlanStepConfigurator --> TaskApplicator: apply step task when active
+end
+
+TaskApplicator -> ScenarioState: assign normalized InterceptEntity
+TaskApplicator -> InterceptTask: create(speed, interceptDistance, altitudeTolerance)
+
+loop simulation ticks while running
+  FDE -> ScenarioState: find live target by targetEntityName
+
+  alt target unavailable/destroyed
+    FDE -> ScenarioState: currentTask.status = Target unavailable
+    PlanExec -> PlanExec: mark step Failed / continue according to plan policy
+  else target available
+    FDE -> InterceptTask: updateTargetLocation(target lat/lon/alt)
+    FDE -> InterceptTask: evaluate(own lat/lon/alt/heading)
+
+    alt horizontal and vertical tolerances met
+      InterceptTask --> FDE: State Completed, speed 0
+      FDE -> ScenarioState: currentTask.status = Completed
+      PlanExec -> PlanExec: mark step Completed
+      PlanExec -> TaskApplicator: start next step
+    else timeout expired before completion
+      FDE -> ScenarioState: currentTask.status = Failed
+      PlanExec -> PlanExec: mark step Failed
+    else still outside tolerance
+      InterceptTask --> FDE: heading to target, target altitude, speed
+      FDE -> ScenarioState: currentTask.status = Running
+    end
+  end
+end
+
+note right of TaskApplicator
+Visible task: "Intercept Entity".
+Runtime primitive: InterceptEntity3DTask.
+Legacy task types load safely:
+- InterceptEntity2D
+- InterceptEntity3D
+end note
+
+note right of InterceptTask
+No weapon effects here.
+Combat plan remains:
+Intercept Entity -> AttackAir -> ReturnToBase
+end note
+
+@enduml

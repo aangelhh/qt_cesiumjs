@@ -1,0 +1,93 @@
+@startuml
+title SysML BDD - Movement Task System
+
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+
+class "MovementTaskSystem" as System <<block>> {
+  +assign task
+  +execute task
+  +advance plan
+  +report status
+}
+
+class "Mission UI" as UI <<block>> {
+  +task menu
+  +task dialog
+  +plan dialog
+  +graphics editor
+}
+
+class "Plan Execution" as Plan <<block>> {
+  +EntityPlanExecutor
+  +PlanStep
+  +PlanStepKind
+}
+
+class "Scenario Runtime" as Runtime <<block>> {
+  +ScenarioState
+  +SimulationEngine
+  +FlightDynamicsEngine
+}
+
+class "Task Assignment" as Assignment <<block>> {
+  +TaskApplicator
+  +AssignTaskController
+  +TaskAssignmentController
+}
+
+class "Task Primitives" as Primitives <<block>> {
+  +MoveToLocationTask
+  +FollowEntityTask
+  +InterceptEntity3DTask
+  +RouteTask
+  +TaskStack
+}
+
+class "Tactical Graphics" as Graphics <<block>> {
+  +Waypoint
+  +RouteGraphic
+  +RoutePoint
+  +AreaDefinition
+}
+
+class "Persistence" as Persistence <<block>> {
+  +ScenarioSerializer
+  +scenario_state.json
+}
+
+class "Operational Status" as Status <<block>> {
+  +EntityStatusFormatter
+  +TrackSummaryBuilder
+}
+
+System *-- UI
+System *-- Plan
+System *-- Runtime
+System *-- Assignment
+System *-- Primitives
+System *-- Graphics
+System *-- Persistence
+System *-- Status
+
+UI --> Assignment : task request
+UI --> Plan : plan authoring
+UI --> Graphics : create/edit waypoint/route
+Plan --> Assignment : start active step
+Assignment --> Runtime : persist EntityTask
+Assignment --> Primitives : build TaskStack primitive
+Runtime --> Primitives : evaluate every tick
+Runtime --> Plan : currentTask.status
+Runtime --> Persistence : save/load
+Status --> Runtime : read entity state
+
+note bottom of Primitives
+Visible movement capabilities:
+- Follow Entity
+- Intercept Entity
+- Follow Route
+- Move To Location / Waypoint
+- Return To Base
+end note
+
+@enduml
