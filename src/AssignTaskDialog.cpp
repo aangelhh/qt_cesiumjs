@@ -55,7 +55,7 @@ AssignTaskDialog::AssignTaskDialog(
   _taskTypeCombo->addItem(QStringLiteral("Fly Heading / Altitude / Speed"), QStringLiteral("FlyHeadingAltitudeSpeed"));
   _taskTypeCombo->addItem(QStringLiteral("Move To Location"), QStringLiteral("MoveToLocation"));
   _taskTypeCombo->addItem(QStringLiteral("Move To Waypoint"), QStringLiteral("MoveToWaypoint"));
-  _taskTypeCombo->addItem(QStringLiteral("Move Along Route"), QStringLiteral("MoveAlongRoute"));
+  _taskTypeCombo->addItem(QStringLiteral("Follow Route"), QStringLiteral("FollowRoute"));
   _taskTypeCombo->addItem(QStringLiteral("Patrol Area"), QStringLiteral("PatrolArea"));
   _taskTypeCombo->addItem(QStringLiteral("Orbit Area"), QStringLiteral("OrbitArea"));
   _taskTypeCombo->addItem(QStringLiteral("Follow Entity"), QStringLiteral("FollowEntity"));
@@ -136,7 +136,9 @@ AssignTaskDialog::AssignTaskDialog(
   const QString rawInitialType = initialTaskType.isEmpty() ? currentTask.taskType : initialTaskType;
   const QString initialType = isInterceptEntityTaskType(rawInitialType)
       ? QStringLiteral("InterceptEntity")
-      : rawInitialType;
+      : (rawInitialType == QStringLiteral("MoveAlongRoute")
+         ? QStringLiteral("FollowRoute")
+         : rawInitialType);
   const int taskIndex = _taskTypeCombo->findData(initialType);
   if (taskIndex >= 0) {
     _taskTypeCombo->setCurrentIndex(taskIndex);
@@ -151,11 +153,16 @@ AssignTaskDialog::AssignTaskDialog(
       isInterceptEntityTaskType(rawInitialType)
       ? (currentTask.interceptDistanceMeters > 0.0 ? currentTask.interceptDistanceMeters : 500.0)
       : (currentTask.followDistanceMeters > 0.0 ? currentTask.followDistanceMeters : 1000.0));
-  _arrivalToleranceSpin->setValue(currentTask.arrivalToleranceMeters);
+  _arrivalToleranceSpin->setValue(
+      initialType == QStringLiteral("FollowRoute") || initialType == QStringLiteral("MoveAlongRoute")
+      ? (currentTask.arrivalToleranceMeters > 0.0 ? currentTask.arrivalToleranceMeters : 1000.0)
+      : currentTask.arrivalToleranceMeters);
   _altitudeToleranceSpin->setValue(
       currentTask.altitudeToleranceMeters > 0.0 ? currentTask.altitudeToleranceMeters : 250.0);
   _durationSpin->setValue(
-      isInterceptEntityTaskType(rawInitialType)
+      isInterceptEntityTaskType(rawInitialType) ||
+          rawInitialType == QStringLiteral("FollowRoute") ||
+          rawInitialType == QStringLiteral("MoveAlongRoute")
       ? (currentTask.timeoutSeconds > 0.0 ? currentTask.timeoutSeconds : 120.0)
       : currentTask.durationSeconds);
   if (!currentTask.targetEntityName.trimmed().isEmpty()) {
@@ -228,7 +235,9 @@ void AssignTaskDialog::syncUiForTaskType() {
   const bool isFlyTask = taskType == QStringLiteral("FlyHeadingAltitudeSpeed");
   const bool isMoveTask = taskType == QStringLiteral("MoveToLocation");
   const bool isWaypointTask = taskType == QStringLiteral("MoveToWaypoint");
-  const bool isRouteTask = taskType == QStringLiteral("MoveAlongRoute");
+  const bool isRouteTask =
+      taskType == QStringLiteral("FollowRoute") ||
+      taskType == QStringLiteral("MoveAlongRoute");
   const bool isAreaTask =
       taskType == QStringLiteral("PatrolArea") ||
       taskType == QStringLiteral("OrbitArea");
@@ -252,9 +261,9 @@ void AssignTaskDialog::syncUiForTaskType() {
   _followTargetCombo->setEnabled(
       isFollowTask || isInterceptTask || isAttackAirTask || isAttackSurfaceTask);
   _followDistanceSpin->setEnabled(isFollowTask || isInterceptTask);
-  _arrivalToleranceSpin->setEnabled(isFollowTask);
+  _arrivalToleranceSpin->setEnabled(isFollowTask || isRouteTask);
   _altitudeToleranceSpin->setEnabled(isInterceptTask);
-  _durationSpin->setEnabled(isFollowTask || isInterceptTask);
+  _durationSpin->setEnabled(isFollowTask || isInterceptTask || isRouteTask);
 }
 
 void AssignTaskDialog::setPickedCoordinate(double longitude, double latitude, double height) {

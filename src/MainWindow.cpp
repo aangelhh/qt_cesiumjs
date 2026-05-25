@@ -330,6 +330,22 @@ MainWindow::MainWindow(QWidget* parent)
       [this]() { return static_cast<int>(this->_scenarioState->waypoints().size()); },
       [this]() { return static_cast<int>(this->_scenarioState->routes().size()); },
       [this]() { return static_cast<int>(this->_scenarioState->areas().size()); },
+      [this]() -> double {
+        if (const Entity* entity = this->findEntityByName(this->selectedEntityName())) {
+          if (entity->domain.compare(QStringLiteral("Ground"), Qt::CaseInsensitive) == 0) {
+            return 0.0;
+          }
+          return static_cast<double>(entity->altitude);
+        }
+        const QVector<Waypoint>& waypoints = this->_scenarioState->waypoints();
+        return waypoints.isEmpty() ? 0.0 : waypoints.last().altitudeMeters;
+      },
+      [this]() -> bool {
+        if (const Entity* entity = this->findEntityByName(this->selectedEntityName())) {
+          return entity->domain.compare(QStringLiteral("Ground"), Qt::CaseInsensitive) == 0;
+        }
+        return false;
+      },
       [this](const QString& title, const QString& label,
              const QString& def, bool& ok) -> QString {
         return QInputDialog::getText(this, title, label, QLineEdit::Normal, def, &ok);
@@ -546,7 +562,8 @@ MainWindow::MainWindow(QWidget* parent)
           this->assignMoveToLocationTask();
         } else if (taskType == QStringLiteral("MoveToWaypoint")) {
           this->assignMoveToWaypointTask();
-        } else if (taskType == QStringLiteral("MoveAlongRoute")) {
+        } else if (taskType == QStringLiteral("FollowRoute") ||
+                   taskType == QStringLiteral("MoveAlongRoute")) {
           this->assignMoveAlongRouteTask();
         } else if (taskType == QStringLiteral("PatrolArea")) {
           this->assignPatrolAreaTask();
@@ -759,12 +776,25 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
            rawTaskType == QStringLiteral("InterceptEntity2D") ||
            rawTaskType == QStringLiteral("InterceptEntity3D")
         ? QStringLiteral("Intercept Entity")
-        : rawTaskType;
+        : (rawTaskType == QStringLiteral("FollowRoute") ||
+           rawTaskType == QStringLiteral("MoveAlongRoute")
+           ? QStringLiteral("Follow Route")
+           : rawTaskType);
+  };
+  const auto displayTaskStatus = [&summary](const QString& rawTaskType, const QString& rawStatus) {
+    const int current = summary.value(QStringLiteral("taskRouteCurrentWaypointIndex")).toInt(0);
+    const int total = summary.value(QStringLiteral("taskRouteTotalWaypoints")).toInt(0);
+    if ((rawTaskType == QStringLiteral("FollowRoute") ||
+         rawTaskType == QStringLiteral("MoveAlongRoute")) &&
+        total > 0) {
+      return QStringLiteral("%1 WP %2/%3").arg(rawStatus).arg(current).arg(total);
+    }
+    return rawStatus;
   };
   const QString operationalState =
       taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
           ? status
-          : QStringLiteral("%1 (%2)").arg(displayTaskType(taskType), taskStatus);
+          : QStringLiteral("%1 (%2)").arg(displayTaskType(taskType), displayTaskStatus(taskType, taskStatus));
   const Entity* selectedEntity = this->findEntityByName(name);
   this->_ui->selectionStateValueLabel->setWordWrap(false);
   this->_ui->selectionStateValueLabel->setStyleSheet(QString());
@@ -1827,9 +1857,9 @@ void MainWindow::populateTaskQuickBarButtons(QFrame* panel, QHBoxLayout* layout)
       [this]() { this->assignMoveToLocationTask(); });
   addButton(
       QStringLiteral("move_along_route.xpm"),
-      QStringLiteral("MR"),
+      QStringLiteral("FR"),
       QColor(QStringLiteral("#ff8c52")),
-      QStringLiteral("Move Along Route"),
+      QStringLiteral("Follow Route"),
       [this]() { this->assignMoveAlongRouteTask(); });
   addButton(
       QStringLiteral("fly_heading.xpm"),
@@ -2490,7 +2520,7 @@ void MainWindow::populateTaskCommands() {
       { "Movement: Fly Heading / Altitude / Speed...", "FlyHeadingAltitudeSpeed" },
       { "Movement: Move To Location...",               "MoveToLocation"          },
       { "Movement: Move To Waypoint...",               "MoveToWaypoint"          },
-      { "Movement: Move Along Route...",               "MoveAlongRoute"          },
+      { "Movement: Follow Route...",                   "FollowRoute"             },
       { "Movement: Patrol Area...",                    "PatrolArea"              },
       { "Movement: Orbit Area...",                     "OrbitArea"               },
       { "Movement: Follow Entity...",                  "FollowEntity"            },

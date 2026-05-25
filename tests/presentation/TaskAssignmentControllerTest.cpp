@@ -211,7 +211,7 @@ TEST(TaskAssignmentController, patrolRouteAssignedSuccessfully) {
 
   ctrl->assignPatrolRoute();
 
-  EXPECT_EQ(f.lastAppliedTask.taskType,        QStringLiteral("MoveAlongRoute"));
+  EXPECT_EQ(f.lastAppliedTask.taskType,        QStringLiteral("FollowRoute"));
   EXPECT_EQ(f.lastAppliedTask.targetRouteName, QStringLiteral("Route1"));
   EXPECT_FALSE(f.lastStatus.isEmpty());
   delete ctrl;

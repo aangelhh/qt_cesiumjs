@@ -40,6 +40,10 @@ EntityTask AssignTaskController::taskFromSummary(const QVariantMap& summary) {
   task.arrivalToleranceMeters = summary.value(QStringLiteral("taskArrivalToleranceMeters"), 100.0).toDouble();
   task.durationSeconds        = summary.value(QStringLiteral("taskDurationSeconds")).toDouble();
   task.elapsedSeconds         = summary.value(QStringLiteral("taskElapsedSeconds")).toDouble();
+  task.routeCurrentWaypointIndex =
+      summary.value(QStringLiteral("taskRouteCurrentWaypointIndex")).toInt();
+  task.routeTotalWaypoints =
+      summary.value(QStringLiteral("taskRouteTotalWaypoints")).toInt();
   task.interceptDistanceMeters =
       summary.value(QStringLiteral("taskInterceptDistanceMeters"), 500.0).toDouble();
   task.altitudeToleranceMeters =

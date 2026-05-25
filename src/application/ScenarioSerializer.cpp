@@ -161,6 +161,8 @@ QJsonObject toJson(const EntityTask& task) {
       {QStringLiteral("arrivalToleranceMeters"), task.arrivalToleranceMeters},
       {QStringLiteral("durationSeconds"), task.durationSeconds},
       {QStringLiteral("elapsedSeconds"), task.elapsedSeconds},
+      {QStringLiteral("routeCurrentWaypointIndex"), task.routeCurrentWaypointIndex},
+      {QStringLiteral("routeTotalWaypoints"), task.routeTotalWaypoints},
       {QStringLiteral("interceptDistanceMeters"), task.interceptDistanceMeters},
       {QStringLiteral("altitudeToleranceMeters"), task.altitudeToleranceMeters},
       {QStringLiteral("timeoutSeconds"), task.timeoutSeconds},
@@ -190,6 +192,8 @@ EntityTask taskFromJson(const QJsonObject& object) {
   task.arrivalToleranceMeters = object.value(QStringLiteral("arrivalToleranceMeters")).toDouble(100.0);
   task.durationSeconds = object.value(QStringLiteral("durationSeconds")).toDouble(0.0);
   task.elapsedSeconds = object.value(QStringLiteral("elapsedSeconds")).toDouble(0.0);
+  task.routeCurrentWaypointIndex = object.value(QStringLiteral("routeCurrentWaypointIndex")).toInt(0);
+  task.routeTotalWaypoints = object.value(QStringLiteral("routeTotalWaypoints")).toInt(0);
   task.interceptDistanceMeters = object.value(QStringLiteral("interceptDistanceMeters")).toDouble(500.0);
   task.altitudeToleranceMeters = object.value(QStringLiteral("altitudeToleranceMeters")).toDouble(250.0);
   task.timeoutSeconds = object.value(QStringLiteral("timeoutSeconds")).toDouble(120.0);
@@ -309,12 +313,15 @@ Entity entityFromJson(const QJsonObject& object) {
 // ── Waypoint ──────────────────────────────────────────────────────────────────
 
 QJsonObject toJson(const Waypoint& waypoint) {
-  return {
+  QJsonObject object{
       {QStringLiteral("name"), waypoint.name},
       {QStringLiteral("latitude"), waypoint.latitude},
       {QStringLiteral("longitude"), waypoint.longitude},
-      {QStringLiteral("altitudeMeters"), waypoint.altitudeMeters},
   };
+  if (waypoint.altitudeMetersSet || waypoint.altitudeMeters != 0.0) {
+    object.insert(QStringLiteral("altitudeMeters"), waypoint.altitudeMeters);
+  }
+  return object;
 }
 
 Waypoint waypointFromJson(const QJsonObject& object) {
@@ -322,6 +329,7 @@ Waypoint waypointFromJson(const QJsonObject& object) {
   waypoint.name = object.value(QStringLiteral("name")).toString();
   waypoint.latitude = object.value(QStringLiteral("latitude")).toDouble(0.0);
   waypoint.longitude = object.value(QStringLiteral("longitude")).toDouble(0.0);
+  waypoint.altitudeMetersSet = object.contains(QStringLiteral("altitudeMeters"));
   waypoint.altitudeMeters = object.value(QStringLiteral("altitudeMeters")).toDouble(0.0);
   return waypoint;
 }
@@ -331,11 +339,14 @@ Waypoint waypointFromJson(const QJsonObject& object) {
 QJsonObject toJson(const RouteGraphic& route) {
   QJsonArray points;
   for (const RoutePoint& point : route.points) {
-    points.append(QJsonObject{
+    QJsonObject pointObject{
         {QStringLiteral("latitude"), point.latitude},
         {QStringLiteral("longitude"), point.longitude},
-        {QStringLiteral("altitudeMeters"), point.altitudeMeters},
-    });
+    };
+    if (point.altitudeMetersSet || point.altitudeMeters != 0.0) {
+      pointObject.insert(QStringLiteral("altitudeMeters"), point.altitudeMeters);
+    }
+    points.append(pointObject);
   }
   return {
       {QStringLiteral("name"), route.name},
@@ -352,6 +363,7 @@ RouteGraphic routeFromJson(const QJsonObject& object) {
     RoutePoint point;
     point.latitude = pointObject.value(QStringLiteral("latitude")).toDouble(0.0);
     point.longitude = pointObject.value(QStringLiteral("longitude")).toDouble(0.0);
+    point.altitudeMetersSet = pointObject.contains(QStringLiteral("altitudeMeters"));
     point.altitudeMeters = pointObject.value(QStringLiteral("altitudeMeters")).toDouble(0.0);
     route.points.push_back(point);
   }
@@ -363,11 +375,14 @@ RouteGraphic routeFromJson(const QJsonObject& object) {
 QJsonObject toJson(const AreaDefinition& area) {
   QJsonArray points;
   for (const RoutePoint& point : area.points) {
-    points.append(QJsonObject{
+    QJsonObject pointObject{
         {QStringLiteral("latitude"), point.latitude},
         {QStringLiteral("longitude"), point.longitude},
-        {QStringLiteral("altitudeMeters"), point.altitudeMeters},
-    });
+    };
+    if (point.altitudeMetersSet || point.altitudeMeters != 0.0) {
+      pointObject.insert(QStringLiteral("altitudeMeters"), point.altitudeMeters);
+    }
+    points.append(pointObject);
   }
   return {
       {QStringLiteral("id"), area.id},
@@ -407,6 +422,7 @@ AreaDefinition areaFromJson(const QJsonObject& object) {
     RoutePoint point;
     point.latitude = pointObject.value(QStringLiteral("latitude")).toDouble(0.0);
     point.longitude = pointObject.value(QStringLiteral("longitude")).toDouble(0.0);
+    point.altitudeMetersSet = pointObject.contains(QStringLiteral("altitudeMeters"));
     point.altitudeMeters = pointObject.value(QStringLiteral("altitudeMeters")).toDouble(0.0);
     area.points.push_back(point);
   }

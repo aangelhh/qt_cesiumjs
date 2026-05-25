@@ -73,13 +73,67 @@ TEST(RouteTask, AdvancesThroughWaypointsAsItPassesEach) {
     route.push_back(a);
     route.push_back(b);
 
-    domain::RouteTask task(route, 250.0);
+    domain::RouteTask task(route, 250.0, 200.0);
 
     // Start at the first waypoint -> should immediately advance and target b.
     const auto desired = task.evaluate(kOriginLat, kOriginLon, 5000.0, 0.0, 0.1);
     EXPECT_EQ(task.getState(), domain::ITask::State::Running);
     // Bearing towards b is roughly north.
     EXPECT_NEAR(desired.targetHeadingDegrees, 0.0, 1.0);
+}
+
+TEST(RouteTask, UsesConfiguredArrivalTolerance) {
+    QVector<RoutePoint> route;
+    RoutePoint a; a.latitude = kOriginLat; a.longitude = kOriginLon; a.altitudeMeters = 5000.0;
+    RoutePoint b; b.latitude = kOriginLat + kFiveKmNorthDeltaLat; b.longitude = kOriginLon; b.altitudeMeters = 8000.0;
+    route.push_back(a);
+    route.push_back(b);
+    domain::RouteTask task(route, 250.0, 600.0);
+
+    const auto desired = task.evaluate(kOriginLat + kFiveKmNorthDeltaLat / 20.0, kOriginLon, 5000.0, 45.0, 0.1);
+
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_EQ(task.currentPointIndex(), 1);
+    EXPECT_EQ(task.totalPoints(), 2);
+    EXPECT_DOUBLE_EQ(desired.targetAltitudeMeters, 8000.0);
+}
+
+TEST(RouteTask, TreatsNearMissThenMovingAwayAsWaypointReached) {
+    QVector<RoutePoint> route;
+    RoutePoint a; a.latitude = kOriginLat + kFiveKmNorthDeltaLat / 20.0; a.longitude = kOriginLon; a.altitudeMeters = 5000.0;
+    RoutePoint b; b.latitude = kOriginLat + kFiveKmNorthDeltaLat; b.longitude = kOriginLon; b.altitudeMeters = 8000.0;
+    route.push_back(a);
+    route.push_back(b);
+
+    domain::RouteTask task(route, 250.0, 200.0);
+
+    task.evaluate(kOriginLat, kOriginLon, 5000.0, 0.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_EQ(task.currentPointIndex(), 0);
+
+    const auto desired = task.evaluate(
+        kOriginLat - kFiveKmNorthDeltaLat / 50.0, kOriginLon, 5000.0, 180.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_EQ(task.currentPointIndex(), 1);
+    EXPECT_DOUBLE_EQ(desired.targetAltitudeMeters, 8000.0);
+}
+
+TEST(RouteTask, DoesNotSkipFarWaypointWhenDistanceGrows) {
+    QVector<RoutePoint> route;
+    RoutePoint a; a.latitude = kOriginLat + kFiveKmNorthDeltaLat; a.longitude = kOriginLon; a.altitudeMeters = 5000.0;
+    RoutePoint b; b.latitude = kOriginLat + kFiveKmNorthDeltaLat * 2.0; b.longitude = kOriginLon; b.altitudeMeters = 8000.0;
+    route.push_back(a);
+    route.push_back(b);
+
+    domain::RouteTask task(route, 250.0, 500.0);
+
+    task.evaluate(kOriginLat, kOriginLon, 5000.0, 0.0, 0.1);
+    const auto desired = task.evaluate(
+        kOriginLat - kFiveKmNorthDeltaLat / 10.0, kOriginLon, 5000.0, 180.0, 0.1);
+
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_EQ(task.currentPointIndex(), 0);
+    EXPECT_DOUBLE_EQ(desired.targetAltitudeMeters, 5000.0);
 }
 
 TEST(RouteTask, CompletesAfterPassingFinalWaypoint) {

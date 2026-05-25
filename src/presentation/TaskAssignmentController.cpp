@@ -100,12 +100,17 @@ void TaskAssignmentController::assignPatrolRoute() {
   _flyTargets(headingDegrees, altitudeMeters, speedKnots);
 
   EntityTask task;
-  task.taskType          = QStringLiteral("MoveAlongRoute");
+  task.taskType          = QStringLiteral("FollowRoute");
   task.enabled           = true;
   task.status            = QStringLiteral("Running");
   task.targetRouteName   = routeName;
   task.targetAltitudeMeters = altitudeMeters;
   task.targetSpeedKnots  = speedKnots;
+  task.arrivalToleranceMeters =
+      summary.value(QStringLiteral("domain")).toString().compare(
+          QStringLiteral("Ground"), Qt::CaseInsensitive) == 0
+      ? 500.0
+      : 1000.0;
 
   if (!_applyTask(entityName, task)) {
     return;
@@ -197,7 +202,7 @@ void TaskAssignmentController::assignMoveToWaypoint() {
 }
 
 void TaskAssignmentController::assignMoveAlongRoute() {
-  _openDialog(QStringLiteral("MoveAlongRoute"));
+  _openDialog(QStringLiteral("FollowRoute"));
 }
 
 void TaskAssignmentController::assignPatrolArea() {

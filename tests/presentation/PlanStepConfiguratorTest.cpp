@@ -111,6 +111,27 @@ TEST_F(PlanStepConfiguratorTest, MoveToWaypoint_Label) {
   EXPECT_EQ(step.label, QStringLiteral("Move To Waypoint: WP1"));
 }
 
+// ── FollowRoute ───────────────────────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, FollowRoute_LabelAndDefaults) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
+        EXPECT_EQ(initialType, QStringLiteral("FollowRoute"));
+        out = init;
+        out.targetRouteName = QStringLiteral("Route1");
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("RouteRunner");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::FollowRoute, step));
+  EXPECT_EQ(step.kind, PlanStepKind::FollowRoute);
+  EXPECT_EQ(step.task.taskType, QStringLiteral("FollowRoute"));
+  EXPECT_DOUBLE_EQ(step.task.arrivalToleranceMeters, 1000.0);
+  EXPECT_EQ(step.label, QStringLiteral("Follow Route: Route1"));
+}
+
 // ── FlyHeadingAltitudeSpeed ───────────────────────────────────────────────
 
 TEST_F(PlanStepConfiguratorTest, FlyHeadingAltitudeSpeed_Label) {

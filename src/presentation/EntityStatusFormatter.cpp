@@ -37,16 +37,31 @@ QString buildEntityOperationalStatus(
            taskType == QStringLiteral("InterceptEntity2D") ||
            taskType == QStringLiteral("InterceptEntity3D")
         ? QStringLiteral("Intercept Entity")
-        : taskType;
+        : (taskType == QStringLiteral("FollowRoute") ||
+           taskType == QStringLiteral("MoveAlongRoute")
+           ? QStringLiteral("Follow Route")
+           : taskType);
   };
 
   const QString taskType = value("taskType", QStringLiteral("No current tasks"));
   const QString taskStatus = value("taskStatus", QStringLiteral("-"));
+  const auto routeStatus = [&summary](const QString& statusText) {
+    const int current = summary.value(QStringLiteral("taskRouteCurrentWaypointIndex")).toInt(0);
+    const int total = summary.value(QStringLiteral("taskRouteTotalWaypoints")).toInt(0);
+    if (total <= 0) {
+      return statusText;
+    }
+    return QStringLiteral("%1 WP %2/%3").arg(statusText).arg(current).arg(total);
+  };
   const QString status = value("status");
   QString operationalState =
       taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
           ? status
-          : QStringLiteral("%1 (%2)").arg(displayTaskType(taskType), taskStatus);
+          : QStringLiteral("%1 (%2)").arg(
+              displayTaskType(taskType),
+              taskType == QStringLiteral("FollowRoute") || taskType == QStringLiteral("MoveAlongRoute")
+                  ? routeStatus(taskStatus)
+                  : taskStatus);
 
   if (!entity) {
     return operationalState;
@@ -55,8 +70,17 @@ QString buildEntityOperationalStatus(
   const QString liveTaskType = entity->currentTask.taskType.trimmed();
   const QString liveTaskStatus = entity->currentTask.status.trimmed();
   if (entity->currentTask.enabled && !liveTaskType.isEmpty()) {
+    const QString liveStatus = liveTaskStatus.isEmpty() ? QStringLiteral("-") : liveTaskStatus;
+    const QString progressStatus =
+        (liveTaskType == QStringLiteral("FollowRoute") || liveTaskType == QStringLiteral("MoveAlongRoute")) &&
+            entity->currentTask.routeTotalWaypoints > 0
+        ? QStringLiteral("%1 WP %2/%3")
+              .arg(liveStatus)
+              .arg(entity->currentTask.routeCurrentWaypointIndex)
+              .arg(entity->currentTask.routeTotalWaypoints)
+        : liveStatus;
     operationalState = QStringLiteral("%1 (%2)")
-        .arg(displayTaskType(liveTaskType), liveTaskStatus.isEmpty() ? QStringLiteral("-") : liveTaskStatus);
+        .arg(displayTaskType(liveTaskType), progressStatus);
   }
 
   const QString entityName = entity->name;

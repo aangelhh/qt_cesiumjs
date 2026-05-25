@@ -95,14 +95,71 @@ DesiredState MoveToLocationTask::evaluate(double currentLat, double currentLon, 
 
 // --- RouteTask ---
 
-RouteTask::RouteTask(const QVector<RoutePoint>& points, double targetSpeedKnots)
-    : m_points(points), m_targetSpeed(targetSpeedKnots)
+RouteTask::RouteTask(
+    const QVector<RoutePoint>& points,
+    double targetSpeedKnots,
+    double arrivalToleranceMeters)
+    : m_points(points),
+      m_targetSpeed(targetSpeedKnots),
+      m_arrivalToleranceMeters(std::max(0.0, arrivalToleranceMeters))
 {
 }
 
 ITask::State RouteTask::getState() const
 {
     return m_state;
+}
+
+int RouteTask::currentPointIndex() const
+{
+    return m_currentPointIndex;
+}
+
+int RouteTask::totalPoints() const
+{
+    return m_points.size();
+}
+
+RoutePoint RouteTask::currentTargetPoint() const
+{
+    if (m_points.isEmpty()) {
+        return {};
+    }
+    const int index = std::clamp(m_currentPointIndex, 0, static_cast<int>(m_points.size()) - 1);
+    return m_points.at(index);
+}
+
+bool RouteTask::currentPointReached(double distanceToPoint)
+{
+    if (distanceToPoint <= m_arrivalToleranceMeters) {
+        return true;
+    }
+
+    if (m_trackedPointIndex != m_currentPointIndex) {
+        resetCurrentPointTracking();
+        m_trackedPointIndex = m_currentPointIndex;
+    }
+
+    const double previousBestDistance = m_bestDistanceToCurrentPointMeters;
+    const double closeEnoughForOvershoot =
+        std::max(m_arrivalToleranceMeters * 1.5, m_arrivalToleranceMeters + 250.0);
+    const double movingAwayDeltaMeters =
+        std::max(25.0, m_arrivalToleranceMeters * 0.05);
+    const bool wasCloseToWaypoint = previousBestDistance <= closeEnoughForOvershoot;
+    const bool isMovingAway =
+        distanceToPoint > previousBestDistance + movingAwayDeltaMeters;
+
+    if (distanceToPoint < m_bestDistanceToCurrentPointMeters) {
+        m_bestDistanceToCurrentPointMeters = distanceToPoint;
+    }
+
+    return wasCloseToWaypoint && isMovingAway;
+}
+
+void RouteTask::resetCurrentPointTracking()
+{
+    m_trackedPointIndex = -1;
+    m_bestDistanceToCurrentPointMeters = std::numeric_limits<double>::infinity();
 }
 
 DesiredState RouteTask::evaluate(
@@ -135,8 +192,9 @@ DesiredState RouteTask::evaluate(
     double distanceToPoint = distanceMeters(
         currentLat, currentLon, targetPoint.latitude, targetPoint.longitude);
 
-    while (distanceToPoint < 200.0 && m_currentPointIndex < m_points.size()) {
+    while (m_currentPointIndex < m_points.size() && currentPointReached(distanceToPoint)) {
         ++m_currentPointIndex;
+        resetCurrentPointTracking();
         if (m_currentPointIndex >= m_points.size()) {
             m_state = State::Completed;
             return {currentHeading, targetPoint.altitudeMeters, 0.0};

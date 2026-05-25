@@ -8,12 +8,14 @@ struct Waypoint {
   double latitude = 0.0;
   double longitude = 0.0;
   double altitudeMeters = 0.0;
+  bool altitudeMetersSet = false;
 };
 
 struct RoutePoint {
   double latitude = 0.0;
   double longitude = 0.0;
   double altitudeMeters = 0.0;
+  bool altitudeMetersSet = false;
 };
 
 struct RouteGraphic {

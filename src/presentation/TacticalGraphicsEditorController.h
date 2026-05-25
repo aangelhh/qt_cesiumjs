@@ -17,6 +17,8 @@ class TacticalGraphicsEditorController : public QObject {
   Q_OBJECT
 public:
   using CountFn    = std::function<int()>;
+  using DefaultAltitudeFn = std::function<double()>;
+  using GroundContextFn = std::function<bool()>;
   using AskTextFn  = std::function<QString(
       const QString& title, const QString& label,
       const QString& defaultText, bool& ok)>;
@@ -32,6 +34,8 @@ public:
       CountFn                 waypointCount,
       CountFn                 routeCount,
       CountFn                 areaCount,
+      DefaultAltitudeFn       defaultAltitude,
+      GroundContextFn         groundContext,
       AskTextFn               askText,
       PickItemFn              pickItem,
       AskDoubleFn             askDouble,
@@ -49,6 +53,8 @@ private:
   CountFn                 _waypointCount;
   CountFn                 _routeCount;
   CountFn                 _areaCount;
+  DefaultAltitudeFn       _defaultAltitude;
+  GroundContextFn         _groundContext;
   AskTextFn               _askText;
   PickItemFn              _pickItem;
   AskDoubleFn             _askDouble;

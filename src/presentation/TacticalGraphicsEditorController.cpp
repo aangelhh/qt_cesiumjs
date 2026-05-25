@@ -7,6 +7,8 @@ TacticalGraphicsEditorController::TacticalGraphicsEditorController(
     CountFn                 waypointCount,
     CountFn                 routeCount,
     CountFn                 areaCount,
+    DefaultAltitudeFn       defaultAltitude,
+    GroundContextFn         groundContext,
     AskTextFn               askText,
     PickItemFn              pickItem,
     AskDoubleFn             askDouble,
@@ -16,6 +18,8 @@ TacticalGraphicsEditorController::TacticalGraphicsEditorController(
     , _waypointCount(std::move(waypointCount))
     , _routeCount(std::move(routeCount))
     , _areaCount(std::move(areaCount))
+    , _defaultAltitude(std::move(defaultAltitude))
+    , _groundContext(std::move(groundContext))
     , _askText(std::move(askText))
     , _pickItem(std::move(pickItem))
     , _askDouble(std::move(askDouble)) {}
@@ -30,7 +34,19 @@ void TacticalGraphicsEditorController::openAddWaypointDialog() {
   if (!ok || name.isEmpty()) {
     return;
   }
-  _coordinator->beginWaypointPick(name);
+  const bool groundContext = _groundContext && _groundContext();
+  double altitudeMeters = 0.0;
+  if (!groundContext) {
+    altitudeMeters = _askDouble(
+        QStringLiteral("Waypoint Altitude"),
+        QStringLiteral("Altitude (m)"),
+        _defaultAltitude ? _defaultAltitude() : 0.0,
+        0.0, 80000.0, 1, ok);
+    if (!ok) {
+      return;
+    }
+  }
+  _coordinator->beginWaypointPick(name, altitudeMeters);
 }
 
 void TacticalGraphicsEditorController::openAddRouteDialog() {
@@ -43,7 +59,28 @@ void TacticalGraphicsEditorController::openAddRouteDialog() {
   if (!ok || name.isEmpty()) {
     return;
   }
-  _coordinator->beginRoutePick(name);
+  const bool groundContext = _groundContext && _groundContext();
+  double firstAltitudeMeters = 0.0;
+  double secondAltitudeMeters = 0.0;
+  if (!groundContext) {
+    firstAltitudeMeters = _askDouble(
+        QStringLiteral("Route Waypoint Altitude"),
+        QStringLiteral("WP1 altitude (m)"),
+        _defaultAltitude ? _defaultAltitude() : 0.0,
+        0.0, 80000.0, 1, ok);
+    if (!ok) {
+      return;
+    }
+    secondAltitudeMeters = _askDouble(
+        QStringLiteral("Route Waypoint Altitude"),
+        QStringLiteral("WP2 altitude (m)"),
+        firstAltitudeMeters,
+        0.0, 80000.0, 1, ok);
+    if (!ok) {
+      return;
+    }
+  }
+  _coordinator->beginRoutePick(name, firstAltitudeMeters, secondAltitudeMeters);
 }
 
 void TacticalGraphicsEditorController::openAddAreaDialog() {
