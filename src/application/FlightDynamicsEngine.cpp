@@ -355,18 +355,6 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
               static_cast<double>(targetEntity->altitude),
               targetEntity->speedKnots);
       }
-      if (auto* interceptTask = dynamic_cast<domain::InterceptEntity2DTask*>(topTask)) {
-          const Entity* targetEntity = findActiveTarget();
-          if (!targetEntity) {
-              entity.currentTask.status = QStringLiteral("Target unavailable");
-              entity.speedKnots = 0.0;
-              entity.verticalSpeedMetersPerSecond = 0.0;
-              return;
-          }
-          entity.currentTask.targetLatitude = targetEntity->latitude;
-          entity.currentTask.targetLongitude = targetEntity->longitude;
-          interceptTask->updateTargetLocation(targetEntity->latitude, targetEntity->longitude);
-      }
       if (auto* interceptTask = dynamic_cast<domain::InterceptEntity3DTask*>(topTask)) {
           const Entity* targetEntity = findActiveTarget();
           if (!targetEntity) {
