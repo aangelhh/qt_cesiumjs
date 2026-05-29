@@ -339,7 +339,8 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
           }
           return nullptr;
       };
-      if (auto* followTask = dynamic_cast<domain::FollowEntityTask*>(topTask)) {
+      if (entity.currentTask.taskType == QStringLiteral("FollowEntity")) {
+          auto* followTask = static_cast<domain::FollowEntityTask*>(topTask);
           const Entity* targetEntity = findActiveTarget();
           if (!targetEntity) {
               entity.currentTask.status = QStringLiteral("Target unavailable");
@@ -355,7 +356,8 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
               static_cast<double>(targetEntity->altitude),
               targetEntity->speedKnots);
       }
-      if (auto* interceptTask = dynamic_cast<domain::InterceptEntity3DTask*>(topTask)) {
+      if (isInterceptEntityTaskType(entity.currentTask.taskType)) {
+          auto* interceptTask = static_cast<domain::InterceptEntity3DTask*>(topTask);
           const Entity* targetEntity = findActiveTarget();
           if (!targetEntity) {
               entity.currentTask.status = QStringLiteral("Target unavailable");
@@ -389,7 +391,8 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
       entity.currentTask.targetHeadingDegrees = desired.targetHeadingDegrees;
       entity.currentTask.targetAltitudeMeters = static_cast<int>(desired.targetAltitudeMeters);
       entity.currentTask.targetSpeedKnots = desired.targetSpeedKnots;
-      if (auto* routeTask = dynamic_cast<domain::RouteTask*>(topTask)) {
+      if (isRouteTaskType(entity.currentTask.taskType)) {
+          auto* routeTask = static_cast<domain::RouteTask*>(topTask);
           const RoutePoint targetPoint = routeTask->currentTargetPoint();
           entity.currentTask.targetLatitude = targetPoint.latitude;
           entity.currentTask.targetLongitude = targetPoint.longitude;
