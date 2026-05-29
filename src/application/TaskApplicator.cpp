@@ -16,6 +16,11 @@ bool isInterceptEntityTaskType(const QString& taskType) {
          taskType == QStringLiteral("InterceptEntity3D");
 }
 
+bool isInterceptEntity3DTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("InterceptEntity") ||
+         taskType == QStringLiteral("InterceptEntity3D");
+}
+
 bool isMovementTaskType(const QString& taskType) {
   return taskType == QStringLiteral("MoveToLocation") ||
          taskType == QStringLiteral("MoveToWaypoint") ||
@@ -177,8 +182,10 @@ bool applyEntityTask(
   }
 
   EntityTask taskToApply = task;
-  if (isInterceptEntityTaskType(taskToApply.taskType)) {
+  if (taskToApply.taskType == QStringLiteral("InterceptEntity3D")) {
     taskToApply.taskType = QStringLiteral("InterceptEntity");
+  }
+  if (isInterceptEntityTaskType(taskToApply.taskType)) {
     if (taskToApply.altitudeToleranceMeters <= 0.0) {
       taskToApply.altitudeToleranceMeters = 250.0;
     }
@@ -294,7 +301,11 @@ bool applyEntityTask(
           taskToApply.targetSpeedKnots,
           resolvedEntity.currentTask.followDistanceMeters,
           resolvedEntity.currentTask.arrivalToleranceMeters));
-    } else if (isInterceptEntityTaskType(taskToApply.taskType)) {
+    } else if (taskToApply.taskType == QStringLiteral("InterceptEntity2D")) {
+      stack->push(std::make_unique<domain::InterceptEntity2DTask>(
+          resolvedEntity.currentTask.targetSpeedKnots,
+          resolvedEntity.currentTask.interceptDistanceMeters));
+    } else if (isInterceptEntity3DTaskType(taskToApply.taskType)) {
       stack->push(std::make_unique<domain::InterceptEntity3DTask>(
           resolvedEntity.currentTask.targetSpeedKnots,
           resolvedEntity.currentTask.interceptDistanceMeters,
@@ -355,7 +366,14 @@ bool applyEntityTask(
           taskToApply.followDistanceMeters,
           taskToApply.arrivalToleranceMeters,
           taskToApply.durationSeconds));
-    } else if (isInterceptEntityTaskType(taskToApply.taskType)) {
+    } else if (taskToApply.taskType == QStringLiteral("InterceptEntity2D")) {
+      simulationEngine->enqueueCommand(std::make_unique<CmdAssignInterceptEntity2DTask>(
+          entityName,
+          taskToApply.targetEntityName,
+          taskToApply.targetSpeedKnots,
+          taskToApply.interceptDistanceMeters,
+          taskToApply.timeoutSeconds));
+    } else if (isInterceptEntity3DTaskType(taskToApply.taskType)) {
       simulationEngine->enqueueCommand(std::make_unique<CmdAssignInterceptEntity3DTask>(
           entityName,
           taskToApply.targetEntityName,

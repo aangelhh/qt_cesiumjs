@@ -571,8 +571,9 @@ MainWindow::MainWindow(QWidget* parent)
           this->assignOrbitAreaTask();
         } else if (taskType == QStringLiteral("FollowEntity")) {
           this->assignFollowEntityTask();
+        } else if (taskType == QStringLiteral("InterceptEntity2D")) {
+          this->openAssignTaskDialog(QStringLiteral("InterceptEntity2D"));
         } else if (taskType == QStringLiteral("InterceptEntity") ||
-                   taskType == QStringLiteral("InterceptEntity2D") ||
                    taskType == QStringLiteral("InterceptEntity3D")) {
           this->assignInterceptEntityTask();
         } else if (taskType == QStringLiteral("AttackAir")) {
@@ -772,14 +773,15 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
   const QString taskType = value("taskType", QStringLiteral("No current tasks"));
   const QString taskStatus = value("taskStatus", QStringLiteral("-"));
   const auto displayTaskType = [](const QString& rawTaskType) {
-    return rawTaskType == QStringLiteral("InterceptEntity") ||
-           rawTaskType == QStringLiteral("InterceptEntity2D") ||
+    return rawTaskType == QStringLiteral("InterceptEntity2D")
+        ? QStringLiteral("Intercept Entity 2D")
+        : (rawTaskType == QStringLiteral("InterceptEntity") ||
            rawTaskType == QStringLiteral("InterceptEntity3D")
         ? QStringLiteral("Intercept Entity")
         : (rawTaskType == QStringLiteral("FollowRoute") ||
            rawTaskType == QStringLiteral("MoveAlongRoute")
            ? QStringLiteral("Follow Route")
-           : rawTaskType);
+           : rawTaskType));
   };
   const auto displayTaskStatus = [&summary](const QString& rawTaskType, const QString& rawStatus) {
     const int current = summary.value(QStringLiteral("taskRouteCurrentWaypointIndex")).toInt(0);
@@ -2524,6 +2526,7 @@ void MainWindow::populateTaskCommands() {
       { "Movement: Patrol Area...",                    "PatrolArea"              },
       { "Movement: Orbit Area...",                     "OrbitArea"               },
       { "Movement: Follow Entity...",                  "FollowEntity"            },
+      { "Movement: Intercept Entity 2D...",            "InterceptEntity2D"        },
       { "Movement: Intercept Entity...",               "InterceptEntity"          },
       { "Attack: Attack Air...",                       "AttackAir"               },
       { "Attack: Attack Surface...",                   "AttackSurface"           },

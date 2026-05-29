@@ -33,14 +33,15 @@ QString buildEntityOperationalStatus(
     return text.isEmpty() ? fallback : text;
   };
   const auto displayTaskType = [](const QString& taskType) {
-    return taskType == QStringLiteral("InterceptEntity") ||
-           taskType == QStringLiteral("InterceptEntity2D") ||
+    return taskType == QStringLiteral("InterceptEntity2D")
+        ? QStringLiteral("Intercept Entity 2D")
+        : (taskType == QStringLiteral("InterceptEntity") ||
            taskType == QStringLiteral("InterceptEntity3D")
         ? QStringLiteral("Intercept Entity")
         : (taskType == QStringLiteral("FollowRoute") ||
            taskType == QStringLiteral("MoveAlongRoute")
            ? QStringLiteral("Follow Route")
-           : taskType);
+           : taskType));
   };
 
   const QString taskType = value("taskType", QStringLiteral("No current tasks"));

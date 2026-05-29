@@ -132,12 +132,12 @@ TEST(TaskAssignmentController, assignInterceptEntityOpensUnifiedDialog) {
   delete ctrl;
 }
 
-TEST(TaskAssignmentController, legacyInterceptActionsOpenUnifiedDialog) {
+TEST(TaskAssignmentController, interceptVariantActionsOpenMatchingDialogs) {
   Fixture f;
   auto* ctrl = f.makeController();
 
   ctrl->assignInterceptEntity2D();
-  EXPECT_EQ(f.openedDialog, QStringLiteral("InterceptEntity"));
+  EXPECT_EQ(f.openedDialog, QStringLiteral("InterceptEntity2D"));
 
   f.openedDialog.clear();
   ctrl->assignInterceptEntity3D();

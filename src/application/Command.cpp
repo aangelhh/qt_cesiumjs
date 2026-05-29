@@ -128,7 +128,7 @@ void CmdAssignInterceptEntity2DTask::apply(ScenarioState& scenario) const {
 
     EntityTask task;
     task.enabled = true;
-    task.taskType = "InterceptEntity";
+    task.taskType = "InterceptEntity2D";
     task.targetEntityName = interceptEntityName;
     task.targetSpeedKnots = targetSpeedKnots;
     task.interceptDistanceMeters = interceptDistanceMeters;
@@ -146,10 +146,9 @@ void CmdAssignInterceptEntity2DTask::apply(ScenarioState& scenario) const {
 
     if (domain::TaskStack* stack = scenario.getTaskStack(targetName)) {
         clearStack(*stack);
-        stack->push(std::make_unique<domain::InterceptEntity3DTask>(
+        stack->push(std::make_unique<domain::InterceptEntity2DTask>(
             task.targetSpeedKnots,
-            task.interceptDistanceMeters,
-            task.altitudeToleranceMeters));
+            task.interceptDistanceMeters));
     }
 }
 

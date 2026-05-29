@@ -259,7 +259,24 @@ TEST_F(PlanStepConfiguratorTest, InterceptEntity_UsesUnified3DTaskAndLabel) {
   EXPECT_EQ(step.label, QStringLiteral("Intercept Entity: Target1"));
 }
 
-TEST_F(PlanStepConfiguratorTest, LegacyInterceptKindsConfigureAsUnifiedInterceptEntity) {
+TEST_F(PlanStepConfiguratorTest, InterceptEntity2D_ConfiguresAsExplicit2DTask) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
+        EXPECT_EQ(initialType, QStringLiteral("InterceptEntity2D"));
+        out = init;
+        out.targetEntityName = QStringLiteral("Target1");
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Legacy");
+  PlanStep step2d;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::InterceptEntity2D, step2d));
+  EXPECT_EQ(step2d.task.taskType, QStringLiteral("InterceptEntity2D"));
+  EXPECT_EQ(step2d.label, QStringLiteral("Intercept Entity 2D: Target1"));
+}
+
+TEST_F(PlanStepConfiguratorTest, LegacyIntercept3DConfiguresAsUnifiedInterceptEntity) {
   presentation::PlanStepConfigurator cfg(
       [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
         EXPECT_EQ(initialType, QStringLiteral("InterceptEntity"));
@@ -270,24 +287,19 @@ TEST_F(PlanStepConfiguratorTest, LegacyInterceptKindsConfigureAsUnifiedIntercept
       noArea, noHome, acceptItem, acceptDouble);
 
   Entity entity = makeAirEntity("Legacy");
-  PlanStep step2d;
-  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::InterceptEntity2D, step2d));
-  EXPECT_EQ(step2d.task.taskType, QStringLiteral("InterceptEntity"));
-  EXPECT_EQ(step2d.label, QStringLiteral("Intercept Entity: Target1"));
-
   PlanStep step3d;
   EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::InterceptEntity3D, step3d));
   EXPECT_EQ(step3d.task.taskType, QStringLiteral("InterceptEntity"));
   EXPECT_EQ(step3d.label, QStringLiteral("Intercept Entity: Target1"));
 }
 
-TEST_F(PlanStepConfiguratorTest, LegacyInterceptDisplayLabelsAreUnified) {
+TEST_F(PlanStepConfiguratorTest, InterceptDisplayLabelsPreserve2DAndNormalize3D) {
   PlanStep step2d;
   step2d.kind = PlanStepKind::InterceptEntity2D;
   step2d.label = QStringLiteral("Intercept Entity 2D: Target1");
   EXPECT_EQ(
       presentation::EntityPlanExecutor::planStepDisplayLabel(step2d),
-      QStringLiteral("Intercept Entity: Target1"));
+      QStringLiteral("Intercept Entity 2D: Target1"));
 
   PlanStep step3d;
   step3d.kind = PlanStepKind::InterceptEntity3D;

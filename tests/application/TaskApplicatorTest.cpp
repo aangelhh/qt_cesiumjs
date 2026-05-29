@@ -143,36 +143,49 @@ TEST_F(TaskApplicatorTest, AssignsInterceptEntityTaskWith3DStack) {
   EXPECT_DOUBLE_EQ(state->entities().front().currentTask.altitudeToleranceMeters, 250.0);
 }
 
-TEST_F(TaskApplicatorTest, LegacyInterceptEntityTypesNormalizeToUnified3DTask) {
-  state->addEntity(makeAirEntity("Interceptor3D"));
+TEST_F(TaskApplicatorTest, AssignsInterceptEntity2DTaskWith2DStack) {
+  state->addEntity(makeAirEntity("Interceptor2D"));
 
-  EntityTask legacy2d;
-  legacy2d.taskType = "InterceptEntity2D";
-  legacy2d.targetEntityName = "Target1";
-  legacy2d.targetSpeedKnots = 420.0;
-  legacy2d.interceptDistanceMeters = 500.0;
-  legacy2d.timeoutSeconds = 120.0;
+  EntityTask task;
+  task.taskType = "InterceptEntity2D";
+  task.targetEntityName = "Target1";
+  task.targetSpeedKnots = 420.0;
+  task.interceptDistanceMeters = 500.0;
+  task.timeoutSeconds = 120.0;
 
   EXPECT_TRUE(application::applyEntityTask(
-      "Interceptor3D", legacy2d, false, state, nullptr,
+      "Interceptor2D", task, false, state, nullptr,
       [this](const QString& m) { logMessages << m; },
       []() {}));
   ASSERT_FALSE(state->entities().isEmpty());
-  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity"));
-  const domain::TaskStack* stack = state->getTaskStack("Interceptor3D");
+  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity2D"));
+  const domain::TaskStack* stack = state->getTaskStack("Interceptor2D");
   ASSERT_NE(stack, nullptr);
   EXPECT_FALSE(stack->isEmpty());
-  EXPECT_NE(dynamic_cast<domain::InterceptEntity3DTask*>(stack->top()), nullptr);
+  EXPECT_NE(dynamic_cast<domain::InterceptEntity2DTask*>(stack->top()), nullptr);
+}
 
-  EntityTask legacy3d = legacy2d;
+TEST_F(TaskApplicatorTest, LegacyInterceptEntity3DTypeNormalizesToUnified3DTask) {
+  state->addEntity(makeAirEntity("Interceptor3D"));
+
+  EntityTask legacy3d;
   legacy3d.taskType = "InterceptEntity3D";
+  legacy3d.targetEntityName = "Target1";
+  legacy3d.targetSpeedKnots = 420.0;
+  legacy3d.interceptDistanceMeters = 500.0;
   legacy3d.altitudeToleranceMeters = 300.0;
+  legacy3d.timeoutSeconds = 120.0;
+
   EXPECT_TRUE(application::applyEntityTask(
       "Interceptor3D", legacy3d, false, state, nullptr,
       [this](const QString& m) { logMessages << m; },
       []() {}));
+
   EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity"));
   EXPECT_DOUBLE_EQ(state->entities().front().currentTask.altitudeToleranceMeters, 300.0);
+  const domain::TaskStack* stack = state->getTaskStack("Interceptor3D");
+  ASSERT_NE(stack, nullptr);
+  EXPECT_FALSE(stack->isEmpty());
   EXPECT_NE(dynamic_cast<domain::InterceptEntity3DTask*>(stack->top()), nullptr);
 }
 

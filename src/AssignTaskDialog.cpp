@@ -17,6 +17,11 @@ bool isInterceptEntityTaskType(const QString& taskType) {
          taskType == QStringLiteral("InterceptEntity3D");
 }
 
+bool isInterceptEntity3DTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("InterceptEntity") ||
+         taskType == QStringLiteral("InterceptEntity3D");
+}
+
 } // namespace
 
 AssignTaskDialog::AssignTaskDialog(
@@ -59,6 +64,7 @@ AssignTaskDialog::AssignTaskDialog(
   _taskTypeCombo->addItem(QStringLiteral("Patrol Area"), QStringLiteral("PatrolArea"));
   _taskTypeCombo->addItem(QStringLiteral("Orbit Area"), QStringLiteral("OrbitArea"));
   _taskTypeCombo->addItem(QStringLiteral("Follow Entity"), QStringLiteral("FollowEntity"));
+  _taskTypeCombo->addItem(QStringLiteral("Intercept Entity 2D"), QStringLiteral("InterceptEntity2D"));
   _taskTypeCombo->addItem(QStringLiteral("Intercept Entity"), QStringLiteral("InterceptEntity"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Air"), QStringLiteral("AttackAir"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Surface"), QStringLiteral("AttackSurface"));
@@ -134,7 +140,7 @@ AssignTaskDialog::AssignTaskDialog(
   layout->addLayout(formLayout);
 
   const QString rawInitialType = initialTaskType.isEmpty() ? currentTask.taskType : initialTaskType;
-  const QString initialType = isInterceptEntityTaskType(rawInitialType)
+  const QString initialType = rawInitialType == QStringLiteral("InterceptEntity3D")
       ? QStringLiteral("InterceptEntity")
       : (rawInitialType == QStringLiteral("MoveAlongRoute")
          ? QStringLiteral("FollowRoute")
@@ -243,6 +249,7 @@ void AssignTaskDialog::syncUiForTaskType() {
       taskType == QStringLiteral("OrbitArea");
   const bool isFollowTask = taskType == QStringLiteral("FollowEntity");
   const bool isInterceptTask = isInterceptEntityTaskType(taskType);
+  const bool isIntercept3DTask = isInterceptEntity3DTaskType(taskType);
   const bool isAttackAirTask = taskType == QStringLiteral("AttackAir");
   const bool isAttackSurfaceTask = taskType == QStringLiteral("AttackSurface");
 
@@ -262,7 +269,7 @@ void AssignTaskDialog::syncUiForTaskType() {
       isFollowTask || isInterceptTask || isAttackAirTask || isAttackSurfaceTask);
   _followDistanceSpin->setEnabled(isFollowTask || isInterceptTask);
   _arrivalToleranceSpin->setEnabled(isFollowTask || isRouteTask);
-  _altitudeToleranceSpin->setEnabled(isInterceptTask);
+  _altitudeToleranceSpin->setEnabled(isIntercept3DTask);
   _durationSpin->setEnabled(isFollowTask || isInterceptTask || isRouteTask);
 }
 

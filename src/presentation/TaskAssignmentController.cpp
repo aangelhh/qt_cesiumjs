@@ -222,7 +222,7 @@ void TaskAssignmentController::assignInterceptEntity() {
 }
 
 void TaskAssignmentController::assignInterceptEntity2D() {
-  assignInterceptEntity();
+  _openDialog(QStringLiteral("InterceptEntity2D"));
 }
 
 void TaskAssignmentController::assignInterceptEntity3D() {
