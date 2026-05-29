@@ -159,7 +159,6 @@ void EntityPlanDialog::onAdd() {
       {"Fly Heading / Altitude / Speed",PlanStepKind::FlyHeadingAltitudeSpeed,  false},
       {"Orbit / Hold (Location)",       PlanStepKind::OrbitHoldLocation,        false},
       {"Follow Entity",                 PlanStepKind::FollowEntity,             false},
-      {"Intercept Entity 2D",           PlanStepKind::InterceptEntity2D,        false},
       {"Intercept Entity",              PlanStepKind::InterceptEntity,           false},
       {"Return To Base",                PlanStepKind::ReturnToBase,             false},
       {"Attack Air",                    PlanStepKind::AttackAir,                true },

@@ -39,7 +39,9 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
   if (!step.label.trimmed().isEmpty()) {
     QString label = step.label;
     if (step.kind == PlanStepKind::InterceptEntity ||
+        step.kind == PlanStepKind::InterceptEntity2D ||
         step.kind == PlanStepKind::InterceptEntity3D) {
+      label.replace(QStringLiteral("Intercept Entity 2D"), QStringLiteral("Intercept Entity"));
       label.replace(QStringLiteral("Intercept Entity 3D"), QStringLiteral("Intercept Entity"));
     }
     return label;
@@ -54,8 +56,8 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
     case PlanStepKind::FlyHeadingAltitudeSpeed: return QStringLiteral("Fly Heading / Altitude / Speed");
     case PlanStepKind::OrbitHoldLocation:    return QStringLiteral("Orbit / Hold (Location)");
     case PlanStepKind::FollowEntity:         return QStringLiteral("Follow Entity");
-    case PlanStepKind::InterceptEntity2D:    return QStringLiteral("Intercept Entity 2D");
     case PlanStepKind::InterceptEntity:
+    case PlanStepKind::InterceptEntity2D:
     case PlanStepKind::InterceptEntity3D:    return QStringLiteral("Intercept Entity");
     case PlanStepKind::ReturnToBase:         return QStringLiteral("Return To Base");
     case PlanStepKind::AttackAir:            return QStringLiteral("Attack Air");
@@ -540,8 +542,9 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
     const Entity& entity,
     const PlanStep& step) const {
   const EntityTask& currentTask = entity.currentTask;
-  const auto isIntercept3DType = [](const QString& taskType) {
+  const auto isInterceptType = [](const QString& taskType) {
     return taskType == QStringLiteral("InterceptEntity") ||
+           taskType == QStringLiteral("InterceptEntity2D") ||
            taskType == QStringLiteral("InterceptEntity3D");
   };
   const auto isRouteType = [](const QString& taskType) {
@@ -550,7 +553,7 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
   };
 
   if (currentTask.taskType != step.task.taskType &&
-      !(isIntercept3DType(currentTask.taskType) && isIntercept3DType(step.task.taskType)) &&
+      !(isInterceptType(currentTask.taskType) && isInterceptType(step.task.taskType)) &&
       !(isRouteType(currentTask.taskType) && isRouteType(step.task.taskType))) {
     return false;
   }

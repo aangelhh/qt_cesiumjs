@@ -47,7 +47,7 @@ EntityTask AssignTaskController::taskFromSummary(const QVariantMap& summary) {
   task.interceptDistanceMeters =
       summary.value(QStringLiteral("taskInterceptDistanceMeters"), 500.0).toDouble();
   task.altitudeToleranceMeters =
-      summary.value(QStringLiteral("taskAltitudeToleranceMeters"), 250.0).toDouble();
+      summary.value(QStringLiteral("taskAltitudeToleranceMeters"), 100.0).toDouble();
   task.timeoutSeconds         = summary.value(QStringLiteral("taskTimeoutSeconds"), 120.0).toDouble();
   return task;
 }

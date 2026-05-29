@@ -238,6 +238,6 @@ struct EntityTask {
   int routeCurrentWaypointIndex = 0;
   int routeTotalWaypoints = 0;
   double interceptDistanceMeters = 500.0;
-  double altitudeToleranceMeters = 250.0;
+  double altitudeToleranceMeters = 100.0;
   double timeoutSeconds = 120.0;
 };

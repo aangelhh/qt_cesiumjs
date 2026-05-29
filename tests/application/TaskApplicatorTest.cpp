@@ -27,6 +27,18 @@ protected:
     return e;
   }
 
+  Entity makeGroundEntity(const QString& name) {
+    Entity e;
+    e.name = name;
+    e.domain = QStringLiteral("Ground");
+    e.category = QStringLiteral("Ground");
+    e.latitude = 40.02;
+    e.longitude = -3.0;
+    e.altitude = 0;
+    e.speedKnots = 0.0;
+    return e;
+  }
+
   ScenarioState* state{nullptr};
   QStringList logMessages;
 };
@@ -124,7 +136,7 @@ TEST_F(TaskApplicatorTest, AssignsInterceptEntityTaskWith3DStack) {
   task.targetEntityName = "Target1";
   task.targetSpeedKnots = 420.0;
   task.interceptDistanceMeters = 500.0;
-  task.altitudeToleranceMeters = 250.0;
+  task.altitudeToleranceMeters = 100.0;
   task.timeoutSeconds = 120.0;
 
   const bool result = application::applyEntityTask(
@@ -140,10 +152,10 @@ TEST_F(TaskApplicatorTest, AssignsInterceptEntityTaskWith3DStack) {
 
   ASSERT_FALSE(state->entities().isEmpty());
   EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity"));
-  EXPECT_DOUBLE_EQ(state->entities().front().currentTask.altitudeToleranceMeters, 250.0);
+  EXPECT_DOUBLE_EQ(state->entities().front().currentTask.altitudeToleranceMeters, 100.0);
 }
 
-TEST_F(TaskApplicatorTest, AssignsInterceptEntity2DTaskWith2DStack) {
+TEST_F(TaskApplicatorTest, LegacyInterceptEntity2DTypeNormalizesToUnifiedTask) {
   state->addEntity(makeAirEntity("Interceptor2D"));
 
   EntityTask task;
@@ -158,11 +170,12 @@ TEST_F(TaskApplicatorTest, AssignsInterceptEntity2DTaskWith2DStack) {
       [this](const QString& m) { logMessages << m; },
       []() {}));
   ASSERT_FALSE(state->entities().isEmpty());
-  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity2D"));
+  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity"));
+  EXPECT_DOUBLE_EQ(state->entities().front().currentTask.altitudeToleranceMeters, 100.0);
   const domain::TaskStack* stack = state->getTaskStack("Interceptor2D");
   ASSERT_NE(stack, nullptr);
   EXPECT_FALSE(stack->isEmpty());
-  EXPECT_NE(dynamic_cast<domain::InterceptEntity2DTask*>(stack->top()), nullptr);
+  EXPECT_NE(dynamic_cast<domain::InterceptEntity3DTask*>(stack->top()), nullptr);
 }
 
 TEST_F(TaskApplicatorTest, LegacyInterceptEntity3DTypeNormalizesToUnified3DTask) {
@@ -187,6 +200,31 @@ TEST_F(TaskApplicatorTest, LegacyInterceptEntity3DTypeNormalizesToUnified3DTask)
   ASSERT_NE(stack, nullptr);
   EXPECT_FALSE(stack->isEmpty());
   EXPECT_NE(dynamic_cast<domain::InterceptEntity3DTask*>(stack->top()), nullptr);
+}
+
+TEST_F(TaskApplicatorTest, InterceptEntityAgainstGroundTargetMaintainsOwnAltitude) {
+  state->addEntity(makeAirEntity("Interceptor"));
+  state->addEntity(makeGroundEntity("GroundTarget"));
+
+  EntityTask task;
+  task.taskType = "InterceptEntity";
+  task.enabled = true;
+  task.targetEntityName = "GroundTarget";
+  task.targetSpeedKnots = 420.0;
+  task.interceptDistanceMeters = 500.0;
+  task.altitudeToleranceMeters = 100.0;
+  task.timeoutSeconds = 120.0;
+
+  ASSERT_TRUE(application::applyEntityTask(
+      "Interceptor", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {}));
+
+  state->advanceSimulation(0.1);
+
+  ASSERT_GE(state->entities().size(), 2);
+  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity"));
+  EXPECT_EQ(state->entities().front().currentTask.targetAltitudeMeters, 3000);
 }
 
 // syncUi callback is called only when syncUi==true

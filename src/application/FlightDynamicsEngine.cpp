@@ -375,13 +375,18 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
               entity.verticalSpeedMetersPerSecond = 0.0;
               return;
           }
+          const bool altitudeApplies =
+              !entityIsGround(entity) && !entityIsGround(*targetEntity);
+          const double interceptAltitude = altitudeApplies
+              ? static_cast<double>(targetEntity->altitude)
+              : static_cast<double>(entity.altitude);
           entity.currentTask.targetLatitude = targetEntity->latitude;
           entity.currentTask.targetLongitude = targetEntity->longitude;
-          entity.currentTask.targetAltitudeMeters = targetEntity->altitude;
+          entity.currentTask.targetAltitudeMeters = static_cast<int>(interceptAltitude);
           interceptTask->updateTargetLocation(
               targetEntity->latitude,
               targetEntity->longitude,
-              static_cast<double>(targetEntity->altitude));
+              interceptAltitude);
       }
   
       domain::ITask::State evaluatedState = domain::ITask::State::Running;

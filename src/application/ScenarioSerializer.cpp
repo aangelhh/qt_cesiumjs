@@ -172,7 +172,8 @@ QJsonObject toJson(const EntityTask& task) {
 EntityTask taskFromJson(const QJsonObject& object) {
   EntityTask task;
   task.taskType = object.value(QStringLiteral("taskType")).toString();
-  if (task.taskType == QStringLiteral("InterceptEntity3D")) {
+  if (task.taskType == QStringLiteral("InterceptEntity2D") ||
+      task.taskType == QStringLiteral("InterceptEntity3D")) {
     task.taskType = QStringLiteral("InterceptEntity");
   }
   task.enabled = object.value(QStringLiteral("enabled")).toBool(false);
@@ -194,7 +195,7 @@ EntityTask taskFromJson(const QJsonObject& object) {
   task.routeCurrentWaypointIndex = object.value(QStringLiteral("routeCurrentWaypointIndex")).toInt(0);
   task.routeTotalWaypoints = object.value(QStringLiteral("routeTotalWaypoints")).toInt(0);
   task.interceptDistanceMeters = object.value(QStringLiteral("interceptDistanceMeters")).toDouble(500.0);
-  task.altitudeToleranceMeters = object.value(QStringLiteral("altitudeToleranceMeters")).toDouble(250.0);
+  task.altitudeToleranceMeters = object.value(QStringLiteral("altitudeToleranceMeters")).toDouble(100.0);
   task.timeoutSeconds = object.value(QStringLiteral("timeoutSeconds")).toDouble(120.0);
   return task;
 }
