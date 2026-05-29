@@ -264,6 +264,7 @@ DesiredState FollowEntityTask::evaluate(double currentLat, double currentLon, do
 
     if (!m_hasTargetData) {
         m_state = State::Failed; // Target unavailable
+        m_stableFollowTicks = 0;
         return {currentHeading, currentAlt, 0.0};
     }
     
@@ -272,6 +273,18 @@ DesiredState FollowEntityTask::evaluate(double currentLat, double currentLon, do
     const double targetHeading = bearingDegrees(currentLat, currentLon, m_targetLat, m_targetLon);
     const double dist = distanceMeters(currentLat, currentLon, m_targetLat, m_targetLon);
     const double assignedAlt = (m_fallbackAlt > 0) ? m_fallbackAlt : m_targetAlt;
+    const bool withinFollowTolerance =
+        std::abs(dist - m_followDistanceMeters) <= m_arrivalToleranceMeters;
+
+    if (withinFollowTolerance) {
+        ++m_stableFollowTicks;
+        if (m_stableFollowTicks >= 3) {
+            m_state = State::Completed;
+            return {currentHeading, assignedAlt, 0.0};
+        }
+    } else {
+        m_stableFollowTicks = 0;
+    }
 
     if (dist <= m_followDistanceMeters) {
         return {currentHeading, assignedAlt, 0.0};

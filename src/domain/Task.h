@@ -110,6 +110,7 @@ private:
     double m_fallbackSpeed;
     double m_followDistanceMeters;
     double m_arrivalToleranceMeters;
+    int m_stableFollowTicks = 0;
     bool m_hasTargetData = false;
     State m_state = State::NotStarted;
 };
