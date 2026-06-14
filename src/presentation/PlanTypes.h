@@ -32,6 +32,7 @@ struct PendingBombRelease {
 
 enum class PlanStepKind {
   MoveToLocation,
+  WaitOnLocation,
   MoveToWaypoint,
   FollowRoute,
   MoveAlongRoute,

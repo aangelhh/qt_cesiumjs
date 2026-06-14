@@ -45,6 +45,7 @@ QString normalizedBehaviorMode(const QString& behaviorMode) {
 
 bool isMovementTaskType(const QString& taskType) {
   return taskType == QStringLiteral("MoveToLocation") ||
+         taskType == QStringLiteral("WaitOnLocation") ||
          taskType == QStringLiteral("MoveToWaypoint") ||
          taskType == QStringLiteral("MoveAlongRoute") ||
          taskType == QStringLiteral("FollowRoute") ||

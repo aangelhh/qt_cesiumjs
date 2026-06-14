@@ -17,6 +17,7 @@ namespace presentation {
 struct EntityContextMenuSlots {
   std::function<void()> assignFlyHeadingAltitudeSpeedTask;
   std::function<void()> assignMoveToLocationTask;
+  std::function<void()> assignWaitOnLocationTask;
   std::function<void()> assignMoveToWaypointTask;
   std::function<void()> assignMoveAlongRouteTask;
   std::function<void()> assignPatrolRouteTask;

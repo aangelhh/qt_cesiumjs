@@ -560,6 +560,8 @@ MainWindow::MainWindow(QWidget* parent)
           this->assignFlyHeadingAltitudeSpeedTask();
         } else if (taskType == QStringLiteral("MoveToLocation")) {
           this->assignMoveToLocationTask();
+        } else if (taskType == QStringLiteral("WaitOnLocation")) {
+          this->assignWaitOnLocationTask();
         } else if (taskType == QStringLiteral("MoveToWaypoint")) {
           this->assignMoveToWaypointTask();
         } else if (taskType == QStringLiteral("FollowRoute") ||
@@ -783,6 +785,8 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
            ? QStringLiteral("Follow Route")
            : rawTaskType == QStringLiteral("HoldRacetrack")
              ? QStringLiteral("Hold Racetrack")
+           : rawTaskType == QStringLiteral("WaitOnLocation")
+             ? QStringLiteral("Wait on Location")
            : rawTaskType);
   };
   const auto displayTaskStatus = [&summary](const QString& rawTaskType, const QString& rawStatus) {
@@ -1975,6 +1979,7 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   presentation::EntityContextMenuSlots actions;
   actions.assignFlyHeadingAltitudeSpeedTask = [this]() { this->assignFlyHeadingAltitudeSpeedTask(); };
   actions.assignMoveToLocationTask          = [this]() { this->assignMoveToLocationTask(); };
+  actions.assignWaitOnLocationTask          = [this]() { this->assignWaitOnLocationTask(); };
   actions.assignMoveToWaypointTask          = [this]() { this->assignMoveToWaypointTask(); };
   actions.assignMoveAlongRouteTask          = [this]() { this->assignMoveAlongRouteTask(); };
   actions.assignPatrolRouteTask             = [this]() { this->assignPatrolRouteTask(); };
@@ -2231,6 +2236,10 @@ void MainWindow::assignFlyHeadingAltitudeSpeedTask() {
 
 void MainWindow::assignMoveToLocationTask() {
   this->_taskAssignmentController->assignMoveToLocation();
+}
+
+void MainWindow::assignWaitOnLocationTask() {
+  this->_taskAssignmentController->assignWaitOnLocation();
 }
 
 void MainWindow::assignMoveToWaypointTask() {
@@ -2528,6 +2537,7 @@ void MainWindow::populateTaskCommands() {
   static const struct { const char* label; const char* type; } kTaskEntries[] = {
       { "Movement: Fly Heading / Altitude / Speed...", "FlyHeadingAltitudeSpeed" },
       { "Movement: Move To Location...",               "MoveToLocation"          },
+      { "Movement: Wait on Location...",               "WaitOnLocation"          },
       { "Movement: Move To Waypoint...",               "MoveToWaypoint"          },
       { "Movement: Follow Route...",                   "FollowRoute"             },
       { "Movement: Patrol Area...",                    "PatrolArea"              },

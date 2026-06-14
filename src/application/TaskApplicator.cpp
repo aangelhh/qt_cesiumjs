@@ -18,6 +18,7 @@ bool isInterceptEntityTaskType(const QString& taskType) {
 
 bool isMovementTaskType(const QString& taskType) {
   return taskType == QStringLiteral("MoveToLocation") ||
+         taskType == QStringLiteral("WaitOnLocation") ||
          taskType == QStringLiteral("MoveToWaypoint") ||
          taskType == QStringLiteral("MoveAlongRoute") ||
          taskType == QStringLiteral("FollowRoute") ||
@@ -141,6 +142,7 @@ void resolveTaskCoordinates(
     }
     const bool isSpatialMovement =
         task.taskType == QStringLiteral("MoveToLocation") ||
+        task.taskType == QStringLiteral("WaitOnLocation") ||
         task.taskType == QStringLiteral("MoveToWaypoint") ||
         isRouteTaskType(task.taskType) ||
         task.taskType == QStringLiteral("PatrolArea") ||
@@ -211,6 +213,10 @@ bool applyEntityTask(
       taskToApply.racetrackLegLengthMeters <= 0.0) {
     taskToApply.racetrackLegLengthMeters = 10000.0;
   }
+  if (taskToApply.taskType == QStringLiteral("WaitOnLocation") &&
+      taskToApply.arrivalToleranceMeters <= 0.0) {
+    taskToApply.arrivalToleranceMeters = 200.0;
+  }
 
   if (!state->assignTask(entityName, taskToApply)) {
     return false;
@@ -262,6 +268,13 @@ bool applyEntityTask(
       }
       stack->push(std::make_unique<domain::MoveToLocationTask>(
           targetLat, targetLon, targetAlt, targetSpeed));
+    } else if (taskToApply.taskType == "WaitOnLocation") {
+      stack->push(std::make_unique<domain::WaitOnLocationTask>(
+          resolvedEntity.currentTask.targetLatitude,
+          resolvedEntity.currentTask.targetLongitude,
+          static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
+          resolvedEntity.currentTask.targetSpeedKnots,
+          resolvedEntity.currentTask.arrivalToleranceMeters));
     } else if (isRouteTaskType(taskToApply.taskType)) {
       bool createdRouteTask = false;
       for (const RouteGraphic& route : state->routes()) {
@@ -357,6 +370,15 @@ bool applyEntityTask(
           resolvedEntity.currentTask.targetLongitude,
           resolvedEntity.currentTask.targetAltitudeMeters,
           resolvedEntity.currentTask.targetSpeedKnots));
+    } else if (taskToApply.taskType == "WaitOnLocation") {
+      simulationEngine->enqueueCommand(std::make_unique<CmdAssignWaitOnLocationTask>(
+          entityName,
+          resolvedEntity.currentTask.targetLatitude,
+          resolvedEntity.currentTask.targetLongitude,
+          resolvedEntity.currentTask.targetAltitudeMeters,
+          resolvedEntity.currentTask.targetSpeedKnots,
+          resolvedEntity.currentTask.arrivalToleranceMeters,
+          resolvedEntity.currentTask.durationSeconds));
     } else if (taskToApply.taskType == "FlyHeadingAltitudeSpeed") {
       simulationEngine->enqueueCommand(std::make_unique<CmdAssignFlyHeadingTask>(
           entityName,

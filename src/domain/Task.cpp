@@ -94,6 +94,56 @@ DesiredState MoveToLocationTask::evaluate(double currentLat, double currentLon, 
     return {targetHeading, m_targetAlt, m_targetSpeed};
 }
 
+// --- WaitOnLocationTask ---
+
+WaitOnLocationTask::WaitOnLocationTask(
+    double targetLat,
+    double targetLon,
+    double targetAlt,
+    double targetSpeedKnots,
+    double arrivalToleranceMeters)
+    : m_targetLat(targetLat),
+      m_targetLon(targetLon),
+      m_targetAlt(targetAlt),
+      m_targetSpeed(targetSpeedKnots),
+      m_arrivalToleranceMeters(std::max(1.0, arrivalToleranceMeters))
+{
+}
+
+ITask::State WaitOnLocationTask::getState() const
+{
+    return m_state;
+}
+
+bool WaitOnLocationTask::hasArrived() const
+{
+    return m_arrived;
+}
+
+DesiredState WaitOnLocationTask::evaluate(
+    double currentLat,
+    double currentLon,
+    double currentAlt,
+    double currentHeading,
+    double dt)
+{
+    (void)currentAlt;
+    (void)dt;
+
+    m_state = State::Running;
+    const double dist = distanceMeters(currentLat, currentLon, m_targetLat, m_targetLon);
+    if (dist <= m_arrivalToleranceMeters) {
+        m_arrived = true;
+    }
+
+    if (m_arrived) {
+        return {currentHeading, m_targetAlt, 0.0};
+    }
+
+    const double targetHeading = bearingDegrees(currentLat, currentLon, m_targetLat, m_targetLon);
+    return {targetHeading, m_targetAlt, m_targetSpeed};
+}
+
 // --- RouteTask ---
 
 RouteTask::RouteTask(

@@ -201,6 +201,10 @@ void TaskAssignmentController::assignMoveToLocation() {
   _openDialog(QStringLiteral("MoveToLocation"));
 }
 
+void TaskAssignmentController::assignWaitOnLocation() {
+  _openDialog(QStringLiteral("WaitOnLocation"));
+}
+
 void TaskAssignmentController::assignMoveToWaypoint() {
   _openDialog(QStringLiteral("MoveToWaypoint"));
 }

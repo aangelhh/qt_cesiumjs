@@ -273,6 +273,34 @@ TEST_F(TaskApplicatorTest, HoldRacetrackDefaultsLegLength) {
   EXPECT_DOUBLE_EQ(state->entities().front().currentTask.racetrackLegLengthMeters, 10000.0);
 }
 
+TEST_F(TaskApplicatorTest, AssignsWaitOnLocationTask) {
+  state->addEntity(makeAirEntity("Waiter"));
+
+  EntityTask task;
+  task.taskType = "WaitOnLocation";
+  task.targetLatitude = 40.0;
+  task.targetLongitude = -3.0;
+  task.targetAltitudeMeters = 5000;
+  task.targetSpeedKnots = 220.0;
+  task.arrivalToleranceMeters = 300.0;
+  task.durationSeconds = 120.0;
+
+  const bool result = application::applyEntityTask(
+      "Waiter", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {});
+
+  EXPECT_TRUE(result);
+  const domain::TaskStack* stack = state->getTaskStack("Waiter");
+  ASSERT_NE(stack, nullptr);
+  EXPECT_FALSE(stack->isEmpty());
+  EXPECT_NE(dynamic_cast<domain::WaitOnLocationTask*>(stack->top()), nullptr);
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("WaitOnLocation"));
+  EXPECT_DOUBLE_EQ(state->entities().front().currentTask.arrivalToleranceMeters, 300.0);
+  EXPECT_DOUBLE_EQ(state->entities().front().currentTask.durationSeconds, 120.0);
+}
+
 // syncUi callback is called only when syncUi==true
 TEST_F(TaskApplicatorTest, SyncUiCallbackCalledOnlyWhenRequested) {
   state->addEntity(makeAirEntity("Delta"));

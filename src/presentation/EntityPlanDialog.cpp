@@ -153,6 +153,7 @@ void EntityPlanDialog::onAdd() {
   struct Item { const char* label; PlanStepKind kind; bool separatorBefore; };
   static const Item items[] = {
       {"Move To Location",              PlanStepKind::MoveToLocation,           false},
+      {"Wait on Location",              PlanStepKind::WaitOnLocation,           false},
       {"Move To Waypoint",              PlanStepKind::MoveToWaypoint,           false},
       {"Follow Route",                  PlanStepKind::FollowRoute,              false},
       {"Patrol Area",                   PlanStepKind::PatrolArea,               false},

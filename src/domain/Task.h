@@ -45,6 +45,29 @@ private:
     State m_state = State::NotStarted;
 };
 
+class WaitOnLocationTask : public ITask {
+public:
+    WaitOnLocationTask(
+        double targetLat,
+        double targetLon,
+        double targetAlt,
+        double targetSpeedKnots,
+        double arrivalToleranceMeters = 200.0);
+
+    State getState() const override;
+    DesiredState evaluate(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt) override;
+    bool hasArrived() const;
+
+private:
+    double m_targetLat;
+    double m_targetLon;
+    double m_targetAlt;
+    double m_targetSpeed;
+    double m_arrivalToleranceMeters;
+    bool m_arrived = false;
+    State m_state = State::NotStarted;
+};
+
 class RouteTask : public ITask {
 public:
     RouteTask(

@@ -36,6 +36,8 @@ void populateEntityContextMenu(
       actions.assignFlyHeadingAltitudeSpeedTask);
   addSlotAction(movementMenu, QStringLiteral("Move To Location..."),
       actions.assignMoveToLocationTask);
+  addSlotAction(movementMenu, QStringLiteral("Wait on Location..."),
+      actions.assignWaitOnLocationTask);
   addSlotAction(movementMenu, QStringLiteral("Move To Waypoint..."),
       actions.assignMoveToWaypointTask);
   addSlotAction(movementMenu, QStringLiteral("Follow Route..."),

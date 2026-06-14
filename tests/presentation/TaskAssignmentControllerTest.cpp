@@ -100,6 +100,14 @@ TEST(TaskAssignmentController, assignMoveToLocationOpensDlg) {
   delete ctrl;
 }
 
+TEST(TaskAssignmentController, assignWaitOnLocationOpensDlg) {
+  Fixture f;
+  auto* ctrl = f.makeController();
+  ctrl->assignWaitOnLocation();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("WaitOnLocation"));
+  delete ctrl;
+}
+
 TEST(TaskAssignmentController, assignMoveToWaypointOpensDlg) {
   Fixture f;
   auto* ctrl = f.makeController();

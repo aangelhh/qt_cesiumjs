@@ -59,6 +59,7 @@ public:
   // Dialog-based assignments (delegates to openDialog callback)
   void assignFlyHeadingAltitudeSpeed();
   void assignMoveToLocation();
+  void assignWaitOnLocation();
   void assignMoveToWaypoint();
   void assignMoveAlongRoute();
   void assignPatrolArea();

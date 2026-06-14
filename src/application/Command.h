@@ -49,6 +49,34 @@ struct CmdAssignMoveTask : public ICommand {
     void apply(ScenarioState& scenario) const override;
 };
 
+struct CmdAssignWaitOnLocationTask : public ICommand {
+    QString targetEntityName;
+    double targetLat;
+    double targetLon;
+    double targetAlt;
+    double targetSpeed;
+    double arrivalToleranceMeters;
+    double durationSeconds;
+
+    CmdAssignWaitOnLocationTask(
+        const QString& name,
+        double lat,
+        double lon,
+        double alt,
+        double speed,
+        double tolerance,
+        double duration)
+        : targetEntityName(name),
+          targetLat(lat),
+          targetLon(lon),
+          targetAlt(alt),
+          targetSpeed(speed),
+          arrivalToleranceMeters(tolerance),
+          durationSeconds(duration) {}
+
+    void apply(ScenarioState& scenario) const override;
+};
+
 struct CmdAssignFlyHeadingTask : public ICommand {
     QString targetEntityName;
     double targetHeadingDegrees;
