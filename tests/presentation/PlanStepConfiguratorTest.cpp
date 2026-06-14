@@ -255,7 +255,7 @@ TEST_F(PlanStepConfiguratorTest, InterceptEntity_UsesUnified3DTaskAndLabel) {
   EXPECT_EQ(step.kind, PlanStepKind::InterceptEntity);
   EXPECT_EQ(step.task.taskType, QStringLiteral("InterceptEntity"));
   EXPECT_DOUBLE_EQ(step.task.interceptDistanceMeters, 500.0);
-  EXPECT_DOUBLE_EQ(step.task.altitudeToleranceMeters, 250.0);
+  EXPECT_DOUBLE_EQ(step.task.altitudeToleranceMeters, 100.0);
   EXPECT_EQ(step.label, QStringLiteral("Intercept Entity: Target1"));
 }
 

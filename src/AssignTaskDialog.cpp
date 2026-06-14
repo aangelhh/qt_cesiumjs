@@ -158,7 +158,7 @@ AssignTaskDialog::AssignTaskDialog(
       ? (currentTask.arrivalToleranceMeters > 0.0 ? currentTask.arrivalToleranceMeters : 1000.0)
       : currentTask.arrivalToleranceMeters);
   _altitudeToleranceSpin->setValue(
-      currentTask.altitudeToleranceMeters > 0.0 ? currentTask.altitudeToleranceMeters : 250.0);
+      currentTask.altitudeToleranceMeters > 0.0 ? currentTask.altitudeToleranceMeters : 100.0);
   _durationSpin->setValue(
       isInterceptEntityTaskType(rawInitialType) ||
           rawInitialType == QStringLiteral("FollowRoute") ||

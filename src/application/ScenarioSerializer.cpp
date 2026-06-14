@@ -195,7 +195,7 @@ EntityTask taskFromJson(const QJsonObject& object) {
   task.routeCurrentWaypointIndex = object.value(QStringLiteral("routeCurrentWaypointIndex")).toInt(0);
   task.routeTotalWaypoints = object.value(QStringLiteral("routeTotalWaypoints")).toInt(0);
   task.interceptDistanceMeters = object.value(QStringLiteral("interceptDistanceMeters")).toDouble(500.0);
-  task.altitudeToleranceMeters = object.value(QStringLiteral("altitudeToleranceMeters")).toDouble(250.0);
+  task.altitudeToleranceMeters = object.value(QStringLiteral("altitudeToleranceMeters")).toDouble(100.0);
   task.timeoutSeconds = object.value(QStringLiteral("timeoutSeconds")).toDouble(120.0);
   return task;
 }

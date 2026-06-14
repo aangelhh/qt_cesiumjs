@@ -132,7 +132,7 @@ void CmdAssignInterceptEntity2DTask::apply(ScenarioState& scenario) const {
     task.targetEntityName = interceptEntityName;
     task.targetSpeedKnots = targetSpeedKnots;
     task.interceptDistanceMeters = interceptDistanceMeters;
-    task.altitudeToleranceMeters = 250.0;
+    task.altitudeToleranceMeters = 100.0;
     task.timeoutSeconds = timeoutSeconds;
     task.status = "Running";
     scenario.assignTask(targetName, task);

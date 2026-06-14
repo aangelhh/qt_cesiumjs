@@ -192,6 +192,42 @@ TEST(FollowEntityTask, StopsPursuitInsideFollowDistance) {
     EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 0.0);
 }
 
+TEST(FollowEntityTask, CompletesAfterMaintainingFollowDistanceForThreeTicks) {
+    domain::FollowEntityTask task(5000.0, 250.0, 1000.0, 100.0);
+    task.updateTargetLocation(kOriginLat + kFiveKmNorthDeltaLat / 5.0, kOriginLon, 5000.0, 250.0);
+
+    task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+
+    task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+
+    const auto desired = task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Completed);
+    EXPECT_DOUBLE_EQ(desired.targetHeadingDegrees, 45.0);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 0.0);
+}
+
+TEST(FollowEntityTask, StableFollowTicksResetWhenTargetLeavesTolerance) {
+    domain::FollowEntityTask task(5000.0, 250.0, 1000.0, 100.0);
+    task.updateTargetLocation(kOriginLat + kFiveKmNorthDeltaLat / 5.0, kOriginLon, 5000.0, 250.0);
+
+    task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+
+    task.updateTargetLocation(kOriginLat + kFiveKmNorthDeltaLat / 2.5, kOriginLon, 5000.0, 250.0);
+    task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+
+    task.updateTargetLocation(kOriginLat + kFiveKmNorthDeltaLat / 5.0, kOriginLon, 5000.0, 250.0);
+    task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+
+    task.evaluate(kOriginLat, kOriginLon, 5000.0, 45.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Completed);
+}
+
 // --- InterceptEntity2DTask -------------------------------------------------
 
 TEST(InterceptEntity2DTask, FailsWhenNoTargetEverProvided) {

@@ -177,10 +177,13 @@ bool applyEntityTask(
   }
 
   EntityTask taskToApply = task;
-  if (isInterceptEntityTaskType(taskToApply.taskType)) {
+  if (taskToApply.taskType == QStringLiteral("InterceptEntity2D") ||
+      taskToApply.taskType == QStringLiteral("InterceptEntity3D")) {
     taskToApply.taskType = QStringLiteral("InterceptEntity");
+  }
+  if (isInterceptEntityTaskType(taskToApply.taskType)) {
     if (taskToApply.altitudeToleranceMeters <= 0.0) {
-      taskToApply.altitudeToleranceMeters = 250.0;
+      taskToApply.altitudeToleranceMeters = 100.0;
     }
     if (taskToApply.interceptDistanceMeters <= 0.0) {
       taskToApply.interceptDistanceMeters = 500.0;

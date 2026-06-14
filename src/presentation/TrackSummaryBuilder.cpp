@@ -72,7 +72,7 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("taskDurationSeconds"), 0.0},
       {QStringLiteral("taskElapsedSeconds"), 0.0},
       {QStringLiteral("taskInterceptDistanceMeters"), 500.0},
-      {QStringLiteral("taskAltitudeToleranceMeters"), 250.0},
+      {QStringLiteral("taskAltitudeToleranceMeters"), 100.0},
       {QStringLiteral("taskTimeoutSeconds"), 120.0},
       {QStringLiteral("destroyed"), false},
       {QStringLiteral("damagePercent"), 0.0},

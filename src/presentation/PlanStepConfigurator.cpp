@@ -218,7 +218,7 @@ bool PlanStepConfigurator::configure(
       initial.status = QStringLiteral("Queued");
       initial.targetSpeedKnots = defaultSpeedKnots;
       initial.interceptDistanceMeters = 500.0;
-      initial.altitudeToleranceMeters = 250.0;
+      initial.altitudeToleranceMeters = 100.0;
       initial.timeoutSeconds = 120.0;
       if (!_capture(entity.name, initial, QStringLiteral("InterceptEntity"), step.task)) {
         return false;

@@ -110,6 +110,7 @@ private:
     double m_fallbackSpeed;
     double m_followDistanceMeters;
     double m_arrivalToleranceMeters;
+    int m_stableFollowTicks = 0;
     bool m_hasTargetData = false;
     State m_state = State::NotStarted;
 };
@@ -237,6 +238,6 @@ struct EntityTask {
   int routeCurrentWaypointIndex = 0;
   int routeTotalWaypoints = 0;
   double interceptDistanceMeters = 500.0;
-  double altitudeToleranceMeters = 250.0;
+  double altitudeToleranceMeters = 100.0;
   double timeoutSeconds = 120.0;
 };
