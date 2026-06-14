@@ -57,6 +57,28 @@ bool PlanStepConfigurator::configure(
       return true;
     }
 
+    case PlanStepKind::WaitOnLocation: {
+      EntityTask initial;
+      initial.taskType             = QStringLiteral("WaitOnLocation");
+      initial.enabled              = true;
+      initial.status               = QStringLiteral("Queued");
+      initial.targetLatitude       = entity.latitude;
+      initial.targetLongitude      = entity.longitude;
+      initial.targetAltitudeMeters = defaultAltitudeMeters;
+      initial.targetSpeedKnots     = defaultSpeedKnots;
+      initial.arrivalToleranceMeters = 200.0;
+      initial.durationSeconds      = 0.0;
+      if (!_capture(entity.name, initial, QStringLiteral("WaitOnLocation"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.taskType = QStringLiteral("WaitOnLocation");
+      step.label = QStringLiteral("Wait on Location at %1, %2")
+          .arg(step.task.targetLatitude,  0, 'f', 4)
+          .arg(step.task.targetLongitude, 0, 'f', 4);
+      return true;
+    }
+
     case PlanStepKind::MoveToWaypoint: {
       EntityTask initial;
       initial.taskType             = QStringLiteral("MoveToWaypoint");

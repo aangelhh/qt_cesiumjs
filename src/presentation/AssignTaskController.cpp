@@ -82,6 +82,15 @@ void AssignTaskController::open(const QString& initialTaskType) {
     currentTask.racetrackLegLengthMeters = 10000.0;
     currentTask.durationSeconds = 0.0;
   }
+  if (initialTaskType == QStringLiteral("WaitOnLocation") &&
+      currentTask.taskType != QStringLiteral("WaitOnLocation")) {
+    currentTask.targetLatitude = summary.value(QStringLiteral("latitude")).toDouble();
+    currentTask.targetLongitude = summary.value(QStringLiteral("longitude")).toDouble();
+    currentTask.targetAltitudeMeters = summary.value(QStringLiteral("altitude")).toInt();
+    currentTask.targetSpeedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
+    currentTask.arrivalToleranceMeters = 200.0;
+    currentTask.durationSeconds = 0.0;
+  }
 
   EntityTask configuredTask;
   if (!_captureConfig(entityName, currentTask, initialTaskType, configuredTask)) {

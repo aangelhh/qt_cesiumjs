@@ -90,6 +90,7 @@ private slots:
   void openObjectsContextMenu(const QPoint& position);
   void assignFlyHeadingAltitudeSpeedTask();
   void assignMoveToLocationTask();
+  void assignWaitOnLocationTask();
   void assignMoveToWaypointTask();
   void assignMoveAlongRouteTask();
   void assignPatrolAreaTask();

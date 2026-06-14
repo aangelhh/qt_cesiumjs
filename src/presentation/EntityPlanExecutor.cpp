@@ -49,6 +49,7 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
 
   switch (step.kind) {
     case PlanStepKind::MoveToLocation:       return QStringLiteral("Move To Location");
+    case PlanStepKind::WaitOnLocation:       return QStringLiteral("Wait on Location");
     case PlanStepKind::MoveToWaypoint:       return QStringLiteral("Move To Waypoint");
     case PlanStepKind::FollowRoute:
     case PlanStepKind::MoveAlongRoute:       return QStringLiteral("Follow Route");
@@ -347,10 +348,13 @@ bool EntityPlanExecutor::activePlanStepCompleted(
   const PlanStep& step = plan.steps.at(plan.currentStepIndex);
   switch (step.kind) {
     case PlanStepKind::MoveToLocation:
+    case PlanStepKind::WaitOnLocation:
     case PlanStepKind::MoveToWaypoint:
     case PlanStepKind::ReturnToBase:
       plan.currentStableTicks = 0;
-      return entity.currentTask.status == QStringLiteral("On target");
+      return step.kind == PlanStepKind::WaitOnLocation
+          ? entity.currentTask.status == QStringLiteral("Completed")
+          : entity.currentTask.status == QStringLiteral("On target");
     case PlanStepKind::FollowRoute:
     case PlanStepKind::MoveAlongRoute:
       plan.currentStableTicks = 0;
@@ -475,6 +479,7 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
     }
 
     case PlanStepKind::MoveToLocation:
+    case PlanStepKind::WaitOnLocation:
     case PlanStepKind::FlyHeadingAltitudeSpeed:
     case PlanStepKind::OrbitHoldLocation:
     case PlanStepKind::HoldRacetrack:
@@ -567,11 +572,15 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
 
   switch (step.kind) {
     case PlanStepKind::MoveToLocation:
+    case PlanStepKind::WaitOnLocation:
     case PlanStepKind::ReturnToBase:
       return nearlyEqual(currentTask.targetLatitude, step.task.targetLatitude, 1e-6) &&
              nearlyEqual(currentTask.targetLongitude, step.task.targetLongitude, 1e-6) &&
              currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
-             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1) &&
+             (step.kind != PlanStepKind::WaitOnLocation ||
+              (nearlyEqual(currentTask.arrivalToleranceMeters, step.task.arrivalToleranceMeters, 1.0) &&
+               nearlyEqual(currentTask.durationSeconds, step.task.durationSeconds, 0.1)));
 
     case PlanStepKind::MoveToWaypoint:
       return currentTask.targetWaypointName == step.task.targetWaypointName &&

@@ -57,6 +57,34 @@ TEST(MoveToLocationTask, CompletesWhenWithinArrivalThreshold) {
     EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 0.0);
 }
 
+// --- WaitOnLocationTask -----------------------------------------------------
+
+TEST(WaitOnLocationTask, NavigatesUntilArrivalThenHoldsRunning) {
+    domain::WaitOnLocationTask task(
+        kOriginLat + kFiveKmNorthDeltaLat,
+        kOriginLon,
+        5000.0,
+        250.0,
+        250.0);
+
+    const auto enroute = task.evaluate(kOriginLat, kOriginLon, 4000.0, 180.0, 0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_FALSE(task.hasArrived());
+    EXPECT_NEAR(enroute.targetHeadingDegrees, approxBearingNorth(), 1.0);
+    EXPECT_DOUBLE_EQ(enroute.targetSpeedKnots, 250.0);
+
+    const auto arrived = task.evaluate(
+        kOriginLat + kFiveKmNorthDeltaLat,
+        kOriginLon,
+        5000.0,
+        90.0,
+        0.1);
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_TRUE(task.hasArrived());
+    EXPECT_DOUBLE_EQ(arrived.targetHeadingDegrees, 90.0);
+    EXPECT_DOUBLE_EQ(arrived.targetSpeedKnots, 0.0);
+}
+
 // --- RouteTask --------------------------------------------------------------
 
 TEST(RouteTask, FailsImmediatelyWhenRouteIsEmpty) {

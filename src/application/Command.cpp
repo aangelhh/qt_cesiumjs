@@ -61,6 +61,35 @@ void CmdAssignMoveTask::apply(ScenarioState& scenario) const {
     }
 }
 
+void CmdAssignWaitOnLocationTask::apply(ScenarioState& scenario) const {
+    const QString targetName = targetEntityName.trimmed();
+    if (targetName.isEmpty()) {
+        return;
+    }
+
+    EntityTask task;
+    task.enabled = true;
+    task.taskType = "WaitOnLocation";
+    task.targetLatitude = targetLat;
+    task.targetLongitude = targetLon;
+    task.targetAltitudeMeters = static_cast<int>(targetAlt);
+    task.targetSpeedKnots = targetSpeed;
+    task.arrivalToleranceMeters = arrivalToleranceMeters;
+    task.durationSeconds = durationSeconds;
+    task.status = "Running";
+    scenario.assignTask(targetName, task);
+
+    if (domain::TaskStack* stack = scenario.getTaskStack(targetName)) {
+        clearStack(*stack);
+        stack->push(std::make_unique<domain::WaitOnLocationTask>(
+            task.targetLatitude,
+            task.targetLongitude,
+            task.targetAltitudeMeters,
+            task.targetSpeedKnots,
+            task.arrivalToleranceMeters));
+    }
+}
+
 void CmdAssignFlyHeadingTask::apply(ScenarioState& scenario) const {
     const QString targetName = targetEntityName.trimmed();
     if (targetName.isEmpty()) {

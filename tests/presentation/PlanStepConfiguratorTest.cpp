@@ -228,6 +228,30 @@ TEST_F(PlanStepConfiguratorTest, HoldRacetrack_UsesDialogAndDefaults) {
   EXPECT_TRUE(step.label.startsWith(QStringLiteral("Hold Racetrack")));
 }
 
+TEST_F(PlanStepConfiguratorTest, WaitOnLocation_UsesDialogAndDefaults) {
+  Entity entity = makeAirEntity(QStringLiteral("F1"));
+  presentation::PlanStepConfigurator::CaptureFn capture =
+      [](const QString&, const EntityTask& initial, const QString& type, EntityTask& out) {
+    EXPECT_EQ(type, QStringLiteral("WaitOnLocation"));
+    EXPECT_EQ(initial.taskType, QStringLiteral("WaitOnLocation"));
+    EXPECT_DOUBLE_EQ(initial.arrivalToleranceMeters, 200.0);
+    out = initial;
+    out.durationSeconds = 180.0;
+    return true;
+  };
+  presentation::PlanStepConfigurator cfg(capture, noArea, noHome, acceptItem, acceptDouble);
+
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 45.0, 3000, 300.0, PlanStepKind::WaitOnLocation, step));
+
+  EXPECT_EQ(step.kind, PlanStepKind::WaitOnLocation);
+  EXPECT_EQ(step.task.taskType, QStringLiteral("WaitOnLocation"));
+  EXPECT_DOUBLE_EQ(step.task.targetLatitude, entity.latitude);
+  EXPECT_DOUBLE_EQ(step.task.targetLongitude, entity.longitude);
+  EXPECT_DOUBLE_EQ(step.task.durationSeconds, 180.0);
+  EXPECT_TRUE(step.label.startsWith(QStringLiteral("Wait on Location")));
+}
+
 // ── PatrolArea (area not found) ───────────────────────────────────────────
 
 TEST_F(PlanStepConfiguratorTest, PatrolArea_AreaNotFound_StillSucceeds) {

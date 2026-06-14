@@ -100,6 +100,7 @@ bool isInterceptEntityTaskType(const QString& taskType) {
 
 bool isMovementTaskType(const QString& taskType) {
   return taskType == QStringLiteral("MoveToLocation") ||
+         taskType == QStringLiteral("WaitOnLocation") ||
          taskType == QStringLiteral("MoveToWaypoint") ||
          taskType == QStringLiteral("MoveAlongRoute") ||
          taskType == QStringLiteral("FollowRoute") ||
@@ -402,6 +403,15 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
               ? qMin(routeTask->currentPointIndex() + 1, routeTask->totalPoints())
               : 0;
       }
+      if (entity.currentTask.taskType == QStringLiteral("WaitOnLocation")) {
+          auto* waitTask = static_cast<domain::WaitOnLocationTask*>(topTask);
+          if (waitTask->hasArrived() && entity.currentTask.durationSeconds > 0.0) {
+              entity.currentTask.elapsedSeconds += qMax(0.0, deltaSeconds);
+              if (entity.currentTask.elapsedSeconds >= entity.currentTask.durationSeconds) {
+                  evaluatedState = domain::ITask::State::Completed;
+              }
+          }
+      }
       
       if (entity.currentTask.taskType == QStringLiteral("FollowEntity") &&
           entity.currentTask.durationSeconds > 0.0) {
@@ -439,7 +449,8 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
               (entity.currentTask.taskType == QStringLiteral("FollowEntity") ||
                isInterceptEntityTaskType(entity.currentTask.taskType) ||
                isRouteTaskType(entity.currentTask.taskType) ||
-               entity.currentTask.taskType == QStringLiteral("HoldRacetrack"))
+               entity.currentTask.taskType == QStringLiteral("HoldRacetrack") ||
+               entity.currentTask.taskType == QStringLiteral("WaitOnLocation"))
               ? QStringLiteral("Completed")
               : QStringLiteral("On target");
       } else if (evaluatedState == domain::ITask::State::Failed) {
@@ -478,6 +489,7 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
   const bool isAttackAirTask =
       entity.currentTask.taskType == QStringLiteral("AttackAir");
   if (entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
+      entity.currentTask.taskType == QStringLiteral("WaitOnLocation") ||
       entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
       entity.currentTask.taskType == QStringLiteral("MoveAlongRoute") ||
       entity.currentTask.taskType == QStringLiteral("FollowRoute") ||
@@ -723,6 +735,7 @@ bool applyJsbsimStep(Entity& entity, double deltaSeconds) {
 
   const bool preferDirectFcs =
       entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
+      entity.currentTask.taskType == QStringLiteral("WaitOnLocation") ||
       entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
       entity.currentTask.taskType == QStringLiteral("FlyHeadingAltitudeSpeed");
   const JsbsimControlMode activeControlMode =
@@ -849,6 +862,7 @@ void FlightDynamicsEngine::advanceEntity(
 #if defined(QTTEST_HAS_JSBSIM)
   const bool preferKinematicGuidance =
       entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
+      entity.currentTask.taskType == QStringLiteral("WaitOnLocation") ||
       entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
       entity.currentTask.taskType == QStringLiteral("MoveAlongRoute") ||
       entity.currentTask.taskType == QStringLiteral("FollowRoute") ||
