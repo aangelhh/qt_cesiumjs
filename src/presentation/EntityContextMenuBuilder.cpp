@@ -44,6 +44,8 @@ void populateEntityContextMenu(
       actions.assignPatrolRouteTask);
   addSlotAction(movementMenu, QStringLiteral("Orbit / Hold (Location)..."),
       actions.assignOrbitHoldLocationTask);
+  addSlotAction(movementMenu, QStringLiteral("Hold Racetrack..."),
+      actions.assignHoldRacetrackTask);
   addSlotAction(movementMenu, QStringLiteral("Return To Base"),
       actions.assignReturnToBaseTask);
   addSlotAction(movementMenu, QStringLiteral("Patrol Area..."),

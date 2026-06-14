@@ -569,6 +569,8 @@ MainWindow::MainWindow(QWidget* parent)
           this->assignPatrolAreaTask();
         } else if (taskType == QStringLiteral("OrbitArea")) {
           this->assignOrbitAreaTask();
+        } else if (taskType == QStringLiteral("HoldRacetrack")) {
+          this->assignHoldRacetrackTask();
         } else if (taskType == QStringLiteral("FollowEntity")) {
           this->assignFollowEntityTask();
         } else if (taskType == QStringLiteral("InterceptEntity") ||
@@ -779,6 +781,8 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
         : (rawTaskType == QStringLiteral("FollowRoute") ||
            rawTaskType == QStringLiteral("MoveAlongRoute")
            ? QStringLiteral("Follow Route")
+           : rawTaskType == QStringLiteral("HoldRacetrack")
+             ? QStringLiteral("Hold Racetrack")
            : rawTaskType);
   };
   const auto displayTaskStatus = [&summary](const QString& rawTaskType, const QString& rawStatus) {
@@ -1883,8 +1887,8 @@ void MainWindow::populateTaskQuickBarButtons(QFrame* panel, QHBoxLayout* layout)
       QStringLiteral("pattern_hold_location.xpm"),
       QStringLiteral("PH"),
       QColor(QStringLiteral("#ffd166")),
-      QStringLiteral("Pattern Hold (Location)\nPlaceholder"),
-      [this]() { this->showTaskQuickPlaceholder(QStringLiteral("Pattern Hold (Location)")); });
+      QStringLiteral("Hold Racetrack"),
+      [this]() { this->assignHoldRacetrackTask(); });
   addButton(
       QStringLiteral("orbit_object.xpm"),
       QStringLiteral("OO"),
@@ -1975,6 +1979,7 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   actions.assignMoveAlongRouteTask          = [this]() { this->assignMoveAlongRouteTask(); };
   actions.assignPatrolRouteTask             = [this]() { this->assignPatrolRouteTask(); };
   actions.assignOrbitHoldLocationTask       = [this]() { this->assignOrbitHoldLocationTask(); };
+  actions.assignHoldRacetrackTask           = [this]() { this->assignHoldRacetrackTask(); };
   actions.assignReturnToBaseTask            = [this]() { this->assignReturnToBaseTask(); };
   actions.assignPatrolAreaTask              = [this]() { this->assignPatrolAreaTask(); };
   actions.assignOrbitAreaTask               = [this]() { this->assignOrbitAreaTask(); };
@@ -2246,6 +2251,10 @@ void MainWindow::assignPatrolRouteTask() {
 
 void MainWindow::assignOrbitHoldLocationTask() {
   this->_taskAssignmentController->assignOrbitHoldLocation();
+}
+
+void MainWindow::assignHoldRacetrackTask() {
+  this->_taskAssignmentController->assignHoldRacetrack();
 }
 
 void MainWindow::assignPatrolAreaTask() {
@@ -2523,6 +2532,7 @@ void MainWindow::populateTaskCommands() {
       { "Movement: Follow Route...",                   "FollowRoute"             },
       { "Movement: Patrol Area...",                    "PatrolArea"              },
       { "Movement: Orbit Area...",                     "OrbitArea"               },
+      { "Movement: Hold Racetrack...",                 "HoldRacetrack"           },
       { "Movement: Follow Entity...",                  "FollowEntity"            },
       { "Movement: Intercept Entity...",               "InterceptEntity"          },
       { "Attack: Attack Air...",                       "AttackAir"               },

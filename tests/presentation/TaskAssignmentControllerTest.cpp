@@ -116,6 +116,14 @@ TEST(TaskAssignmentController, assignPatrolAreaOpensDlg) {
   delete ctrl;
 }
 
+TEST(TaskAssignmentController, assignHoldRacetrackOpensDlg) {
+  Fixture f;
+  auto* ctrl = f.makeController();
+  ctrl->assignHoldRacetrack();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("HoldRacetrack"));
+  delete ctrl;
+}
+
 TEST(TaskAssignmentController, assignAttackAirOpensDlg) {
   Fixture f;
   auto* ctrl = f.makeController();

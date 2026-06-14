@@ -192,6 +192,32 @@ private:
     State m_state = State::NotStarted;
 };
 
+class HoldRacetrackTask : public ITask {
+public:
+    HoldRacetrackTask(
+        double centerLat,
+        double centerLon,
+        double headingDegrees,
+        double legLengthMeters,
+        double targetAlt,
+        double targetSpeedKnots);
+
+    State getState() const override;
+    DesiredState evaluate(double currentLat, double currentLon, double currentAlt, double currentHeading, double dt) override;
+
+private:
+    RoutePoint endpoint(int index) const;
+
+    double m_centerLat;
+    double m_centerLon;
+    double m_headingDegrees;
+    double m_legLengthMeters;
+    double m_targetAlt;
+    double m_targetSpeed;
+    int m_targetEndpointIndex = 0;
+    State m_state = State::NotStarted;
+};
+
 QVector<RoutePoint> buildPatrolRouteFromArea(const AreaDefinition& area);
 
 // Task Stack manages execution of multiple tasks
@@ -240,4 +266,5 @@ struct EntityTask {
   double interceptDistanceMeters = 500.0;
   double altitudeToleranceMeters = 100.0;
   double timeoutSeconds = 120.0;
+  double racetrackLegLengthMeters = 10000.0;
 };

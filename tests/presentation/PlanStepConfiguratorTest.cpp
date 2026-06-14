@@ -203,6 +203,31 @@ TEST_F(PlanStepConfiguratorTest, OrbitHoldLocation_CurrentPosition_UsesEntityPos
   EXPECT_GT(step.task.targetAreaRadiusMeters, 0.0);
 }
 
+TEST_F(PlanStepConfiguratorTest, HoldRacetrack_UsesDialogAndDefaults) {
+  Entity entity = makeAirEntity(QStringLiteral("F1"));
+  presentation::PlanStepConfigurator::CaptureFn capture =
+      [](const QString&, const EntityTask& initial, const QString& type, EntityTask& out) {
+    EXPECT_EQ(type, QStringLiteral("HoldRacetrack"));
+    out = initial;
+    out.racetrackLegLengthMeters = 12000.0;
+    out.durationSeconds = 300.0;
+    return true;
+  };
+  presentation::PlanStepConfigurator cfg(capture, noArea, noHome, acceptItem, acceptDouble);
+
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 45.0, 3000, 300.0, PlanStepKind::HoldRacetrack, step));
+
+  EXPECT_EQ(step.kind, PlanStepKind::HoldRacetrack);
+  EXPECT_EQ(step.task.taskType, QStringLiteral("HoldRacetrack"));
+  EXPECT_DOUBLE_EQ(step.task.targetLatitude, entity.latitude);
+  EXPECT_DOUBLE_EQ(step.task.targetLongitude, entity.longitude);
+  EXPECT_DOUBLE_EQ(step.task.targetHeadingDegrees, 45.0);
+  EXPECT_DOUBLE_EQ(step.task.racetrackLegLengthMeters, 12000.0);
+  EXPECT_DOUBLE_EQ(step.task.durationSeconds, 300.0);
+  EXPECT_TRUE(step.label.startsWith(QStringLiteral("Hold Racetrack")));
+}
+
 // ── PatrolArea (area not found) ───────────────────────────────────────────
 
 TEST_F(PlanStepConfiguratorTest, PatrolArea_AreaNotFound_StillSucceeds) {

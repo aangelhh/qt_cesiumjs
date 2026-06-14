@@ -23,6 +23,7 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("FollowRoute") ||
          taskType == QStringLiteral("PatrolArea") ||
          taskType == QStringLiteral("OrbitArea") ||
+         taskType == QStringLiteral("HoldRacetrack") ||
          taskType == QStringLiteral("FollowEntity") ||
          isInterceptEntityTaskType(taskType) ||
          taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
@@ -144,6 +145,7 @@ void resolveTaskCoordinates(
         isRouteTaskType(task.taskType) ||
         task.taskType == QStringLiteral("PatrolArea") ||
         task.taskType == QStringLiteral("OrbitArea") ||
+        task.taskType == QStringLiteral("HoldRacetrack") ||
         task.taskType == QStringLiteral("FollowEntity") ||
         isInterceptEntityTaskType(task.taskType);
     if ((task.taskType == QStringLiteral("FollowEntity") ||
@@ -204,6 +206,10 @@ bool applyEntityTask(
         taskToApply.arrivalToleranceMeters = 1000.0;
       }
     }
+  }
+  if (taskToApply.taskType == QStringLiteral("HoldRacetrack") &&
+      taskToApply.racetrackLegLengthMeters <= 0.0) {
+    taskToApply.racetrackLegLengthMeters = 10000.0;
   }
 
   if (!state->assignTask(entityName, taskToApply)) {
@@ -331,6 +337,14 @@ bool applyEntityTask(
           static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
           resolvedEntity.currentTask.targetSpeedKnots,
           false));
+    } else if (taskToApply.taskType == "HoldRacetrack") {
+      stack->push(std::make_unique<domain::HoldRacetrackTask>(
+          resolvedEntity.currentTask.targetLatitude,
+          resolvedEntity.currentTask.targetLongitude,
+          resolvedEntity.currentTask.targetHeadingDegrees,
+          resolvedEntity.currentTask.racetrackLegLengthMeters,
+          static_cast<double>(resolvedEntity.currentTask.targetAltitudeMeters),
+          resolvedEntity.currentTask.targetSpeedKnots));
     }
   }
 
@@ -376,6 +390,16 @@ bool applyEntityTask(
           resolvedEntity.currentTask.targetAltitudeMeters,
           resolvedEntity.currentTask.targetSpeedKnots,
           (taskToApply.taskType == "PatrolArea")));
+    } else if (taskToApply.taskType == "HoldRacetrack") {
+      simulationEngine->enqueueCommand(std::make_unique<CmdAssignHoldRacetrackTask>(
+          entityName,
+          resolvedEntity.currentTask.targetLatitude,
+          resolvedEntity.currentTask.targetLongitude,
+          resolvedEntity.currentTask.targetHeadingDegrees,
+          resolvedEntity.currentTask.racetrackLegLengthMeters,
+          resolvedEntity.currentTask.targetAltitudeMeters,
+          resolvedEntity.currentTask.targetSpeedKnots,
+          resolvedEntity.currentTask.durationSeconds));
     }
   }
 

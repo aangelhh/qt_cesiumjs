@@ -157,6 +157,10 @@ void TaskAssignmentController::assignOrbitHoldLocation() {
       .arg(centerLongitude, 0, 'f', 4));
 }
 
+void TaskAssignmentController::assignHoldRacetrack() {
+  _openDialog(QStringLiteral("HoldRacetrack"));
+}
+
 bool TaskAssignmentController::resolveOrbitCenter(
     double& outLatitude, double& outLongitude) {
   bool ok = false;

@@ -227,6 +227,52 @@ TEST_F(TaskApplicatorTest, InterceptEntityAgainstGroundTargetMaintainsOwnAltitud
   EXPECT_EQ(state->entities().front().currentTask.targetAltitudeMeters, 3000);
 }
 
+TEST_F(TaskApplicatorTest, AssignsHoldRacetrackTask) {
+  state->addEntity(makeAirEntity("Holder"));
+
+  EntityTask task;
+  task.taskType = "HoldRacetrack";
+  task.targetLatitude = 40.0;
+  task.targetLongitude = -3.0;
+  task.targetHeadingDegrees = 90.0;
+  task.targetAltitudeMeters = 6000;
+  task.targetSpeedKnots = 240.0;
+  task.racetrackLegLengthMeters = 12000.0;
+
+  const bool result = application::applyEntityTask(
+      "Holder", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {});
+
+  EXPECT_TRUE(result);
+  const domain::TaskStack* stack = state->getTaskStack("Holder");
+  ASSERT_NE(stack, nullptr);
+  EXPECT_FALSE(stack->isEmpty());
+  EXPECT_NE(dynamic_cast<domain::HoldRacetrackTask*>(stack->top()), nullptr);
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("HoldRacetrack"));
+  EXPECT_DOUBLE_EQ(state->entities().front().currentTask.racetrackLegLengthMeters, 12000.0);
+}
+
+TEST_F(TaskApplicatorTest, HoldRacetrackDefaultsLegLength) {
+  state->addEntity(makeAirEntity("DefaultHolder"));
+
+  EntityTask task;
+  task.taskType = "HoldRacetrack";
+  task.targetLatitude = 40.0;
+  task.targetLongitude = -3.0;
+  task.targetAltitudeMeters = 6000;
+  task.targetSpeedKnots = 240.0;
+
+  ASSERT_TRUE(application::applyEntityTask(
+      "DefaultHolder", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {}));
+
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_DOUBLE_EQ(state->entities().front().currentTask.racetrackLegLengthMeters, 10000.0);
+}
+
 // syncUi callback is called only when syncUi==true
 TEST_F(TaskApplicatorTest, SyncUiCallbackCalledOnlyWhenRequested) {
   state->addEntity(makeAirEntity("Delta"));

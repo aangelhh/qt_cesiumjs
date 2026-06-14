@@ -188,6 +188,30 @@ bool PlanStepConfigurator::configure(
       return true;
     }
 
+    case PlanStepKind::HoldRacetrack: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("HoldRacetrack");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.targetLatitude = entity.latitude;
+      initial.targetLongitude = entity.longitude;
+      initial.targetHeadingDegrees = defaultHeading;
+      initial.targetAltitudeMeters = defaultAltitudeMeters;
+      initial.targetSpeedKnots = defaultSpeedKnots;
+      initial.racetrackLegLengthMeters = 10000.0;
+      initial.durationSeconds = 0.0;
+      if (!_capture(entity.name, initial, QStringLiteral("HoldRacetrack"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.status = QStringLiteral("Queued");
+      step.task.taskType = QStringLiteral("HoldRacetrack");
+      step.label = QStringLiteral("Hold Racetrack at %1, %2")
+          .arg(step.task.targetLatitude, 0, 'f', 4)
+          .arg(step.task.targetLongitude, 0, 'f', 4);
+      return true;
+    }
+
     case PlanStepKind::FollowEntity: {
       EntityTask initial;
       initial.taskType = QStringLiteral("FollowEntity");

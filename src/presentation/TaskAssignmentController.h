@@ -54,6 +54,7 @@ public:
   void assignReturnToBase();
   void assignPatrolRoute();
   void assignOrbitHoldLocation();
+  void assignHoldRacetrack();
 
   // Dialog-based assignments (delegates to openDialog callback)
   void assignFlyHeadingAltitudeSpeed();
