@@ -152,4 +152,35 @@ struct CmdAssignOrbitTask : public ICommand {
     void apply(ScenarioState& scenario) const override;
 };
 
+struct CmdAssignHoldRacetrackTask : public ICommand {
+    QString targetEntityName;
+    double centerLatitude;
+    double centerLongitude;
+    double headingDegrees;
+    double legLengthMeters;
+    double targetAltitudeMeters;
+    double targetSpeedKnots;
+    double durationSeconds;
+
+    CmdAssignHoldRacetrackTask(
+        const QString& name,
+        double lat,
+        double lon,
+        double heading,
+        double legLength,
+        double alt,
+        double speed,
+        double duration)
+        : targetEntityName(name),
+          centerLatitude(lat),
+          centerLongitude(lon),
+          headingDegrees(heading),
+          legLengthMeters(legLength),
+          targetAltitudeMeters(alt),
+          targetSpeedKnots(speed),
+          durationSeconds(duration) {}
+
+    void apply(ScenarioState& scenario) const override;
+};
+
 } // namespace application

@@ -166,6 +166,7 @@ QJsonObject toJson(const EntityTask& task) {
       {QStringLiteral("interceptDistanceMeters"), task.interceptDistanceMeters},
       {QStringLiteral("altitudeToleranceMeters"), task.altitudeToleranceMeters},
       {QStringLiteral("timeoutSeconds"), task.timeoutSeconds},
+      {QStringLiteral("racetrackLegLengthMeters"), task.racetrackLegLengthMeters},
   };
 }
 
@@ -197,6 +198,8 @@ EntityTask taskFromJson(const QJsonObject& object) {
   task.interceptDistanceMeters = object.value(QStringLiteral("interceptDistanceMeters")).toDouble(500.0);
   task.altitudeToleranceMeters = object.value(QStringLiteral("altitudeToleranceMeters")).toDouble(100.0);
   task.timeoutSeconds = object.value(QStringLiteral("timeoutSeconds")).toDouble(120.0);
+  task.racetrackLegLengthMeters =
+      object.value(QStringLiteral("racetrackLegLengthMeters")).toDouble(10000.0);
   return task;
 }
 

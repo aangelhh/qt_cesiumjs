@@ -97,6 +97,7 @@ private slots:
   void assignReturnToBaseTask();
   void assignPatrolRouteTask();
   void assignOrbitHoldLocationTask();
+  void assignHoldRacetrackTask();
   void assignFollowEntityTask();
   void assignInterceptEntityTask();
   void assignAttackAirTask();

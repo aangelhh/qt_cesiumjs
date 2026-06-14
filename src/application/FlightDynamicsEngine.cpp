@@ -105,6 +105,7 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("FollowRoute") ||
          taskType == QStringLiteral("PatrolArea") ||
          taskType == QStringLiteral("OrbitArea") ||
+         taskType == QStringLiteral("HoldRacetrack") ||
          taskType == QStringLiteral("FollowEntity") ||
          isInterceptEntityTaskType(taskType) ||
          taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
@@ -425,12 +426,20 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
               evaluatedState = domain::ITask::State::Failed;
           }
       }
+      if (entity.currentTask.taskType == QStringLiteral("HoldRacetrack") &&
+          entity.currentTask.durationSeconds > 0.0) {
+          entity.currentTask.elapsedSeconds += qMax(0.0, deltaSeconds);
+          if (entity.currentTask.elapsedSeconds >= entity.currentTask.durationSeconds) {
+              evaluatedState = domain::ITask::State::Completed;
+          }
+      }
 
       if (evaluatedState == domain::ITask::State::Completed) {
           entity.currentTask.status =
               (entity.currentTask.taskType == QStringLiteral("FollowEntity") ||
                isInterceptEntityTaskType(entity.currentTask.taskType) ||
-               isRouteTaskType(entity.currentTask.taskType))
+               isRouteTaskType(entity.currentTask.taskType) ||
+               entity.currentTask.taskType == QStringLiteral("HoldRacetrack"))
               ? QStringLiteral("Completed")
               : QStringLiteral("On target");
       } else if (evaluatedState == domain::ITask::State::Failed) {
@@ -845,6 +854,7 @@ void FlightDynamicsEngine::advanceEntity(
       entity.currentTask.taskType == QStringLiteral("FollowRoute") ||
       entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
       entity.currentTask.taskType == QStringLiteral("OrbitArea") ||
+      entity.currentTask.taskType == QStringLiteral("HoldRacetrack") ||
       entity.currentTask.taskType == QStringLiteral("FollowEntity") ||
       isInterceptEntityTaskType(entity.currentTask.taskType) ||
       entity.currentTask.taskType == QStringLiteral("AttackAir");

@@ -305,6 +305,34 @@ TEST(OrbitAreaTask, DoesNotCompleteWhenOrbiting) {
     EXPECT_NE(task.getState(), domain::ITask::State::Completed);
 }
 
+// --- HoldRacetrackTask ------------------------------------------------------
+
+TEST(HoldRacetrackTask, CommandsConfiguredAltitudeAndSpeed) {
+    domain::HoldRacetrackTask task(kOriginLat, kOriginLon, 0.0, 10000.0, 6000.0, 240.0);
+
+    const auto desired = task.evaluate(kOriginLat, kOriginLon, 4000.0, 180.0, 0.1);
+
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_NEAR(desired.targetHeadingDegrees, 0.0, 1.0);
+    EXPECT_DOUBLE_EQ(desired.targetAltitudeMeters, 6000.0);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 240.0);
+}
+
+TEST(HoldRacetrackTask, AlternatesAtEndpointAndKeepsRunning) {
+    domain::HoldRacetrackTask task(kOriginLat, kOriginLon, 0.0, 10000.0, 6000.0, 240.0);
+
+    const auto desired = task.evaluate(
+        kOriginLat + kFiveKmNorthDeltaLat,
+        kOriginLon,
+        6000.0,
+        0.0,
+        0.1);
+
+    EXPECT_EQ(task.getState(), domain::ITask::State::Running);
+    EXPECT_NEAR(desired.targetHeadingDegrees, 180.0, 1.0);
+    EXPECT_DOUBLE_EQ(desired.targetSpeedKnots, 240.0);
+}
+
 // --- TaskStack -------------------------------------------------------------
 
 TEST(TaskStack, IsEmptyOnConstruction) {

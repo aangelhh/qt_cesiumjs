@@ -55,6 +55,7 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
     case PlanStepKind::PatrolArea:           return QStringLiteral("Patrol Area");
     case PlanStepKind::FlyHeadingAltitudeSpeed: return QStringLiteral("Fly Heading / Altitude / Speed");
     case PlanStepKind::OrbitHoldLocation:    return QStringLiteral("Orbit / Hold (Location)");
+    case PlanStepKind::HoldRacetrack:        return QStringLiteral("Hold Racetrack");
     case PlanStepKind::FollowEntity:         return QStringLiteral("Follow Entity");
     case PlanStepKind::InterceptEntity:
     case PlanStepKind::InterceptEntity2D:
@@ -397,6 +398,7 @@ bool EntityPlanExecutor::activePlanStepCompleted(
 
     case PlanStepKind::AttackAir:
     case PlanStepKind::AttackSurface:
+    case PlanStepKind::HoldRacetrack:
     case PlanStepKind::FollowEntity:
     case PlanStepKind::InterceptEntity:
     case PlanStepKind::InterceptEntity2D:
@@ -475,6 +477,7 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
     case PlanStepKind::MoveToLocation:
     case PlanStepKind::FlyHeadingAltitudeSpeed:
     case PlanStepKind::OrbitHoldLocation:
+    case PlanStepKind::HoldRacetrack:
     case PlanStepKind::ReturnToBase:
       return true;
 
@@ -596,6 +599,15 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
              currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
              nearlyEqual(currentTask.targetAreaRadiusMeters, step.task.targetAreaRadiusMeters, 1.0) &&
              nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1);
+
+    case PlanStepKind::HoldRacetrack:
+      return nearlyEqual(currentTask.targetLatitude, step.task.targetLatitude, 1e-6) &&
+             nearlyEqual(currentTask.targetLongitude, step.task.targetLongitude, 1e-6) &&
+             currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters &&
+             nearlyEqual(currentTask.targetHeadingDegrees, step.task.targetHeadingDegrees, 0.1) &&
+             nearlyEqual(currentTask.racetrackLegLengthMeters, step.task.racetrackLegLengthMeters, 1.0) &&
+             nearlyEqual(currentTask.targetSpeedKnots, step.task.targetSpeedKnots, 0.1) &&
+             nearlyEqual(currentTask.durationSeconds, step.task.durationSeconds, 0.1);
 
     case PlanStepKind::FollowEntity:
       return currentTask.targetEntityName == step.task.targetEntityName &&

@@ -11,6 +11,7 @@
 namespace {
     constexpr double kEarthRadiusMeters = 6371000.0;
     constexpr double kPatrolArrivalThresholdMeters = 200.0;
+    constexpr double kRacetrackArrivalThresholdMeters = 500.0;
     constexpr int kGeneratedPatrolPointCount = 6;
 
     constexpr double toRadians(double degrees) { return degrees * M_PI / 180.0; }
@@ -512,6 +513,77 @@ DesiredState PatrolAreaTask::evaluate(
     const double assignedAlt =
         targetPoint.altitudeMeters != 0.0 ? targetPoint.altitudeMeters : m_targetAlt;
     return {targetHeading, assignedAlt, m_targetSpeed};
+}
+
+// --- HoldRacetrackTask ---
+
+HoldRacetrackTask::HoldRacetrackTask(
+    double centerLat,
+    double centerLon,
+    double headingDegrees,
+    double legLengthMeters,
+    double targetAlt,
+    double targetSpeedKnots)
+    : m_centerLat(centerLat),
+      m_centerLon(centerLon),
+      m_headingDegrees(headingDegrees),
+      m_legLengthMeters(std::max(100.0, legLengthMeters)),
+      m_targetAlt(targetAlt),
+      m_targetSpeed(targetSpeedKnots)
+{
+}
+
+ITask::State HoldRacetrackTask::getState() const
+{
+    return m_state;
+}
+
+RoutePoint HoldRacetrackTask::endpoint(int index) const
+{
+    const double endpointHeading = m_headingDegrees + (index == 0 ? 0.0 : 180.0);
+    const double halfLegMeters = m_legLengthMeters * 0.5;
+    const double headingRadians = toRadians(endpointHeading);
+    const double northMeters = std::cos(headingRadians) * halfLegMeters;
+    const double eastMeters = std::sin(headingRadians) * halfLegMeters;
+    return offsetPointMeters(
+        m_centerLat,
+        m_centerLon,
+        northMeters,
+        eastMeters,
+        m_targetAlt);
+}
+
+DesiredState HoldRacetrackTask::evaluate(
+    double currentLat,
+    double currentLon,
+    double currentAlt,
+    double currentHeading,
+    double dt)
+{
+    (void)currentAlt;
+    (void)currentHeading;
+    (void)dt;
+
+    m_state = State::Running;
+
+    RoutePoint targetPoint = endpoint(m_targetEndpointIndex);
+    const double distanceToEndpoint = distanceMeters(
+        currentLat,
+        currentLon,
+        targetPoint.latitude,
+        targetPoint.longitude);
+
+    if (distanceToEndpoint <= kRacetrackArrivalThresholdMeters) {
+        m_targetEndpointIndex = 1 - m_targetEndpointIndex;
+        targetPoint = endpoint(m_targetEndpointIndex);
+    }
+
+    const double targetHeading = bearingDegrees(
+        currentLat,
+        currentLon,
+        targetPoint.latitude,
+        targetPoint.longitude);
+    return {targetHeading, m_targetAlt, m_targetSpeed};
 }
 
 QVector<RoutePoint> buildPatrolRouteFromArea(const AreaDefinition& area)

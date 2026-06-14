@@ -21,6 +21,7 @@ struct EntityContextMenuSlots {
   std::function<void()> assignMoveAlongRouteTask;
   std::function<void()> assignPatrolRouteTask;
   std::function<void()> assignOrbitHoldLocationTask;
+  std::function<void()> assignHoldRacetrackTask;
   std::function<void()> assignReturnToBaseTask;
   std::function<void()> assignPatrolAreaTask;
   std::function<void()> assignOrbitAreaTask;

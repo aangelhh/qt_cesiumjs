@@ -243,4 +243,35 @@ void CmdAssignOrbitTask::apply(ScenarioState& scenario) const {
     }
 }
 
+void CmdAssignHoldRacetrackTask::apply(ScenarioState& scenario) const {
+    const QString targetName = targetEntityName.trimmed();
+    if (targetName.isEmpty()) {
+        return;
+    }
+
+    EntityTask task;
+    task.enabled = true;
+    task.taskType = "HoldRacetrack";
+    task.targetLatitude = centerLatitude;
+    task.targetLongitude = centerLongitude;
+    task.targetHeadingDegrees = headingDegrees;
+    task.racetrackLegLengthMeters = legLengthMeters;
+    task.targetAltitudeMeters = static_cast<int>(targetAltitudeMeters);
+    task.targetSpeedKnots = targetSpeedKnots;
+    task.durationSeconds = durationSeconds;
+    task.status = "Running";
+    scenario.assignTask(targetName, task);
+
+    if (domain::TaskStack* stack = scenario.getTaskStack(targetName)) {
+        clearStack(*stack);
+        stack->push(std::make_unique<domain::HoldRacetrackTask>(
+            task.targetLatitude,
+            task.targetLongitude,
+            task.targetHeadingDegrees,
+            task.racetrackLegLengthMeters,
+            static_cast<double>(task.targetAltitudeMeters),
+            task.targetSpeedKnots));
+    }
+}
+
 } // namespace application

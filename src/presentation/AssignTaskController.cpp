@@ -49,6 +49,8 @@ EntityTask AssignTaskController::taskFromSummary(const QVariantMap& summary) {
   task.altitudeToleranceMeters =
       summary.value(QStringLiteral("taskAltitudeToleranceMeters"), 100.0).toDouble();
   task.timeoutSeconds         = summary.value(QStringLiteral("taskTimeoutSeconds"), 120.0).toDouble();
+  task.racetrackLegLengthMeters =
+      summary.value(QStringLiteral("taskRacetrackLegLengthMeters"), 10000.0).toDouble();
   return task;
 }
 
@@ -68,7 +70,18 @@ void AssignTaskController::open(const QString& initialTaskType) {
     return;
   }
 
-  const EntityTask currentTask = taskFromSummary(_currentSummary());
+  const QVariantMap summary = _currentSummary();
+  EntityTask currentTask = taskFromSummary(summary);
+  if (initialTaskType == QStringLiteral("HoldRacetrack") &&
+      currentTask.taskType != QStringLiteral("HoldRacetrack")) {
+    currentTask.targetLatitude = summary.value(QStringLiteral("latitude")).toDouble();
+    currentTask.targetLongitude = summary.value(QStringLiteral("longitude")).toDouble();
+    currentTask.targetHeadingDegrees = summary.value(QStringLiteral("headingDegrees")).toDouble();
+    currentTask.targetAltitudeMeters = summary.value(QStringLiteral("altitude")).toInt();
+    currentTask.targetSpeedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
+    currentTask.racetrackLegLengthMeters = 10000.0;
+    currentTask.durationSeconds = 0.0;
+  }
 
   EntityTask configuredTask;
   if (!_captureConfig(entityName, currentTask, initialTaskType, configuredTask)) {
