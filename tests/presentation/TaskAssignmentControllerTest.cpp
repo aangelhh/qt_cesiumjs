@@ -132,6 +132,14 @@ TEST(TaskAssignmentController, assignHoldRacetrackOpensDlg) {
   delete ctrl;
 }
 
+TEST(TaskAssignmentController, assignAttackOnceOpensDlg) {
+  Fixture f;
+  auto* ctrl = f.makeController();
+  ctrl->assignAttackOnce();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("AttackOnce"));
+  delete ctrl;
+}
+
 TEST(TaskAssignmentController, assignAttackAirOpensDlg) {
   Fixture f;
   auto* ctrl = f.makeController();

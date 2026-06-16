@@ -579,6 +579,8 @@ MainWindow::MainWindow(QWidget* parent)
                    taskType == QStringLiteral("InterceptEntity2D") ||
                    taskType == QStringLiteral("InterceptEntity3D")) {
           this->assignInterceptEntityTask();
+        } else if (taskType == QStringLiteral("AttackOnce")) {
+          this->assignAttackOnceTask();
         } else if (taskType == QStringLiteral("AttackAir")) {
           this->assignAttackAirTask();
         } else if (taskType == QStringLiteral("AttackSurface")) {
@@ -787,6 +789,8 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
              ? QStringLiteral("Hold Racetrack")
            : rawTaskType == QStringLiteral("WaitOnLocation")
              ? QStringLiteral("Wait on Location")
+           : rawTaskType == QStringLiteral("AttackOnce")
+             ? QStringLiteral("Attack Once")
            : rawTaskType);
   };
   const auto displayTaskStatus = [&summary](const QString& rawTaskType, const QString& rawStatus) {
@@ -1990,6 +1994,7 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   actions.assignOrbitAreaTask               = [this]() { this->assignOrbitAreaTask(); };
   actions.assignFollowEntityTask            = [this]() { this->assignFollowEntityTask(); };
   actions.assignInterceptEntityTask         = [this]() { this->assignInterceptEntityTask(); };
+  actions.assignAttackOnceTask              = [this]() { this->assignAttackOnceTask(); };
   actions.assignAttackAirTask               = [this]() { this->assignAttackAirTask(); };
   actions.assignAttackSurfaceTask           = [this]() { this->assignAttackSurfaceTask(); };
   actions.clearSelectedTask                 = [this]() { this->clearSelectedTask(); };
@@ -2282,6 +2287,10 @@ void MainWindow::assignInterceptEntityTask() {
   this->_taskAssignmentController->assignInterceptEntity();
 }
 
+void MainWindow::assignAttackOnceTask() {
+  this->_taskAssignmentController->assignAttackOnce();
+}
+
 void MainWindow::assignAttackAirTask() {
   this->_taskAssignmentController->assignAttackAir();
 }
@@ -2545,6 +2554,7 @@ void MainWindow::populateTaskCommands() {
       { "Movement: Hold Racetrack...",                 "HoldRacetrack"           },
       { "Movement: Follow Entity...",                  "FollowEntity"            },
       { "Movement: Intercept Entity...",               "InterceptEntity"          },
+      { "Attack: Attack Once...",                      "AttackOnce"              },
       { "Attack: Attack Air...",                       "AttackAir"               },
       { "Attack: Attack Surface...",                   "AttackSurface"           },
       { "Other: Clear Current Task",                   "ClearTask"               },

@@ -291,6 +291,26 @@ bool PlanStepConfigurator::configure(
       return true;
     }
 
+    case PlanStepKind::AttackOnce: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("AttackOnce");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.weaponType = QStringLiteral("Auto");
+      initial.timeoutSeconds = 120.0;
+      if (!_capture(entity.name, initial, QStringLiteral("AttackOnce"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.status = QStringLiteral("Queued");
+      step.task.taskType = QStringLiteral("AttackOnce");
+      step.label = QStringLiteral("Attack Once: %1")
+          .arg(step.task.targetEntityName.trimmed().isEmpty()
+               ? QStringLiteral("-")
+               : step.task.targetEntityName.trimmed());
+      return true;
+    }
+
     case PlanStepKind::AttackAir: {
       EntityTask initial;
       initial.taskType = QStringLiteral("AttackAir");

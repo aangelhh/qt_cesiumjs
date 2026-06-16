@@ -76,6 +76,19 @@ protected:
     }
   }
 
+  void addDetectedContact(const QString& launcherName, const QString& targetName, double rangeMeters = 10000.0) {
+    for (Entity& e : state->entitiesMutable()) {
+      if (e.name == launcherName) {
+        SensorContact contact;
+        contact.targetEntityName = targetName;
+        contact.rangeMeters = rangeMeters;
+        contact.detected = true;
+        e.sensorContacts.push_back(contact);
+        return;
+      }
+    }
+  }
+
   ScenarioState* state = nullptr;
   presentation::BombReleaseController* bombCtrl = nullptr;
   std::unique_ptr<application::AttackTaskProcessor> processor;
@@ -176,6 +189,102 @@ TEST_F(AttackTaskProcessorTest, AttackAirTimesOut) {
   const Entity& updated = state->entities().first();
   EXPECT_EQ(updated.currentTask.status, QStringLiteral("Failed"));
   EXPECT_TRUE(logMessages.last().contains(QStringLiteral("timeout")));
+}
+
+TEST_F(AttackTaskProcessorTest, AttackOnceWithMissileCompletesAfterSingleLaunch) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  addWeapon(QStringLiteral("F16"), QStringLiteral("Missile"), 2);
+  state->addEntity(makeAirEntity(QStringLiteral("Mig29"), 2));
+  addDetectedContact(QStringLiteral("F16"), QStringLiteral("Mig29"));
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("AttackOnce");
+  task.targetEntityName = QStringLiteral("Mig29");
+  task.weaponType = QStringLiteral("Missile");
+  task.timeoutSeconds = 120.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Completed"));
+  ASSERT_FALSE(updated.weapons.isEmpty());
+  EXPECT_EQ(updated.weapons.first().quantity, 1);
+  EXPECT_EQ(state->activeMunitions().size(), 1);
+  EXPECT_EQ(state->activeMunitions().first().targetEntityName, QStringLiteral("Mig29"));
+}
+
+TEST_F(AttackTaskProcessorTest, AttackOnceWithBombCompletesAfterQueueingRelease) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  addWeapon(QStringLiteral("F16"), QStringLiteral("Bomb"), 2);
+
+  Entity target;
+  target.name = QStringLiteral("Tank1");
+  target.forceIdentifier = 2;
+  target.domain = QStringLiteral("Land");
+  target.latitude = 40.1;
+  target.longitude = -3.1;
+  target.altitude = 500;
+  target.destroyed = false;
+  state->addEntity(target);
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("AttackOnce");
+  task.targetEntityName = QStringLiteral("Tank1");
+  task.weaponType = QStringLiteral("Bomb");
+  task.timeoutSeconds = 120.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  EXPECT_EQ(bombsQueued.size(), 1);
+  EXPECT_EQ(bombsQueued.first(), QStringLiteral("F16"));
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Completed"));
+}
+
+TEST_F(AttackTaskProcessorTest, AttackOnceFailsWithNoCompatibleAmmo) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  state->addEntity(makeAirEntity(QStringLiteral("Mig29"), 2));
+  addDetectedContact(QStringLiteral("F16"), QStringLiteral("Mig29"));
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("AttackOnce");
+  task.targetEntityName = QStringLiteral("Mig29");
+  task.weaponType = QStringLiteral("Missile");
+  task.timeoutSeconds = 120.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Failed"));
+  EXPECT_TRUE(state->activeMunitions().isEmpty());
+}
+
+TEST_F(AttackTaskProcessorTest, AttackOnceFailsForInvalidTarget) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  addWeapon(QStringLiteral("F16"), QStringLiteral("Missile"), 2);
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("AttackOnce");
+  task.targetEntityName = QStringLiteral("MissingTarget");
+  task.weaponType = QStringLiteral("Missile");
+  task.timeoutSeconds = 120.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Failed"));
 }
 
 TEST_F(AttackTaskProcessorTest, AttackSurfaceFailsWithNoBombs) {

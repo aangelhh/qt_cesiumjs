@@ -44,6 +44,8 @@ QString buildEntityOperationalStatus(
              ? QStringLiteral("Hold Racetrack")
            : taskType == QStringLiteral("WaitOnLocation")
              ? QStringLiteral("Wait on Location")
+           : taskType == QStringLiteral("AttackOnce")
+             ? QStringLiteral("Attack Once")
            : taskType);
   };
 

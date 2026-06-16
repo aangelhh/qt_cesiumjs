@@ -163,7 +163,8 @@ void EntityPlanDialog::onAdd() {
       {"Follow Entity",                 PlanStepKind::FollowEntity,             false},
       {"Intercept Entity",              PlanStepKind::InterceptEntity,           false},
       {"Return To Base",                PlanStepKind::ReturnToBase,             false},
-      {"Attack Air",                    PlanStepKind::AttackAir,                true },
+      {"Attack Once",                   PlanStepKind::AttackOnce,               true },
+      {"Attack Air",                    PlanStepKind::AttackAir,                false},
       {"Attack Surface",                PlanStepKind::AttackSurface,            false},
   };
   for (const Item& item : items) {

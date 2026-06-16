@@ -62,6 +62,7 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
     case PlanStepKind::InterceptEntity2D:
     case PlanStepKind::InterceptEntity3D:    return QStringLiteral("Intercept Entity");
     case PlanStepKind::ReturnToBase:         return QStringLiteral("Return To Base");
+    case PlanStepKind::AttackOnce:           return QStringLiteral("Attack Once");
     case PlanStepKind::AttackAir:            return QStringLiteral("Attack Air");
     case PlanStepKind::AttackSurface:        return QStringLiteral("Attack Surface");
   }
@@ -401,6 +402,7 @@ bool EntityPlanExecutor::activePlanStepCompleted(
     }
 
     case PlanStepKind::AttackAir:
+    case PlanStepKind::AttackOnce:
     case PlanStepKind::AttackSurface:
     case PlanStepKind::HoldRacetrack:
     case PlanStepKind::FollowEntity:
@@ -520,6 +522,24 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
       return true;
     }
 
+    case PlanStepKind::AttackOnce: {
+      if (step.task.targetEntityName.trimmed().isEmpty()) {
+        return setReason(QStringLiteral("attack target is not set"));
+      }
+      bool found = false;
+      for (const auto& e : _state->entities()) {
+        if (e.name.compare(step.task.targetEntityName.trimmed(), Qt::CaseInsensitive) == 0) {
+          found = true; break;
+        }
+      }
+      if (!found) {
+        return setReason(
+            QStringLiteral("attack target '%1' no longer exists")
+                .arg(step.task.targetEntityName.trimmed()));
+      }
+      return true;
+    }
+
     case PlanStepKind::AttackSurface: {
       if (!step.task.targetEntityName.trimmed().isEmpty()) {
         bool found = false;
@@ -633,6 +653,11 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
 
     case PlanStepKind::AttackAir:
       return currentTask.targetEntityName == step.task.targetEntityName;
+
+    case PlanStepKind::AttackOnce:
+      return currentTask.targetEntityName == step.task.targetEntityName &&
+             currentTask.weaponType == step.task.weaponType &&
+             nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
 
     case PlanStepKind::AttackSurface:
       if (!step.task.targetEntityName.trimmed().isEmpty()) {
