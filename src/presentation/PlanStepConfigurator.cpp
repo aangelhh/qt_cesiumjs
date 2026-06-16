@@ -348,6 +348,97 @@ bool PlanStepConfigurator::configure(
           : QStringLiteral("Attack Surface: %1").arg(targetName);
       return true;
     }
+
+    case PlanStepKind::WaitUntilTargetDetected: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("WaitUntilTargetDetected");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.targetDomain = QStringLiteral("Any");
+      initial.enemyOnly = true;
+      initial.timeoutSeconds = 120.0;
+      if (!_capture(entity.name, initial, QStringLiteral("WaitUntilTargetDetected"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.taskType = QStringLiteral("WaitUntilTargetDetected");
+      step.label = QStringLiteral("Wait Until Target Detected");
+      return true;
+    }
+
+    case PlanStepKind::WaitUntilTargetDestroyed: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("WaitUntilTargetDestroyed");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.timeoutSeconds = 120.0;
+      if (!_capture(entity.name, initial, QStringLiteral("WaitUntilTargetDestroyed"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.taskType = QStringLiteral("WaitUntilTargetDestroyed");
+      step.label = QStringLiteral("Wait Until Target Destroyed: %1")
+          .arg(step.task.targetEntityName.trimmed().isEmpty()
+               ? QStringLiteral("-")
+               : step.task.targetEntityName.trimmed());
+      return true;
+    }
+
+    case PlanStepKind::WaitUntilDamaged: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("WaitUntilDamaged");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.damageThresholdPercent = 50.0;
+      initial.timeoutSeconds = 120.0;
+      if (!_capture(entity.name, initial, QStringLiteral("WaitUntilDamaged"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.taskType = QStringLiteral("WaitUntilDamaged");
+      step.label = QStringLiteral("Wait Until Damaged: %1 >= %2%")
+          .arg(step.task.targetEntityName.trimmed().isEmpty()
+               ? QStringLiteral("-")
+               : step.task.targetEntityName.trimmed())
+          .arg(step.task.damageThresholdPercent, 0, 'f', 0);
+      return true;
+    }
+
+    case PlanStepKind::WaitUntilTime: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("WaitUntilTime");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.durationSeconds = 30.0;
+      if (!_capture(entity.name, initial, QStringLiteral("WaitUntilTime"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.taskType = QStringLiteral("WaitUntilTime");
+      step.label = QStringLiteral("Wait Until Time: %1 s")
+          .arg(step.task.durationSeconds, 0, 'f', 0);
+      return true;
+    }
+
+    case PlanStepKind::WaitUntilInRange: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("WaitUntilInRange");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.rangeMeters = 1000.0;
+      initial.timeoutSeconds = 120.0;
+      if (!_capture(entity.name, initial, QStringLiteral("WaitUntilInRange"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.taskType = QStringLiteral("WaitUntilInRange");
+      step.label = QStringLiteral("Wait Until In Range: %1 <= %2 m")
+          .arg(step.task.targetEntityName.trimmed().isEmpty()
+               ? QStringLiteral("-")
+               : step.task.targetEntityName.trimmed())
+          .arg(step.task.rangeMeters, 0, 'f', 0);
+      return true;
+    }
   }
 
   return false;

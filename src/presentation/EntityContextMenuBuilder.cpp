@@ -67,6 +67,18 @@ void populateEntityContextMenu(
   addSlotAction(attackTaskMenu, QStringLiteral("Attack Surface..."),
       actions.assignAttackSurfaceTask);
 
+  QMenu* waitTaskMenu = taskMenu->addMenu(QStringLiteral("Conditional / Wait"));
+  addSlotAction(waitTaskMenu, QStringLiteral("Wait Until Target Detected..."),
+      actions.assignWaitUntilTargetDetectedTask);
+  addSlotAction(waitTaskMenu, QStringLiteral("Wait Until Target Destroyed..."),
+      actions.assignWaitUntilTargetDestroyedTask);
+  addSlotAction(waitTaskMenu, QStringLiteral("Wait Until Damaged..."),
+      actions.assignWaitUntilDamagedTask);
+  addSlotAction(waitTaskMenu, QStringLiteral("Wait Until Time..."),
+      actions.assignWaitUntilTimeTask);
+  addSlotAction(waitTaskMenu, QStringLiteral("Wait Until In Range..."),
+      actions.assignWaitUntilInRangeTask);
+
   taskMenu->addSeparator();
   addSlotAction(taskMenu, QStringLiteral("Clear Current Task"),
       actions.clearSelectedTask);

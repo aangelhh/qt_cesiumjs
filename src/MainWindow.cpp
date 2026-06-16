@@ -585,6 +585,16 @@ MainWindow::MainWindow(QWidget* parent)
           this->assignAttackAirTask();
         } else if (taskType == QStringLiteral("AttackSurface")) {
           this->assignAttackSurfaceTask();
+        } else if (taskType == QStringLiteral("WaitUntilTargetDetected")) {
+          this->assignWaitUntilTargetDetectedTask();
+        } else if (taskType == QStringLiteral("WaitUntilTargetDestroyed")) {
+          this->assignWaitUntilTargetDestroyedTask();
+        } else if (taskType == QStringLiteral("WaitUntilDamaged")) {
+          this->assignWaitUntilDamagedTask();
+        } else if (taskType == QStringLiteral("WaitUntilTime")) {
+          this->assignWaitUntilTimeTask();
+        } else if (taskType == QStringLiteral("WaitUntilInRange")) {
+          this->assignWaitUntilInRangeTask();
         } else if (taskType == QStringLiteral("ClearTask")) {
           this->clearSelectedTask();
         }
@@ -791,6 +801,16 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
              ? QStringLiteral("Wait on Location")
            : rawTaskType == QStringLiteral("AttackOnce")
              ? QStringLiteral("Attack Once")
+           : rawTaskType == QStringLiteral("WaitUntilTargetDetected")
+             ? QStringLiteral("Wait Until Target Detected")
+           : rawTaskType == QStringLiteral("WaitUntilTargetDestroyed")
+             ? QStringLiteral("Wait Until Target Destroyed")
+           : rawTaskType == QStringLiteral("WaitUntilDamaged")
+             ? QStringLiteral("Wait Until Damaged")
+           : rawTaskType == QStringLiteral("WaitUntilTime")
+             ? QStringLiteral("Wait Until Time")
+           : rawTaskType == QStringLiteral("WaitUntilInRange")
+             ? QStringLiteral("Wait Until In Range")
            : rawTaskType);
   };
   const auto displayTaskStatus = [&summary](const QString& rawTaskType, const QString& rawStatus) {
@@ -1997,6 +2017,11 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   actions.assignAttackOnceTask              = [this]() { this->assignAttackOnceTask(); };
   actions.assignAttackAirTask               = [this]() { this->assignAttackAirTask(); };
   actions.assignAttackSurfaceTask           = [this]() { this->assignAttackSurfaceTask(); };
+  actions.assignWaitUntilTargetDetectedTask  = [this]() { this->assignWaitUntilTargetDetectedTask(); };
+  actions.assignWaitUntilTargetDestroyedTask = [this]() { this->assignWaitUntilTargetDestroyedTask(); };
+  actions.assignWaitUntilDamagedTask         = [this]() { this->assignWaitUntilDamagedTask(); };
+  actions.assignWaitUntilTimeTask            = [this]() { this->assignWaitUntilTimeTask(); };
+  actions.assignWaitUntilInRangeTask         = [this]() { this->assignWaitUntilInRangeTask(); };
   actions.clearSelectedTask                 = [this]() { this->clearSelectedTask(); };
   actions.setSelectedEntityHeading          = [this]() { this->setSelectedEntityHeading(); };
   actions.setSelectedEntityAltitude         = [this]() { this->setSelectedEntityAltitude(); };
@@ -2299,6 +2324,26 @@ void MainWindow::assignAttackSurfaceTask() {
   this->_taskAssignmentController->assignAttackSurface();
 }
 
+void MainWindow::assignWaitUntilTargetDetectedTask() {
+  this->_taskAssignmentController->assignWaitUntilTargetDetected();
+}
+
+void MainWindow::assignWaitUntilTargetDestroyedTask() {
+  this->_taskAssignmentController->assignWaitUntilTargetDestroyed();
+}
+
+void MainWindow::assignWaitUntilDamagedTask() {
+  this->_taskAssignmentController->assignWaitUntilDamaged();
+}
+
+void MainWindow::assignWaitUntilTimeTask() {
+  this->_taskAssignmentController->assignWaitUntilTime();
+}
+
+void MainWindow::assignWaitUntilInRangeTask() {
+  this->_taskAssignmentController->assignWaitUntilInRange();
+}
+
 void MainWindow::openEntityPlanDialog() {
   const QString entityName = this->selectedEntityName();
   if (entityName.isEmpty()) {
@@ -2557,6 +2602,11 @@ void MainWindow::populateTaskCommands() {
       { "Attack: Attack Once...",                      "AttackOnce"              },
       { "Attack: Attack Air...",                       "AttackAir"               },
       { "Attack: Attack Surface...",                   "AttackSurface"           },
+      { "Conditional: Wait Until Target Detected...",  "WaitUntilTargetDetected" },
+      { "Conditional: Wait Until Target Destroyed...", "WaitUntilTargetDestroyed"},
+      { "Conditional: Wait Until Damaged...",          "WaitUntilDamaged"        },
+      { "Conditional: Wait Until Time...",             "WaitUntilTime"           },
+      { "Conditional: Wait Until In Range...",         "WaitUntilInRange"        },
       { "Other: Clear Current Task",                   "ClearTask"               },
   };
 

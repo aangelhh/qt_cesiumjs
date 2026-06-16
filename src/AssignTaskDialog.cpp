@@ -1,5 +1,6 @@
 #include "AssignTaskDialog.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -43,7 +44,9 @@ AssignTaskDialog::AssignTaskDialog(
       _waypointCombo(new QComboBox(this)),
       _routeCombo(new QComboBox(this)),
       _areaCombo(new QComboBox(this)),
-      _weaponTypeCombo(new QComboBox(this)) {
+      _weaponTypeCombo(new QComboBox(this)),
+      _targetDomainCombo(new QComboBox(this)),
+      _enemyOnlyCheck(new QCheckBox(this)) {
   this->setWindowTitle(QStringLiteral("Assign Task"));
 
   auto* layout = new QVBoxLayout(this);
@@ -66,6 +69,11 @@ AssignTaskDialog::AssignTaskDialog(
   _taskTypeCombo->addItem(QStringLiteral("Attack Once"), QStringLiteral("AttackOnce"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Air"), QStringLiteral("AttackAir"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Surface"), QStringLiteral("AttackSurface"));
+  _taskTypeCombo->addItem(QStringLiteral("Wait Until Target Detected"), QStringLiteral("WaitUntilTargetDetected"));
+  _taskTypeCombo->addItem(QStringLiteral("Wait Until Target Destroyed"), QStringLiteral("WaitUntilTargetDestroyed"));
+  _taskTypeCombo->addItem(QStringLiteral("Wait Until Damaged"), QStringLiteral("WaitUntilDamaged"));
+  _taskTypeCombo->addItem(QStringLiteral("Wait Until Time"), QStringLiteral("WaitUntilTime"));
+  _taskTypeCombo->addItem(QStringLiteral("Wait Until In Range"), QStringLiteral("WaitUntilInRange"));
 
   _headingSpin->setRange(0.0, 359.0);
   _headingSpin->setDecimals(1);
@@ -122,6 +130,12 @@ AssignTaskDialog::AssignTaskDialog(
   _weaponTypeCombo->addItem(QStringLiteral("Auto"), QStringLiteral("Auto"));
   _weaponTypeCombo->addItem(QStringLiteral("Missile"), QStringLiteral("Missile"));
   _weaponTypeCombo->addItem(QStringLiteral("Bomb"), QStringLiteral("Bomb"));
+  _targetDomainCombo->addItem(QStringLiteral("Any"), QStringLiteral("Any"));
+  _targetDomainCombo->addItem(QStringLiteral("Air"), QStringLiteral("Air"));
+  _targetDomainCombo->addItem(QStringLiteral("Ground"), QStringLiteral("Ground"));
+  _targetDomainCombo->addItem(QStringLiteral("Land"), QStringLiteral("Land"));
+  _targetDomainCombo->addItem(QStringLiteral("Surface"), QStringLiteral("Surface"));
+  _enemyOnlyCheck->setText(QStringLiteral("Enemy only"));
 
   auto* formLayout = new QFormLayout();
   formLayout->addRow(QStringLiteral("Task"), _taskTypeCombo);
@@ -134,6 +148,8 @@ AssignTaskDialog::AssignTaskDialog(
   formLayout->addRow(QStringLiteral("Target Route"), _routeCombo);
   formLayout->addRow(QStringLiteral("Target Area"), _areaCombo);
   formLayout->addRow(QStringLiteral("Target Entity"), _followTargetCombo);
+  formLayout->addRow(QStringLiteral("Target Domain"), _targetDomainCombo);
+  formLayout->addRow(QStringLiteral("Enemy Filter"), _enemyOnlyCheck);
   formLayout->addRow(QStringLiteral("Weapon"), _weaponTypeCombo);
   formLayout->addRow(QStringLiteral("Follow / Intercept Distance"), _followDistanceSpin);
   formLayout->addRow(QStringLiteral("Arrival Tolerance"), _arrivalToleranceSpin);
@@ -160,15 +176,19 @@ AssignTaskDialog::AssignTaskDialog(
   _followDistanceSpin->setValue(
       isInterceptEntityTaskType(rawInitialType)
       ? (currentTask.interceptDistanceMeters > 0.0 ? currentTask.interceptDistanceMeters : 500.0)
+      : (initialType == QStringLiteral("WaitUntilInRange")
+         ? (currentTask.rangeMeters > 0.0 ? currentTask.rangeMeters : 1000.0)
       : (initialType == QStringLiteral("HoldRacetrack")
          ? (currentTask.racetrackLegLengthMeters > 0.0 ? currentTask.racetrackLegLengthMeters : 10000.0)
-         : (currentTask.followDistanceMeters > 0.0 ? currentTask.followDistanceMeters : 1000.0)));
+         : (currentTask.followDistanceMeters > 0.0 ? currentTask.followDistanceMeters : 1000.0))));
   _arrivalToleranceSpin->setValue(
       initialType == QStringLiteral("FollowRoute") || initialType == QStringLiteral("MoveAlongRoute")
       ? (currentTask.arrivalToleranceMeters > 0.0 ? currentTask.arrivalToleranceMeters : 1000.0)
       : currentTask.arrivalToleranceMeters);
   _altitudeToleranceSpin->setValue(
-      currentTask.altitudeToleranceMeters > 0.0 ? currentTask.altitudeToleranceMeters : 100.0);
+      initialType == QStringLiteral("WaitUntilDamaged")
+      ? (currentTask.damageThresholdPercent > 0.0 ? currentTask.damageThresholdPercent : 50.0)
+      : (currentTask.altitudeToleranceMeters > 0.0 ? currentTask.altitudeToleranceMeters : 100.0));
   _durationSpin->setValue(
       isInterceptEntityTaskType(rawInitialType) ||
           rawInitialType == QStringLiteral("AttackOnce") ||
@@ -203,6 +223,14 @@ AssignTaskDialog::AssignTaskDialog(
   if (weaponIndex >= 0) {
     _weaponTypeCombo->setCurrentIndex(weaponIndex);
   }
+  const int domainIndex = _targetDomainCombo->findData(
+      currentTask.targetDomain.trimmed().isEmpty()
+      ? QStringLiteral("Any")
+      : currentTask.targetDomain.trimmed());
+  if (domainIndex >= 0) {
+    _targetDomainCombo->setCurrentIndex(domainIndex);
+  }
+  _enemyOnlyCheck->setChecked(currentTask.enemyOnly);
 
   QObject::connect(
       _taskTypeCombo,
@@ -248,6 +276,10 @@ EntityTask AssignTaskDialog::task() const {
   task.timeoutSeconds = _durationSpin->value();
   task.racetrackLegLengthMeters = _followDistanceSpin->value();
   task.weaponType = _weaponTypeCombo->currentData().toString();
+  task.targetDomain = _targetDomainCombo->currentData().toString();
+  task.enemyOnly = _enemyOnlyCheck->isChecked();
+  task.damageThresholdPercent = _altitudeToleranceSpin->value();
+  task.rangeMeters = _followDistanceSpin->value();
   task.elapsedSeconds = 0.0;
   return task;
 }
@@ -270,6 +302,13 @@ void AssignTaskDialog::syncUiForTaskType() {
   const bool isAttackOnceTask = taskType == QStringLiteral("AttackOnce");
   const bool isAttackAirTask = taskType == QStringLiteral("AttackAir");
   const bool isAttackSurfaceTask = taskType == QStringLiteral("AttackSurface");
+  const bool isWaitDetectedTask = taskType == QStringLiteral("WaitUntilTargetDetected");
+  const bool isWaitDestroyedTask = taskType == QStringLiteral("WaitUntilTargetDestroyed");
+  const bool isWaitDamagedTask = taskType == QStringLiteral("WaitUntilDamaged");
+  const bool isWaitTimeTask = taskType == QStringLiteral("WaitUntilTime");
+  const bool isWaitRangeTask = taskType == QStringLiteral("WaitUntilInRange");
+  const bool isConditionalTargetTask =
+      isWaitDetectedTask || isWaitDestroyedTask || isWaitDamagedTask || isWaitRangeTask;
 
   _headingSpin->setEnabled(isFlyTask || isRacetrackTask);
   _latitudeSpin->setEnabled(isMoveTask || isWaitTask || isRacetrackTask || isAttackSurfaceTask);
@@ -286,12 +325,17 @@ void AssignTaskDialog::syncUiForTaskType() {
   _routeCombo->setEnabled(isRouteTask);
   _areaCombo->setEnabled(isAreaTask);
   _followTargetCombo->setEnabled(
-      isFollowTask || isInterceptTask || isAttackOnceTask || isAttackAirTask || isAttackSurfaceTask);
+      isFollowTask || isInterceptTask || isAttackOnceTask || isAttackAirTask || isAttackSurfaceTask ||
+      isConditionalTargetTask);
+  _targetDomainCombo->setEnabled(isWaitDetectedTask);
+  _enemyOnlyCheck->setEnabled(isWaitDetectedTask);
   _weaponTypeCombo->setEnabled(isAttackOnceTask || isAttackAirTask || isAttackSurfaceTask);
-  _followDistanceSpin->setEnabled(isFollowTask || isInterceptTask || isRacetrackTask);
+  _followDistanceSpin->setEnabled(isFollowTask || isInterceptTask || isRacetrackTask || isWaitRangeTask);
   _arrivalToleranceSpin->setEnabled(isFollowTask || isRouteTask || isWaitTask);
-  _altitudeToleranceSpin->setEnabled(isInterceptTask);
-  _durationSpin->setEnabled(isFollowTask || isInterceptTask || isRouteTask || isRacetrackTask || isWaitTask || isAttackOnceTask);
+  _altitudeToleranceSpin->setEnabled(isInterceptTask || isWaitDamagedTask);
+  _durationSpin->setEnabled(isFollowTask || isInterceptTask || isRouteTask || isRacetrackTask || isWaitTask ||
+                            isAttackOnceTask || isWaitDetectedTask || isWaitDestroyedTask ||
+                            isWaitDamagedTask || isWaitTimeTask || isWaitRangeTask);
 }
 
 void AssignTaskDialog::setPickedCoordinate(double longitude, double latitude, double height) {

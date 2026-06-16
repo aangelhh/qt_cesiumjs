@@ -46,6 +46,16 @@ QString buildEntityOperationalStatus(
              ? QStringLiteral("Wait on Location")
            : taskType == QStringLiteral("AttackOnce")
              ? QStringLiteral("Attack Once")
+           : taskType == QStringLiteral("WaitUntilTargetDetected")
+             ? QStringLiteral("Wait Until Target Detected")
+           : taskType == QStringLiteral("WaitUntilTargetDestroyed")
+             ? QStringLiteral("Wait Until Target Destroyed")
+           : taskType == QStringLiteral("WaitUntilDamaged")
+             ? QStringLiteral("Wait Until Damaged")
+           : taskType == QStringLiteral("WaitUntilTime")
+             ? QStringLiteral("Wait Until Time")
+           : taskType == QStringLiteral("WaitUntilInRange")
+             ? QStringLiteral("Wait Until In Range")
            : taskType);
   };
 

@@ -37,6 +37,7 @@ add_executable(qttest_unit_tests
     presentation/EntityHomePositionTrackerTest.cpp
     presentation/TrackIconProviderTest.cpp
     presentation/PlanStepConfiguratorTest.cpp
+    presentation/EntityPlanExecutorConditionalTest.cpp
     presentation/GraphicPickCoordinatorTest.cpp
     presentation/EntityStatusFormatterTest.cpp
     presentation/EntityTrackSummaryTest.cpp

@@ -166,6 +166,11 @@ void EntityPlanDialog::onAdd() {
       {"Attack Once",                   PlanStepKind::AttackOnce,               true },
       {"Attack Air",                    PlanStepKind::AttackAir,                false},
       {"Attack Surface",                PlanStepKind::AttackSurface,            false},
+      {"Wait Until Target Detected",    PlanStepKind::WaitUntilTargetDetected,  true },
+      {"Wait Until Target Destroyed",   PlanStepKind::WaitUntilTargetDestroyed, false},
+      {"Wait Until Damaged",            PlanStepKind::WaitUntilDamaged,         false},
+      {"Wait Until Time",               PlanStepKind::WaitUntilTime,            false},
+      {"Wait Until In Range",           PlanStepKind::WaitUntilInRange,         false},
   };
   for (const Item& item : items) {
     if (item.separatorBefore) {

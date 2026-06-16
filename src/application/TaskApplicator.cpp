@@ -36,6 +36,14 @@ bool isRouteTaskType(const QString& taskType) {
          taskType == QStringLiteral("FollowRoute");
 }
 
+bool isConditionalWaitTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("WaitUntilTargetDetected") ||
+         taskType == QStringLiteral("WaitUntilTargetDestroyed") ||
+         taskType == QStringLiteral("WaitUntilDamaged") ||
+         taskType == QStringLiteral("WaitUntilTime") ||
+         taskType == QStringLiteral("WaitUntilInRange");
+}
+
 bool entityIsGround(const Entity& entity) {
   return entity.domain.compare(QStringLiteral("Ground"), Qt::CaseInsensitive) == 0;
 }
@@ -223,6 +231,27 @@ bool applyEntityTask(
     }
     if (taskToApply.weaponType.trimmed().isEmpty()) {
       taskToApply.weaponType = QStringLiteral("Auto");
+    }
+  }
+  if (isConditionalWaitTaskType(taskToApply.taskType)) {
+    if (taskToApply.taskType == QStringLiteral("WaitUntilTime")) {
+      if (taskToApply.durationSeconds <= 0.0) {
+        taskToApply.durationSeconds = 30.0;
+      }
+    } else if (taskToApply.timeoutSeconds <= 0.0) {
+      taskToApply.timeoutSeconds = 120.0;
+    }
+    if (taskToApply.taskType == QStringLiteral("WaitUntilDamaged") &&
+        taskToApply.damageThresholdPercent <= 0.0) {
+      taskToApply.damageThresholdPercent = 50.0;
+    }
+    if (taskToApply.taskType == QStringLiteral("WaitUntilInRange") &&
+        taskToApply.rangeMeters <= 0.0) {
+      taskToApply.rangeMeters = 1000.0;
+    }
+    if (taskToApply.taskType == QStringLiteral("WaitUntilTargetDetected") &&
+        taskToApply.targetDomain.trimmed().isEmpty()) {
+      taskToApply.targetDomain = QStringLiteral("Any");
     }
   }
 

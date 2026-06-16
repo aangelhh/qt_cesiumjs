@@ -168,6 +168,10 @@ QJsonObject toJson(const EntityTask& task) {
       {QStringLiteral("timeoutSeconds"), task.timeoutSeconds},
       {QStringLiteral("racetrackLegLengthMeters"), task.racetrackLegLengthMeters},
       {QStringLiteral("weaponType"), task.weaponType},
+      {QStringLiteral("targetDomain"), task.targetDomain},
+      {QStringLiteral("enemyOnly"), task.enemyOnly},
+      {QStringLiteral("damageThresholdPercent"), task.damageThresholdPercent},
+      {QStringLiteral("rangeMeters"), task.rangeMeters},
   };
 }
 
@@ -202,6 +206,11 @@ EntityTask taskFromJson(const QJsonObject& object) {
   task.racetrackLegLengthMeters =
       object.value(QStringLiteral("racetrackLegLengthMeters")).toDouble(10000.0);
   task.weaponType = object.value(QStringLiteral("weaponType")).toString();
+  task.targetDomain = object.value(QStringLiteral("targetDomain")).toString();
+  task.enemyOnly = object.value(QStringLiteral("enemyOnly")).toBool(true);
+  task.damageThresholdPercent =
+      object.value(QStringLiteral("damageThresholdPercent")).toDouble(50.0);
+  task.rangeMeters = object.value(QStringLiteral("rangeMeters")).toDouble(1000.0);
   return task;
 }
 

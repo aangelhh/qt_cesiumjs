@@ -302,6 +302,10 @@ QVariantMap makeEntityTrackSummary(
   summary.insert(QStringLiteral("taskTimeoutSeconds"),          entity.currentTask.timeoutSeconds);
   summary.insert(QStringLiteral("taskRacetrackLegLengthMeters"), entity.currentTask.racetrackLegLengthMeters);
   summary.insert(QStringLiteral("taskWeaponType"),              entity.currentTask.weaponType);
+  summary.insert(QStringLiteral("taskTargetDomain"),            entity.currentTask.targetDomain);
+  summary.insert(QStringLiteral("taskEnemyOnly"),               entity.currentTask.enemyOnly);
+  summary.insert(QStringLiteral("taskDamageThresholdPercent"),  entity.currentTask.damageThresholdPercent);
+  summary.insert(QStringLiteral("taskRangeMeters"),             entity.currentTask.rangeMeters);
   summary.insert(QStringLiteral("sensorCount"),    entity.sensors.size());
   summary.insert(QStringLiteral("contactCount"),   entity.sensorContacts.size());
 

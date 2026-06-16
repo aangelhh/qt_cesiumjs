@@ -309,6 +309,65 @@ TEST_F(PlanStepConfiguratorTest, AttackAir_Label) {
   EXPECT_EQ(step.label, QStringLiteral("Attack Air: Target1"));
 }
 
+// ── Conditional waits ────────────────────────────────────────────────────
+
+TEST_F(PlanStepConfiguratorTest, ConditionalWaits_UseExpectedTaskTypesAndDefaults) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
+        out = init;
+        if (initialType == QStringLiteral("WaitUntilTargetDetected")) {
+          EXPECT_EQ(init.targetDomain, QStringLiteral("Any"));
+          EXPECT_TRUE(init.enemyOnly);
+          EXPECT_DOUBLE_EQ(init.timeoutSeconds, 120.0);
+        } else if (initialType == QStringLiteral("WaitUntilTargetDestroyed")) {
+          out.targetEntityName = QStringLiteral("Target1");
+          EXPECT_DOUBLE_EQ(init.timeoutSeconds, 120.0);
+        } else if (initialType == QStringLiteral("WaitUntilDamaged")) {
+          out.targetEntityName = QStringLiteral("Target1");
+          out.damageThresholdPercent = 60.0;
+          EXPECT_DOUBLE_EQ(init.damageThresholdPercent, 50.0);
+          EXPECT_DOUBLE_EQ(init.timeoutSeconds, 120.0);
+        } else if (initialType == QStringLiteral("WaitUntilTime")) {
+          out.durationSeconds = 45.0;
+          EXPECT_DOUBLE_EQ(init.durationSeconds, 30.0);
+        } else if (initialType == QStringLiteral("WaitUntilInRange")) {
+          out.targetEntityName = QStringLiteral("Target1");
+          out.rangeMeters = 1500.0;
+          EXPECT_DOUBLE_EQ(init.rangeMeters, 1000.0);
+          EXPECT_DOUBLE_EQ(init.timeoutSeconds, 120.0);
+        }
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Waiter");
+
+  PlanStep detected;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::WaitUntilTargetDetected, detected));
+  EXPECT_EQ(detected.task.taskType, QStringLiteral("WaitUntilTargetDetected"));
+  EXPECT_EQ(detected.label, QStringLiteral("Wait Until Target Detected"));
+
+  PlanStep destroyed;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::WaitUntilTargetDestroyed, destroyed));
+  EXPECT_EQ(destroyed.task.taskType, QStringLiteral("WaitUntilTargetDestroyed"));
+  EXPECT_EQ(destroyed.label, QStringLiteral("Wait Until Target Destroyed: Target1"));
+
+  PlanStep damaged;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::WaitUntilDamaged, damaged));
+  EXPECT_EQ(damaged.task.taskType, QStringLiteral("WaitUntilDamaged"));
+  EXPECT_EQ(damaged.label, QStringLiteral("Wait Until Damaged: Target1 >= 60%"));
+
+  PlanStep time;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::WaitUntilTime, time));
+  EXPECT_EQ(time.task.taskType, QStringLiteral("WaitUntilTime"));
+  EXPECT_EQ(time.label, QStringLiteral("Wait Until Time: 45 s"));
+
+  PlanStep range;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::WaitUntilInRange, range));
+  EXPECT_EQ(range.task.taskType, QStringLiteral("WaitUntilInRange"));
+  EXPECT_EQ(range.label, QStringLiteral("Wait Until In Range: Target1 <= 1500 m"));
+}
+
 // ── InterceptEntity ───────────────────────────────────────────────────────
 
 TEST_F(PlanStepConfiguratorTest, InterceptEntity_UsesUnified3DTaskAndLabel) {

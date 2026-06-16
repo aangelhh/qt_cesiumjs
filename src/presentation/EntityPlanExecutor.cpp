@@ -65,6 +65,11 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
     case PlanStepKind::AttackOnce:           return QStringLiteral("Attack Once");
     case PlanStepKind::AttackAir:            return QStringLiteral("Attack Air");
     case PlanStepKind::AttackSurface:        return QStringLiteral("Attack Surface");
+    case PlanStepKind::WaitUntilTargetDetected: return QStringLiteral("Wait Until Target Detected");
+    case PlanStepKind::WaitUntilTargetDestroyed: return QStringLiteral("Wait Until Target Destroyed");
+    case PlanStepKind::WaitUntilDamaged:     return QStringLiteral("Wait Until Damaged");
+    case PlanStepKind::WaitUntilTime:        return QStringLiteral("Wait Until Time");
+    case PlanStepKind::WaitUntilInRange:     return QStringLiteral("Wait Until In Range");
   }
   return QStringLiteral("Plan Step");
 }
@@ -347,6 +352,149 @@ bool EntityPlanExecutor::activePlanStepCompleted(
   }
 
   const PlanStep& step = plan.steps.at(plan.currentStepIndex);
+  auto mutableEntityTask = [&]() -> EntityTask* {
+    for (Entity& mutableEntity : _state->entitiesMutable()) {
+      if (mutableEntity.name == entity.name) {
+        return &mutableEntity.currentTask;
+      }
+    }
+    return nullptr;
+  };
+  auto markConditionStatus = [&](const QString& status) {
+    if (EntityTask* task = mutableEntityTask()) {
+      task->status = status;
+    }
+  };
+  auto tickConditionElapsed = [&]() -> double {
+    if (EntityTask* task = mutableEntityTask()) {
+      task->elapsedSeconds += 1.0;
+      return task->elapsedSeconds;
+    }
+    return step.task.elapsedSeconds;
+  };
+  auto targetByName = [&](const QString& targetName) -> const Entity* {
+    const QString trimmed = targetName.trimmed();
+    if (trimmed.isEmpty()) {
+      return nullptr;
+    }
+    for (const Entity& candidate : _state->entities()) {
+      if (candidate.name.compare(trimmed, Qt::CaseInsensitive) == 0) {
+        return &candidate;
+      }
+    }
+    return nullptr;
+  };
+  auto targetDomainMatches = [](const QString& filter, const Entity& target) {
+    const QString trimmed = filter.trimmed();
+    return trimmed.isEmpty() ||
+           trimmed.compare(QStringLiteral("Any"), Qt::CaseInsensitive) == 0 ||
+           target.domain.compare(trimmed, Qt::CaseInsensitive) == 0 ||
+           target.category.compare(trimmed, Qt::CaseInsensitive) == 0;
+  };
+  auto timedOut = [&](double timeoutSeconds) {
+    return timeoutSeconds > 0.0 && tickConditionElapsed() >= timeoutSeconds;
+  };
+
+  switch (step.kind) {
+    case PlanStepKind::WaitUntilTargetDetected: {
+      for (const SensorContact& contact : entity.sensorContacts) {
+        if (!contact.detected) {
+          continue;
+        }
+        if (!step.task.targetEntityName.trimmed().isEmpty() &&
+            contact.targetEntityName.compare(step.task.targetEntityName.trimmed(), Qt::CaseInsensitive) != 0) {
+          continue;
+        }
+        const Entity* target = targetByName(contact.targetEntityName);
+        if (!target || target->destroyed) {
+          continue;
+        }
+        if (step.task.enemyOnly && target->forceIdentifier == entity.forceIdentifier) {
+          continue;
+        }
+        if (!targetDomainMatches(step.task.targetDomain, *target)) {
+          continue;
+        }
+        markConditionStatus(QStringLiteral("Completed"));
+        return true;
+      }
+      if (timedOut(step.task.timeoutSeconds)) {
+        markConditionStatus(QStringLiteral("Failed"));
+      } else {
+        markConditionStatus(QStringLiteral("Running"));
+      }
+      return false;
+    }
+
+    case PlanStepKind::WaitUntilTargetDestroyed: {
+      const Entity* target = targetByName(step.task.targetEntityName);
+      if (!target) {
+        markConditionStatus(QStringLiteral("Failed"));
+        return false;
+      }
+      if (target->destroyed) {
+        markConditionStatus(QStringLiteral("Completed"));
+        return true;
+      }
+      if (timedOut(step.task.timeoutSeconds)) {
+        markConditionStatus(QStringLiteral("Failed"));
+      } else {
+        markConditionStatus(QStringLiteral("Running"));
+      }
+      return false;
+    }
+
+    case PlanStepKind::WaitUntilDamaged: {
+      const Entity* target = targetByName(step.task.targetEntityName);
+      if (!target) {
+        markConditionStatus(QStringLiteral("Failed"));
+        return false;
+      }
+      if (target->damagePercent >= step.task.damageThresholdPercent) {
+        markConditionStatus(QStringLiteral("Completed"));
+        return true;
+      }
+      if (timedOut(step.task.timeoutSeconds)) {
+        markConditionStatus(QStringLiteral("Failed"));
+      } else {
+        markConditionStatus(QStringLiteral("Running"));
+      }
+      return false;
+    }
+
+    case PlanStepKind::WaitUntilTime: {
+      if (tickConditionElapsed() >= step.task.durationSeconds) {
+        markConditionStatus(QStringLiteral("Completed"));
+        return true;
+      }
+      markConditionStatus(QStringLiteral("Running"));
+      return false;
+    }
+
+    case PlanStepKind::WaitUntilInRange: {
+      const Entity* target = targetByName(step.task.targetEntityName);
+      if (!target || target->destroyed) {
+        markConditionStatus(QStringLiteral("Failed"));
+        return false;
+      }
+      const double distanceMeters = domain::distanceMeters(
+          entity.latitude, entity.longitude, target->latitude, target->longitude);
+      if (distanceMeters <= step.task.rangeMeters) {
+        markConditionStatus(QStringLiteral("Completed"));
+        return true;
+      }
+      if (timedOut(step.task.timeoutSeconds)) {
+        markConditionStatus(QStringLiteral("Failed"));
+      } else {
+        markConditionStatus(QStringLiteral("Running"));
+      }
+      return false;
+    }
+
+    default:
+      break;
+  }
+
   switch (step.kind) {
     case PlanStepKind::MoveToLocation:
     case PlanStepKind::WaitOnLocation:
@@ -409,6 +557,11 @@ bool EntityPlanExecutor::activePlanStepCompleted(
     case PlanStepKind::InterceptEntity:
     case PlanStepKind::InterceptEntity2D:
     case PlanStepKind::InterceptEntity3D:
+    case PlanStepKind::WaitUntilTargetDetected:
+    case PlanStepKind::WaitUntilTargetDestroyed:
+    case PlanStepKind::WaitUntilDamaged:
+    case PlanStepKind::WaitUntilTime:
+    case PlanStepKind::WaitUntilInRange:
       plan.currentStableTicks = 0;
       return entity.currentTask.status == QStringLiteral("Completed");
   }
@@ -561,6 +714,37 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
       }
       return true;
     }
+
+    case PlanStepKind::WaitUntilTargetDetected:
+      if (step.task.timeoutSeconds < 0.0) {
+        return setReason(QStringLiteral("timeout must be non-negative"));
+      }
+      return true;
+
+    case PlanStepKind::WaitUntilTargetDestroyed:
+    case PlanStepKind::WaitUntilDamaged:
+    case PlanStepKind::WaitUntilInRange: {
+      if (step.task.targetEntityName.trimmed().isEmpty()) {
+        return setReason(QStringLiteral("target entity is not set"));
+      }
+      if (step.kind == PlanStepKind::WaitUntilDamaged &&
+          (step.task.damageThresholdPercent < 0.0 || step.task.damageThresholdPercent > 100.0)) {
+        return setReason(QStringLiteral("damage threshold must be between 0 and 100"));
+      }
+      if (step.kind == PlanStepKind::WaitUntilInRange && step.task.rangeMeters <= 0.0) {
+        return setReason(QStringLiteral("range must be greater than zero"));
+      }
+      if (step.task.timeoutSeconds < 0.0) {
+        return setReason(QStringLiteral("timeout must be non-negative"));
+      }
+      return true;
+    }
+
+    case PlanStepKind::WaitUntilTime:
+      if (step.task.durationSeconds <= 0.0) {
+        return setReason(QStringLiteral("duration must be greater than zero"));
+      }
+      return true;
   }
 
   return true;
@@ -666,6 +850,29 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
       return nearlyEqual(currentTask.targetLatitude, step.task.targetLatitude, 1e-6) &&
              nearlyEqual(currentTask.targetLongitude, step.task.targetLongitude, 1e-6) &&
              currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters;
+
+    case PlanStepKind::WaitUntilTargetDetected:
+      return currentTask.targetEntityName == step.task.targetEntityName &&
+             currentTask.targetDomain == step.task.targetDomain &&
+             currentTask.enemyOnly == step.task.enemyOnly &&
+             nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
+
+    case PlanStepKind::WaitUntilTargetDestroyed:
+      return currentTask.targetEntityName == step.task.targetEntityName &&
+             nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
+
+    case PlanStepKind::WaitUntilDamaged:
+      return currentTask.targetEntityName == step.task.targetEntityName &&
+             nearlyEqual(currentTask.damageThresholdPercent, step.task.damageThresholdPercent, 0.1) &&
+             nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
+
+    case PlanStepKind::WaitUntilTime:
+      return nearlyEqual(currentTask.durationSeconds, step.task.durationSeconds, 0.1);
+
+    case PlanStepKind::WaitUntilInRange:
+      return currentTask.targetEntityName == step.task.targetEntityName &&
+             nearlyEqual(currentTask.rangeMeters, step.task.rangeMeters, 1.0) &&
+             nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
   }
 
   return false;

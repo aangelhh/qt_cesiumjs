@@ -48,6 +48,11 @@ enum class PlanStepKind {
   AttackOnce,
   AttackAir,
   AttackSurface,
+  WaitUntilTargetDetected,
+  WaitUntilTargetDestroyed,
+  WaitUntilDamaged,
+  WaitUntilTime,
+  WaitUntilInRange,
 };
 
 struct PlanStep {
