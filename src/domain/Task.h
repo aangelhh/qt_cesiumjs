@@ -291,4 +291,8 @@ struct EntityTask {
   double timeoutSeconds = 120.0;
   double racetrackLegLengthMeters = 10000.0;
   QString weaponType;
+  QString targetDomain;
+  bool enemyOnly = true;
+  double damageThresholdPercent = 50.0;
+  double rangeMeters = 1000.0;
 };

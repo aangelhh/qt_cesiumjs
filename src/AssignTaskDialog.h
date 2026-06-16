@@ -6,6 +6,7 @@
 #include <QStringList>
 
 class QComboBox;
+class QCheckBox;
 class QDoubleSpinBox;
 class QSpinBox;
 
@@ -47,4 +48,6 @@ private:
   QComboBox* _routeCombo;
   QComboBox* _areaCombo;
   QComboBox* _weaponTypeCombo;
+  QComboBox* _targetDomainCombo;
+  QCheckBox* _enemyOnlyCheck;
 };

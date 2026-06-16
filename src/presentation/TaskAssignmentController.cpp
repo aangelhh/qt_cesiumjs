@@ -249,4 +249,24 @@ void TaskAssignmentController::assignAttackSurface() {
   _openDialog(QStringLiteral("AttackSurface"));
 }
 
+void TaskAssignmentController::assignWaitUntilTargetDetected() {
+  _openDialog(QStringLiteral("WaitUntilTargetDetected"));
+}
+
+void TaskAssignmentController::assignWaitUntilTargetDestroyed() {
+  _openDialog(QStringLiteral("WaitUntilTargetDestroyed"));
+}
+
+void TaskAssignmentController::assignWaitUntilDamaged() {
+  _openDialog(QStringLiteral("WaitUntilDamaged"));
+}
+
+void TaskAssignmentController::assignWaitUntilTime() {
+  _openDialog(QStringLiteral("WaitUntilTime"));
+}
+
+void TaskAssignmentController::assignWaitUntilInRange() {
+  _openDialog(QStringLiteral("WaitUntilInRange"));
+}
+
 } // namespace presentation

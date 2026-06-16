@@ -148,6 +148,31 @@ TEST(TaskAssignmentController, assignAttackAirOpensDlg) {
   delete ctrl;
 }
 
+TEST(TaskAssignmentController, conditionalWaitActionsOpenDialogs) {
+  Fixture f;
+  auto* ctrl = f.makeController();
+
+  ctrl->assignWaitUntilTargetDetected();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("WaitUntilTargetDetected"));
+
+  f.openedDialog.clear();
+  ctrl->assignWaitUntilTargetDestroyed();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("WaitUntilTargetDestroyed"));
+
+  f.openedDialog.clear();
+  ctrl->assignWaitUntilDamaged();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("WaitUntilDamaged"));
+
+  f.openedDialog.clear();
+  ctrl->assignWaitUntilTime();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("WaitUntilTime"));
+
+  f.openedDialog.clear();
+  ctrl->assignWaitUntilInRange();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("WaitUntilInRange"));
+  delete ctrl;
+}
+
 TEST(TaskAssignmentController, assignInterceptEntityOpensUnifiedDialog) {
   Fixture f;
   auto* ctrl = f.makeController();

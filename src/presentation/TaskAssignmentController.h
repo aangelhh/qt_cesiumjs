@@ -71,6 +71,11 @@ public:
   void assignAttackOnce();
   void assignAttackAir();
   void assignAttackSurface();
+  void assignWaitUntilTargetDetected();
+  void assignWaitUntilTargetDestroyed();
+  void assignWaitUntilDamaged();
+  void assignWaitUntilTime();
+  void assignWaitUntilInRange();
 
 private:
   bool resolveOrbitCenter(double& outLatitude, double& outLongitude);

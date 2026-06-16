@@ -104,6 +104,11 @@ private slots:
   void assignAttackOnceTask();
   void assignAttackAirTask();
   void assignAttackSurfaceTask();
+  void assignWaitUntilTargetDetectedTask();
+  void assignWaitUntilTargetDestroyedTask();
+  void assignWaitUntilDamagedTask();
+  void assignWaitUntilTimeTask();
+  void assignWaitUntilInRangeTask();
   void openEntityPlanDialog();
   void setSelectedEntityHeading();
   void setSelectedEntityAltitude();

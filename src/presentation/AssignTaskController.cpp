@@ -52,6 +52,11 @@ EntityTask AssignTaskController::taskFromSummary(const QVariantMap& summary) {
   task.racetrackLegLengthMeters =
       summary.value(QStringLiteral("taskRacetrackLegLengthMeters"), 10000.0).toDouble();
   task.weaponType              = summary.value(QStringLiteral("taskWeaponType")).toString();
+  task.targetDomain            = summary.value(QStringLiteral("taskTargetDomain")).toString();
+  task.enemyOnly               = summary.value(QStringLiteral("taskEnemyOnly"), true).toBool();
+  task.damageThresholdPercent  =
+      summary.value(QStringLiteral("taskDamageThresholdPercent"), 50.0).toDouble();
+  task.rangeMeters             = summary.value(QStringLiteral("taskRangeMeters"), 1000.0).toDouble();
   return task;
 }
 
