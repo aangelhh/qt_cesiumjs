@@ -62,6 +62,14 @@ void populateEntityContextMenu(
   QMenu* attackTaskMenu = taskMenu->addMenu(QStringLiteral("Attack"));
   addSlotAction(attackTaskMenu, QStringLiteral("Attack Once..."),
       actions.assignAttackOnceTask);
+  addSlotAction(attackTaskMenu, QStringLiteral("Attack Until Destroyed..."),
+      actions.assignAttackUntilDestroyedTask);
+  addSlotAction(attackTaskMenu, QStringLiteral("Fire on Position..."),
+      actions.assignFireOnPositionTask);
+  addSlotAction(attackTaskMenu, QStringLiteral("Fire in Direction..."),
+      actions.assignFireInDirectionTask);
+  addSlotAction(attackTaskMenu, QStringLiteral("Stop Weapons Task"),
+      actions.assignStopWeaponsTask);
   addSlotAction(attackTaskMenu, QStringLiteral("Attack Air..."),
       actions.assignAttackAirTask);
   addSlotAction(attackTaskMenu, QStringLiteral("Attack Surface..."),

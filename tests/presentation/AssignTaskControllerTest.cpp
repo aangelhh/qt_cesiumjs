@@ -117,6 +117,8 @@ TEST(AssignTaskController, taskFromSummary_extractsAllFields) {
   m[QStringLiteral("taskTargetRouteName")]         = QStringLiteral("Rte3");
   m[QStringLiteral("taskTargetAreaName")]          = QStringLiteral("Zone4");
   m[QStringLiteral("taskTargetAreaRadiusMeters")]  = 1500.0;
+  m[QStringLiteral("taskMaxEngagementTimeSeconds")] = 180.0;
+  m[QStringLiteral("taskShotCooldownSeconds")]     = 5.0;
 
   const EntityTask task = AssignTaskController::taskFromSummary(m);
 
@@ -133,6 +135,8 @@ TEST(AssignTaskController, taskFromSummary_extractsAllFields) {
   EXPECT_EQ(task.targetRouteName,        QStringLiteral("Rte3"));
   EXPECT_EQ(task.targetAreaName,         QStringLiteral("Zone4"));
   EXPECT_DOUBLE_EQ(task.targetAreaRadiusMeters, 1500.0);
+  EXPECT_DOUBLE_EQ(task.maxEngagementTimeSeconds, 180.0);
+  EXPECT_DOUBLE_EQ(task.shotCooldownSeconds, 5.0);
 }
 
 TEST(AssignTaskController, taskFromSummary_emptyMap_returnsDefaults) {

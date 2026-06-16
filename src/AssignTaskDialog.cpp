@@ -40,6 +40,7 @@ AssignTaskDialog::AssignTaskDialog(
       _arrivalToleranceSpin(new QDoubleSpinBox(this)),
       _altitudeToleranceSpin(new QDoubleSpinBox(this)),
       _durationSpin(new QDoubleSpinBox(this)),
+      _shotCooldownSpin(new QDoubleSpinBox(this)),
       _followTargetCombo(new QComboBox(this)),
       _waypointCombo(new QComboBox(this)),
       _routeCombo(new QComboBox(this)),
@@ -67,6 +68,10 @@ AssignTaskDialog::AssignTaskDialog(
   _taskTypeCombo->addItem(QStringLiteral("Follow Entity"), QStringLiteral("FollowEntity"));
   _taskTypeCombo->addItem(QStringLiteral("Intercept Entity"), QStringLiteral("InterceptEntity"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Once"), QStringLiteral("AttackOnce"));
+  _taskTypeCombo->addItem(QStringLiteral("Attack Until Destroyed"), QStringLiteral("AttackUntilDestroyed"));
+  _taskTypeCombo->addItem(QStringLiteral("Fire on Position"), QStringLiteral("FireOnPosition"));
+  _taskTypeCombo->addItem(QStringLiteral("Fire in Direction"), QStringLiteral("FireInDirection"));
+  _taskTypeCombo->addItem(QStringLiteral("Stop Weapons Task"), QStringLiteral("StopWeaponsTask"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Air"), QStringLiteral("AttackAir"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Surface"), QStringLiteral("AttackSurface"));
   _taskTypeCombo->addItem(QStringLiteral("Wait Until Target Detected"), QStringLiteral("WaitUntilTargetDetected"));
@@ -120,6 +125,11 @@ AssignTaskDialog::AssignTaskDialog(
   _durationSpin->setSpecialValueText(QStringLiteral("Until cancelled"));
   _durationSpin->setSuffix(QStringLiteral(" s"));
 
+  _shotCooldownSpin->setRange(0.0, 3600.0);
+  _shotCooldownSpin->setDecimals(1);
+  _shotCooldownSpin->setSingleStep(1.0);
+  _shotCooldownSpin->setSuffix(QStringLiteral(" s"));
+
   for (const QString& targetName : availableTargets) {
     _followTargetCombo->addItem(targetName, targetName);
   }
@@ -155,6 +165,7 @@ AssignTaskDialog::AssignTaskDialog(
   formLayout->addRow(QStringLiteral("Arrival Tolerance"), _arrivalToleranceSpin);
   formLayout->addRow(QStringLiteral("Altitude Tolerance"), _altitudeToleranceSpin);
   formLayout->addRow(QStringLiteral("Duration / Timeout"), _durationSpin);
+  formLayout->addRow(QStringLiteral("Shot Cooldown"), _shotCooldownSpin);
   layout->addLayout(formLayout);
 
   const QString rawInitialType = initialTaskType.isEmpty() ? currentTask.taskType : initialTaskType;
@@ -192,12 +203,18 @@ AssignTaskDialog::AssignTaskDialog(
   _durationSpin->setValue(
       isInterceptEntityTaskType(rawInitialType) ||
           rawInitialType == QStringLiteral("AttackOnce") ||
+          rawInitialType == QStringLiteral("AttackUntilDestroyed") ||
+          rawInitialType == QStringLiteral("FireInDirection") ||
           rawInitialType == QStringLiteral("FollowRoute") ||
           rawInitialType == QStringLiteral("MoveAlongRoute")
-      ? (currentTask.timeoutSeconds > 0.0 ? currentTask.timeoutSeconds : 120.0)
+      ? (rawInitialType == QStringLiteral("AttackUntilDestroyed")
+         ? (currentTask.maxEngagementTimeSeconds > 0.0 ? currentTask.maxEngagementTimeSeconds : 120.0)
+         : (currentTask.timeoutSeconds > 0.0 ? currentTask.timeoutSeconds : 120.0))
       : rawInitialType == QStringLiteral("HoldRacetrack")
         ? currentTask.durationSeconds
       : currentTask.durationSeconds);
+  _shotCooldownSpin->setValue(
+      currentTask.shotCooldownSeconds > 0.0 ? currentTask.shotCooldownSeconds : 8.0);
   if (!currentTask.targetEntityName.trimmed().isEmpty()) {
     const int followIndex = _followTargetCombo->findData(currentTask.targetEntityName);
     if (followIndex >= 0) {
@@ -274,6 +291,8 @@ EntityTask AssignTaskDialog::task() const {
   task.interceptDistanceMeters = _followDistanceSpin->value();
   task.altitudeToleranceMeters = _altitudeToleranceSpin->value();
   task.timeoutSeconds = _durationSpin->value();
+  task.maxEngagementTimeSeconds = _durationSpin->value();
+  task.shotCooldownSeconds = _shotCooldownSpin->value();
   task.racetrackLegLengthMeters = _followDistanceSpin->value();
   task.weaponType = _weaponTypeCombo->currentData().toString();
   task.targetDomain = _targetDomainCombo->currentData().toString();
@@ -300,6 +319,9 @@ void AssignTaskDialog::syncUiForTaskType() {
   const bool isFollowTask = taskType == QStringLiteral("FollowEntity");
   const bool isInterceptTask = isInterceptEntityTaskType(taskType);
   const bool isAttackOnceTask = taskType == QStringLiteral("AttackOnce");
+  const bool isAttackUntilDestroyedTask = taskType == QStringLiteral("AttackUntilDestroyed");
+  const bool isFireOnPositionTask = taskType == QStringLiteral("FireOnPosition");
+  const bool isFireInDirectionTask = taskType == QStringLiteral("FireInDirection");
   const bool isAttackAirTask = taskType == QStringLiteral("AttackAir");
   const bool isAttackSurfaceTask = taskType == QStringLiteral("AttackSurface");
   const bool isWaitDetectedTask = taskType == QStringLiteral("WaitUntilTargetDetected");
@@ -310,9 +332,11 @@ void AssignTaskDialog::syncUiForTaskType() {
   const bool isConditionalTargetTask =
       isWaitDetectedTask || isWaitDestroyedTask || isWaitDamagedTask || isWaitRangeTask;
 
-  _headingSpin->setEnabled(isFlyTask || isRacetrackTask);
-  _latitudeSpin->setEnabled(isMoveTask || isWaitTask || isRacetrackTask || isAttackSurfaceTask);
-  _longitudeSpin->setEnabled(isMoveTask || isWaitTask || isRacetrackTask || isAttackSurfaceTask);
+  _headingSpin->setEnabled(isFlyTask || isRacetrackTask || isFireInDirectionTask);
+  _latitudeSpin->setEnabled(isMoveTask || isWaitTask || isRacetrackTask || isAttackSurfaceTask ||
+                            isFireOnPositionTask);
+  _longitudeSpin->setEnabled(isMoveTask || isWaitTask || isRacetrackTask || isAttackSurfaceTask ||
+                             isFireOnPositionTask);
   _altitudeSpin->setEnabled(
       isFlyTask ||
       isMoveTask ||
@@ -320,22 +344,29 @@ void AssignTaskDialog::syncUiForTaskType() {
       isWaypointTask ||
       isAreaTask ||
       isRacetrackTask ||
-      isAttackSurfaceTask);
+      isAttackSurfaceTask ||
+      isFireOnPositionTask);
   _waypointCombo->setEnabled(isWaypointTask);
   _routeCombo->setEnabled(isRouteTask);
   _areaCombo->setEnabled(isAreaTask);
   _followTargetCombo->setEnabled(
       isFollowTask || isInterceptTask || isAttackOnceTask || isAttackAirTask || isAttackSurfaceTask ||
+      isAttackUntilDestroyedTask ||
       isConditionalTargetTask);
   _targetDomainCombo->setEnabled(isWaitDetectedTask);
   _enemyOnlyCheck->setEnabled(isWaitDetectedTask);
-  _weaponTypeCombo->setEnabled(isAttackOnceTask || isAttackAirTask || isAttackSurfaceTask);
+  _weaponTypeCombo->setEnabled(isAttackOnceTask || isAttackUntilDestroyedTask ||
+                               isFireOnPositionTask || isFireInDirectionTask ||
+                               isAttackAirTask || isAttackSurfaceTask);
   _followDistanceSpin->setEnabled(isFollowTask || isInterceptTask || isRacetrackTask || isWaitRangeTask);
   _arrivalToleranceSpin->setEnabled(isFollowTask || isRouteTask || isWaitTask);
   _altitudeToleranceSpin->setEnabled(isInterceptTask || isWaitDamagedTask);
   _durationSpin->setEnabled(isFollowTask || isInterceptTask || isRouteTask || isRacetrackTask || isWaitTask ||
-                            isAttackOnceTask || isWaitDetectedTask || isWaitDestroyedTask ||
+                            isAttackOnceTask || isAttackUntilDestroyedTask ||
+                            isFireInDirectionTask ||
+                            isWaitDetectedTask || isWaitDestroyedTask ||
                             isWaitDamagedTask || isWaitTimeTask || isWaitRangeTask);
+  _shotCooldownSpin->setEnabled(isAttackUntilDestroyedTask);
 }
 
 void AssignTaskDialog::setPickedCoordinate(double longitude, double latitude, double height) {

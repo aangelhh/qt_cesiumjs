@@ -110,7 +110,8 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("FollowEntity") ||
          isInterceptEntityTaskType(taskType) ||
          taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
-         taskType == QStringLiteral("AttackAir");
+         taskType == QStringLiteral("AttackAir") ||
+         taskType == QStringLiteral("AttackUntilDestroyed");
 }
 
 bool isRouteTaskType(const QString& taskType) {
@@ -487,7 +488,8 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
   }
 
   const bool isAttackAirTask =
-      entity.currentTask.taskType == QStringLiteral("AttackAir");
+      entity.currentTask.taskType == QStringLiteral("AttackAir") ||
+      entity.currentTask.taskType == QStringLiteral("AttackUntilDestroyed");
   if (entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
       entity.currentTask.taskType == QStringLiteral("WaitOnLocation") ||
       entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
@@ -871,7 +873,8 @@ void FlightDynamicsEngine::advanceEntity(
       entity.currentTask.taskType == QStringLiteral("HoldRacetrack") ||
       entity.currentTask.taskType == QStringLiteral("FollowEntity") ||
       isInterceptEntityTaskType(entity.currentTask.taskType) ||
-      entity.currentTask.taskType == QStringLiteral("AttackAir");
+      entity.currentTask.taskType == QStringLiteral("AttackAir") ||
+      entity.currentTask.taskType == QStringLiteral("AttackUntilDestroyed");
   if (!preferKinematicGuidance &&
       entity.flightDynamicsMode == QStringLiteral("jsbsim") &&
       applyJsbsimStep(entity, deltaSeconds)) {

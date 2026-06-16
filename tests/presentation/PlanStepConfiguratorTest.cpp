@@ -294,6 +294,97 @@ TEST_F(PlanStepConfiguratorTest, AttackOnce_LabelAndDefaults) {
   EXPECT_EQ(step.label, QStringLiteral("Attack Once: Target1"));
 }
 
+TEST_F(PlanStepConfiguratorTest, AttackUntilDestroyed_LabelAndDefaults) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
+        EXPECT_EQ(initialType, QStringLiteral("AttackUntilDestroyed"));
+        EXPECT_EQ(init.taskType, QStringLiteral("AttackUntilDestroyed"));
+        EXPECT_EQ(init.weaponType, QStringLiteral("Auto"));
+        EXPECT_DOUBLE_EQ(init.maxEngagementTimeSeconds, 120.0);
+        EXPECT_DOUBLE_EQ(init.shotCooldownSeconds, 8.0);
+        out = init;
+        out.targetEntityName = QStringLiteral("Target1");
+        out.weaponType = QStringLiteral("Missile");
+        out.maxEngagementTimeSeconds = 180.0;
+        out.shotCooldownSeconds = 5.0;
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Kappa");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::AttackUntilDestroyed, step));
+  EXPECT_EQ(step.kind, PlanStepKind::AttackUntilDestroyed);
+  EXPECT_EQ(step.task.taskType, QStringLiteral("AttackUntilDestroyed"));
+  EXPECT_EQ(step.task.weaponType, QStringLiteral("Missile"));
+  EXPECT_DOUBLE_EQ(step.task.maxEngagementTimeSeconds, 180.0);
+  EXPECT_DOUBLE_EQ(step.task.shotCooldownSeconds, 5.0);
+  EXPECT_EQ(step.label, QStringLiteral("Attack Until Destroyed: Target1"));
+}
+
+TEST_F(PlanStepConfiguratorTest, FireOnPosition_LabelAndDefaults) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
+        EXPECT_EQ(initialType, QStringLiteral("FireOnPosition"));
+        EXPECT_EQ(init.taskType, QStringLiteral("FireOnPosition"));
+        EXPECT_EQ(init.weaponType, QStringLiteral("Auto"));
+        out = init;
+        out.targetLatitude = 40.5;
+        out.targetLongitude = -3.5;
+        out.targetAltitudeMeters = 1200;
+        out.weaponType = QStringLiteral("Bomb");
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Kappa");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::FireOnPosition, step));
+  EXPECT_EQ(step.kind, PlanStepKind::FireOnPosition);
+  EXPECT_EQ(step.task.taskType, QStringLiteral("FireOnPosition"));
+  EXPECT_EQ(step.task.weaponType, QStringLiteral("Bomb"));
+  EXPECT_EQ(step.task.targetAltitudeMeters, 1200);
+  EXPECT_TRUE(step.label.startsWith(QStringLiteral("Fire on Position:")));
+}
+
+TEST_F(PlanStepConfiguratorTest, FireInDirection_LabelAndDefaults) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
+        EXPECT_EQ(initialType, QStringLiteral("FireInDirection"));
+        EXPECT_EQ(init.taskType, QStringLiteral("FireInDirection"));
+        EXPECT_EQ(init.weaponType, QStringLiteral("Auto"));
+        EXPECT_DOUBLE_EQ(init.targetHeadingDegrees, 45.0);
+        out = init;
+        out.durationSeconds = 10.0;
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Kappa");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 45.0, 3000, 300.0, PlanStepKind::FireInDirection, step));
+  EXPECT_EQ(step.kind, PlanStepKind::FireInDirection);
+  EXPECT_EQ(step.task.taskType, QStringLiteral("FireInDirection"));
+  EXPECT_DOUBLE_EQ(step.task.durationSeconds, 10.0);
+  EXPECT_EQ(step.label, QStringLiteral("Fire in Direction: H45"));
+}
+
+TEST_F(PlanStepConfiguratorTest, StopWeaponsTask_LabelAndDefaults) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask&, const QString&, EntityTask&) {
+        ADD_FAILURE() << "Stop Weapons Task should not open capture dialog";
+        return false;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Kappa");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::StopWeaponsTask, step));
+  EXPECT_EQ(step.kind, PlanStepKind::StopWeaponsTask);
+  EXPECT_EQ(step.task.taskType, QStringLiteral("StopWeaponsTask"));
+  EXPECT_EQ(step.label, QStringLiteral("Stop Weapons Task"));
+}
+
 TEST_F(PlanStepConfiguratorTest, AttackAir_Label) {
   presentation::PlanStepConfigurator cfg(
       [](const QString&, const EntityTask& init, const QString&, EntityTask& out) {

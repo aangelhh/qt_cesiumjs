@@ -49,6 +49,10 @@ EntityTask AssignTaskController::taskFromSummary(const QVariantMap& summary) {
   task.altitudeToleranceMeters =
       summary.value(QStringLiteral("taskAltitudeToleranceMeters"), 100.0).toDouble();
   task.timeoutSeconds         = summary.value(QStringLiteral("taskTimeoutSeconds"), 120.0).toDouble();
+  task.maxEngagementTimeSeconds =
+      summary.value(QStringLiteral("taskMaxEngagementTimeSeconds"), 120.0).toDouble();
+  task.shotCooldownSeconds =
+      summary.value(QStringLiteral("taskShotCooldownSeconds"), 8.0).toDouble();
   task.racetrackLegLengthMeters =
       summary.value(QStringLiteral("taskRacetrackLegLengthMeters"), 10000.0).toDouble();
   task.weaponType              = summary.value(QStringLiteral("taskWeaponType")).toString();
@@ -101,6 +105,13 @@ void AssignTaskController::open(const QString& initialTaskType) {
       currentTask.taskType != QStringLiteral("AttackOnce")) {
     currentTask.weaponType = QStringLiteral("Auto");
     currentTask.timeoutSeconds = 120.0;
+  }
+  if (initialTaskType == QStringLiteral("AttackUntilDestroyed") &&
+      currentTask.taskType != QStringLiteral("AttackUntilDestroyed")) {
+    currentTask.weaponType = QStringLiteral("Auto");
+    currentTask.maxEngagementTimeSeconds = 120.0;
+    currentTask.timeoutSeconds = 120.0;
+    currentTask.shotCooldownSeconds = 8.0;
   }
 
   EntityTask configuredTask;

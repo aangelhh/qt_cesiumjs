@@ -241,6 +241,22 @@ void TaskAssignmentController::assignAttackOnce() {
   _openDialog(QStringLiteral("AttackOnce"));
 }
 
+void TaskAssignmentController::assignAttackUntilDestroyed() {
+  _openDialog(QStringLiteral("AttackUntilDestroyed"));
+}
+
+void TaskAssignmentController::assignFireOnPosition() {
+  _openDialog(QStringLiteral("FireOnPosition"));
+}
+
+void TaskAssignmentController::assignFireInDirection() {
+  _openDialog(QStringLiteral("FireInDirection"));
+}
+
+void TaskAssignmentController::assignStopWeaponsTask() {
+  _openDialog(QStringLiteral("StopWeaponsTask"));
+}
+
 void TaskAssignmentController::assignAttackAir() {
   _openDialog(QStringLiteral("AttackAir"));
 }

@@ -289,6 +289,8 @@ struct EntityTask {
   double interceptDistanceMeters = 500.0;
   double altitudeToleranceMeters = 100.0;
   double timeoutSeconds = 120.0;
+  double maxEngagementTimeSeconds = 120.0;
+  double shotCooldownSeconds = 8.0;
   double racetrackLegLengthMeters = 10000.0;
   QString weaponType;
   QString targetDomain;

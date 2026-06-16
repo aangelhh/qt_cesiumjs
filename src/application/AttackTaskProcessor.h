@@ -51,6 +51,10 @@ public:
 
 private:
   bool processAttackOnceTask(const QString& entityName, double deltaSeconds);
+  bool processAttackUntilDestroyedTask(const QString& entityName, double deltaSeconds);
+  bool processFireOnPositionTask(const QString& entityName);
+  bool processFireInDirectionTask(const QString& entityName, double deltaSeconds);
+  bool processStopWeaponsTask(const QString& entityName);
   bool processAttackAirTask(const QString& entityName, double deltaSeconds);
   bool processAttackSurfaceTask(const QString& entityName);
   bool setEntityTaskStatus(const QString& entityName, const QString& status);

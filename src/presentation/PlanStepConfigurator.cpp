@@ -311,6 +311,75 @@ bool PlanStepConfigurator::configure(
       return true;
     }
 
+    case PlanStepKind::AttackUntilDestroyed: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("AttackUntilDestroyed");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.weaponType = QStringLiteral("Auto");
+      initial.maxEngagementTimeSeconds = 120.0;
+      initial.timeoutSeconds = 120.0;
+      initial.shotCooldownSeconds = 8.0;
+      if (!_capture(entity.name, initial, QStringLiteral("AttackUntilDestroyed"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.status = QStringLiteral("Queued");
+      step.task.taskType = QStringLiteral("AttackUntilDestroyed");
+      step.label = QStringLiteral("Attack Until Destroyed: %1")
+          .arg(step.task.targetEntityName.trimmed().isEmpty()
+               ? QStringLiteral("-")
+               : step.task.targetEntityName.trimmed());
+      return true;
+    }
+
+    case PlanStepKind::FireOnPosition: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("FireOnPosition");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.weaponType = QStringLiteral("Auto");
+      initial.targetLatitude = entity.latitude;
+      initial.targetLongitude = entity.longitude;
+      initial.targetAltitudeMeters = 0;
+      if (!_capture(entity.name, initial, QStringLiteral("FireOnPosition"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.status = QStringLiteral("Queued");
+      step.task.taskType = QStringLiteral("FireOnPosition");
+      step.label = QStringLiteral("Fire on Position: %1")
+          .arg(domain::attackPointLabel(step.task.targetLatitude, step.task.targetLongitude));
+      return true;
+    }
+
+    case PlanStepKind::FireInDirection: {
+      EntityTask initial;
+      initial.taskType = QStringLiteral("FireInDirection");
+      initial.enabled = true;
+      initial.status = QStringLiteral("Queued");
+      initial.weaponType = QStringLiteral("Auto");
+      initial.targetHeadingDegrees = defaultHeading;
+      initial.durationSeconds = 0.0;
+      if (!_capture(entity.name, initial, QStringLiteral("FireInDirection"), step.task)) {
+        return false;
+      }
+      step.task.enabled = true;
+      step.task.status = QStringLiteral("Queued");
+      step.task.taskType = QStringLiteral("FireInDirection");
+      step.label = QStringLiteral("Fire in Direction: H%1")
+          .arg(step.task.targetHeadingDegrees, 0, 'f', 0);
+      return true;
+    }
+
+    case PlanStepKind::StopWeaponsTask: {
+      step.task.taskType = QStringLiteral("StopWeaponsTask");
+      step.task.enabled = true;
+      step.task.status = QStringLiteral("Queued");
+      step.label = QStringLiteral("Stop Weapons Task");
+      return true;
+    }
+
     case PlanStepKind::AttackAir: {
       EntityTask initial;
       initial.taskType = QStringLiteral("AttackAir");
