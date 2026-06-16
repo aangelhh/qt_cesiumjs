@@ -29,7 +29,9 @@ static EntityStatusContext makeCtx(
       noMunitions,
       noBomb,
       noPlans,
-      simRunning};
+      simRunning,
+      0,
+      QString()};
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -117,6 +119,67 @@ TEST(EntityStatusFormatterTest, NoContactsMessageWhenEmpty) {
   const auto ctx = makeCtx({entity});
   const QString result = buildEntityOperationalStatus(summary, &entity, ctx);
   EXPECT_TRUE(result.contains(QStringLiteral("No contacts detected")));
+}
+
+TEST(EntityStatusFormatterTest, PendingBombReleaseShowsCcrpCue) {
+  QVariantMap summary;
+  Entity entity = makeEntity(QStringLiteral("Eagle1"));
+  entity.domain = QStringLiteral("Air");
+  entity.category = QStringLiteral("Fighter");
+  entity.latitude = 40.0;
+  entity.longitude = -3.0;
+  entity.altitude = 3000;
+  entity.headingDegrees = 0.0;
+  entity.speedKnots = 300.0;
+
+  PendingBombRelease pending;
+  pending.pending = true;
+  pending.launcherEntityName = QStringLiteral("Eagle1");
+  pending.targetLabel = QStringLiteral("Target Point");
+  pending.targetLatitude = 40.01;
+  pending.targetLongitude = -3.0;
+  pending.targetAltitudeMeters = 0.0;
+
+  static QVector<Entity> entities;
+  static QVector<ActiveMunition> munitions;
+  static QHash<QString, EntityPlan> plans;
+  entities = {entity};
+  EntityStatusContext ctx{entities, munitions, pending, plans, true, 0, QString()};
+
+  const QString result = buildEntityOperationalStatus(summary, &entity, ctx);
+  EXPECT_TRUE(result.contains(QStringLiteral("CCRP Cue")));
+  EXPECT_TRUE(result.contains(QStringLiteral("Time To Impact")));
+  EXPECT_TRUE(result.contains(QStringLiteral("Release Distance")));
+  EXPECT_TRUE(result.contains(QStringLiteral("Heading Error")));
+}
+
+TEST(EntityStatusFormatterTest, PendingBombReleaseShowsQueuedTargets) {
+  QVariantMap summary;
+  Entity entity = makeEntity(QStringLiteral("EagleQueue"));
+
+  PendingBombRelease pending;
+  pending.pending = true;
+  pending.launcherEntityName = QStringLiteral("EagleQueue");
+  pending.targetLabel = QStringLiteral("Target Active");
+
+  static QVector<Entity> entities;
+  static QVector<ActiveMunition> munitions;
+  static QHash<QString, EntityPlan> plans;
+  entities = {entity};
+  EntityStatusContext ctx{
+      entities,
+      munitions,
+      pending,
+      plans,
+      true,
+      2,
+      QStringLiteral("Target Next")};
+
+  const QString result = buildEntityOperationalStatus(summary, &entity, ctx);
+  EXPECT_TRUE(result.contains(QStringLiteral("Current Bomb Target")));
+  EXPECT_TRUE(result.contains(QStringLiteral("Queued Targets")));
+  EXPECT_TRUE(result.contains(QStringLiteral("2")));
+  EXPECT_TRUE(result.contains(QStringLiteral("Target Next")));
 }
 
 TEST(EntityStatusFormatterTest, ContactAppearsInOutput) {

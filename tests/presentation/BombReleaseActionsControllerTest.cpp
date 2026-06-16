@@ -174,6 +174,113 @@ TEST(BombReleaseActionsController, releaseAbortedWhenUserCancelsDialog) {
   delete bc;
 }
 
+// ── addBombTargetToQueue ─────────────────────────────────────────────────────
+
+TEST(BombReleaseActionsController, addBombTargetToQueueArmsImmediatelyWhenIdle) {
+  Fixture f;
+  f.addBomber(QStringLiteral("BomberQ1"));
+  f.addGroundTarget(QStringLiteral("TargetQ1"));
+  f.selectedName   = QStringLiteral("BomberQ1");
+  f.pickItemReturn = QStringLiteral("TargetQ1 (Opposing / Surface)");
+  auto* bc   = f.makeBombCtrl();
+  auto* ctrl = f.makeController(bc);
+
+  ctrl->addBombTargetToQueue();
+
+  EXPECT_TRUE(bc->pendingRelease().pending);
+  EXPECT_EQ(bc->pendingRelease().launcherEntityName, QStringLiteral("BomberQ1"));
+  EXPECT_EQ(bc->pendingRelease().targetEntityName, QStringLiteral("TargetQ1"));
+  EXPECT_EQ(bc->queuedTargetCount(), 0);
+  delete ctrl;
+  delete bc;
+}
+
+TEST(BombReleaseActionsController, addBombTargetToQueueAppendsWhenActivePending) {
+  Fixture f;
+  f.addBomber(QStringLiteral("BomberQ2"));
+  f.addGroundTarget(QStringLiteral("TargetQ2A"));
+  f.addGroundTarget(QStringLiteral("TargetQ2B"));
+  f.selectedName   = QStringLiteral("BomberQ2");
+  f.pickItemReturn = QStringLiteral("TargetQ2B (Opposing / Surface)");
+  auto* bc   = f.makeBombCtrl();
+  auto* ctrl = f.makeController(bc);
+  bc->queue(QStringLiteral("BomberQ2"), 40.0, -3.0, 0.0,
+            QStringLiteral("TargetQ2A"), QStringLiteral("Surface Entity"),
+            QStringLiteral("TargetQ2A"), false, false);
+
+  ctrl->addBombTargetToQueue();
+
+  EXPECT_TRUE(bc->pendingRelease().pending);
+  EXPECT_EQ(bc->pendingRelease().targetEntityName, QStringLiteral("TargetQ2A"));
+  EXPECT_EQ(bc->queuedTargetCount(), 1);
+  EXPECT_EQ(bc->nextQueuedTargetLabel(), QStringLiteral("TargetQ2B"));
+  delete ctrl;
+  delete bc;
+}
+
+TEST(BombReleaseActionsController, cancelPendingReleaseArmsNextQueuedTarget) {
+  Fixture f;
+  f.addBomber(QStringLiteral("BomberQ3"));
+  f.addGroundTarget(QStringLiteral("TargetQ3A"));
+  f.addGroundTarget(QStringLiteral("TargetQ3B"));
+  auto* bc   = f.makeBombCtrl();
+  auto* ctrl = f.makeController(bc);
+  bc->queue(QStringLiteral("BomberQ3"), 40.0, -3.0, 0.0,
+            QStringLiteral("TargetQ3A"), QStringLiteral("Surface Entity"),
+            QStringLiteral("TargetQ3A"), false, false);
+  bc->addTargetToQueue(QStringLiteral("BomberQ3"), 40.1, -3.1, 0.0,
+                       QStringLiteral("TargetQ3B"), QStringLiteral("Surface Entity"),
+                       QStringLiteral("TargetQ3B"), false, false);
+
+  ctrl->cancelPendingBombRelease();
+
+  EXPECT_TRUE(bc->pendingRelease().pending);
+  EXPECT_EQ(bc->pendingRelease().targetEntityName, QStringLiteral("TargetQ3B"));
+  EXPECT_EQ(bc->queuedTargetCount(), 0);
+  delete ctrl;
+  delete bc;
+}
+
+TEST(BombReleaseActionsController, clearBombTargetQueueLeavesActiveRelease) {
+  Fixture f;
+  f.addBomber(QStringLiteral("BomberQ4"));
+  f.addGroundTarget(QStringLiteral("TargetQ4A"));
+  f.addGroundTarget(QStringLiteral("TargetQ4B"));
+  auto* bc   = f.makeBombCtrl();
+  auto* ctrl = f.makeController(bc);
+  bc->queue(QStringLiteral("BomberQ4"), 40.0, -3.0, 0.0,
+            QStringLiteral("TargetQ4A"), QStringLiteral("Surface Entity"),
+            QStringLiteral("TargetQ4A"), false, false);
+  bc->addTargetToQueue(QStringLiteral("BomberQ4"), 40.1, -3.1, 0.0,
+                       QStringLiteral("TargetQ4B"), QStringLiteral("Surface Entity"),
+                       QStringLiteral("TargetQ4B"), false, false);
+
+  ctrl->clearBombTargetQueue();
+
+  EXPECT_TRUE(bc->pendingRelease().pending);
+  EXPECT_EQ(bc->pendingRelease().targetEntityName, QStringLiteral("TargetQ4A"));
+  EXPECT_EQ(bc->queuedTargetCount(), 0);
+  delete ctrl;
+  delete bc;
+}
+
+TEST(BombReleaseActionsController, addCustomBombTargetToQueueStartsQueuePickMode) {
+  Fixture f;
+  f.addBomber(QStringLiteral("BomberQ5"));
+  f.selectedName = QStringLiteral("BomberQ5");
+  auto* bc   = f.makeBombCtrl();
+  auto* ctrl = f.makeController(bc);
+
+  ctrl->addCustomBombTargetToQueue();
+
+  EXPECT_TRUE(bc->isPickingMode());
+  EXPECT_TRUE(bc->isQueuePickingMode());
+  EXPECT_TRUE(f.coordPickStarted);
+  EXPECT_FALSE(f.lastStatus.isEmpty());
+  delete ctrl;
+  delete bc;
+}
+
 // ── releaseBombAtCustomCoordinates ───────────────────────────────────────────
 
 TEST(BombReleaseActionsController, customCoordsStartsPickMode) {

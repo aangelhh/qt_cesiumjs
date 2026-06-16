@@ -577,7 +577,7 @@ bool AttackTaskProcessor::processStopWeaponsTask(const QString& entityName) {
       _bombCtrl->pendingRelease().launcherEntityName.compare(
           entityName, Qt::CaseInsensitive) == 0;
   if (hadPendingRelease) {
-    _bombCtrl->clear();
+    _bombCtrl->cancelActiveAndArmNext();
   }
   _attackAirElapsedSeconds.remove(entityName);
   _attackAirMissileCooldownSeconds.remove(entityName);

@@ -34,6 +34,10 @@ TEST(BombReleaseGate, ValidWhenAboveAndMoving) {
   Entity launcher = makeLauncher(40.0, -3.0, 3000, 0.0, 300.0);
   auto result = evaluateBombReleaseGate(launcher, 40.01, -3.0, 0.0);
   EXPECT_TRUE(result.valid);
+  EXPECT_GT(result.timeToImpactSeconds, 0.0);
+  EXPECT_GT(result.releaseDistanceMeters, 0.0);
+  EXPECT_GT(result.distanceToTargetMeters, 0.0);
+  EXPECT_GE(result.headingErrorDegrees, 0.0);
 }
 
 TEST(BombReleaseGate, TargetBehindNotAhead) {
@@ -64,6 +68,26 @@ TEST(BombReleaseGate, StateLabelValues) {
   eval.withinHeadingCone = true;
   eval.withinReleaseWindow = true;
   EXPECT_EQ(eval.stateLabel(), QStringLiteral("In Release Window"));
+}
+
+TEST(BombReleaseGate, CcrpCueLabels) {
+  BombReleaseGateEvaluation eval;
+  EXPECT_EQ(eval.ccrpCueLabel(), QStringLiteral("Invalid"));
+
+  eval.valid = true;
+  eval.targetAhead = false;
+  EXPECT_EQ(eval.ccrpCueLabel(), QStringLiteral("Target Behind"));
+
+  eval.targetAhead = true;
+  eval.withinHeadingCone = false;
+  EXPECT_EQ(eval.ccrpCueLabel(), QStringLiteral("Steer"));
+
+  eval.withinHeadingCone = true;
+  eval.withinReleaseWindow = false;
+  EXPECT_EQ(eval.ccrpCueLabel(), QStringLiteral("Hold"));
+
+  eval.withinReleaseWindow = true;
+  EXPECT_EQ(eval.ccrpCueLabel(), QStringLiteral("Release"));
 }
 
 TEST(WeaponQuantity, FindsExistingWeapon) {

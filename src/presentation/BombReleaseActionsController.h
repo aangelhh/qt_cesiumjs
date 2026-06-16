@@ -55,10 +55,15 @@ public:
 
   void releaseBombAtSurfaceEntity();
   void releaseBombAtCustomCoordinates();
+  void addBombTargetToQueue();
+  void addCustomBombTargetToQueue();
+  void clearBombTargetQueue();
   void cancelPendingBombRelease();
 
 private:
   void queueBombReleaseAtEntity(const QString& launcherName, const Entity& target);
+  void addBombTargetToQueueAtEntity(const QString& launcherName, const Entity& target);
+  bool validateLauncherCanQueueBombTarget(const QString& launcherName);
 
   BombReleaseController* _bombController;
   SelectedNameFn         _selectedName;

@@ -30,6 +30,16 @@ struct PendingBombRelease {
   }
 };
 
+struct BombTargetQueueItem {
+  QString launcherEntityName;
+  QString targetEntityName;
+  double targetLatitude = 0.0;
+  double targetLongitude = 0.0;
+  double targetAltitudeMeters = 0.0;
+  QString targetLabel;
+  QString sourceDescription;
+};
+
 enum class PlanStepKind {
   MoveToLocation,
   WaitOnLocation,

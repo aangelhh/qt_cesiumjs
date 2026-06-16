@@ -152,7 +152,11 @@ QVariantMap makePendingBombTargetTrackSummary(
     double targetAltitudeMeters,
     const QString& teamLabel,
     const QString& releaseStateLabel,
-    double distanceMetersToTarget) {
+    double distanceMetersToTarget,
+    const QString& ccrpCueLabel,
+    double releaseDistanceMeters,
+    double distanceErrorMeters,
+    double timeToImpactSeconds) {
   const QString distanceText = distanceMetersToTarget >= 0.0
       ? QStringLiteral("%1 km").arg(distanceMetersToTarget / 1000.0, 0, 'f', 1)
       : QString();
@@ -176,6 +180,10 @@ QVariantMap makePendingBombTargetTrackSummary(
   summary.insert(QStringLiteral("pendingBombReleaseState"), releaseStateLabel);
   summary.insert(QStringLiteral("pendingBombTargetLabel"), targetLabel);
   summary.insert(QStringLiteral("pendingBombTargetDistanceMeters"), distanceMetersToTarget);
+  summary.insert(QStringLiteral("pendingBombCcrpCue"), ccrpCueLabel);
+  summary.insert(QStringLiteral("pendingBombReleaseDistanceMeters"), releaseDistanceMeters);
+  summary.insert(QStringLiteral("pendingBombDistanceErrorMeters"), distanceErrorMeters);
+  summary.insert(QStringLiteral("pendingBombTimeToImpactSeconds"), timeToImpactSeconds);
   return summary;
 }
 
