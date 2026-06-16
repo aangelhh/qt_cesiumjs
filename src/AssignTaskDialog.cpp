@@ -42,7 +42,8 @@ AssignTaskDialog::AssignTaskDialog(
       _followTargetCombo(new QComboBox(this)),
       _waypointCombo(new QComboBox(this)),
       _routeCombo(new QComboBox(this)),
-      _areaCombo(new QComboBox(this)) {
+      _areaCombo(new QComboBox(this)),
+      _weaponTypeCombo(new QComboBox(this)) {
   this->setWindowTitle(QStringLiteral("Assign Task"));
 
   auto* layout = new QVBoxLayout(this);
@@ -62,6 +63,7 @@ AssignTaskDialog::AssignTaskDialog(
   _taskTypeCombo->addItem(QStringLiteral("Hold Racetrack"), QStringLiteral("HoldRacetrack"));
   _taskTypeCombo->addItem(QStringLiteral("Follow Entity"), QStringLiteral("FollowEntity"));
   _taskTypeCombo->addItem(QStringLiteral("Intercept Entity"), QStringLiteral("InterceptEntity"));
+  _taskTypeCombo->addItem(QStringLiteral("Attack Once"), QStringLiteral("AttackOnce"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Air"), QStringLiteral("AttackAir"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Surface"), QStringLiteral("AttackSurface"));
 
@@ -117,6 +119,9 @@ AssignTaskDialog::AssignTaskDialog(
   _waypointCombo->addItems(availableWaypoints);
   _routeCombo->addItems(availableRoutes);
   _areaCombo->addItems(availableAreas);
+  _weaponTypeCombo->addItem(QStringLiteral("Auto"), QStringLiteral("Auto"));
+  _weaponTypeCombo->addItem(QStringLiteral("Missile"), QStringLiteral("Missile"));
+  _weaponTypeCombo->addItem(QStringLiteral("Bomb"), QStringLiteral("Bomb"));
 
   auto* formLayout = new QFormLayout();
   formLayout->addRow(QStringLiteral("Task"), _taskTypeCombo);
@@ -129,6 +134,7 @@ AssignTaskDialog::AssignTaskDialog(
   formLayout->addRow(QStringLiteral("Target Route"), _routeCombo);
   formLayout->addRow(QStringLiteral("Target Area"), _areaCombo);
   formLayout->addRow(QStringLiteral("Target Entity"), _followTargetCombo);
+  formLayout->addRow(QStringLiteral("Weapon"), _weaponTypeCombo);
   formLayout->addRow(QStringLiteral("Follow / Intercept Distance"), _followDistanceSpin);
   formLayout->addRow(QStringLiteral("Arrival Tolerance"), _arrivalToleranceSpin);
   formLayout->addRow(QStringLiteral("Altitude Tolerance"), _altitudeToleranceSpin);
@@ -165,6 +171,7 @@ AssignTaskDialog::AssignTaskDialog(
       currentTask.altitudeToleranceMeters > 0.0 ? currentTask.altitudeToleranceMeters : 100.0);
   _durationSpin->setValue(
       isInterceptEntityTaskType(rawInitialType) ||
+          rawInitialType == QStringLiteral("AttackOnce") ||
           rawInitialType == QStringLiteral("FollowRoute") ||
           rawInitialType == QStringLiteral("MoveAlongRoute")
       ? (currentTask.timeoutSeconds > 0.0 ? currentTask.timeoutSeconds : 120.0)
@@ -188,6 +195,13 @@ AssignTaskDialog::AssignTaskDialog(
   const int areaIndex = _areaCombo->findText(currentTask.targetAreaName);
   if (areaIndex >= 0) {
     _areaCombo->setCurrentIndex(areaIndex);
+  }
+  const int weaponIndex = _weaponTypeCombo->findData(
+      currentTask.weaponType.trimmed().isEmpty()
+      ? QStringLiteral("Auto")
+      : currentTask.weaponType.trimmed());
+  if (weaponIndex >= 0) {
+    _weaponTypeCombo->setCurrentIndex(weaponIndex);
   }
 
   QObject::connect(
@@ -233,6 +247,7 @@ EntityTask AssignTaskDialog::task() const {
   task.altitudeToleranceMeters = _altitudeToleranceSpin->value();
   task.timeoutSeconds = _durationSpin->value();
   task.racetrackLegLengthMeters = _followDistanceSpin->value();
+  task.weaponType = _weaponTypeCombo->currentData().toString();
   task.elapsedSeconds = 0.0;
   return task;
 }
@@ -252,6 +267,7 @@ void AssignTaskDialog::syncUiForTaskType() {
   const bool isRacetrackTask = taskType == QStringLiteral("HoldRacetrack");
   const bool isFollowTask = taskType == QStringLiteral("FollowEntity");
   const bool isInterceptTask = isInterceptEntityTaskType(taskType);
+  const bool isAttackOnceTask = taskType == QStringLiteral("AttackOnce");
   const bool isAttackAirTask = taskType == QStringLiteral("AttackAir");
   const bool isAttackSurfaceTask = taskType == QStringLiteral("AttackSurface");
 
@@ -270,11 +286,12 @@ void AssignTaskDialog::syncUiForTaskType() {
   _routeCombo->setEnabled(isRouteTask);
   _areaCombo->setEnabled(isAreaTask);
   _followTargetCombo->setEnabled(
-      isFollowTask || isInterceptTask || isAttackAirTask || isAttackSurfaceTask);
+      isFollowTask || isInterceptTask || isAttackOnceTask || isAttackAirTask || isAttackSurfaceTask);
+  _weaponTypeCombo->setEnabled(isAttackOnceTask || isAttackAirTask || isAttackSurfaceTask);
   _followDistanceSpin->setEnabled(isFollowTask || isInterceptTask || isRacetrackTask);
   _arrivalToleranceSpin->setEnabled(isFollowTask || isRouteTask || isWaitTask);
   _altitudeToleranceSpin->setEnabled(isInterceptTask);
-  _durationSpin->setEnabled(isFollowTask || isInterceptTask || isRouteTask || isRacetrackTask || isWaitTask);
+  _durationSpin->setEnabled(isFollowTask || isInterceptTask || isRouteTask || isRacetrackTask || isWaitTask || isAttackOnceTask);
 }
 
 void AssignTaskDialog::setPickedCoordinate(double longitude, double latitude, double height) {

@@ -45,6 +45,7 @@ enum class PlanStepKind {
   InterceptEntity2D,
   InterceptEntity3D,
   ReturnToBase,
+  AttackOnce,
   AttackAir,
   AttackSurface,
 };

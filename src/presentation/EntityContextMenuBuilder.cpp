@@ -60,6 +60,8 @@ void populateEntityContextMenu(
       actions.assignInterceptEntityTask);
 
   QMenu* attackTaskMenu = taskMenu->addMenu(QStringLiteral("Attack"));
+  addSlotAction(attackTaskMenu, QStringLiteral("Attack Once..."),
+      actions.assignAttackOnceTask);
   addSlotAction(attackTaskMenu, QStringLiteral("Attack Air..."),
       actions.assignAttackAirTask);
   addSlotAction(attackTaskMenu, QStringLiteral("Attack Surface..."),

@@ -271,6 +271,29 @@ TEST_F(PlanStepConfiguratorTest, PatrolArea_AreaNotFound_StillSucceeds) {
 
 // ── AttackAir ─────────────────────────────────────────────────────────────
 
+TEST_F(PlanStepConfiguratorTest, AttackOnce_LabelAndDefaults) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
+        EXPECT_EQ(initialType, QStringLiteral("AttackOnce"));
+        EXPECT_EQ(init.taskType, QStringLiteral("AttackOnce"));
+        EXPECT_EQ(init.weaponType, QStringLiteral("Auto"));
+        EXPECT_DOUBLE_EQ(init.timeoutSeconds, 120.0);
+        out = init;
+        out.targetEntityName = QStringLiteral("Target1");
+        out.weaponType = QStringLiteral("Missile");
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Kappa");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::AttackOnce, step));
+  EXPECT_EQ(step.kind, PlanStepKind::AttackOnce);
+  EXPECT_EQ(step.task.taskType, QStringLiteral("AttackOnce"));
+  EXPECT_EQ(step.task.weaponType, QStringLiteral("Missile"));
+  EXPECT_EQ(step.label, QStringLiteral("Attack Once: Target1"));
+}
+
 TEST_F(PlanStepConfiguratorTest, AttackAir_Label) {
   presentation::PlanStepConfigurator cfg(
       [](const QString&, const EntityTask& init, const QString&, EntityTask& out) {

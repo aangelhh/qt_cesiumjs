@@ -301,6 +301,7 @@ QVariantMap makeEntityTrackSummary(
   summary.insert(QStringLiteral("taskAltitudeToleranceMeters"), entity.currentTask.altitudeToleranceMeters);
   summary.insert(QStringLiteral("taskTimeoutSeconds"),          entity.currentTask.timeoutSeconds);
   summary.insert(QStringLiteral("taskRacetrackLegLengthMeters"), entity.currentTask.racetrackLegLengthMeters);
+  summary.insert(QStringLiteral("taskWeaponType"),              entity.currentTask.weaponType);
   summary.insert(QStringLiteral("sensorCount"),    entity.sensors.size());
   summary.insert(QStringLiteral("contactCount"),   entity.sensorContacts.size());
 

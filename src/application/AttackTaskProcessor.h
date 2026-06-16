@@ -50,6 +50,7 @@ public:
   QHash<QString, int>&    autoBehaviorDamageReactionLevel();
 
 private:
+  bool processAttackOnceTask(const QString& entityName, double deltaSeconds);
   bool processAttackAirTask(const QString& entityName, double deltaSeconds);
   bool processAttackSurfaceTask(const QString& entityName);
   bool setEntityTaskStatus(const QString& entityName, const QString& status);

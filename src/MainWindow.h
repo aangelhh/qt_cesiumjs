@@ -101,6 +101,7 @@ private slots:
   void assignHoldRacetrackTask();
   void assignFollowEntityTask();
   void assignInterceptEntityTask();
+  void assignAttackOnceTask();
   void assignAttackAirTask();
   void assignAttackSurfaceTask();
   void openEntityPlanDialog();

@@ -68,6 +68,7 @@ public:
   void assignInterceptEntity();
   void assignInterceptEntity2D();
   void assignInterceptEntity3D();
+  void assignAttackOnce();
   void assignAttackAir();
   void assignAttackSurface();
 

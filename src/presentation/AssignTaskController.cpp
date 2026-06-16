@@ -51,6 +51,7 @@ EntityTask AssignTaskController::taskFromSummary(const QVariantMap& summary) {
   task.timeoutSeconds         = summary.value(QStringLiteral("taskTimeoutSeconds"), 120.0).toDouble();
   task.racetrackLegLengthMeters =
       summary.value(QStringLiteral("taskRacetrackLegLengthMeters"), 10000.0).toDouble();
+  task.weaponType              = summary.value(QStringLiteral("taskWeaponType")).toString();
   return task;
 }
 
@@ -90,6 +91,11 @@ void AssignTaskController::open(const QString& initialTaskType) {
     currentTask.targetSpeedKnots = summary.value(QStringLiteral("speedKnots")).toDouble();
     currentTask.arrivalToleranceMeters = 200.0;
     currentTask.durationSeconds = 0.0;
+  }
+  if (initialTaskType == QStringLiteral("AttackOnce") &&
+      currentTask.taskType != QStringLiteral("AttackOnce")) {
+    currentTask.weaponType = QStringLiteral("Auto");
+    currentTask.timeoutSeconds = 120.0;
   }
 
   EntityTask configuredTask;

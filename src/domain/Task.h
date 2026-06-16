@@ -290,4 +290,5 @@ struct EntityTask {
   double altitudeToleranceMeters = 100.0;
   double timeoutSeconds = 120.0;
   double racetrackLegLengthMeters = 10000.0;
+  QString weaponType;
 };

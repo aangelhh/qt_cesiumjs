@@ -217,6 +217,14 @@ bool applyEntityTask(
       taskToApply.arrivalToleranceMeters <= 0.0) {
     taskToApply.arrivalToleranceMeters = 200.0;
   }
+  if (taskToApply.taskType == QStringLiteral("AttackOnce")) {
+    if (taskToApply.timeoutSeconds <= 0.0) {
+      taskToApply.timeoutSeconds = 120.0;
+    }
+    if (taskToApply.weaponType.trimmed().isEmpty()) {
+      taskToApply.weaponType = QStringLiteral("Auto");
+    }
+  }
 
   if (!state->assignTask(entityName, taskToApply)) {
     return false;

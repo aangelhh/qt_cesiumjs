@@ -46,4 +46,5 @@ private:
   QComboBox* _waypointCombo;
   QComboBox* _routeCombo;
   QComboBox* _areaCombo;
+  QComboBox* _weaponTypeCombo;
 };
