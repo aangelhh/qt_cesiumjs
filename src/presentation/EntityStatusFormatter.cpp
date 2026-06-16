@@ -206,6 +206,16 @@ QString buildEntityOperationalStatus(
   QString bombReleaseState = QStringLiteral("None");
   QString bombTargetText = QStringLiteral("-");
   QString bombDistanceText = QStringLiteral("-");
+  QString ccrpCueText = QStringLiteral("-");
+  QString ccrpTimeText = QStringLiteral("-");
+  QString ccrpReleaseDistanceText = QStringLiteral("-");
+  QString ccrpDistanceErrorText = QStringLiteral("-");
+  QString ccrpHeadingErrorText = QStringLiteral("-");
+  QString currentBombTargetText = QStringLiteral("-");
+  QString nextQueuedBombTargetText =
+      ctx.nextQueuedBombTargetLabel.trimmed().isEmpty()
+      ? QStringLiteral("-")
+      : ctx.nextQueuedBombTargetLabel.trimmed();
   if (ctx.pendingRelease.pending &&
       ctx.pendingRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0) {
     const domain::BombReleaseGateEvaluation evaluation = domain::evaluateBombReleaseGate(
@@ -219,6 +229,7 @@ QString buildEntityOperationalStatus(
               ctx.pendingRelease.targetLatitude,
               ctx.pendingRelease.targetLongitude)
         : ctx.pendingRelease.targetLabel.trimmed();
+    currentBombTargetText = bombTargetText;
     bombDistanceText = QStringLiteral("%1 km")
         .arg(
             domain::distanceMeters(
@@ -229,6 +240,19 @@ QString buildEntityOperationalStatus(
             0,
             'f',
             1);
+    ccrpCueText = evaluation.ccrpCueLabel();
+    if (evaluation.timeToImpactSeconds >= 0.0) {
+      ccrpTimeText = QStringLiteral("%1 s")
+          .arg(evaluation.timeToImpactSeconds, 0, 'f', 1);
+    }
+    if (evaluation.releaseDistanceMeters >= 0.0) {
+      ccrpReleaseDistanceText = QStringLiteral("%1 m")
+          .arg(evaluation.releaseDistanceMeters, 0, 'f', 0);
+      ccrpDistanceErrorText = QStringLiteral("%1 m")
+          .arg(evaluation.distanceErrorMeters, 0, 'f', 0);
+      ccrpHeadingErrorText = QStringLiteral("%1 deg")
+          .arg(evaluation.headingErrorDegrees, 0, 'f', 1);
+    }
   } else {
     for (const ActiveMunition& munition : ctx.activeMunitions) {
       if (munition.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0 &&
@@ -359,8 +383,16 @@ QString buildEntityOperationalStatus(
         << QStringLiteral("")
         << QStringLiteral("[BOMBING]")
         << fieldLine(QStringLiteral("Pending Release"), bombReleaseState)
+        << fieldLine(QStringLiteral("Current Bomb Target"), currentBombTargetText)
+        << fieldLine(QStringLiteral("Queued Targets"), QString::number(ctx.queuedBombTargetCount))
+        << fieldLine(QStringLiteral("Next Target"), nextQueuedBombTargetText)
         << fieldLine(QStringLiteral("Bomb Target"), bombTargetText)
         << fieldLine(QStringLiteral("Distance"), bombDistanceText)
+        << fieldLine(QStringLiteral("CCRP Cue"), ccrpCueText)
+        << fieldLine(QStringLiteral("Time To Impact"), ccrpTimeText)
+        << fieldLine(QStringLiteral("Release Distance"), ccrpReleaseDistanceText)
+        << fieldLine(QStringLiteral("Range Error"), ccrpDistanceErrorText)
+        << fieldLine(QStringLiteral("Heading Error"), ccrpHeadingErrorText)
         << QStringLiteral("")
         << QStringLiteral("")
         << QStringLiteral("[PLAN]")

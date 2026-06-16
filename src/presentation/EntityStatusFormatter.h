@@ -19,6 +19,8 @@ struct EntityStatusContext {
   const PendingBombRelease& pendingRelease;
   const QHash<QString, EntityPlan>& plans;
   bool simulationRunning = false;
+  int queuedBombTargetCount = 0;
+  QString nextQueuedBombTargetLabel;
 };
 
 /// Build a multi-line operational status string for display in the detail panel.

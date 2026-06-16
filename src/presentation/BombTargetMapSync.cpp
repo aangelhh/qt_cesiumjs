@@ -25,7 +25,11 @@ void syncPendingBombTargetToMap(
 
   QString teamLabel         = QStringLiteral("Friendly");
   QString releaseStateLabel = QStringLiteral("Armed");
+  QString ccrpCueLabel;
   double distanceMeters     = -1.0;
+  double releaseDistanceMeters = -1.0;
+  double distanceErrorMeters = 0.0;
+  double timeToImpactSeconds = -1.0;
 
   if (const Entity* launcher = findEntity(pendingRelease.launcherEntityName)) {
     teamLabel         = domain::forceIdentifierLabel(launcher->forceIdentifier);
@@ -41,6 +45,10 @@ void syncPendingBombTargetToMap(
         pendingRelease.targetLongitude,
         pendingRelease.targetAltitudeMeters);
     releaseStateLabel = evaluation.stateLabel();
+    ccrpCueLabel = evaluation.ccrpCueLabel();
+    releaseDistanceMeters = evaluation.releaseDistanceMeters;
+    distanceErrorMeters = evaluation.distanceErrorMeters;
+    timeToImpactSeconds = evaluation.timeToImpactSeconds;
 
     sendTrack(
         makePendingBombTargetLineTrackSummary(
@@ -63,7 +71,11 @@ void syncPendingBombTargetToMap(
           pendingRelease.targetAltitudeMeters,
           teamLabel,
           releaseStateLabel,
-          distanceMeters),
+          distanceMeters,
+          ccrpCueLabel,
+          releaseDistanceMeters,
+          distanceErrorMeters,
+          timeToImpactSeconds),
       false);
 }
 

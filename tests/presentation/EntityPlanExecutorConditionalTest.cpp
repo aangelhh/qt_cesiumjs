@@ -189,6 +189,46 @@ TEST(EntityPlanExecutorConditional, WaitUntilInRangeCompletesWhenTargetIsClose) 
   EXPECT_EQ(plan.steps.at(0).status, QStringLiteral("Completed"));
 }
 
+TEST(EntityPlanExecutorConditional, StopWeaponsTaskCompletesAndAdvancesPlan) {
+  ExecutorFixture fixture;
+  fixture.state.addEntity(makeEntity(QStringLiteral("Own"), 1));
+
+  auto executor = fixture.makeExecutor();
+  PlanStep stopStep = makeWaitStep(
+      PlanStepKind::StopWeaponsTask,
+      QStringLiteral("StopWeaponsTask"));
+  PlanStep returnStep = makeWaitStep(
+      PlanStepKind::ReturnToBase,
+      QStringLiteral("MoveToLocation"));
+  returnStep.task.targetLatitude = 40.1;
+  returnStep.task.targetLongitude = -3.1;
+  returnStep.task.targetAltitudeMeters = 3000;
+  returnStep.task.targetSpeedKnots = 250.0;
+
+  EntityPlan& plan = executor.ensurePlan(QStringLiteral("Own"));
+  plan.steps.clear();
+  plan.steps.append(stopStep);
+  plan.steps.append(returnStep);
+
+  ASSERT_TRUE(executor.startPlan(QStringLiteral("Own")));
+  for (Entity& entity : fixture.state.entitiesMutable()) {
+    if (entity.name == QStringLiteral("Own")) {
+      entity.currentTask.status = QStringLiteral("Completed");
+      break;
+    }
+  }
+
+  executor.advancePlans();
+
+  EXPECT_TRUE(plan.running);
+  EXPECT_EQ(plan.currentStepIndex, 1);
+  EXPECT_EQ(plan.steps.at(0).status, QStringLiteral("Completed"));
+  EXPECT_EQ(plan.steps.at(1).status, QStringLiteral("Running"));
+  ASSERT_NE(findEntity(fixture.state, QStringLiteral("Own")), nullptr);
+  EXPECT_EQ(findEntity(fixture.state, QStringLiteral("Own"))->currentTask.taskType,
+            QStringLiteral("MoveToLocation"));
+}
+
 TEST(EntityPlanExecutorConditional, WaitUntilTargetDetectedFailsOnTimeout) {
   ExecutorFixture fixture;
   fixture.state.addEntity(makeEntity(QStringLiteral("Own"), 1));

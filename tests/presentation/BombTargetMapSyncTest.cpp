@@ -25,11 +25,15 @@ Entity makeLauncher(const QString& name = "Eagle1", int force = 1) {
   e.forceIdentifier = force;
   e.latitude        = 40.01;
   e.longitude       = -3.01;
+  e.altitude        = 3000;
+  e.headingDegrees  = 135.0;
+  e.speedKnots      = 300.0;
   return e;
 }
 
 struct Spy {
   QVector<QString>    sent;
+  QVector<QVariantMap> sentSummaries;
   QVector<QString>    removed;
   const Entity*       resolvedEntity = nullptr;
 
@@ -39,6 +43,7 @@ struct Spy {
   std::function<void(const QVariantMap&, bool)> sender() {
     return [this](const QVariantMap& s, bool) {
       sent.push_back(s.value(QStringLiteral("name")).toString());
+      sentSummaries.push_back(s);
     };
   }
   std::function<void(const QString&)> remover() {
@@ -96,4 +101,25 @@ TEST(BombTargetMapSync, LauncherFoundNothingRemoved) {
   spy.resolvedEntity = &launcher;
   syncPendingBombTargetToMap(makePending(), spy.finder(), spy.sender(), spy.remover());
   EXPECT_TRUE(spy.removed.isEmpty());
+}
+
+TEST(BombTargetMapSync, LauncherFoundSendsCcrpCueFields) {
+  Entity launcher = makeLauncher();
+  Spy spy;
+  spy.resolvedEntity = &launcher;
+  syncPendingBombTargetToMap(makePending(), spy.finder(), spy.sender(), spy.remover());
+
+  QVariantMap bombTargetSummary;
+  for (const QVariantMap& summary : spy.sentSummaries) {
+    if (summary.value(QStringLiteral("name")).toString() == QStringLiteral("Bomb Target")) {
+      bombTargetSummary = summary;
+      break;
+    }
+  }
+
+  EXPECT_FALSE(bombTargetSummary.isEmpty());
+  EXPECT_FALSE(bombTargetSummary.value(QStringLiteral("pendingBombCcrpCue")).toString().isEmpty());
+  EXPECT_GE(
+      bombTargetSummary.value(QStringLiteral("pendingBombTimeToImpactSeconds")).toDouble(),
+      0.0);
 }

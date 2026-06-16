@@ -46,7 +46,11 @@ QVariantMap makePendingBombTargetTrackSummary(
     double targetAltitudeMeters,
     const QString& teamLabel,
     const QString& releaseStateLabel,
-    double distanceMetersToTarget);
+    double distanceMetersToTarget,
+    const QString& ccrpCueLabel = {},
+    double releaseDistanceMeters = -1.0,
+    double distanceErrorMeters = 0.0,
+    double timeToImpactSeconds = -1.0);
 
 /// Track summary for the line connecting launcher to pending bomb target.
 QVariantMap makePendingBombTargetLineTrackSummary(

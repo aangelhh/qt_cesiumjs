@@ -150,6 +150,16 @@ void populateEntityContextMenu(
   QAction* releaseBombAtCustom = addSlotAction(releaseBombAtMenu,
       QStringLiteral("Custom Coordinates..."),
       actions.releaseBombAtCustomCoordinates);
+  QMenu* addBombTargetQueueMenu = weaponsMenu->addMenu(QStringLiteral("Add Bomb Target to Queue..."));
+  QAction* addBombQueueSurface = addSlotAction(addBombTargetQueueMenu,
+      QStringLiteral("Surface Entity..."),
+      actions.addBombTargetToQueue);
+  QAction* addBombQueueCustom = addSlotAction(addBombTargetQueueMenu,
+      QStringLiteral("Custom Coordinates..."),
+      actions.addCustomBombTargetToQueue);
+  QAction* clearBombTargetQueue = addSlotAction(weaponsMenu,
+      QStringLiteral("Clear Bomb Target Queue"),
+      actions.clearBombTargetQueue);
   QAction* cancelBomb = addSlotAction(weaponsMenu,
       QStringLiteral("Cancel Bomb Release"),
       actions.cancelPendingBombRelease);
@@ -164,6 +174,10 @@ void populateEntityContextMenu(
   releaseBombAtMenu->setEnabled(s.canUseWeapons && s.bombCount > 0 && s.simulationRunning);
   releaseBombAtSurface->setEnabled(s.canUseWeapons && s.bombCount > 0 && s.simulationRunning);
   releaseBombAtCustom->setEnabled(s.canUseWeapons && s.bombCount > 0 && s.simulationRunning);
+  addBombTargetQueueMenu->setEnabled(s.canUseWeapons && s.bombCount > 0 && s.simulationRunning);
+  addBombQueueSurface->setEnabled(s.canUseWeapons && s.bombCount > 0 && s.simulationRunning);
+  addBombQueueCustom->setEnabled(s.canUseWeapons && s.bombCount > 0 && s.simulationRunning);
+  clearBombTargetQueue->setEnabled(s.canUseWeapons);
   cancelBomb->setEnabled(s.bombReleasePendingForThisEntity);
   if (s.canUseWeapons && s.missileCount > 0 && s.simulationRunning &&
       s.detectedMissileTargetCount <= 0) {

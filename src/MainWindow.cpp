@@ -860,7 +860,9 @@ QString MainWindow::buildSelectedEntityOperationalStatus(
       this->_scenarioState->activeMunitions(),
       this->_bombReleaseController->pendingRelease(),
       this->_planExecutor->plans(),
-      this->_simulationRunning};
+      this->_simulationRunning,
+      this->_bombReleaseController->queuedTargetCount(),
+      this->_bombReleaseController->nextQueuedTargetLabel()};
   return presentation::buildEntityOperationalStatus(summary, entity, ctx);
 }
 
@@ -1317,6 +1319,7 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
 
 void MainWindow::handleBombPickCoordinate(double longitude, double latitude) {
   const QString launcherName = this->_bombReleaseController->pickingLauncherName();
+  const bool queueTarget = this->_bombReleaseController->isQueuePickingMode();
   this->_bombReleaseController->cancelPickMode();
 
   const Entity* launcher = this->findEntityByName(launcherName);
@@ -1329,13 +1332,24 @@ void MainWindow::handleBombPickCoordinate(double longitude, double latitude) {
     return;
   }
 
-  this->queuePendingBombRelease(
-      launcherName,
-      latitude,
-      longitude,
-      0.0,
-      domain::attackPointLabel(latitude, longitude),
-      QStringLiteral("Pick on map"));
+  const QString targetLabel = domain::attackPointLabel(latitude, longitude);
+  if (queueTarget) {
+    this->_bombReleaseController->addTargetToQueue(
+        launcherName,
+        latitude,
+        longitude,
+        0.0,
+        targetLabel,
+        QStringLiteral("Pick on map"));
+  } else {
+    this->queuePendingBombRelease(
+        launcherName,
+        latitude,
+        longitude,
+        0.0,
+        targetLabel,
+        QStringLiteral("Pick on map"));
+  }
 }
 
 void MainWindow::openSelectedEntityDetails() {
@@ -2055,6 +2069,9 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   actions.releaseBombFromSelectedEntity     = [this]() { this->releaseBombFromSelectedEntity(); };
   actions.releaseBombAtSurfaceEntity        = [this]() { this->releaseBombAtSurfaceEntity(); };
   actions.releaseBombAtCustomCoordinates    = [this]() { this->releaseBombAtCustomCoordinates(); };
+  actions.addBombTargetToQueue              = [this]() { this->addBombTargetToQueue(); };
+  actions.addCustomBombTargetToQueue        = [this]() { this->addCustomBombTargetToQueue(); };
+  actions.clearBombTargetQueue              = [this]() { this->clearBombTargetQueue(); };
   actions.cancelPendingBombRelease          = [this]() { this->cancelPendingBombRelease(); };
   actions.openSelectedEntityDetails         = [this]() { this->openSelectedEntityDetails(); };
   actions.focusSelectedEntityInMap          = [this]() { this->focusSelectedEntityInMap(); };
@@ -2563,7 +2580,7 @@ void MainWindow::queuePendingBombRelease(
 }
 
 void MainWindow::clearPendingBombRelease() {
-  this->_bombReleaseController->clear();
+  this->_bombReleaseController->clearAll();
 }
 
 QString MainWindow::cleanupRuntimeReferencesForRemovedEntity(const QString& entityName) {
@@ -2611,6 +2628,18 @@ void MainWindow::queueBombReleaseAtEntity(const QString& launcherName, const Ent
 
 void MainWindow::releaseBombAtCustomCoordinates() {
   this->_bombReleaseActionsController->releaseBombAtCustomCoordinates();
+}
+
+void MainWindow::addBombTargetToQueue() {
+  this->_bombReleaseActionsController->addBombTargetToQueue();
+}
+
+void MainWindow::addCustomBombTargetToQueue() {
+  this->_bombReleaseActionsController->addCustomBombTargetToQueue();
+}
+
+void MainWindow::clearBombTargetQueue() {
+  this->_bombReleaseActionsController->clearBombTargetQueue();
 }
 
 void MainWindow::cancelPendingBombRelease() {

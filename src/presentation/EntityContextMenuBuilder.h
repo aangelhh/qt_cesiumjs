@@ -53,6 +53,9 @@ struct EntityContextMenuSlots {
   std::function<void()> releaseBombFromSelectedEntity;
   std::function<void()> releaseBombAtSurfaceEntity;
   std::function<void()> releaseBombAtCustomCoordinates;
+  std::function<void()> addBombTargetToQueue;
+  std::function<void()> addCustomBombTargetToQueue;
+  std::function<void()> clearBombTargetQueue;
   std::function<void()> cancelPendingBombRelease;
   std::function<void()> openSelectedEntityDetails;
   std::function<void()> focusSelectedEntityInMap;

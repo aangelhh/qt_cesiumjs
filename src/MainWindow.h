@@ -129,6 +129,9 @@ private slots:
   void releaseBombAtSurfaceEntity();
   void queueBombReleaseAtEntity(const QString& launcherName, const struct Entity& target);
   void releaseBombAtCustomCoordinates();
+  void addBombTargetToQueue();
+  void addCustomBombTargetToQueue();
+  void clearBombTargetQueue();
   void cancelPendingBombRelease();
   void clearSelectedTask();
   void deleteSelectedEntity();

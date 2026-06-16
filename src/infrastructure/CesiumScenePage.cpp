@@ -371,6 +371,23 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         return (distanceMeters / 1000.0).toFixed(1) + ' km';
       }
 
+      function pendingBombCcrpText(track) {
+        const cue = String(track && track.pendingBombCcrpCue || '').trim();
+        const errorMeters = Number(track && track.pendingBombDistanceErrorMeters);
+        const timeToImpactSeconds = Number(track && track.pendingBombTimeToImpactSeconds);
+        const parts = [];
+        if (cue.length > 0) {
+          parts.push('CCRP ' + cue);
+        }
+        if (Number.isFinite(errorMeters)) {
+          parts.push('Err ' + errorMeters.toFixed(0) + ' m');
+        }
+        if (Number.isFinite(timeToImpactSeconds) && timeToImpactSeconds >= 0.0) {
+          parts.push('TOF ' + timeToImpactSeconds.toFixed(1) + ' s');
+        }
+        return parts.join(' | ');
+      }
+
       function effectDisplayColor(track) {
         const effectType = String(track && track.effectType || '').toLowerCase();
         if (effectType === 'bombsmoketrail') {
@@ -2223,9 +2240,11 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         let entity = qtEntitiesByName.get(track.name);
         const canTrack = trackCanBeTracked(track);
         const bombTargetDistanceText = pendingBombTargetDistanceText(track);
+        const bombTargetCcrpText = pendingBombCcrpText(track);
         const labelText = isPendingBombTarget
           ? ('Bomb Target\n' + pendingBombReleaseState(track) +
-              (bombTargetDistanceText.length > 0 ? ('\n' + bombTargetDistanceText) : ''))
+              (bombTargetDistanceText.length > 0 ? ('\n' + bombTargetDistanceText) : '') +
+              (bombTargetCcrpText.length > 0 ? ('\n' + bombTargetCcrpText) : ''))
           : track.name;
         const wasTrackedEntity = canTrack && viewer.trackedEntity && viewer.trackedEntity === entity;
         let overlayBundle = qtOverlayEntitiesByName.get(track.name) || {

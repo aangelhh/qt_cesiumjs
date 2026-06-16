@@ -91,6 +91,95 @@ void BombReleaseActionsController::releaseBombAtSurfaceEntity() {
   queueBombReleaseAtEntity(launcherName, *target);
 }
 
+bool BombReleaseActionsController::validateLauncherCanQueueBombTarget(
+    const QString& launcherName) {
+  if (launcherName.isEmpty()) {
+    return false;
+  }
+
+  const Entity* launcher = _findEntity(launcherName);
+  const int bombCount =
+      launcher ? domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) : 0;
+  if (!launcher || bombCount <= 0) {
+    _setStatus(QStringLiteral("No hay bombas disponibles en %1.").arg(launcherName));
+    return false;
+  }
+
+  if (!_isRunning()) {
+    _setStatus(QStringLiteral("Arranca la simulacion para programar targets de bomba."));
+    return false;
+  }
+
+  return true;
+}
+
+void BombReleaseActionsController::addBombTargetToQueue() {
+  const QString launcherName = _selectedName();
+  if (!validateLauncherCanQueueBombTarget(launcherName)) {
+    return;
+  }
+
+  const Entity* launcher = _findEntity(launcherName);
+  if (!launcher) {
+    return;
+  }
+  const QVector<const Entity*> targets = _validTargets(*launcher);
+  if (targets.isEmpty()) {
+    _setStatus(QStringLiteral("No hay surface targets validos para %1.").arg(launcherName));
+    return;
+  }
+
+  QStringList options;
+  QHash<QString, QString> targetNameByOption;
+  for (const Entity* target : targets) {
+    if (!target) {
+      continue;
+    }
+    const QString option = _targetLabel(*target);
+    options.push_back(option);
+    targetNameByOption.insert(option, target->name);
+  }
+
+  bool ok = false;
+  const QString selectedOption = _pickItem(
+      QStringLiteral("Add Bomb Target to Queue"),
+      QStringLiteral("Surface Target"),
+      options, ok);
+  if (!ok || selectedOption.trimmed().isEmpty()) {
+    return;
+  }
+
+  const QString targetName = targetNameByOption.value(selectedOption).trimmed();
+  const Entity* target = _findEntity(targetName);
+  if (!target) {
+    return;
+  }
+
+  addBombTargetToQueueAtEntity(launcherName, *target);
+}
+
+void BombReleaseActionsController::addCustomBombTargetToQueue() {
+  const QString launcherName = _selectedName();
+  if (!validateLauncherCanQueueBombTarget(launcherName)) {
+    return;
+  }
+
+  if (_isPickPending()) {
+    _setStatus(QStringLiteral("Termina antes la captura de coordenadas que ya esta activa."));
+    return;
+  }
+
+  _bombController->beginQueuePickMode(launcherName);
+  _beginCoordPick();
+  _setStatus(QStringLiteral("Haz clic en el mapa para encolar un target de bomba para %1.")
+      .arg(launcherName));
+}
+
+void BombReleaseActionsController::clearBombTargetQueue() {
+  _bombController->clearTargetQueue();
+  _syncUi();
+}
+
 void BombReleaseActionsController::releaseBombAtCustomCoordinates() {
   _bombController->clear();
   _bombController->cancelPickMode();
@@ -133,7 +222,7 @@ void BombReleaseActionsController::cancelPendingBombRelease() {
   const QString launcherName = _bombController->pendingRelease().launcherEntityName;
   const QString targetLabel  = _bombController->pendingRelease().targetLabel;
   _bombController->cancelPickMode();
-  _bombController->clear();
+  _bombController->cancelActiveAndArmNext();
   _log(QStringLiteral("Bomb release canceled for %1 on %2")
       .arg(launcherName, targetLabel));
   _syncUi();
@@ -143,6 +232,18 @@ void BombReleaseActionsController::cancelPendingBombRelease() {
 void BombReleaseActionsController::queueBombReleaseAtEntity(
     const QString& launcherName, const Entity& target) {
   _bombController->queue(
+      launcherName,
+      target.latitude,
+      target.longitude,
+      static_cast<double>(target.altitude),
+      target.name,
+      QStringLiteral("Surface Entity"),
+      target.name);
+}
+
+void BombReleaseActionsController::addBombTargetToQueueAtEntity(
+    const QString& launcherName, const Entity& target) {
+  _bombController->addTargetToQueue(
       launcherName,
       target.latitude,
       target.longitude,
