@@ -63,6 +63,7 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
     case PlanStepKind::InterceptEntity3D:    return QStringLiteral("Intercept Entity");
     case PlanStepKind::ReturnToBase:         return QStringLiteral("Return To Base");
     case PlanStepKind::AttackOnce:           return QStringLiteral("Attack Once");
+    case PlanStepKind::AttackUntilDestroyed: return QStringLiteral("Attack Until Destroyed");
     case PlanStepKind::AttackAir:            return QStringLiteral("Attack Air");
     case PlanStepKind::AttackSurface:        return QStringLiteral("Attack Surface");
     case PlanStepKind::WaitUntilTargetDetected: return QStringLiteral("Wait Until Target Detected");
@@ -551,6 +552,7 @@ bool EntityPlanExecutor::activePlanStepCompleted(
 
     case PlanStepKind::AttackAir:
     case PlanStepKind::AttackOnce:
+    case PlanStepKind::AttackUntilDestroyed:
     case PlanStepKind::AttackSurface:
     case PlanStepKind::HoldRacetrack:
     case PlanStepKind::FollowEntity:
@@ -689,6 +691,30 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
         return setReason(
             QStringLiteral("attack target '%1' no longer exists")
                 .arg(step.task.targetEntityName.trimmed()));
+      }
+      return true;
+    }
+
+    case PlanStepKind::AttackUntilDestroyed: {
+      if (step.task.targetEntityName.trimmed().isEmpty()) {
+        return setReason(QStringLiteral("attack target is not set"));
+      }
+      bool found = false;
+      for (const auto& e : _state->entities()) {
+        if (e.name.compare(step.task.targetEntityName.trimmed(), Qt::CaseInsensitive) == 0) {
+          found = true; break;
+        }
+      }
+      if (!found) {
+        return setReason(
+            QStringLiteral("attack target '%1' no longer exists")
+                .arg(step.task.targetEntityName.trimmed()));
+      }
+      if (step.task.maxEngagementTimeSeconds < 0.0) {
+        return setReason(QStringLiteral("max engagement time must be non-negative"));
+      }
+      if (step.task.shotCooldownSeconds < 0.0) {
+        return setReason(QStringLiteral("shot cooldown must be non-negative"));
       }
       return true;
     }
@@ -842,6 +868,13 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
       return currentTask.targetEntityName == step.task.targetEntityName &&
              currentTask.weaponType == step.task.weaponType &&
              nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
+
+    case PlanStepKind::AttackUntilDestroyed:
+      return currentTask.targetEntityName == step.task.targetEntityName &&
+             currentTask.weaponType == step.task.weaponType &&
+             nearlyEqual(currentTask.maxEngagementTimeSeconds,
+                         step.task.maxEngagementTimeSeconds, 0.1) &&
+             nearlyEqual(currentTask.shotCooldownSeconds, step.task.shotCooldownSeconds, 0.1);
 
     case PlanStepKind::AttackSurface:
       if (!step.task.targetEntityName.trimmed().isEmpty()) {

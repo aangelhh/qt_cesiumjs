@@ -164,6 +164,7 @@ void EntityPlanDialog::onAdd() {
       {"Intercept Entity",              PlanStepKind::InterceptEntity,           false},
       {"Return To Base",                PlanStepKind::ReturnToBase,             false},
       {"Attack Once",                   PlanStepKind::AttackOnce,               true },
+      {"Attack Until Destroyed",        PlanStepKind::AttackUntilDestroyed,     false},
       {"Attack Air",                    PlanStepKind::AttackAir,                false},
       {"Attack Surface",                PlanStepKind::AttackSurface,            false},
       {"Wait Until Target Detected",    PlanStepKind::WaitUntilTargetDetected,  true },

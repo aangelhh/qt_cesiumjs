@@ -57,7 +57,8 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("InterceptEntity2D") ||
          taskType == QStringLiteral("InterceptEntity3D") ||
          taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
-         taskType == QStringLiteral("AttackAir");
+         taskType == QStringLiteral("AttackAir") ||
+         taskType == QStringLiteral("AttackUntilDestroyed");
 }
 
 

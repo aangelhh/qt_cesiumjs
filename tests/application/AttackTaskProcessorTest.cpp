@@ -173,6 +173,7 @@ TEST_F(AttackTaskProcessorTest, AttackAirTimesOut) {
   state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
   addWeapon(QStringLiteral("F16"), QStringLiteral("Missile"), 2);
   state->addEntity(makeAirEntity(QStringLiteral("Mig29"), 2));
+  addDetectedContact(QStringLiteral("F16"), QStringLiteral("Mig29"));
 
   EntityTask task;
   task.enabled = true;
@@ -285,6 +286,127 @@ TEST_F(AttackTaskProcessorTest, AttackOnceFailsForInvalidTarget) {
 
   const Entity& updated = state->entities().first();
   EXPECT_EQ(updated.currentTask.status, QStringLiteral("Failed"));
+}
+
+TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedWithMissileLaunchesAndKeepsRunning) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  addWeapon(QStringLiteral("F16"), QStringLiteral("Missile"), 2);
+  state->addEntity(makeAirEntity(QStringLiteral("Mig29"), 2));
+  addDetectedContact(QStringLiteral("F16"), QStringLiteral("Mig29"));
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("AttackUntilDestroyed");
+  task.targetEntityName = QStringLiteral("Mig29");
+  task.weaponType = QStringLiteral("Missile");
+  task.maxEngagementTimeSeconds = 120.0;
+  task.shotCooldownSeconds = 8.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Running"));
+  ASSERT_FALSE(updated.weapons.isEmpty());
+  EXPECT_EQ(updated.weapons.first().quantity, 1);
+  EXPECT_EQ(state->activeMunitions().size(), 1);
+}
+
+TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedCompletesWhenTargetDestroyed) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  Entity target = makeAirEntity(QStringLiteral("Mig29"), 2);
+  target.destroyed = true;
+  state->addEntity(target);
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("AttackUntilDestroyed");
+  task.targetEntityName = QStringLiteral("Mig29");
+  task.weaponType = QStringLiteral("Missile");
+  task.maxEngagementTimeSeconds = 120.0;
+  task.shotCooldownSeconds = 8.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Completed"));
+}
+
+TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedFailsWithNoAmmo) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  state->addEntity(makeAirEntity(QStringLiteral("Mig29"), 2));
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("AttackUntilDestroyed");
+  task.targetEntityName = QStringLiteral("Mig29");
+  task.weaponType = QStringLiteral("Missile");
+  task.maxEngagementTimeSeconds = 120.0;
+  task.shotCooldownSeconds = 8.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Failed"));
+}
+
+TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedWithBombQueuesAndKeepsRunning) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  addWeapon(QStringLiteral("F16"), QStringLiteral("Bomb"), 2);
+
+  Entity target;
+  target.name = QStringLiteral("Tank1");
+  target.forceIdentifier = 2;
+  target.domain = QStringLiteral("Land");
+  target.latitude = 40.1;
+  target.longitude = -3.1;
+  target.altitude = 500;
+  target.destroyed = false;
+  state->addEntity(target);
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("AttackUntilDestroyed");
+  task.targetEntityName = QStringLiteral("Tank1");
+  task.weaponType = QStringLiteral("Bomb");
+  task.maxEngagementTimeSeconds = 120.0;
+  task.shotCooldownSeconds = 8.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  EXPECT_EQ(bombsQueued.size(), 1);
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Running"));
+}
+
+TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedFailsOnMaxEngagementTimeout) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  addWeapon(QStringLiteral("F16"), QStringLiteral("Missile"), 2);
+  state->addEntity(makeAirEntity(QStringLiteral("Mig29"), 2));
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("AttackUntilDestroyed");
+  task.targetEntityName = QStringLiteral("Mig29");
+  task.weaponType = QStringLiteral("Missile");
+  task.maxEngagementTimeSeconds = 0.05;
+  task.shotCooldownSeconds = 8.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+  processor->processAttackTasks(0.033, true);
+
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Failed"));
+  EXPECT_TRUE(logMessages.last().contains(QStringLiteral("timeout")));
 }
 
 TEST_F(AttackTaskProcessorTest, AttackSurfaceFailsWithNoBombs) {

@@ -46,6 +46,8 @@ QString buildEntityOperationalStatus(
              ? QStringLiteral("Wait on Location")
            : taskType == QStringLiteral("AttackOnce")
              ? QStringLiteral("Attack Once")
+           : taskType == QStringLiteral("AttackUntilDestroyed")
+             ? QStringLiteral("Attack Until Destroyed")
            : taskType == QStringLiteral("WaitUntilTargetDetected")
              ? QStringLiteral("Wait Until Target Detected")
            : taskType == QStringLiteral("WaitUntilTargetDestroyed")

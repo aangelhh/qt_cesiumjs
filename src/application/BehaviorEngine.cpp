@@ -202,6 +202,7 @@ QStringList advanceBehaviors(
     const QString taskType = entity.currentTask.taskType.trimmed();
     if (entity.currentTask.enabled &&
         (taskType == QStringLiteral("AttackAir") ||
+         taskType == QStringLiteral("AttackUntilDestroyed") ||
          taskType == QStringLiteral("AttackSurface"))) {
       continue;
     }

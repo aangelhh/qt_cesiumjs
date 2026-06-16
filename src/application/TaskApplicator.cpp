@@ -28,7 +28,8 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("FollowEntity") ||
          isInterceptEntityTaskType(taskType) ||
          taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
-         taskType == QStringLiteral("AttackAir");
+         taskType == QStringLiteral("AttackAir") ||
+         taskType == QStringLiteral("AttackUntilDestroyed");
 }
 
 bool isRouteTaskType(const QString& taskType) {
@@ -228,6 +229,20 @@ bool applyEntityTask(
   if (taskToApply.taskType == QStringLiteral("AttackOnce")) {
     if (taskToApply.timeoutSeconds <= 0.0) {
       taskToApply.timeoutSeconds = 120.0;
+    }
+    if (taskToApply.weaponType.trimmed().isEmpty()) {
+      taskToApply.weaponType = QStringLiteral("Auto");
+    }
+  }
+  if (taskToApply.taskType == QStringLiteral("AttackUntilDestroyed")) {
+    if (taskToApply.maxEngagementTimeSeconds <= 0.0) {
+      taskToApply.maxEngagementTimeSeconds = 120.0;
+    }
+    if (taskToApply.timeoutSeconds <= 0.0) {
+      taskToApply.timeoutSeconds = taskToApply.maxEngagementTimeSeconds;
+    }
+    if (taskToApply.shotCooldownSeconds <= 0.0) {
+      taskToApply.shotCooldownSeconds = 8.0;
     }
     if (taskToApply.weaponType.trimmed().isEmpty()) {
       taskToApply.weaponType = QStringLiteral("Auto");

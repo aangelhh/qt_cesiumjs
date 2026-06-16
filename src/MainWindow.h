@@ -102,6 +102,7 @@ private slots:
   void assignFollowEntityTask();
   void assignInterceptEntityTask();
   void assignAttackOnceTask();
+  void assignAttackUntilDestroyedTask();
   void assignAttackAirTask();
   void assignAttackSurfaceTask();
   void assignWaitUntilTargetDetectedTask();

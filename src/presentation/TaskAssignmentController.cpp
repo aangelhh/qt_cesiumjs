@@ -241,6 +241,10 @@ void TaskAssignmentController::assignAttackOnce() {
   _openDialog(QStringLiteral("AttackOnce"));
 }
 
+void TaskAssignmentController::assignAttackUntilDestroyed() {
+  _openDialog(QStringLiteral("AttackUntilDestroyed"));
+}
+
 void TaskAssignmentController::assignAttackAir() {
   _openDialog(QStringLiteral("AttackAir"));
 }

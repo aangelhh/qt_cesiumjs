@@ -69,6 +69,7 @@ public:
   void assignInterceptEntity2D();
   void assignInterceptEntity3D();
   void assignAttackOnce();
+  void assignAttackUntilDestroyed();
   void assignAttackAir();
   void assignAttackSurface();
   void assignWaitUntilTargetDetected();

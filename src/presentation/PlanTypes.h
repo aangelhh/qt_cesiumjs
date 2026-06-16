@@ -46,6 +46,7 @@ enum class PlanStepKind {
   InterceptEntity3D,
   ReturnToBase,
   AttackOnce,
+  AttackUntilDestroyed,
   AttackAir,
   AttackSurface,
   WaitUntilTargetDetected,

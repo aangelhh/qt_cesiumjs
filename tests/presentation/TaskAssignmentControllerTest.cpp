@@ -140,6 +140,14 @@ TEST(TaskAssignmentController, assignAttackOnceOpensDlg) {
   delete ctrl;
 }
 
+TEST(TaskAssignmentController, assignAttackUntilDestroyedOpensDlg) {
+  Fixture f;
+  auto* ctrl = f.makeController();
+  ctrl->assignAttackUntilDestroyed();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("AttackUntilDestroyed"));
+  delete ctrl;
+}
+
 TEST(TaskAssignmentController, assignAttackAirOpensDlg) {
   Fixture f;
   auto* ctrl = f.makeController();

@@ -294,6 +294,34 @@ TEST_F(PlanStepConfiguratorTest, AttackOnce_LabelAndDefaults) {
   EXPECT_EQ(step.label, QStringLiteral("Attack Once: Target1"));
 }
 
+TEST_F(PlanStepConfiguratorTest, AttackUntilDestroyed_LabelAndDefaults) {
+  presentation::PlanStepConfigurator cfg(
+      [](const QString&, const EntityTask& init, const QString& initialType, EntityTask& out) {
+        EXPECT_EQ(initialType, QStringLiteral("AttackUntilDestroyed"));
+        EXPECT_EQ(init.taskType, QStringLiteral("AttackUntilDestroyed"));
+        EXPECT_EQ(init.weaponType, QStringLiteral("Auto"));
+        EXPECT_DOUBLE_EQ(init.maxEngagementTimeSeconds, 120.0);
+        EXPECT_DOUBLE_EQ(init.shotCooldownSeconds, 8.0);
+        out = init;
+        out.targetEntityName = QStringLiteral("Target1");
+        out.weaponType = QStringLiteral("Missile");
+        out.maxEngagementTimeSeconds = 180.0;
+        out.shotCooldownSeconds = 5.0;
+        return true;
+      },
+      noArea, noHome, acceptItem, acceptDouble);
+
+  Entity entity = makeAirEntity("Kappa");
+  PlanStep step;
+  EXPECT_TRUE(cfg.configure(entity, 0.0, 3000, 300.0, PlanStepKind::AttackUntilDestroyed, step));
+  EXPECT_EQ(step.kind, PlanStepKind::AttackUntilDestroyed);
+  EXPECT_EQ(step.task.taskType, QStringLiteral("AttackUntilDestroyed"));
+  EXPECT_EQ(step.task.weaponType, QStringLiteral("Missile"));
+  EXPECT_DOUBLE_EQ(step.task.maxEngagementTimeSeconds, 180.0);
+  EXPECT_DOUBLE_EQ(step.task.shotCooldownSeconds, 5.0);
+  EXPECT_EQ(step.label, QStringLiteral("Attack Until Destroyed: Target1"));
+}
+
 TEST_F(PlanStepConfiguratorTest, AttackAir_Label) {
   presentation::PlanStepConfigurator cfg(
       [](const QString&, const EntityTask& init, const QString&, EntityTask& out) {
