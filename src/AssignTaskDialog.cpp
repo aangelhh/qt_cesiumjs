@@ -69,6 +69,9 @@ AssignTaskDialog::AssignTaskDialog(
   _taskTypeCombo->addItem(QStringLiteral("Intercept Entity"), QStringLiteral("InterceptEntity"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Once"), QStringLiteral("AttackOnce"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Until Destroyed"), QStringLiteral("AttackUntilDestroyed"));
+  _taskTypeCombo->addItem(QStringLiteral("Fire on Position"), QStringLiteral("FireOnPosition"));
+  _taskTypeCombo->addItem(QStringLiteral("Fire in Direction"), QStringLiteral("FireInDirection"));
+  _taskTypeCombo->addItem(QStringLiteral("Stop Weapons Task"), QStringLiteral("StopWeaponsTask"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Air"), QStringLiteral("AttackAir"));
   _taskTypeCombo->addItem(QStringLiteral("Attack Surface"), QStringLiteral("AttackSurface"));
   _taskTypeCombo->addItem(QStringLiteral("Wait Until Target Detected"), QStringLiteral("WaitUntilTargetDetected"));
@@ -201,6 +204,7 @@ AssignTaskDialog::AssignTaskDialog(
       isInterceptEntityTaskType(rawInitialType) ||
           rawInitialType == QStringLiteral("AttackOnce") ||
           rawInitialType == QStringLiteral("AttackUntilDestroyed") ||
+          rawInitialType == QStringLiteral("FireInDirection") ||
           rawInitialType == QStringLiteral("FollowRoute") ||
           rawInitialType == QStringLiteral("MoveAlongRoute")
       ? (rawInitialType == QStringLiteral("AttackUntilDestroyed")
@@ -316,6 +320,8 @@ void AssignTaskDialog::syncUiForTaskType() {
   const bool isInterceptTask = isInterceptEntityTaskType(taskType);
   const bool isAttackOnceTask = taskType == QStringLiteral("AttackOnce");
   const bool isAttackUntilDestroyedTask = taskType == QStringLiteral("AttackUntilDestroyed");
+  const bool isFireOnPositionTask = taskType == QStringLiteral("FireOnPosition");
+  const bool isFireInDirectionTask = taskType == QStringLiteral("FireInDirection");
   const bool isAttackAirTask = taskType == QStringLiteral("AttackAir");
   const bool isAttackSurfaceTask = taskType == QStringLiteral("AttackSurface");
   const bool isWaitDetectedTask = taskType == QStringLiteral("WaitUntilTargetDetected");
@@ -326,9 +332,11 @@ void AssignTaskDialog::syncUiForTaskType() {
   const bool isConditionalTargetTask =
       isWaitDetectedTask || isWaitDestroyedTask || isWaitDamagedTask || isWaitRangeTask;
 
-  _headingSpin->setEnabled(isFlyTask || isRacetrackTask);
-  _latitudeSpin->setEnabled(isMoveTask || isWaitTask || isRacetrackTask || isAttackSurfaceTask);
-  _longitudeSpin->setEnabled(isMoveTask || isWaitTask || isRacetrackTask || isAttackSurfaceTask);
+  _headingSpin->setEnabled(isFlyTask || isRacetrackTask || isFireInDirectionTask);
+  _latitudeSpin->setEnabled(isMoveTask || isWaitTask || isRacetrackTask || isAttackSurfaceTask ||
+                            isFireOnPositionTask);
+  _longitudeSpin->setEnabled(isMoveTask || isWaitTask || isRacetrackTask || isAttackSurfaceTask ||
+                             isFireOnPositionTask);
   _altitudeSpin->setEnabled(
       isFlyTask ||
       isMoveTask ||
@@ -336,7 +344,8 @@ void AssignTaskDialog::syncUiForTaskType() {
       isWaypointTask ||
       isAreaTask ||
       isRacetrackTask ||
-      isAttackSurfaceTask);
+      isAttackSurfaceTask ||
+      isFireOnPositionTask);
   _waypointCombo->setEnabled(isWaypointTask);
   _routeCombo->setEnabled(isRouteTask);
   _areaCombo->setEnabled(isAreaTask);
@@ -347,12 +356,14 @@ void AssignTaskDialog::syncUiForTaskType() {
   _targetDomainCombo->setEnabled(isWaitDetectedTask);
   _enemyOnlyCheck->setEnabled(isWaitDetectedTask);
   _weaponTypeCombo->setEnabled(isAttackOnceTask || isAttackUntilDestroyedTask ||
+                               isFireOnPositionTask || isFireInDirectionTask ||
                                isAttackAirTask || isAttackSurfaceTask);
   _followDistanceSpin->setEnabled(isFollowTask || isInterceptTask || isRacetrackTask || isWaitRangeTask);
   _arrivalToleranceSpin->setEnabled(isFollowTask || isRouteTask || isWaitTask);
   _altitudeToleranceSpin->setEnabled(isInterceptTask || isWaitDamagedTask);
   _durationSpin->setEnabled(isFollowTask || isInterceptTask || isRouteTask || isRacetrackTask || isWaitTask ||
                             isAttackOnceTask || isAttackUntilDestroyedTask ||
+                            isFireInDirectionTask ||
                             isWaitDetectedTask || isWaitDestroyedTask ||
                             isWaitDamagedTask || isWaitTimeTask || isWaitRangeTask);
   _shotCooldownSpin->setEnabled(isAttackUntilDestroyedTask);

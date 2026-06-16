@@ -409,6 +409,110 @@ TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedFailsOnMaxEngagementTimeout)
   EXPECT_TRUE(logMessages.last().contains(QStringLiteral("timeout")));
 }
 
+TEST_F(AttackTaskProcessorTest, FireOnPositionQueuesBombAndCompletes) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  addWeapon(QStringLiteral("F16"), QStringLiteral("Bomb"), 2);
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("FireOnPosition");
+  task.weaponType = QStringLiteral("Bomb");
+  task.targetLatitude = 40.25;
+  task.targetLongitude = -3.25;
+  task.targetAltitudeMeters = 750;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  EXPECT_EQ(bombsQueued.size(), 1);
+  EXPECT_EQ(bombsQueued.first(), QStringLiteral("F16"));
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Completed"));
+}
+
+TEST_F(AttackTaskProcessorTest, FireOnPositionFailsForUnsupportedWeapon) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  addWeapon(QStringLiteral("F16"), QStringLiteral("Missile"), 2);
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("FireOnPosition");
+  task.weaponType = QStringLiteral("Missile");
+  task.targetLatitude = 40.25;
+  task.targetLongitude = -3.25;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  const Entity& updated = state->entities().first();
+  EXPECT_EQ(updated.currentTask.status, QStringLiteral("Failed"));
+  EXPECT_TRUE(bombsQueued.isEmpty());
+}
+
+TEST_F(AttackTaskProcessorTest, FireInDirectionPlaceholderCompletesAfterDuration) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("FireInDirection");
+  task.weaponType = QStringLiteral("Auto");
+  task.targetHeadingDegrees = 90.0;
+  task.durationSeconds = 1.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.5, true);
+  EXPECT_EQ(state->entities().first().currentTask.status, QStringLiteral("Running"));
+
+  processor->processAttackTasks(0.5, true);
+  EXPECT_EQ(state->entities().first().currentTask.status, QStringLiteral("Completed"));
+}
+
+TEST_F(AttackTaskProcessorTest, FireInDirectionFailsForSpecificUnsupportedWeapon) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("FireInDirection");
+  task.weaponType = QStringLiteral("Missile");
+  task.targetHeadingDegrees = 90.0;
+  task.durationSeconds = 1.0;
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  EXPECT_EQ(state->entities().first().currentTask.status, QStringLiteral("Failed"));
+}
+
+TEST_F(AttackTaskProcessorTest, StopWeaponsTaskClearsPendingBombReleaseAndCompletes) {
+  state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
+  bombCtrl->queue(
+      QStringLiteral("F16"),
+      40.25,
+      -3.25,
+      0.0,
+      QStringLiteral("Point"),
+      QStringLiteral("Test"),
+      QString(),
+      false,
+      false);
+  ASSERT_TRUE(bombCtrl->isPending());
+
+  EntityTask task;
+  task.enabled = true;
+  task.taskType = QStringLiteral("StopWeaponsTask");
+  task.status = QStringLiteral("Running");
+  setTask(QStringLiteral("F16"), task);
+
+  processor->processAttackTasks(0.033, true);
+
+  EXPECT_FALSE(bombCtrl->isPending());
+  EXPECT_EQ(state->entities().first().currentTask.status, QStringLiteral("Completed"));
+}
+
 TEST_F(AttackTaskProcessorTest, AttackSurfaceFailsWithNoBombs) {
   state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
 

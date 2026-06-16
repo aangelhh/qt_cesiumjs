@@ -70,6 +70,9 @@ public:
   void assignInterceptEntity3D();
   void assignAttackOnce();
   void assignAttackUntilDestroyed();
+  void assignFireOnPosition();
+  void assignFireInDirection();
+  void assignStopWeaponsTask();
   void assignAttackAir();
   void assignAttackSurface();
   void assignWaitUntilTargetDetected();

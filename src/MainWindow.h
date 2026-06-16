@@ -103,6 +103,9 @@ private slots:
   void assignInterceptEntityTask();
   void assignAttackOnceTask();
   void assignAttackUntilDestroyedTask();
+  void assignFireOnPositionTask();
+  void assignFireInDirectionTask();
+  void assignStopWeaponsTask();
   void assignAttackAirTask();
   void assignAttackSurfaceTask();
   void assignWaitUntilTargetDetectedTask();

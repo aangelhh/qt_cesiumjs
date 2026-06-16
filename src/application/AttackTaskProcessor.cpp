@@ -52,6 +52,7 @@ void AttackTaskProcessor::processAttackTasks(double deltaSeconds, bool simulatio
     }
     if ((taskType == QStringLiteral("AttackAir") ||
          taskType == QStringLiteral("AttackUntilDestroyed") ||
+         taskType == QStringLiteral("FireInDirection") ||
          taskType == QStringLiteral("AttackOnce")) &&
         domain::attackTaskStatusIsTerminal(taskStatus)) {
       _attackAirElapsedSeconds.remove(entity.name);
@@ -61,6 +62,9 @@ void AttackTaskProcessor::processAttackTasks(double deltaSeconds, bool simulatio
         entity.destroyed ||
         (taskType != QStringLiteral("AttackOnce") &&
          taskType != QStringLiteral("AttackUntilDestroyed") &&
+         taskType != QStringLiteral("FireOnPosition") &&
+         taskType != QStringLiteral("FireInDirection") &&
+         taskType != QStringLiteral("StopWeaponsTask") &&
          taskType != QStringLiteral("AttackAir") &&
          taskType != QStringLiteral("AttackSurface")) ||
         domain::attackTaskStatusIsTerminal(taskStatus)) {
@@ -84,6 +88,12 @@ void AttackTaskProcessor::processAttackTasks(double deltaSeconds, bool simulatio
       processAttackOnceTask(entityName, deltaSeconds);
     } else if (taskType == QStringLiteral("AttackUntilDestroyed")) {
       processAttackUntilDestroyedTask(entityName, deltaSeconds);
+    } else if (taskType == QStringLiteral("FireOnPosition")) {
+      processFireOnPositionTask(entityName);
+    } else if (taskType == QStringLiteral("FireInDirection")) {
+      processFireInDirectionTask(entityName, deltaSeconds);
+    } else if (taskType == QStringLiteral("StopWeaponsTask")) {
+      processStopWeaponsTask(entityName);
     } else if (taskType == QStringLiteral("AttackAir")) {
       processAttackAirTask(entityName, deltaSeconds);
     } else if (taskType == QStringLiteral("AttackSurface")) {
@@ -114,6 +124,9 @@ void AttackTaskProcessor::processAutoBombing(double deltaSeconds, bool simulatio
     if (launcher.currentTask.enabled &&
         (taskType == QStringLiteral("AttackOnce") ||
          taskType == QStringLiteral("AttackUntilDestroyed") ||
+         taskType == QStringLiteral("FireOnPosition") ||
+         taskType == QStringLiteral("FireInDirection") ||
+         taskType == QStringLiteral("StopWeaponsTask") ||
          taskType == QStringLiteral("AttackAir") ||
          taskType == QStringLiteral("AttackSurface"))) {
       continue;
@@ -457,6 +470,125 @@ bool AttackTaskProcessor::processAttackUntilDestroyedTask(
   }
 
   return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+}
+
+bool AttackTaskProcessor::processFireOnPositionTask(const QString& entityName) {
+  const Entity* launcher = nullptr;
+  for (const Entity& e : _state->entities()) {
+    if (e.name == entityName) { launcher = &e; break; }
+  }
+  if (!launcher || launcher->destroyed) {
+    return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+
+  const EntityTask task = launcher->currentTask;
+  QString weaponType = task.weaponType.trimmed();
+  if (weaponType.isEmpty() ||
+      weaponType.compare(QStringLiteral("Auto"), Qt::CaseInsensitive) == 0) {
+    weaponType = QStringLiteral("Bomb");
+  }
+  if (weaponType.compare(QStringLiteral("Bomb"), Qt::CaseInsensitive) != 0) {
+    _log(QStringLiteral("Fire on Position task failed for %1: unsupported weapon %2.")
+             .arg(entityName, weaponType));
+    return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+  if (!domain::attackSurfaceCoordinatesAreUsable(
+          task.targetLatitude, task.targetLongitude) ||
+      domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) <= 0 ||
+      _bombCtrl->isPending()) {
+    return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+
+  const QString targetLabel =
+      domain::attackPointLabel(task.targetLatitude, task.targetLongitude);
+  _queueBomb(
+      entityName,
+      task.targetLatitude,
+      task.targetLongitude,
+      static_cast<double>(task.targetAltitudeMeters),
+      targetLabel,
+      QStringLiteral("Fire on Position Task"),
+      QString(),
+      false,
+      false);
+  _attackAirElapsedSeconds.remove(entityName);
+  _attackAirMissileCooldownSeconds.remove(entityName);
+  _log(QStringLiteral("Fire on Position task armed bomb release for %1 at %2")
+           .arg(entityName, targetLabel));
+  _setStatus(QStringLiteral("Fire on Position armado para %1.").arg(entityName));
+  return setEntityTaskStatus(entityName, QStringLiteral("Completed"));
+}
+
+bool AttackTaskProcessor::processFireInDirectionTask(
+    const QString& entityName, double deltaSeconds) {
+  const Entity* launcher = nullptr;
+  for (const Entity& e : _state->entities()) {
+    if (e.name == entityName) { launcher = &e; break; }
+  }
+  if (!launcher || launcher->destroyed) {
+    return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+
+  const QString weaponType = launcher->currentTask.weaponType.trimmed();
+  if (!weaponType.isEmpty() &&
+      weaponType.compare(QStringLiteral("Auto"), Qt::CaseInsensitive) != 0) {
+    _log(QStringLiteral("Fire in Direction task failed for %1: no compatible %2 weapon.")
+             .arg(entityName, weaponType));
+    _attackAirElapsedSeconds.remove(entityName);
+    return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+
+  _attackAirElapsedSeconds[entityName] =
+      _attackAirElapsedSeconds.value(entityName, 0.0) + qMax(0.0, deltaSeconds);
+  const double durationSeconds = launcher->currentTask.durationSeconds;
+  if (durationSeconds <= 0.0 ||
+      _attackAirElapsedSeconds.value(entityName) >= durationSeconds) {
+    _attackAirElapsedSeconds.remove(entityName);
+    _attackAirMissileCooldownSeconds.remove(entityName);
+    _log(QStringLiteral("Fire in Direction task completed for %1: placeholder executed.")
+             .arg(entityName));
+    _setStatus(QStringLiteral("Fire in Direction completado para %1.").arg(entityName));
+    return setEntityTaskStatus(entityName, QStringLiteral("Completed"));
+  }
+
+  Entity* mutableLauncher = nullptr;
+  for (Entity& e : _state->entitiesMutable()) {
+    if (e.name == entityName) { mutableLauncher = &e; break; }
+  }
+  if (mutableLauncher) {
+    mutableLauncher->currentTask.status = QStringLiteral("Running");
+    mutableLauncher->currentTask.targetHeadingDegrees =
+        launcher->currentTask.targetHeadingDegrees;
+  }
+  return true;
+}
+
+bool AttackTaskProcessor::processStopWeaponsTask(const QString& entityName) {
+  const Entity* launcher = nullptr;
+  for (const Entity& e : _state->entities()) {
+    if (e.name == entityName) { launcher = &e; break; }
+  }
+  if (!launcher || launcher->destroyed) {
+    return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
+  }
+
+  const bool hadPendingRelease =
+      _bombCtrl->isPending() &&
+      _bombCtrl->pendingRelease().launcherEntityName.compare(
+          entityName, Qt::CaseInsensitive) == 0;
+  if (hadPendingRelease) {
+    _bombCtrl->clear();
+  }
+  _attackAirElapsedSeconds.remove(entityName);
+  _attackAirMissileCooldownSeconds.remove(entityName);
+  _autoBombReleaseCooldownSeconds.remove(entityName);
+  _autoBehaviorDamageReactionLevel.remove(entityName);
+  _log(hadPendingRelease
+           ? QStringLiteral("Stop Weapons Task cancelled pending release for %1.")
+                 .arg(entityName)
+           : QStringLiteral("Stop Weapons Task completed for %1.").arg(entityName));
+  _setStatus(QStringLiteral("Stop Weapons Task completado para %1.").arg(entityName));
+  return setEntityTaskStatus(entityName, QStringLiteral("Completed"));
 }
 
 bool AttackTaskProcessor::processAttackAirTask(

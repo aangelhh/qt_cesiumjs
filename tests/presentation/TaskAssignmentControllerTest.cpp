@@ -148,6 +148,30 @@ TEST(TaskAssignmentController, assignAttackUntilDestroyedOpensDlg) {
   delete ctrl;
 }
 
+TEST(TaskAssignmentController, assignFireOnPositionOpensDlg) {
+  Fixture f;
+  auto* ctrl = f.makeController();
+  ctrl->assignFireOnPosition();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("FireOnPosition"));
+  delete ctrl;
+}
+
+TEST(TaskAssignmentController, assignFireInDirectionOpensDlg) {
+  Fixture f;
+  auto* ctrl = f.makeController();
+  ctrl->assignFireInDirection();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("FireInDirection"));
+  delete ctrl;
+}
+
+TEST(TaskAssignmentController, assignStopWeaponsTaskOpensDlg) {
+  Fixture f;
+  auto* ctrl = f.makeController();
+  ctrl->assignStopWeaponsTask();
+  EXPECT_EQ(f.openedDialog, QStringLiteral("StopWeaponsTask"));
+  delete ctrl;
+}
+
 TEST(TaskAssignmentController, assignAttackAirOpensDlg) {
   Fixture f;
   auto* ctrl = f.makeController();

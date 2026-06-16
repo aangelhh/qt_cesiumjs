@@ -248,6 +248,16 @@ bool applyEntityTask(
       taskToApply.weaponType = QStringLiteral("Auto");
     }
   }
+  if (taskToApply.taskType == QStringLiteral("FireOnPosition")) {
+    if (taskToApply.weaponType.trimmed().isEmpty()) {
+      taskToApply.weaponType = QStringLiteral("Auto");
+    }
+  }
+  if (taskToApply.taskType == QStringLiteral("FireInDirection")) {
+    if (taskToApply.weaponType.trimmed().isEmpty()) {
+      taskToApply.weaponType = QStringLiteral("Auto");
+    }
+  }
   if (isConditionalWaitTaskType(taskToApply.taskType)) {
     if (taskToApply.taskType == QStringLiteral("WaitUntilTime")) {
       if (taskToApply.durationSeconds <= 0.0) {

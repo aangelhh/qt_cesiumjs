@@ -583,6 +583,12 @@ MainWindow::MainWindow(QWidget* parent)
           this->assignAttackOnceTask();
         } else if (taskType == QStringLiteral("AttackUntilDestroyed")) {
           this->assignAttackUntilDestroyedTask();
+        } else if (taskType == QStringLiteral("FireOnPosition")) {
+          this->assignFireOnPositionTask();
+        } else if (taskType == QStringLiteral("FireInDirection")) {
+          this->assignFireInDirectionTask();
+        } else if (taskType == QStringLiteral("StopWeaponsTask")) {
+          this->assignStopWeaponsTask();
         } else if (taskType == QStringLiteral("AttackAir")) {
           this->assignAttackAirTask();
         } else if (taskType == QStringLiteral("AttackSurface")) {
@@ -805,6 +811,12 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
              ? QStringLiteral("Attack Once")
            : rawTaskType == QStringLiteral("AttackUntilDestroyed")
              ? QStringLiteral("Attack Until Destroyed")
+           : rawTaskType == QStringLiteral("FireOnPosition")
+             ? QStringLiteral("Fire on Position")
+           : rawTaskType == QStringLiteral("FireInDirection")
+             ? QStringLiteral("Fire in Direction")
+           : rawTaskType == QStringLiteral("StopWeaponsTask")
+             ? QStringLiteral("Stop Weapons Task")
            : rawTaskType == QStringLiteral("WaitUntilTargetDetected")
              ? QStringLiteral("Wait Until Target Detected")
            : rawTaskType == QStringLiteral("WaitUntilTargetDestroyed")
@@ -2020,6 +2032,9 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   actions.assignInterceptEntityTask         = [this]() { this->assignInterceptEntityTask(); };
   actions.assignAttackOnceTask              = [this]() { this->assignAttackOnceTask(); };
   actions.assignAttackUntilDestroyedTask    = [this]() { this->assignAttackUntilDestroyedTask(); };
+  actions.assignFireOnPositionTask          = [this]() { this->assignFireOnPositionTask(); };
+  actions.assignFireInDirectionTask         = [this]() { this->assignFireInDirectionTask(); };
+  actions.assignStopWeaponsTask             = [this]() { this->assignStopWeaponsTask(); };
   actions.assignAttackAirTask               = [this]() { this->assignAttackAirTask(); };
   actions.assignAttackSurfaceTask           = [this]() { this->assignAttackSurfaceTask(); };
   actions.assignWaitUntilTargetDetectedTask  = [this]() { this->assignWaitUntilTargetDetectedTask(); };
@@ -2325,6 +2340,18 @@ void MainWindow::assignAttackUntilDestroyedTask() {
   this->_taskAssignmentController->assignAttackUntilDestroyed();
 }
 
+void MainWindow::assignFireOnPositionTask() {
+  this->_taskAssignmentController->assignFireOnPosition();
+}
+
+void MainWindow::assignFireInDirectionTask() {
+  this->_taskAssignmentController->assignFireInDirection();
+}
+
+void MainWindow::assignStopWeaponsTask() {
+  this->_taskAssignmentController->assignStopWeaponsTask();
+}
+
 void MainWindow::assignAttackAirTask() {
   this->_taskAssignmentController->assignAttackAir();
 }
@@ -2610,6 +2637,9 @@ void MainWindow::populateTaskCommands() {
       { "Movement: Intercept Entity...",               "InterceptEntity"          },
       { "Attack: Attack Once...",                      "AttackOnce"              },
       { "Attack: Attack Until Destroyed...",           "AttackUntilDestroyed"    },
+      { "Attack: Fire on Position...",                 "FireOnPosition"          },
+      { "Attack: Fire in Direction...",                "FireInDirection"         },
+      { "Attack: Stop Weapons Task",                   "StopWeaponsTask"         },
       { "Attack: Attack Air...",                       "AttackAir"               },
       { "Attack: Attack Surface...",                   "AttackSurface"           },
       { "Conditional: Wait Until Target Detected...",  "WaitUntilTargetDetected" },
