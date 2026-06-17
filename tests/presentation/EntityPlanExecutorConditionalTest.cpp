@@ -229,6 +229,119 @@ TEST(EntityPlanExecutorConditional, StopWeaponsTaskCompletesAndAdvancesPlan) {
             QStringLiteral("MoveToLocation"));
 }
 
+TEST(EntityPlanExecutorConditional, AttackAirCompletedAdvancesToReturnToBaseAndReplacesPursuitTargets) {
+  ExecutorFixture fixture;
+  fixture.state.addEntity(makeEntity(QStringLiteral("Own"), 1));
+  fixture.state.addEntity(makeEntity(QStringLiteral("Bandit"), 2));
+
+  auto executor = fixture.makeExecutor();
+  PlanStep attackStep = makeWaitStep(
+      PlanStepKind::AttackAir,
+      QStringLiteral("AttackAir"));
+  attackStep.task.targetEntityName = QStringLiteral("Bandit");
+  attackStep.task.targetLatitude = 41.0;
+  attackStep.task.targetLongitude = -2.0;
+  attackStep.task.targetAltitudeMeters = 9000;
+  attackStep.task.targetSpeedKnots = 450.0;
+
+  PlanStep returnStep = makeWaitStep(
+      PlanStepKind::ReturnToBase,
+      QStringLiteral("MoveToLocation"));
+  returnStep.task.targetLatitude = 40.25;
+  returnStep.task.targetLongitude = -3.25;
+  returnStep.task.targetAltitudeMeters = 3000;
+  returnStep.task.targetSpeedKnots = 250.0;
+
+  EntityPlan& plan = executor.ensurePlan(QStringLiteral("Own"));
+  plan.steps.clear();
+  plan.steps.append(attackStep);
+  plan.steps.append(returnStep);
+
+  ASSERT_TRUE(executor.startPlan(QStringLiteral("Own")));
+  for (Entity& entity : fixture.state.entitiesMutable()) {
+    if (entity.name == QStringLiteral("Own")) {
+      entity.currentTask.status = QStringLiteral("Completed");
+      entity.currentTask.targetLatitude = 41.0;
+      entity.currentTask.targetLongitude = -2.0;
+      entity.currentTask.targetAltitudeMeters = 9000;
+      entity.currentTask.targetSpeedKnots = 450.0;
+      break;
+    }
+  }
+
+  executor.advancePlans();
+
+  EXPECT_TRUE(plan.running);
+  EXPECT_EQ(plan.currentStepIndex, 1);
+  EXPECT_EQ(plan.steps.at(0).status, QStringLiteral("Completed"));
+  EXPECT_EQ(plan.steps.at(1).status, QStringLiteral("Running"));
+  const Entity* updated = findEntity(fixture.state, QStringLiteral("Own"));
+  ASSERT_NE(updated, nullptr);
+  EXPECT_EQ(updated->currentTask.taskType, QStringLiteral("MoveToLocation"));
+  EXPECT_DOUBLE_EQ(updated->currentTask.targetLatitude, returnStep.task.targetLatitude);
+  EXPECT_DOUBLE_EQ(updated->currentTask.targetLongitude, returnStep.task.targetLongitude);
+  EXPECT_EQ(updated->currentTask.targetAltitudeMeters, returnStep.task.targetAltitudeMeters);
+  EXPECT_DOUBLE_EQ(updated->currentTask.targetSpeedKnots, returnStep.task.targetSpeedKnots);
+}
+
+TEST(EntityPlanExecutorConditional, FailedMovementStepAdvancesWithoutKeepingStaleTargets) {
+  ExecutorFixture fixture;
+  fixture.state.addEntity(makeEntity(QStringLiteral("Own"), 1));
+  fixture.state.addEntity(makeEntity(QStringLiteral("Target"), 2));
+
+  auto executor = fixture.makeExecutor();
+  PlanStep interceptStep = makeWaitStep(
+      PlanStepKind::InterceptEntity,
+      QStringLiteral("InterceptEntity"));
+  interceptStep.task.targetEntityName = QStringLiteral("Target");
+  interceptStep.task.targetLatitude = 41.5;
+  interceptStep.task.targetLongitude = -2.5;
+  interceptStep.task.targetAltitudeMeters = 8000;
+  interceptStep.task.targetSpeedKnots = 350.0;
+  interceptStep.task.interceptDistanceMeters = 500.0;
+  interceptStep.task.altitudeToleranceMeters = 100.0;
+  interceptStep.task.timeoutSeconds = 120.0;
+
+  PlanStep returnStep = makeWaitStep(
+      PlanStepKind::ReturnToBase,
+      QStringLiteral("MoveToLocation"));
+  returnStep.task.targetLatitude = 39.9;
+  returnStep.task.targetLongitude = -3.2;
+  returnStep.task.targetAltitudeMeters = 3000;
+  returnStep.task.targetSpeedKnots = 220.0;
+
+  EntityPlan& plan = executor.ensurePlan(QStringLiteral("Own"));
+  plan.steps.clear();
+  plan.steps.append(interceptStep);
+  plan.steps.append(returnStep);
+
+  ASSERT_TRUE(executor.startPlan(QStringLiteral("Own")));
+  for (Entity& entity : fixture.state.entitiesMutable()) {
+    if (entity.name == QStringLiteral("Own")) {
+      entity.currentTask.status = QStringLiteral("Failed");
+      entity.currentTask.targetLatitude = 41.5;
+      entity.currentTask.targetLongitude = -2.5;
+      entity.currentTask.targetAltitudeMeters = 8000;
+      entity.currentTask.targetSpeedKnots = 350.0;
+      break;
+    }
+  }
+
+  executor.advancePlans();
+
+  EXPECT_TRUE(plan.running);
+  EXPECT_EQ(plan.currentStepIndex, 1);
+  EXPECT_EQ(plan.steps.at(0).status, QStringLiteral("Failed"));
+  EXPECT_EQ(plan.steps.at(1).status, QStringLiteral("Running"));
+  const Entity* updated = findEntity(fixture.state, QStringLiteral("Own"));
+  ASSERT_NE(updated, nullptr);
+  EXPECT_EQ(updated->currentTask.taskType, QStringLiteral("MoveToLocation"));
+  EXPECT_DOUBLE_EQ(updated->currentTask.targetLatitude, returnStep.task.targetLatitude);
+  EXPECT_DOUBLE_EQ(updated->currentTask.targetLongitude, returnStep.task.targetLongitude);
+  EXPECT_EQ(updated->currentTask.targetAltitudeMeters, returnStep.task.targetAltitudeMeters);
+  EXPECT_DOUBLE_EQ(updated->currentTask.targetSpeedKnots, returnStep.task.targetSpeedKnots);
+}
+
 TEST(EntityPlanExecutorConditional, WaitUntilTargetDetectedFailsOnTimeout) {
   ExecutorFixture fixture;
   fixture.state.addEntity(makeEntity(QStringLiteral("Own"), 1));
