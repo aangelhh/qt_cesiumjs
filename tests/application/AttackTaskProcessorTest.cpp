@@ -106,6 +106,11 @@ TEST_F(AttackTaskProcessorTest, NoOpWhenSimulationNotRunning) {
   task.taskType = QStringLiteral("AttackAir");
   task.targetEntityName = QStringLiteral("Mig29");
   task.status = QStringLiteral("Running");
+  task.targetLatitude = 52.0;
+  task.targetLongitude = 12.0;
+  task.targetAltitudeMeters = 9000;
+  task.targetHeadingDegrees = 270.0;
+  task.targetSpeedKnots = 480.0;
   setTask(QStringLiteral("F16"), task);
 
   processor->processAttackTasks(0.033, false);
@@ -147,6 +152,11 @@ TEST_F(AttackTaskProcessorTest, AttackAirCompletesWhenTargetDestroyed) {
 
   const Entity& updated = state->entities().first();
   EXPECT_EQ(updated.currentTask.status, QStringLiteral("Completed"));
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetLatitude, updated.latitude);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetLongitude, updated.longitude);
+  EXPECT_EQ(updated.currentTask.targetAltitudeMeters, updated.altitude);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetHeadingDegrees, updated.headingDegrees);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetSpeedKnots, 0.0);
   EXPECT_FALSE(logMessages.isEmpty());
   EXPECT_TRUE(logMessages.first().contains(QStringLiteral("completed")));
 }
@@ -161,12 +171,22 @@ TEST_F(AttackTaskProcessorTest, AttackAirFailsAgainstFriendly) {
   task.taskType = QStringLiteral("AttackAir");
   task.targetEntityName = QStringLiteral("Wingman");
   task.status = QStringLiteral("Running");
+  task.targetLatitude = 52.0;
+  task.targetLongitude = 12.0;
+  task.targetAltitudeMeters = 9000;
+  task.targetHeadingDegrees = 270.0;
+  task.targetSpeedKnots = 480.0;
   setTask(QStringLiteral("F16"), task);
 
   processor->processAttackTasks(0.033, true);
 
   const Entity& updated = state->entities().first();
   EXPECT_EQ(updated.currentTask.status, QStringLiteral("Failed"));
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetLatitude, updated.latitude);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetLongitude, updated.longitude);
+  EXPECT_EQ(updated.currentTask.targetAltitudeMeters, updated.altitude);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetHeadingDegrees, updated.headingDegrees);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetSpeedKnots, 0.0);
 }
 
 TEST_F(AttackTaskProcessorTest, AttackAirTimesOut) {
@@ -302,6 +322,11 @@ TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedWithMissileLaunchesAndKeepsR
   task.maxEngagementTimeSeconds = 120.0;
   task.shotCooldownSeconds = 8.0;
   task.status = QStringLiteral("Running");
+  task.targetLatitude = 52.0;
+  task.targetLongitude = 12.0;
+  task.targetAltitudeMeters = 9000;
+  task.targetHeadingDegrees = 270.0;
+  task.targetSpeedKnots = 480.0;
   setTask(QStringLiteral("F16"), task);
 
   processor->processAttackTasks(0.033, true);
@@ -333,6 +358,11 @@ TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedCompletesWhenTargetDestroyed
 
   const Entity& updated = state->entities().first();
   EXPECT_EQ(updated.currentTask.status, QStringLiteral("Completed"));
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetLatitude, updated.latitude);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetLongitude, updated.longitude);
+  EXPECT_EQ(updated.currentTask.targetAltitudeMeters, updated.altitude);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetHeadingDegrees, updated.headingDegrees);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetSpeedKnots, 0.0);
 }
 
 TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedFailsWithNoAmmo) {
@@ -347,12 +377,22 @@ TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedFailsWithNoAmmo) {
   task.maxEngagementTimeSeconds = 120.0;
   task.shotCooldownSeconds = 8.0;
   task.status = QStringLiteral("Running");
+  task.targetLatitude = 52.0;
+  task.targetLongitude = 12.0;
+  task.targetAltitudeMeters = 9000;
+  task.targetHeadingDegrees = 270.0;
+  task.targetSpeedKnots = 480.0;
   setTask(QStringLiteral("F16"), task);
 
   processor->processAttackTasks(0.033, true);
 
   const Entity& updated = state->entities().first();
   EXPECT_EQ(updated.currentTask.status, QStringLiteral("Failed"));
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetLatitude, updated.latitude);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetLongitude, updated.longitude);
+  EXPECT_EQ(updated.currentTask.targetAltitudeMeters, updated.altitude);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetHeadingDegrees, updated.headingDegrees);
+  EXPECT_DOUBLE_EQ(updated.currentTask.targetSpeedKnots, 0.0);
 }
 
 TEST_F(AttackTaskProcessorTest, AttackUntilDestroyedWithBombQueuesAndKeepsRunning) {
