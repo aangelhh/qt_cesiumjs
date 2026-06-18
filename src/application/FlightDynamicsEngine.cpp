@@ -1,4 +1,5 @@
 #include "application/FlightDynamicsEngine.h"
+#include "application/MovementIntent.h"
 
 #if defined(QTTEST_HAS_JSBSIM)
 #include <FGFDMExec.h>
@@ -475,26 +476,18 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
       } else {
           entity.currentTask.status = QStringLiteral("Running");
       }
-      
-      // Compute vertical speed for kinematics
-      const double targetAltitude = static_cast<double>(entity.currentTask.targetAltitudeMeters);
-      const double altitudeDelta = targetAltitude - static_cast<double>(entity.altitude);
-      entity.verticalSpeedMetersPerSecond = clampStep(
-          0.0, altitudeDelta, kClimbRateMetersPerSecond);
-          
-      // Compute heading/speed interpolation for kinematics
-      const double headingDelta = shortestSignedAngle(
-          entity.headingDegrees, entity.currentTask.targetHeadingDegrees);
-      entity.headingDegrees = normalizeDegrees360(
-          entity.headingDegrees + clampStep(0.0, headingDelta, kHeadingRateDegreesPerSecond * deltaSeconds));
-          
-      entity.speedKnots = clampStep(
-          entity.speedKnots, entity.currentTask.targetSpeedKnots, kAccelerationKnotsPerSecond * deltaSeconds);
+
+      application::applyMovementIntent(
+          entity,
+          application::movementIntentFromTask(entity.currentTask),
+          deltaSeconds,
+          {kHeadingRateDegreesPerSecond,
+           kAccelerationKnotsPerSecond,
+           kClimbRateMetersPerSecond});
           
       if (entity.currentTask.status == QStringLiteral("On target") ||
           entity.currentTask.status == QStringLiteral("Completed")) {
-          entity.speedKnots = 0.0;
-          entity.verticalSpeedMetersPerSecond = 0.0;
+          application::stopMovementIntent(entity);
       }
       return;
   }
@@ -520,31 +513,18 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
         entity.currentTask.targetLatitude,
         entity.currentTask.targetLongitude);
 
-    const double headingDelta = shortestSignedAngle(
-        entity.headingDegrees,
-        entity.currentTask.targetHeadingDegrees);
-    entity.headingDegrees = normalizeDegrees360(
-        entity.headingDegrees +
-        clampStep(0.0, headingDelta, kHeadingRateDegreesPerSecond * deltaSeconds));
-
-    entity.speedKnots = clampStep(
-        entity.speedKnots,
-        entity.currentTask.targetSpeedKnots,
-        kAccelerationKnotsPerSecond * deltaSeconds);
-
-    const double altitudeDelta =
-        static_cast<double>(entity.currentTask.targetAltitudeMeters) -
-        static_cast<double>(entity.altitude);
-    entity.verticalSpeedMetersPerSecond = clampStep(
-        0.0,
-        altitudeDelta,
-        kClimbRateMetersPerSecond);
+    application::applyMovementIntent(
+        entity,
+        application::movementIntentFromTask(entity.currentTask),
+        deltaSeconds,
+        {kHeadingRateDegreesPerSecond,
+         kAccelerationKnotsPerSecond,
+         kClimbRateMetersPerSecond});
 
     entity.currentTask.status = QStringLiteral("Running");
     if (!isAttackAirTask && distance < 200.0) {
       entity.currentTask.status = QStringLiteral("On target");
-      entity.speedKnots = 0.0;
-      entity.verticalSpeedMetersPerSecond = 0.0;
+      application::stopMovementIntent(entity);
     }
     return;
   }

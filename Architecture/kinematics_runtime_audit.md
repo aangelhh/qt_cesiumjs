@@ -388,6 +388,25 @@ Implemented baseline:
   - Air WaitOnLocation respects configured altitude.
   - ReturnToBase uses home altitude for Air.
 
+## Recommended Fix List for Feature 1.8
+
+Implemented baseline:
+
+- Introduce `MovementIntent` as the small adapter between task setpoints and physical kinematics.
+- Keep task/runtime behavior unchanged while centralizing heading, speed, and vertical-speed interpolation.
+- Route both TaskStack-driven movement and legacy fallback movement through the same intent application helper.
+- Add regression tests for:
+  - shortest heading turn across 0/360 degrees;
+  - climb/descent intent producing correct vertical speed sign;
+  - Air turn + climb deriving positive pitch/roll;
+  - Air turn + descent deriving negative pitch/roll.
+
+Deferred to Feature 1.9:
+
+- Advanced turn-rate limits by platform.
+- Acceleration/deceleration profiles by aircraft type.
+- More realistic pitch/roll coupling and energy/performance modeling.
+
 Remaining future work:
 
 - Replace the current Ground altitude fallback with a terrain/elevation service when EPIC 16 adds world elevation sampling.
