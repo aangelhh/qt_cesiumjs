@@ -100,7 +100,8 @@ Runtime writers:
 - `FlightDynamicsEngine::applyJsbsimStep(...)`
   - Replaces altitude from JSBSim state.
 - `FlightDynamicsEngine::normalizeGroundKinematics(...)`
-  - Forces Ground altitude to `0`.
+  - Clears vertical speed, pitch, and roll for Ground entities.
+  - Preserves the current Ground altitude/elevation because there is no terrain model yet.
 
 Lifecycle/load writers:
 
@@ -111,8 +112,8 @@ Lifecycle/load writers:
 Audit result:
 
 - Air altitude is controlled by `targetAltitudeMeters -> verticalSpeedMetersPerSecond -> altitude`.
-- Ground altitude is force-normalized to `0` in multiple paths.
-- No terrain model exists, so Ground altitude `0` is currently the only supported rule.
+- Ground altitude is not flight-controlled. It represents current configured elevation and must not be overwritten by movement tasks.
+- No terrain model exists, so new Ground entities may still default to `0`, but loaded/configured Ground altitude should be preserved.
 
 ### `headingDegrees`
 
@@ -247,7 +248,7 @@ Audit result:
 | Task | Runtime path | Desired state source | Completion source | Notes |
 | --- | --- | --- | --- | --- |
 | MoveToLocation | `TaskStack` -> `MoveToLocationTask` or fallback block in `FlightDynamicsEngine` | Fixed target lat/lon/alt/speed | `On target` when close; plan treats as complete | Legacy fallback still exists when no stack is present. |
-| MoveToWaypoint | `TaskApplicator` resolves waypoint; stack uses `MoveToLocationTask` | Resolved waypoint coordinates | Same as MoveToLocation | Air altitude respects waypoint altitude when set; Ground forced to `0`. |
+| MoveToWaypoint | `TaskApplicator` resolves waypoint; stack uses `MoveToLocationTask` | Resolved waypoint coordinates | Same as MoveToLocation | Air altitude respects waypoint altitude when set; Ground uses current configured altitude/elevation. |
 | FollowRoute / MoveAlongRoute | `RouteTask` | Current route point | `Completed` at final point | Overshoot handling exists in domain task. |
 | FollowEntity | `FlightDynamicsEngine` feeds target data into `FollowEntityTask` | Dynamic target location | `Completed` after stable distance unless duration overrides | Speed forced `0` inside follow distance. |
 | InterceptEntity | `FlightDynamicsEngine` feeds target data into `InterceptEntity3DTask` | Dynamic target lat/lon/alt if applicable | `Completed` inside horizontal and vertical tolerances | Legacy 2D/3D names normalize to unified task. |
@@ -296,13 +297,15 @@ Ground entities are normalized in serializer/load, scenario normalization, and e
 
 Risk:
 
-- This is safe for current MVP, but it hides bad altitude inputs by overwriting them.
-- Ground `currentTask.targetAltitudeMeters` may still contain non-zero values even though physical altitude remains `0`.
+- This is safe for current MVP if normalization only disables airborne dynamics.
+- It becomes unsafe if normalization overwrites configured Ground altitude/elevation.
+- Ground `currentTask.targetAltitudeMeters` should be aligned to the current Ground altitude so tasks do not command climb/descent.
 
 Safe fix candidate for 1.5/1.6:
 
-- Normalize Ground task target altitude at assignment time as well as physical altitude at runtime.
-- Add tests for Ground movement tasks preserving altitude `0`, pitch `0`, roll `0`.
+- Normalize Ground task target altitude to the entity current altitude at assignment time.
+- Preserve Ground physical altitude at runtime while clearing vertical speed, pitch, and roll.
+- Add tests for Ground movement tasks preserving current altitude, pitch `0`, roll `0`, and vertical speed `0`.
 
 ### 4. Completed movement tasks force speed zero, but non-movement terminal cleanup relies on engine guards
 
@@ -337,7 +340,7 @@ Safe fix candidate for 1.10:
 - Domain tasks in `src/domain/Task.cpp` do not mutate `Entity` directly. They return `DesiredState` and internal task state only.
 - Main physical position writes are centralized in `FlightDynamicsEngine`.
 - Terminal task status is checked before movement for both Air and Ground in `FlightDynamicsEngine::advanceEntity`.
-- Ground pitch, roll, vertical speed, and altitude are forced safe in the engine.
+- Ground pitch, roll, and vertical speed are forced safe in the engine; altitude is preserved as configured/current elevation.
 - Destroyed entities have task stacks cleared and speed/vertical speed set to zero in `ScenarioState::setEntityDestroyed`.
 
 ## Recommended Fix List for Feature 1.4
@@ -370,11 +373,11 @@ Priority 4:
 
 ## Recommended Fix List for Feature 1.5 / 1.6
 
-- Normalize Ground `targetAltitudeMeters` to `0` during task assignment.
+- Normalize Ground `targetAltitudeMeters` to the entity current altitude during task assignment.
 - Add regression tests:
   - Ground MoveToLocation does not pitch/roll/climb.
-  - Ground FollowRoute keeps altitude `0`.
-  - Ground InterceptEntity keeps altitude `0`.
+  - Ground FollowRoute keeps current configured altitude.
+  - Ground InterceptEntity keeps current configured altitude.
   - Air WaitOnLocation respects configured altitude.
   - ReturnToBase uses home altitude for Air.
 
@@ -423,4 +426,3 @@ Short-term rule:
 ## Audit Conclusion
 
 The current system is stable enough to proceed to Feature 1.4 without a large refactor. The main physical kinematic authority is already `FlightDynamicsEngine`. The highest-value hardening is not architectural surgery; it is focused terminal-state and plan-transition cleanup, plus regression tests around stale movement setpoints.
-

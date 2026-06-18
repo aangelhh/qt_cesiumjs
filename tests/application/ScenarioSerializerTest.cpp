@@ -102,6 +102,34 @@ TEST(ScenarioSerializer, RuntimeStateResetOnLoad) {
   EXPECT_FALSE(le.currentTask.enabled);
 }
 
+TEST(ScenarioSerializer, GroundEntityLoadPreservesConfiguredAltitude) {
+  ScenarioSnapshot snapshot;
+  Entity ground = makeSimpleEntity(QStringLiteral("Ground-1"));
+  ground.domain = QStringLiteral("Ground");
+  ground.category = QStringLiteral("Vehicle");
+  ground.altitude = 350;
+  ground.pitchDegrees = 12.0;
+  ground.rollDegrees = -8.0;
+  ground.speedKnots = 25.0;
+  ground.currentTask.enabled = true;
+  ground.currentTask.taskType = QStringLiteral("MoveToLocation");
+  snapshot.entities.push_back(ground);
+
+  const QString path = tempFilePath();
+  ASSERT_TRUE(saveScenario(path, snapshot));
+  const ScenarioSnapshot loaded = loadScenario(path);
+  QFile::remove(path);
+
+  ASSERT_FALSE(loaded.entities.isEmpty());
+  const Entity& loadedGround = loaded.entities.at(0);
+  EXPECT_EQ(loadedGround.domain, QStringLiteral("Ground"));
+  EXPECT_EQ(loadedGround.altitude, 350);
+  EXPECT_DOUBLE_EQ(loadedGround.pitchDegrees, 0.0);
+  EXPECT_DOUBLE_EQ(loadedGround.rollDegrees, 0.0);
+  EXPECT_DOUBLE_EQ(loadedGround.speedKnots, 0.0);
+  EXPECT_TRUE(loadedGround.currentTask.taskType.isEmpty());
+}
+
 TEST(ScenarioSerializer, RoundTripWeapons) {
   ScenarioSnapshot snapshot;
   Entity e = makeSimpleEntity(QStringLiteral("E"));

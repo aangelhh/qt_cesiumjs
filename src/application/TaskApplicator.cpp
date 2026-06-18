@@ -55,7 +55,7 @@ double defaultRouteArrivalToleranceMeters(const Entity& entity) {
 
 double waypointAltitudeForEntity(const Waypoint& waypoint, const Entity& entity) {
   if (entityIsGround(entity)) {
-    return 0.0;
+    return static_cast<double>(entity.altitude);
   }
   return waypoint.altitudeMetersSet
       ? waypoint.altitudeMeters
@@ -65,12 +65,10 @@ double waypointAltitudeForEntity(const Waypoint& waypoint, const Entity& entity)
 QVector<RoutePoint> routePointsForEntity(const RouteGraphic& route, const Entity& entity) {
   QVector<RoutePoint> points;
   points.reserve(route.points.size());
-  double fallbackAltitudeMeters = entityIsGround(entity)
-      ? 0.0
-      : static_cast<double>(entity.altitude);
+  double fallbackAltitudeMeters = static_cast<double>(entity.altitude);
   for (RoutePoint point : route.points) {
     if (entityIsGround(entity)) {
-      point.altitudeMeters = 0.0;
+      point.altitudeMeters = static_cast<double>(entity.altitude);
       point.altitudeMetersSet = true;
     } else if (!point.altitudeMetersSet) {
       point.altitudeMeters = fallbackAltitudeMeters;
@@ -142,6 +140,10 @@ void resolveTaskCoordinates(
       task.targetAreaRadiusMeters = radiusMeters;
       break;
     }
+  }
+
+  if (entityIsGround(entity) && isMovementTaskType(task.taskType)) {
+    task.targetAltitudeMeters = entity.altitude;
   }
 
   if (task.enabled && isMovementTaskType(task.taskType)) {

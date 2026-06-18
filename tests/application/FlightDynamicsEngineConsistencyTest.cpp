@@ -107,10 +107,9 @@ TEST(FlightDynamicsEngineConsistency, GroundTerminalTaskKeepsGroundKinematicsSaf
   ASSERT_EQ(entities.size(), 1);
   EXPECT_DOUBLE_EQ(entities.first().latitude, entity.latitude);
   EXPECT_DOUBLE_EQ(entities.first().longitude, entity.longitude);
-  EXPECT_EQ(entities.first().altitude, 0);
+  EXPECT_EQ(entities.first().altitude, entity.altitude);
   EXPECT_DOUBLE_EQ(entities.first().pitchDegrees, 0.0);
   EXPECT_DOUBLE_EQ(entities.first().rollDegrees, 0.0);
   EXPECT_DOUBLE_EQ(entities.first().speedKnots, 0.0);
   EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
 }
-

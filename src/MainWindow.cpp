@@ -173,6 +173,8 @@ MainWindow::MainWindow(QWidget* parent)
       _tacticalGraphicsRootItem(nullptr),
       _entityDialog(nullptr),
       _taskDialog(nullptr),
+      _entityCoordinatePickPending(false),
+      _taskCoordinatePickPending(false),
       _addWaypointAction(new QAction(QStringLiteral("Add Waypoint"), this)),
       _addRouteAction(new QAction(QStringLiteral("Add Route"), this)),
       _addAreaAction(new QAction(QStringLiteral("Add Area"), this)),
@@ -368,7 +370,7 @@ MainWindow::MainWindow(QWidget* parent)
       },
       [this]() { return this->_simulationRunning; },
       [this]() { return this->_graphicPickCoordinator->isPending(); },
-      [this]() { this->beginTaskCoordinatePick(); },
+      [this]() { this->beginBombCoordinatePick(); },
       [this](const Entity& launcher) {
         return application::validBombReleaseTargets(this->_scenarioState, launcher);
       },
@@ -1134,6 +1136,7 @@ bool MainWindow::captureTaskConfiguration(
       &loop,
       [this, &loop]() {
         this->_taskDialog = nullptr;
+        this->_taskCoordinatePickPending = false;
         if (loop.isRunning()) {
           loop.quit();
         }
@@ -1147,7 +1150,8 @@ bool MainWindow::captureTaskConfiguration(
       dialog,
       &QDialog::finished,
       &loop,
-      [dialog, &accepted, &outTask, &loop](int result) {
+      [this, dialog, &accepted, &outTask, &loop](int result) {
+        this->_taskCoordinatePickPending = false;
         accepted = result == QDialog::Accepted;
         if (accepted && dialog) {
           outTask = dialog->task();
@@ -1220,7 +1224,10 @@ void MainWindow::openAddEntityDialog() {
       dialog,
       &QObject::destroyed,
       this,
-      [this]() { this->_entityDialog = nullptr; });
+      [this]() {
+        this->_entityDialog = nullptr;
+        this->_entityCoordinatePickPending = false;
+      });
   QObject::connect(
       dialog,
       &AddEntityDialog::pickOnMapRequested,
@@ -1257,7 +1264,7 @@ void MainWindow::onEntityDialogAccepted(const Entity& entity) {
   this->_ui->statusLabel->setText(EntityTextFormatter::statusMessage(entity));
 }
 
-void MainWindow::beginEntityCoordinatePick() {
+void MainWindow::beginMapCoordinatePick() {
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   if (!this->_webView) {
     this->_ui->statusLabel->setText(
@@ -1282,23 +1289,26 @@ void MainWindow::beginEntityCoordinatePick() {
 #endif
 }
 
+void MainWindow::beginEntityCoordinatePick() {
+  if (!this->_entityDialog) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No hay una entidad esperando coordenadas."));
+    return;
+  }
+  this->_entityCoordinatePickPending = true;
+  this->_taskCoordinatePickPending = false;
+  this->_bombReleaseController->cancelPickMode();
+  this->beginMapCoordinatePick();
+}
+
 void MainWindow::reportPickedCoordinate(double longitude, double latitude, double height) {
-  if (this->_graphicPickCoordinator->handleCoordinate(longitude, latitude, height)) {
-    return;
-  }
-
-  if (this->_bombReleaseController->isPickingMode()) {
-    this->handleBombPickCoordinate(longitude, latitude);
-    return;
-  }
-
-  if (this->_entityDialog) {
-    this->_entityDialog->setPickedCoordinate(longitude, latitude, height);
-    this->_entityDialog->show();
-    this->_entityDialog->raise();
-    this->_entityDialog->activateWindow();
-  }
-  if (this->_taskDialog) {
+  if (this->_taskCoordinatePickPending) {
+    this->_taskCoordinatePickPending = false;
+    if (!this->_taskDialog) {
+      this->_ui->statusLabel->setText(
+          QStringLiteral("La task ya no esta esperando coordenadas."));
+      return;
+    }
     QPointer<AssignTaskDialog> taskDialog = this->_taskDialog;
     taskDialog->setPickedCoordinate(longitude, latitude, height);
     QTimer::singleShot(0, this, [taskDialog]() {
@@ -1309,10 +1319,42 @@ void MainWindow::reportPickedCoordinate(double longitude, double latitude, doubl
       taskDialog->raise();
       taskDialog->activateWindow();
     });
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
+            .arg(latitude, 0, 'f', 6)
+            .arg(longitude, 0, 'f', 6));
+    return;
+  }
+
+  if (this->_entityCoordinatePickPending) {
+    this->_entityCoordinatePickPending = false;
+    if (!this->_entityDialog) {
+      this->_ui->statusLabel->setText(
+          QStringLiteral("La entidad ya no esta esperando coordenadas."));
+      return;
+    }
+    this->_entityDialog->setPickedCoordinate(longitude, latitude, height);
+    this->_entityDialog->show();
+    this->_entityDialog->raise();
+    this->_entityDialog->activateWindow();
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
+            .arg(latitude, 0, 'f', 6)
+            .arg(longitude, 0, 'f', 6));
+    return;
+  }
+
+  if (this->_graphicPickCoordinator->handleCoordinate(longitude, latitude, height)) {
+    return;
+  }
+
+  if (this->_bombReleaseController->isPickingMode()) {
+    this->handleBombPickCoordinate(longitude, latitude);
+    return;
   }
 
   this->_ui->statusLabel->setText(
-      QStringLiteral("Coordenadas capturadas: lat %1, lon %2")
+      QStringLiteral("Coordenadas recibidas sin operacion pendiente: lat %1, lon %2")
           .arg(latitude,  0, 'f', 5)
           .arg(longitude, 0, 'f', 5));
 }
@@ -2720,10 +2762,27 @@ void MainWindow::rebuildTacticalGraphicsTree() {
 }
 
 void MainWindow::beginTaskCoordinatePick() {
-  this->beginEntityCoordinatePick();
+  if (!this->_taskDialog) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No hay una task esperando coordenadas."));
+    return;
+  }
+  this->_entityCoordinatePickPending = false;
+  this->_taskCoordinatePickPending = true;
+  this->_bombReleaseController->cancelPickMode();
+  this->beginMapCoordinatePick();
+}
+
+void MainWindow::beginBombCoordinatePick() {
+  this->_entityCoordinatePickPending = false;
+  this->_taskCoordinatePickPending = false;
+  this->beginMapCoordinatePick();
 }
 
 void MainWindow::beginGraphicCoordinatePick() {
+  this->_entityCoordinatePickPending = false;
+  this->_taskCoordinatePickPending = false;
+  this->_bombReleaseController->cancelPickMode();
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
   if (!this->_webView) {
     this->_ui->statusLabel->setText(

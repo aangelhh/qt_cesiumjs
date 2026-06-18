@@ -198,7 +198,9 @@ private:
   void processPendingBombRelease();
   void openAssignTaskDialog(const QString& initialTaskType);
   void populateTaskCommands();
+  void beginMapCoordinatePick();
   void beginTaskCoordinatePick();
+  void beginBombCoordinatePick();
   void beginGraphicCoordinatePick();
   void updateSimulationControls();
   void createTaskQuickBar();
@@ -257,6 +259,8 @@ private:
   QStandardItem* _tacticalGraphicsRootItem;
   QPointer<AddEntityDialog> _entityDialog;
   QPointer<AssignTaskDialog> _taskDialog;
+  bool _entityCoordinatePickPending;
+  bool _taskCoordinatePickPending;
   QPointer<presentation::EntityPlanDialog> _entityPlanDialog;
   QString _entityPlanDialogEntityName;
   QAction* _addWaypointAction;
