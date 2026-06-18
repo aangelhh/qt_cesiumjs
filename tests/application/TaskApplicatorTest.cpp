@@ -91,6 +91,27 @@ TEST_F(TaskApplicatorTest, AssignsMoveToLocationTask) {
   EXPECT_FALSE(stack->isEmpty());
 }
 
+TEST_F(TaskApplicatorTest, GroundMoveToLocationUsesCurrentGroundAltitude) {
+  Entity ground = makeGroundEntity("GroundMover");
+  ground.altitude = 250;
+  state->addEntity(ground);
+  EntityTask task;
+  task.taskType = "MoveToLocation";
+  task.targetLatitude = 41.0;
+  task.targetLongitude = -4.0;
+  task.targetAltitudeMeters = 5000.0;
+  task.targetSpeedKnots = 12.0;
+
+  const bool result = application::applyEntityTask(
+      "GroundMover", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {});
+
+  EXPECT_TRUE(result);
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_EQ(state->entities().front().currentTask.targetAltitudeMeters, 250);
+}
+
 // Assigns FlyHeadingAltitudeSpeed task
 TEST_F(TaskApplicatorTest, AssignsFlyHeadingTask) {
   state->addEntity(makeAirEntity("Beta"));
@@ -153,6 +174,32 @@ TEST_F(TaskApplicatorTest, AssignsInterceptEntityTaskWith3DStack) {
   ASSERT_FALSE(state->entities().isEmpty());
   EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity"));
   EXPECT_DOUBLE_EQ(state->entities().front().currentTask.altitudeToleranceMeters, 100.0);
+}
+
+TEST_F(TaskApplicatorTest, GroundInterceptEntityKeepsCurrentGroundAltitude) {
+  Entity ground = makeGroundEntity("GroundInterceptor");
+  ground.altitude = 180;
+  state->addEntity(ground);
+  state->addEntity(makeAirEntity("AirTarget"));
+
+  EntityTask task;
+  task.taskType = "InterceptEntity";
+  task.enabled = true;
+  task.targetEntityName = "AirTarget";
+  task.targetSpeedKnots = 20.0;
+  task.targetAltitudeMeters = 7000;
+  task.interceptDistanceMeters = 500.0;
+  task.altitudeToleranceMeters = 100.0;
+  task.timeoutSeconds = 120.0;
+
+  ASSERT_TRUE(application::applyEntityTask(
+      "GroundInterceptor", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {}));
+
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("InterceptEntity"));
+  EXPECT_EQ(state->entities().front().currentTask.targetAltitudeMeters, 180);
 }
 
 TEST_F(TaskApplicatorTest, LegacyInterceptEntity2DTypeNormalizesToUnifiedTask) {
@@ -254,6 +301,30 @@ TEST_F(TaskApplicatorTest, AssignsHoldRacetrackTask) {
   EXPECT_DOUBLE_EQ(state->entities().front().currentTask.racetrackLegLengthMeters, 12000.0);
 }
 
+TEST_F(TaskApplicatorTest, GroundHoldRacetrackUsesCurrentGroundAltitude) {
+  Entity ground = makeGroundEntity("GroundHolder");
+  ground.altitude = 320;
+  state->addEntity(ground);
+
+  EntityTask task;
+  task.taskType = "HoldRacetrack";
+  task.targetLatitude = 40.0;
+  task.targetLongitude = -3.0;
+  task.targetHeadingDegrees = 90.0;
+  task.targetAltitudeMeters = 6000;
+  task.targetSpeedKnots = 12.0;
+  task.racetrackLegLengthMeters = 12000.0;
+
+  const bool result = application::applyEntityTask(
+      "GroundHolder", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {});
+
+  EXPECT_TRUE(result);
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_EQ(state->entities().front().currentTask.targetAltitudeMeters, 320);
+}
+
 TEST_F(TaskApplicatorTest, HoldRacetrackDefaultsLegLength) {
   state->addEntity(makeAirEntity("DefaultHolder"));
 
@@ -299,6 +370,48 @@ TEST_F(TaskApplicatorTest, AssignsWaitOnLocationTask) {
   EXPECT_EQ(state->entities().front().currentTask.taskType, QStringLiteral("WaitOnLocation"));
   EXPECT_DOUBLE_EQ(state->entities().front().currentTask.arrivalToleranceMeters, 300.0);
   EXPECT_DOUBLE_EQ(state->entities().front().currentTask.durationSeconds, 120.0);
+}
+
+TEST_F(TaskApplicatorTest, AirWaitOnLocationRespectsConfiguredAltitude) {
+  state->addEntity(makeAirEntity("AirWaiter"));
+
+  EntityTask task;
+  task.taskType = "WaitOnLocation";
+  task.targetLatitude = 40.0;
+  task.targetLongitude = -3.0;
+  task.targetAltitudeMeters = 6500;
+  task.targetSpeedKnots = 220.0;
+  task.arrivalToleranceMeters = 300.0;
+
+  ASSERT_TRUE(application::applyEntityTask(
+      "AirWaiter", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {}));
+
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_EQ(state->entities().front().currentTask.targetAltitudeMeters, 6500);
+}
+
+TEST_F(TaskApplicatorTest, GroundWaitOnLocationUsesCurrentGroundAltitude) {
+  Entity ground = makeGroundEntity("GroundWaiter");
+  ground.altitude = 275;
+  state->addEntity(ground);
+
+  EntityTask task;
+  task.taskType = "WaitOnLocation";
+  task.targetLatitude = 40.0;
+  task.targetLongitude = -3.0;
+  task.targetAltitudeMeters = 6500;
+  task.targetSpeedKnots = 12.0;
+  task.arrivalToleranceMeters = 300.0;
+
+  ASSERT_TRUE(application::applyEntityTask(
+      "GroundWaiter", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {}));
+
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_EQ(state->entities().front().currentTask.targetAltitudeMeters, 275);
 }
 
 // syncUi callback is called only when syncUi==true
@@ -498,7 +611,7 @@ TEST(ResolveTaskCoordinates, MoveToWaypointLegacyAirAltitudeFallsBackToCurrentAl
   EXPECT_EQ(entity.currentTask.targetAltitudeMeters, 3000);
 }
 
-TEST(ResolveTaskCoordinates, GroundRouteAltitudeIsForcedToZero) {
+TEST(ResolveTaskCoordinates, GroundRouteAltitudeUsesCurrentGroundAltitude) {
   Entity entity = makeGroundEntity(QStringLiteral("G1"));
   entity.altitude = 1000;
   EntityTask task;
@@ -515,7 +628,7 @@ TEST(ResolveTaskCoordinates, GroundRouteAltitudeIsForcedToZero) {
 
   application::resolveTaskCoordinates(entity, {}, {route}, {});
 
-  EXPECT_EQ(entity.currentTask.targetAltitudeMeters, 0);
+  EXPECT_EQ(entity.currentTask.targetAltitudeMeters, 1000);
 }
 
 TEST(ResolveTaskCoordinates, PatrolAreaHydratesCenter) {

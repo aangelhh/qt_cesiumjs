@@ -27,6 +27,7 @@ add_executable(qttest_unit_tests
     application/EventBusTest.cpp
     application/AttackTaskProcessorTest.cpp
     application/TaskApplicatorTest.cpp
+    application/FlightDynamicsEngineConsistencyTest.cpp
     application/MunitionSimulatorTest.cpp
     application/BehaviorEngineTest.cpp
     application/ScenarioQueriesTest.cpp

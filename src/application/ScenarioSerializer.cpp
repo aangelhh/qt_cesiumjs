@@ -39,7 +39,6 @@ void normalizeGroundEntity(Entity& entity) {
   if (!entityIsGroundDomain(entity)) {
     return;
   }
-  entity.altitude = 0;
   entity.pitchDegrees = 0.0;
   entity.rollDegrees = 0.0;
   entity.flightDynamicsEnabled = false;

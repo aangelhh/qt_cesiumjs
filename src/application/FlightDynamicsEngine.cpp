@@ -128,7 +128,6 @@ bool taskStatusIsTerminal(const QString& status) {
 void applyKinematicStep(Entity& entity, double deltaSeconds);
 
 void normalizeGroundKinematics(Entity& entity) {
-  entity.altitude = 0;
   entity.verticalSpeedMetersPerSecond = 0.0;
   entity.pitchDegrees = 0.0;
   entity.rollDegrees = 0.0;
