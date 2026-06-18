@@ -395,12 +395,21 @@ Remaining future work:
 
 ## Recommended Fix List for Feature 1.7
 
-- Treat sustained attack pursuit as an explicit movement intent.
-- Ensure `AttackAir` and `AttackUntilDestroyed` clear pursuit setpoints on terminal status.
-- Add tests:
-  - AttackAir failed by no ammo does not continue moving.
-  - AttackAir completed by destroyed target does not keep pursuing.
-  - AttackAir followed by ReturnToBase has ReturnToBase as sole movement authority.
+Implemented baseline:
+
+- Sustained attack pursuit still writes task setpoints while the attack is active.
+- `AttackAir` and `AttackUntilDestroyed` now clear pursuit setpoints when they enter a terminal status.
+- Terminal pursuit cleanup resets task target latitude/longitude/altitude/heading to current ownship state and target speed to `0`.
+- Existing plan progression tests cover `AttackAir -> ReturnToBase` replacing stale pursuit targets.
+- Added regression tests:
+  - `AttackAir` completed by destroyed target clears pursuit targets.
+  - `AttackAir` failed against invalid/friendly target clears pursuit targets.
+  - `AttackUntilDestroyed` completed by destroyed target clears pursuit targets.
+  - `AttackUntilDestroyed` failed by no ammo clears pursuit targets.
+
+Remaining future work:
+
+- Treat sustained attack pursuit as a first-class movement intent in Feature 1.8 instead of writing setpoints directly from `AttackTaskProcessor`.
 
 ## Future Refactor Direction for Feature 1.8
 

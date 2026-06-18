@@ -9,6 +9,23 @@
 
 namespace application {
 
+namespace {
+
+bool isAttackPursuitTask(const QString& taskType) {
+  return taskType == QStringLiteral("AttackAir") ||
+         taskType == QStringLiteral("AttackUntilDestroyed");
+}
+
+void clearAttackPursuitTargets(Entity& entity) {
+  entity.currentTask.targetLatitude = entity.latitude;
+  entity.currentTask.targetLongitude = entity.longitude;
+  entity.currentTask.targetAltitudeMeters = entity.altitude;
+  entity.currentTask.targetHeadingDegrees = entity.headingDegrees;
+  entity.currentTask.targetSpeedKnots = 0.0;
+}
+
+} // namespace
+
 AttackTaskProcessor::AttackTaskProcessor(
     ScenarioState* state,
     presentation::BombReleaseController* bombCtrl,
@@ -780,10 +797,16 @@ bool AttackTaskProcessor::setEntityTaskStatus(
     if (entity.name != entityName) {
       continue;
     }
-    if (entity.currentTask.status == status) {
+    const bool terminalAttackPursuit =
+        isAttackPursuitTask(entity.currentTask.taskType.trimmed()) &&
+        domain::attackTaskStatusIsTerminal(status);
+    if (entity.currentTask.status == status && !terminalAttackPursuit) {
       return true;
     }
     entity.currentTask.status = status;
+    if (terminalAttackPursuit) {
+      clearAttackPursuitTargets(entity);
+    }
     _state->save();
     return true;
   }
