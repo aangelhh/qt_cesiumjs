@@ -113,3 +113,81 @@ TEST(FlightDynamicsEngineConsistency, GroundTerminalTaskKeepsGroundKinematicsSaf
   EXPECT_DOUBLE_EQ(entities.first().speedKnots, 0.0);
   EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
 }
+
+TEST(FlightDynamicsEngineConsistency, GroundNonMovementTaskWithResidualSpeedDoesNotMove) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.domain = QStringLiteral("Ground");
+  entity.altitude = 410;
+  entity.speedKnots = 25.0;
+  entity.verticalSpeedMetersPerSecond = 5.0;
+  entity.pitchDegrees = 12.0;
+  entity.rollDegrees = -9.0;
+  entity.currentTask.taskType = QStringLiteral("WaitUntilTime");
+  entity.currentTask.targetSpeedKnots = 30.0;
+  QVector<Entity> entities = {entity};
+  const Entity before = entities.first();
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 10.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  expectPositionUnchanged(before, entities.first());
+  EXPECT_DOUBLE_EQ(entities.first().speedKnots, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().pitchDegrees, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().rollDegrees, 0.0);
+}
+
+TEST(FlightDynamicsEngineConsistency, GroundAirOnlyMovementTaskDoesNotMoveOrClimb) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.domain = QStringLiteral("Ground");
+  entity.altitude = 725;
+  entity.speedKnots = 40.0;
+  entity.verticalSpeedMetersPerSecond = 7.0;
+  entity.pitchDegrees = 15.0;
+  entity.rollDegrees = 11.0;
+  entity.currentTask.taskType = QStringLiteral("FlyHeadingAltitudeSpeed");
+  entity.currentTask.targetAltitudeMeters = 5000;
+  entity.currentTask.targetSpeedKnots = 180.0;
+  QVector<Entity> entities = {entity};
+  const Entity before = entities.first();
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 10.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  expectPositionUnchanged(before, entities.first());
+  EXPECT_DOUBLE_EQ(entities.first().speedKnots, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().pitchDegrees, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().rollDegrees, 0.0);
+}
+
+TEST(FlightDynamicsEngineConsistency, GroundMoveToLocationMovesHorizontallyOnly) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.domain = QStringLiteral("Ground");
+  entity.altitude = 530;
+  entity.speedKnots = 0.0;
+  entity.verticalSpeedMetersPerSecond = 9.0;
+  entity.pitchDegrees = 8.0;
+  entity.rollDegrees = -5.0;
+  entity.currentTask.taskType = QStringLiteral("MoveToLocation");
+  entity.currentTask.targetLatitude = 40.05;
+  entity.currentTask.targetLongitude = -2.95;
+  entity.currentTask.targetAltitudeMeters = 9000;
+  entity.currentTask.targetSpeedKnots = 20.0;
+  QVector<Entity> entities = {entity};
+  const Entity before = entities.first();
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 10.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  EXPECT_NE(entities.first().latitude, before.latitude);
+  EXPECT_NE(entities.first().longitude, before.longitude);
+  EXPECT_EQ(entities.first().altitude, before.altitude);
+  EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().pitchDegrees, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().rollDegrees, 0.0);
+  EXPECT_GT(entities.first().speedKnots, 0.0);
+}

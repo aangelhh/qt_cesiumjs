@@ -32,6 +32,12 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("AttackUntilDestroyed");
 }
 
+bool isAirOnlyMovementTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("FlyHeadingAltitudeSpeed") ||
+         taskType == QStringLiteral("AttackAir") ||
+         taskType == QStringLiteral("AttackUntilDestroyed");
+}
+
 bool isRouteTaskType(const QString& taskType) {
   return taskType == QStringLiteral("MoveAlongRoute") ||
          taskType == QStringLiteral("FollowRoute");
@@ -282,12 +288,6 @@ bool applyEntityTask(
     }
   }
 
-  if (!state->assignTask(entityName, taskToApply)) {
-    return false;
-  }
-
-  log(QStringLiteral("Task %1 assigned to %2").arg(taskToApply.taskType, entityName));
-
   Entity resolvedEntity;
   bool foundEntity = false;
   for (const Entity& entity : state->entities()) {
@@ -300,6 +300,28 @@ bool applyEntityTask(
   }
   if (!foundEntity) {
     return false;
+  }
+
+  if (entityIsGround(resolvedEntity) && isAirOnlyMovementTaskType(taskToApply.taskType)) {
+    if (log) {
+      log(QStringLiteral("Task %1 rejected for ground entity %2.")
+              .arg(taskToApply.taskType, entityName));
+    }
+    return false;
+  }
+
+  if (!state->assignTask(entityName, taskToApply)) {
+    return false;
+  }
+
+  log(QStringLiteral("Task %1 assigned to %2").arg(taskToApply.taskType, entityName));
+
+  for (const Entity& entity : state->entities()) {
+    if (entity.name != entityName) {
+      continue;
+    }
+    resolvedEntity = entity;
+    break;
   }
 
   auto updateAppliedTask = [&](const EntityTask& updatedTask) {
