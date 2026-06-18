@@ -191,3 +191,49 @@ TEST(FlightDynamicsEngineConsistency, GroundMoveToLocationMovesHorizontallyOnly)
   EXPECT_DOUBLE_EQ(entities.first().rollDegrees, 0.0);
   EXPECT_GT(entities.first().speedKnots, 0.0);
 }
+
+TEST(FlightDynamicsEngineConsistency, AirTurnAndClimbDeriveStableAttitude) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.headingDegrees = 0.0;
+  entity.pitchDegrees = 0.0;
+  entity.rollDegrees = 0.0;
+  entity.speedKnots = 300.0;
+  entity.currentTask.taskType = QStringLiteral("MoveToLocation");
+  entity.currentTask.targetLatitude = 40.0;
+  entity.currentTask.targetLongitude = -2.0;
+  entity.currentTask.targetAltitudeMeters = 5000;
+  entity.currentTask.targetSpeedKnots = 300.0;
+  QVector<Entity> entities = {entity};
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 1.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  EXPECT_GT(entities.first().headingDegrees, entity.headingDegrees);
+  EXPECT_GT(entities.first().pitchDegrees, 0.0);
+  EXPECT_GT(entities.first().rollDegrees, 0.0);
+  EXPECT_GT(entities.first().verticalSpeedMetersPerSecond, 0.0);
+}
+
+TEST(FlightDynamicsEngineConsistency, AirTurnAndDescentDeriveStableAttitude) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.headingDegrees = 90.0;
+  entity.pitchDegrees = 0.0;
+  entity.rollDegrees = 0.0;
+  entity.speedKnots = 300.0;
+  entity.currentTask.taskType = QStringLiteral("MoveToLocation");
+  entity.currentTask.targetLatitude = 41.0;
+  entity.currentTask.targetLongitude = -3.0;
+  entity.currentTask.targetAltitudeMeters = 1000;
+  entity.currentTask.targetSpeedKnots = 300.0;
+  QVector<Entity> entities = {entity};
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 1.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  EXPECT_LT(entities.first().headingDegrees, entity.headingDegrees);
+  EXPECT_LT(entities.first().pitchDegrees, 0.0);
+  EXPECT_LT(entities.first().rollDegrees, 0.0);
+  EXPECT_LT(entities.first().verticalSpeedMetersPerSecond, 0.0);
+}
