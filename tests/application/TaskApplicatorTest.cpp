@@ -133,6 +133,46 @@ TEST_F(TaskApplicatorTest, AssignsFlyHeadingTask) {
   EXPECT_FALSE(stack->isEmpty());
 }
 
+TEST_F(TaskApplicatorTest, RejectsFlyHeadingTaskForGroundEntity) {
+  state->addEntity(makeGroundEntity("GroundFly"));
+  EntityTask task;
+  task.taskType = "FlyHeadingAltitudeSpeed";
+  task.targetHeadingDegrees = 90.0;
+  task.targetAltitudeMeters = 5000;
+  task.targetSpeedKnots = 200.0;
+
+  const bool result = application::applyEntityTask(
+      "GroundFly", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {});
+
+  EXPECT_FALSE(result);
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_TRUE(state->entities().front().currentTask.taskType.isEmpty());
+  ASSERT_EQ(logMessages.size(), 1);
+  EXPECT_TRUE(logMessages.front().contains(QStringLiteral("rejected")));
+}
+
+TEST_F(TaskApplicatorTest, RejectsAttackAirTaskForGroundEntity) {
+  state->addEntity(makeGroundEntity("GroundAttack"));
+  state->addEntity(makeAirEntity("AirTarget"));
+  EntityTask task;
+  task.taskType = "AttackAir";
+  task.targetEntityName = "AirTarget";
+  task.targetSpeedKnots = 250.0;
+
+  const bool result = application::applyEntityTask(
+      "GroundAttack", task, false, state, nullptr,
+      [this](const QString& m) { logMessages << m; },
+      []() {});
+
+  EXPECT_FALSE(result);
+  ASSERT_FALSE(state->entities().isEmpty());
+  EXPECT_TRUE(state->entities().front().currentTask.taskType.isEmpty());
+  ASSERT_EQ(logMessages.size(), 1);
+  EXPECT_TRUE(logMessages.front().contains(QStringLiteral("rejected")));
+}
+
 // Assigns FollowEntity task
 TEST_F(TaskApplicatorTest, AssignsFollowEntityTask) {
   state->addEntity(makeAirEntity("Gamma"));

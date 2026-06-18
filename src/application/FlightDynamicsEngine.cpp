@@ -114,6 +114,19 @@ bool isMovementTaskType(const QString& taskType) {
          taskType == QStringLiteral("AttackUntilDestroyed");
 }
 
+bool isGroundMovementTaskType(const QString& taskType) {
+  return taskType == QStringLiteral("MoveToLocation") ||
+         taskType == QStringLiteral("WaitOnLocation") ||
+         taskType == QStringLiteral("MoveToWaypoint") ||
+         taskType == QStringLiteral("MoveAlongRoute") ||
+         taskType == QStringLiteral("FollowRoute") ||
+         taskType == QStringLiteral("PatrolArea") ||
+         taskType == QStringLiteral("OrbitArea") ||
+         taskType == QStringLiteral("HoldRacetrack") ||
+         taskType == QStringLiteral("FollowEntity") ||
+         isInterceptEntityTaskType(taskType);
+}
+
 bool isRouteTaskType(const QString& taskType) {
   return taskType == QStringLiteral("MoveAlongRoute") ||
          taskType == QStringLiteral("FollowRoute");
@@ -817,18 +830,15 @@ void FlightDynamicsEngine::advanceEntity(
       entity.speedKnots = 0.0;
       return;
     }
-    if (!isMovementTaskType(entity.currentTask.taskType)) {
-      if (entity.speedKnots <= 0.0) {
-        return;
-      }
-      applyKinematicStep(entity, deltaSeconds);
-      normalizeGroundKinematics(entity);
+    if (!isGroundMovementTaskType(entity.currentTask.taskType)) {
+      entity.speedKnots = 0.0;
       return;
     }
 
     resolveTaskTargets(entity, taskStacks, snapshot, deltaSeconds);
+    entity.currentTask.targetAltitudeMeters = entity.altitude;
+    normalizeGroundKinematics(entity);
     if (entity.speedKnots <= 0.0) {
-      normalizeGroundKinematics(entity);
       return;
     }
 

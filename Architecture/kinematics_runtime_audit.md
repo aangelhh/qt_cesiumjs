@@ -373,13 +373,25 @@ Priority 4:
 
 ## Recommended Fix List for Feature 1.5 / 1.6
 
-- Normalize Ground `targetAltitudeMeters` to the entity current altitude during task assignment.
+Implemented baseline:
+
+- Normalize Ground `targetAltitudeMeters` to the entity current altitude during task assignment and before runtime integration.
+- Keep Ground physical altitude as configured/current elevation while clearing pitch, roll, and vertical speed.
+- Prevent Ground entities from drifting on residual speed when the active task is not a Ground movement task.
+- Reject explicitly air-only movement/attack pursuit tasks for Ground at task assignment time.
 - Add regression tests:
-  - Ground MoveToLocation does not pitch/roll/climb.
+  - Ground MoveToLocation moves horizontally only.
+  - Ground non-movement task with residual speed does not move.
+  - Ground air-only movement task does not move or climb.
   - Ground FollowRoute keeps current configured altitude.
   - Ground InterceptEntity keeps current configured altitude.
   - Air WaitOnLocation respects configured altitude.
   - ReturnToBase uses home altitude for Air.
+
+Remaining future work:
+
+- Replace the current Ground altitude fallback with a terrain/elevation service when EPIC 16 adds world elevation sampling.
+- Move duplicated task classification helpers into one shared module before larger movement-controller refactors.
 
 ## Recommended Fix List for Feature 1.7
 
