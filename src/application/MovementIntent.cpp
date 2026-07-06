@@ -2,6 +2,7 @@
 
 #include "domain/GeoMath.h"
 
+#include <QString>
 #include <QtGlobal>
 
 namespace application {
@@ -26,6 +27,28 @@ MovementIntent movementIntentFromTask(const EntityTask& task) {
   return intent;
 }
 
+MovementControllerLimits movementControllerLimitsForEntity(const Entity& entity) {
+  const bool isGround =
+      entity.domain.compare(QStringLiteral("Ground"), Qt::CaseInsensitive) == 0;
+  if (isGround) {
+    return {18.0, 10.0, 0.0, 70.0, static_cast<double>(qMax(0, entity.altitude)), 1.0};
+  }
+
+  const QString category = entity.category.trimmed().toLower();
+  if (category.contains(QStringLiteral("fighter")) ||
+      category.contains(QStringLiteral("interceptor"))) {
+    return {6.0, 18.0, 35.0, 900.0, 16000.0, 50.0};
+  }
+  if (category.contains(QStringLiteral("bomber")) ||
+      category.contains(QStringLiteral("transport")) ||
+      category.contains(QStringLiteral("tanker")) ||
+      category.contains(QStringLiteral("awacs"))) {
+    return {2.5, 6.0, 12.0, 520.0, 11000.0, 50.0};
+  }
+
+  return {4.0, 10.0, 20.0, 650.0, 12000.0, 50.0};
+}
+
 void applyMovementIntent(
     Entity& entity,
     const MovementIntent& intent,
@@ -47,15 +70,19 @@ void applyMovementIntent(
 
   entity.speedKnots = stepToward(
       entity.speedKnots,
-      qMax(0.0, intent.targetSpeedKnots),
+      qBound(0.0, intent.targetSpeedKnots, limits.maxSpeedKnots),
       limits.accelerationKnotsPerSecond * deltaSeconds);
 
-  const double altitudeDelta =
-      intent.targetAltitudeMeters - static_cast<double>(entity.altitude);
-  entity.verticalSpeedMetersPerSecond = stepToward(
+  const double targetAltitudeMeters = qBound(
       0.0,
-      altitudeDelta,
-      limits.climbRateMetersPerSecond);
+      intent.targetAltitudeMeters,
+      limits.maxAltitudeMeters);
+  const double altitudeDelta =
+      targetAltitudeMeters - static_cast<double>(entity.altitude);
+  entity.verticalSpeedMetersPerSecond =
+      qAbs(altitudeDelta) <= limits.altitudeCaptureToleranceMeters
+          ? 0.0
+          : stepToward(0.0, altitudeDelta, limits.climbRateMetersPerSecond);
 }
 
 void stopMovementIntent(Entity& entity) {

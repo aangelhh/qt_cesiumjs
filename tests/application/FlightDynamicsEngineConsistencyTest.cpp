@@ -215,6 +215,39 @@ TEST(FlightDynamicsEngineConsistency, AirTurnAndClimbDeriveStableAttitude) {
   EXPECT_GT(entities.first().verticalSpeedMetersPerSecond, 0.0);
 }
 
+TEST(FlightDynamicsEngineConsistency, FighterUsesSharperMovementLimitsThanTanker) {
+  Entity fighter = makeMovingAirEntity(QStringLiteral("Running"));
+  fighter.category = QStringLiteral("Fighter");
+  fighter.headingDegrees = 0.0;
+  fighter.speedKnots = 250.0;
+  fighter.currentTask.taskType = QStringLiteral("MoveToLocation");
+  fighter.currentTask.targetLatitude = 40.0;
+  fighter.currentTask.targetLongitude = -2.0;
+  fighter.currentTask.targetAltitudeMeters = 6000;
+  fighter.currentTask.targetSpeedKnots = 350.0;
+
+  Entity tanker = fighter;
+  tanker.name = QStringLiteral("Tanker");
+  tanker.category = QStringLiteral("Tanker");
+
+  QVector<Entity> fighterEntities = {fighter};
+  QVector<Entity> tankerEntities = {tanker};
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(fighterEntities, stacks, 1.0);
+  FlightDynamicsEngine::advanceEntities(tankerEntities, stacks, 1.0);
+
+  ASSERT_EQ(fighterEntities.size(), 1);
+  ASSERT_EQ(tankerEntities.size(), 1);
+  EXPECT_GT(fighterEntities.first().headingDegrees,
+            tankerEntities.first().headingDegrees);
+  EXPECT_GT(fighterEntities.first().speedKnots,
+            tankerEntities.first().speedKnots);
+  EXPECT_GT(fighterEntities.first().verticalSpeedMetersPerSecond,
+            tankerEntities.first().verticalSpeedMetersPerSecond);
+  EXPECT_DOUBLE_EQ(fighterEntities.first().verticalSpeedMetersPerSecond, 35.0);
+}
+
 TEST(FlightDynamicsEngineConsistency, AirTurnAndDescentDeriveStableAttitude) {
   Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
   entity.headingDegrees = 90.0;
@@ -236,4 +269,77 @@ TEST(FlightDynamicsEngineConsistency, AirTurnAndDescentDeriveStableAttitude) {
   EXPECT_LT(entities.first().pitchDegrees, 0.0);
   EXPECT_LT(entities.first().rollDegrees, 0.0);
   EXPECT_LT(entities.first().verticalSpeedMetersPerSecond, 0.0);
+}
+
+TEST(FlightDynamicsEngineConsistency, AirDescentAfterTurnLevelsRoll) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.latitude = 40.0;
+  entity.longitude = -3.0;
+  entity.altitude = 3000;
+  entity.headingDegrees = 90.0;
+  entity.pitchDegrees = -5.0;
+  entity.rollDegrees = 10.0;
+  entity.speedKnots = 300.0;
+  entity.currentTask.taskType = QStringLiteral("MoveToLocation");
+  entity.currentTask.targetLatitude = 40.0;
+  entity.currentTask.targetLongitude = -2.0;
+  entity.currentTask.targetAltitudeMeters = 1000;
+  entity.currentTask.targetHeadingDegrees = 90.0;
+  entity.currentTask.targetSpeedKnots = 300.0;
+  QVector<Entity> entities = {entity};
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 0.1);
+
+  ASSERT_EQ(entities.size(), 1);
+  EXPECT_LT(entities.first().pitchDegrees, 0.0);
+  EXPECT_NEAR(entities.first().rollDegrees, 0.0, 0.001);
+  EXPECT_LT(entities.first().verticalSpeedMetersPerSecond, 0.0);
+}
+
+TEST(FlightDynamicsEngineConsistency, AirLevelsPitchWhenAltitudeCapturedOnThisTick) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.latitude = 40.0;
+  entity.longitude = -3.0;
+  entity.altitude = 3000;
+  entity.headingDegrees = 90.0;
+  entity.pitchDegrees = 0.0;
+  entity.rollDegrees = 0.0;
+  entity.speedKnots = 300.0;
+  entity.currentTask.taskType = QStringLiteral("MoveToLocation");
+  entity.currentTask.targetLatitude = 40.0;
+  entity.currentTask.targetLongitude = -2.0;
+  entity.currentTask.targetAltitudeMeters = 3055;
+  entity.currentTask.targetSpeedKnots = 300.0;
+  QVector<Entity> entities = {entity};
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 1.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  EXPECT_EQ(entities.first().altitude, 3035);
+  EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
+  EXPECT_NEAR(entities.first().pitchDegrees, 0.0, 0.001);
+}
+
+TEST(FlightDynamicsEngineConsistency, FighterDoesNotClimbBeyondProfileCeiling) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.category = QStringLiteral("Fighter");
+  entity.altitude = 16000;
+  entity.pitchDegrees = 7.0;
+  entity.speedKnots = 300.0;
+  entity.currentTask.taskType = QStringLiteral("MoveToLocation");
+  entity.currentTask.targetLatitude = 40.0;
+  entity.currentTask.targetLongitude = -2.0;
+  entity.currentTask.targetAltitudeMeters = 25000;
+  entity.currentTask.targetSpeedKnots = 300.0;
+  QVector<Entity> entities = {entity};
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 1.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  EXPECT_EQ(entities.first().altitude, 16000);
+  EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
+  EXPECT_NEAR(entities.first().pitchDegrees, 0.0, 0.001);
 }
