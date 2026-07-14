@@ -72,6 +72,7 @@ QJsonObject toJson(const SensorDefinition& sensor) {
       {QStringLiteral("id"), sensor.id},
       {QStringLiteral("name"), sensor.name},
       {QStringLiteral("sensorType"), sensor.sensorType},
+      {QStringLiteral("sensorSubType"), sensor.sensorSubType},
       {QStringLiteral("enabled"), sensor.enabled},
       {QStringLiteral("emitting"), sensor.emitting},
       {QStringLiteral("maxRangeMeters"), sensor.maxRangeMeters},
@@ -96,6 +97,8 @@ SensorDefinition sensorFromJson(const QJsonObject& object) {
   sensor.id = object.value(QStringLiteral("id")).toString();
   sensor.name = object.value(QStringLiteral("name")).toString();
   sensor.sensorType = object.value(QStringLiteral("sensorType")).toString(QStringLiteral("radar"));
+  sensor.sensorSubType =
+      object.value(QStringLiteral("sensorSubType")).toString(QStringLiteral("generic"));
   sensor.enabled = object.value(QStringLiteral("enabled")).toBool(true);
   sensor.emitting = object.value(QStringLiteral("emitting")).toBool(true);
   sensor.maxRangeMeters = object.value(QStringLiteral("maxRangeMeters")).toDouble(250000.0);
@@ -120,6 +123,8 @@ SensorDefinition sensorFromJson(const QJsonObject& object) {
 QJsonObject toJson(const SensorContact& contact) {
   return {
       {QStringLiteral("sensorId"), contact.sensorId},
+      {QStringLiteral("sensorType"), contact.sensorType},
+      {QStringLiteral("sensorSubType"), contact.sensorSubType},
       {QStringLiteral("targetEntityName"), contact.targetEntityName},
       {QStringLiteral("rangeMeters"), contact.rangeMeters},
       {QStringLiteral("bearingDegrees"), contact.bearingDegrees},
@@ -131,6 +136,8 @@ QJsonObject toJson(const SensorContact& contact) {
 SensorContact sensorContactFromJson(const QJsonObject& object) {
   SensorContact contact;
   contact.sensorId = object.value(QStringLiteral("sensorId")).toString();
+  contact.sensorType = object.value(QStringLiteral("sensorType")).toString();
+  contact.sensorSubType = object.value(QStringLiteral("sensorSubType")).toString();
   contact.targetEntityName = object.value(QStringLiteral("targetEntityName")).toString();
   contact.rangeMeters = object.value(QStringLiteral("rangeMeters")).toDouble(0.0);
   contact.bearingDegrees = object.value(QStringLiteral("bearingDegrees")).toDouble(0.0);

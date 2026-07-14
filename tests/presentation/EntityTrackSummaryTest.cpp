@@ -114,6 +114,7 @@ TEST(EntityTrackSummaryTest, SensorCountMatchesSensorsSize) {
   sensor.id = QStringLiteral("radar-1");
   sensor.name = QStringLiteral("Radar1");
   sensor.sensorType = QStringLiteral("Radar");
+  sensor.sensorSubType = QStringLiteral("AirborneRadar");
   sensor.maxRangeMeters = 100000.0;
   e.sensors.push_back(sensor);
   const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
@@ -121,11 +122,16 @@ TEST(EntityTrackSummaryTest, SensorCountMatchesSensorsSize) {
   const QVariantList sensors = summary.value(QStringLiteral("sensors")).toList();
   ASSERT_EQ(sensors.size(), 1);
   EXPECT_EQ(sensors.first().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Radar1"));
+  EXPECT_EQ(
+      sensors.first().toMap().value(QStringLiteral("sensorSubType")).toString(),
+      QStringLiteral("AirborneRadar"));
 }
 
 TEST(EntityTrackSummaryTest, ContactCountMatchesContactsSize) {
   Entity e = makeBasicEntity();
   SensorContact contact;
+  contact.sensorType = QStringLiteral("radar");
+  contact.sensorSubType = QStringLiteral("airborneRadar");
   contact.targetEntityName = QStringLiteral("Enemy1");
   contact.detected = true;
   contact.rangeMeters = 25000.0;
@@ -135,6 +141,9 @@ TEST(EntityTrackSummaryTest, ContactCountMatchesContactsSize) {
   const QVariantList contacts = summary.value(QStringLiteral("sensorContacts")).toList();
   ASSERT_EQ(contacts.size(), 1);
   EXPECT_EQ(contacts.first().toMap().value(QStringLiteral("targetEntityName")).toString(), QStringLiteral("Enemy1"));
+  EXPECT_EQ(
+      contacts.first().toMap().value(QStringLiteral("sensorSubType")).toString(),
+      QStringLiteral("airborneRadar"));
 }
 
 TEST(EntityTrackSummaryTest, DestroyedFlagReflected) {

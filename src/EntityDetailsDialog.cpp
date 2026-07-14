@@ -293,6 +293,7 @@ void EntityDetailsDialog::populateSensorInformation() {
       const QString prefix = QStringLiteral("Sensor %1").arg(index + 1);
       rows.append({prefix + QStringLiteral(" Name"), sensor.value(QStringLiteral("name")).toString()});
       rows.append({prefix + QStringLiteral(" Type"), sensor.value(QStringLiteral("sensorType")).toString()});
+      rows.append({prefix + QStringLiteral(" Subtype"), sensor.value(QStringLiteral("sensorSubType")).toString()});
       rows.append({prefix + QStringLiteral(" Enabled"), sensor.value(QStringLiteral("enabled")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
       rows.append({prefix + QStringLiteral(" Emitting"), sensor.value(QStringLiteral("emitting")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
       rows.append({prefix + QStringLiteral(" Range"), QStringLiteral("%1 km").arg(sensor.value(QStringLiteral("maxRangeMeters")).toDouble() / 1000.0, 0, 'f', 1)});

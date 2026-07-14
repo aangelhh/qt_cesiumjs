@@ -1,0 +1,199 @@
+#include <gtest/gtest.h>
+
+#include "application/SensorEngine.h"
+
+namespace {
+
+Entity makeEntity(
+    const QString& name,
+    int forceIdentifier,
+    const QString& domain,
+    double longitude) {
+  Entity entity;
+  entity.name = name;
+  entity.forceIdentifier = forceIdentifier;
+  entity.domain = domain;
+  entity.latitude = 40.0;
+  entity.longitude = longitude;
+  entity.altitude = domain == QStringLiteral("Air") ? 5000 : 0;
+  return entity;
+}
+
+SensorDefinition makeRadar() {
+  SensorDefinition radar;
+  radar.id = QStringLiteral("radar-1");
+  radar.sensorType = QStringLiteral("radar");
+  radar.sensorSubType = QStringLiteral("airborneRadar");
+  radar.maxRangeMeters = 100000.0;
+  radar.azimuthWidthDegrees = 360.0;
+  radar.elevationWidthDegrees = 180.0;
+  return radar;
+}
+
+SensorDefinition makeGroundRadar() {
+  SensorDefinition radar = makeRadar();
+  radar.id = QStringLiteral("ground-radar-1");
+  radar.sensorSubType = QStringLiteral("groundRadar");
+  radar.azimuthWidthDegrees = 360.0;
+  return radar;
+}
+
+} // namespace
+
+TEST(SensorEngine, ContactCarriesProducingSensorTypeAndSubType) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(QStringLiteral("Observer"), 1, QStringLiteral("Air"), 0.0);
+  observer.sensors.push_back(makeRadar());
+  entities.push_back(observer);
+  entities.push_back(makeEntity(QStringLiteral("Target"), 2, QStringLiteral("Air"), 0.1));
+
+  SensorEngine::updateEntityContacts(entities);
+
+  ASSERT_EQ(entities.at(0).sensorContacts.size(), 1);
+  const SensorContact& contact = entities.at(0).sensorContacts.front();
+  EXPECT_EQ(contact.sensorId, QStringLiteral("radar-1"));
+  EXPECT_EQ(contact.sensorType, QStringLiteral("radar"));
+  EXPECT_EQ(contact.sensorSubType, QStringLiteral("airborneRadar"));
+  EXPECT_EQ(contact.targetEntityName, QStringLiteral("Target"));
+}
+
+TEST(SensorEngine, RejectsTargetDomainsDisabledBySensorConfiguration) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(QStringLiteral("Observer"), 1, QStringLiteral("Air"), 0.0);
+  SensorDefinition radar = makeRadar();
+  radar.sensorSubType = QStringLiteral("generic");
+  radar.canDetectAir = false;
+  radar.canDetectGround = true;
+  observer.sensors.push_back(radar);
+  entities.push_back(observer);
+  entities.push_back(makeEntity(QStringLiteral("AirTarget"), 2, QStringLiteral("Air"), 0.1));
+  entities.push_back(makeEntity(QStringLiteral("GroundTarget"), 2, QStringLiteral("Ground"), 0.2));
+
+  SensorEngine::updateEntityContacts(entities);
+
+  ASSERT_EQ(entities.at(0).sensorContacts.size(), 1);
+  EXPECT_EQ(
+      entities.at(0).sensorContacts.front().targetEntityName,
+      QStringLiteral("GroundTarget"));
+}
+
+TEST(SensorEngine, AirborneRadarUsesObserverHeadingAndConfiguredFieldOfView) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(QStringLiteral("Observer"), 1, QStringLiteral("Air"), 0.0);
+  observer.headingDegrees = 90.0;
+  SensorDefinition radar = makeRadar();
+  radar.azimuthWidthDegrees = 60.0;
+  observer.sensors.push_back(radar);
+  entities.push_back(observer);
+  entities.push_back(makeEntity(QStringLiteral("EastTarget"), 2, QStringLiteral("Air"), 0.1));
+
+  SensorEngine::updateEntityContacts(entities);
+  ASSERT_EQ(entities.at(0).sensorContacts.size(), 1);
+
+  entities[0].headingDegrees = 270.0;
+  SensorEngine::updateEntityContacts(entities);
+  EXPECT_TRUE(entities.at(0).sensorContacts.isEmpty());
+}
+
+TEST(SensorEngine, AirborneRadarRejectsTargetsOutsideMaximumRange) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(QStringLiteral("Observer"), 1, QStringLiteral("Air"), 0.0);
+  SensorDefinition radar = makeRadar();
+  radar.maxRangeMeters = 5000.0;
+  observer.sensors.push_back(radar);
+  entities.push_back(observer);
+  entities.push_back(makeEntity(QStringLiteral("FarTarget"), 2, QStringLiteral("Air"), 0.1));
+
+  SensorEngine::updateEntityContacts(entities);
+
+  EXPECT_TRUE(entities.at(0).sensorContacts.isEmpty());
+}
+
+TEST(SensorEngine, AirborneRadarDoesNotOperateFromGroundPlatform) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(QStringLiteral("Observer"), 1, QStringLiteral("Ground"), 0.0);
+  observer.sensors.push_back(makeRadar());
+  entities.push_back(observer);
+  entities.push_back(makeEntity(QStringLiteral("AirTarget"), 2, QStringLiteral("Air"), 0.1));
+
+  SensorEngine::updateEntityContacts(entities);
+
+  EXPECT_TRUE(entities.at(0).sensorContacts.isEmpty());
+}
+
+TEST(SensorEngine, AirborneRadarMvpIgnoresNonAirTargets) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(QStringLiteral("Observer"), 1, QStringLiteral("Air"), 0.0);
+  SensorDefinition radar = makeRadar();
+  radar.canDetectGround = true;
+  observer.sensors.push_back(radar);
+  entities.push_back(observer);
+  entities.push_back(makeEntity(QStringLiteral("GroundTarget"), 2, QStringLiteral("Ground"), 0.1));
+
+  SensorEngine::updateEntityContacts(entities);
+
+  EXPECT_TRUE(entities.at(0).sensorContacts.isEmpty());
+}
+
+TEST(SensorEngine, GroundRadarWithFullCoverageDetectsAirRegardlessOfHeading) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(QStringLiteral("GroundRadar"), 1, QStringLiteral("Ground"), 0.0);
+  observer.headingDegrees = 270.0;
+  observer.sensors.push_back(makeGroundRadar());
+  entities.push_back(observer);
+  entities.push_back(makeEntity(QStringLiteral("AirTarget"), 2, QStringLiteral("Air"), 0.1));
+
+  SensorEngine::updateEntityContacts(entities);
+
+  ASSERT_EQ(entities.at(0).sensorContacts.size(), 1);
+  EXPECT_EQ(
+      entities.at(0).sensorContacts.front().sensorSubType,
+      QStringLiteral("groundRadar"));
+  EXPECT_EQ(
+      entities.at(0).sensorContacts.front().targetEntityName,
+      QStringLiteral("AirTarget"));
+}
+
+TEST(SensorEngine, GroundRadarSectorUsesConfiguredHeadingAndFieldOfView) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(QStringLiteral("GroundRadar"), 1, QStringLiteral("Ground"), 0.0);
+  observer.headingDegrees = 90.0;
+  SensorDefinition radar = makeGroundRadar();
+  radar.azimuthWidthDegrees = 60.0;
+  observer.sensors.push_back(radar);
+  entities.push_back(observer);
+  entities.push_back(makeEntity(QStringLiteral("AirTarget"), 2, QStringLiteral("Air"), 0.1));
+
+  SensorEngine::updateEntityContacts(entities);
+  ASSERT_EQ(entities.at(0).sensorContacts.size(), 1);
+
+  entities[0].headingDegrees = 270.0;
+  SensorEngine::updateEntityContacts(entities);
+  EXPECT_TRUE(entities.at(0).sensorContacts.isEmpty());
+}
+
+TEST(SensorEngine, GroundRadarDoesNotOperateFromAirPlatform) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(QStringLiteral("Aircraft"), 1, QStringLiteral("Air"), 0.0);
+  observer.sensors.push_back(makeGroundRadar());
+  entities.push_back(observer);
+  entities.push_back(makeEntity(QStringLiteral("AirTarget"), 2, QStringLiteral("Air"), 0.1));
+
+  SensorEngine::updateEntityContacts(entities);
+
+  EXPECT_TRUE(entities.at(0).sensorContacts.isEmpty());
+}
+
+TEST(SensorEngine, GroundRadarMvpIgnoresNonAirTargets) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(QStringLiteral("GroundRadar"), 1, QStringLiteral("Ground"), 0.0);
+  SensorDefinition radar = makeGroundRadar();
+  radar.canDetectGround = true;
+  observer.sensors.push_back(radar);
+  entities.push_back(observer);
+  entities.push_back(makeEntity(QStringLiteral("GroundTarget"), 2, QStringLiteral("Ground"), 0.1));
+
+  SensorEngine::updateEntityContacts(entities);
+
+  EXPECT_TRUE(entities.at(0).sensorContacts.isEmpty());
+}
