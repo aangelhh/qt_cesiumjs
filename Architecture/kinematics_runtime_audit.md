@@ -407,6 +407,32 @@ Deferred to Feature 1.9:
 - Acceleration/deceleration profiles by aircraft type.
 - More realistic pitch/roll coupling and energy/performance modeling.
 
+## Recommended Fix List for Feature 1.9
+
+Implemented baseline:
+
+- Add entity movement profiles on top of `MovementIntent`.
+- Fighters/interceptors receive sharper heading, acceleration, and climb limits than heavy aircraft.
+- Heavy aircraft categories such as bomber, transport, tanker, and AWACS keep conservative movement limits.
+- Ground entities expose zero climb rate through the movement profile; runtime Ground safety still clamps vertical movement.
+- Movement profiles now include operational max speed and service ceiling constraints.
+- Fighter climb is intentionally capped to an operational kinematic rate instead of an extreme instant climb.
+- Air entities clear vertical speed immediately when altitude is captured so pitch levels out on the same tick.
+- Visual pitch maximum is kept conservative to avoid exaggerated nose-up/nose-down attitude in kinematic mode.
+- Add regression tests proving:
+  - fighter profile is more agile than tanker/heavy profile;
+  - impossible altitude/speed commands are clamped by the movement profile;
+  - Ground profile does not command vertical movement;
+  - `FlightDynamicsEngine` applies sharper fighter limits than tanker limits for the same movement intent.
+  - Air pitch levels out when the target altitude is captured on the current tick.
+
+Still deferred:
+
+- Real G limits.
+- Stall/energy modeling.
+- Platform database-driven performance.
+- JSBSim full FDM control handoff.
+
 Remaining future work:
 
 - Replace the current Ground altitude fallback with a terrain/elevation service when EPIC 16 adds world elevation sampling.

@@ -17,20 +17,20 @@ namespace {
 
 constexpr double kEarthRadiusMeters = 6371000.0;
 constexpr double kKnotsToMetersPerSecond = 0.514444;
-constexpr double kHeadingRateDegreesPerSecond = 3.0;
-constexpr double kAccelerationKnotsPerSecond = 8.0;
 constexpr double kClimbRateMetersPerSecond = 20.0;
 constexpr double kMetersToFeet = 3.28084;
 constexpr double kFeetToMeters = 1.0 / kMetersToFeet;
 constexpr double kMinimumAttitudeSpeedMetersPerSecond = 5.0;
 constexpr double kPitchResponseDegreesPerSecond = 18.0;
 constexpr double kRollResponseDegreesPerSecond = 45.0;
-constexpr double kMaxPitchDegrees = 20.0;
-constexpr double kMaxRollDegrees = 35.0;
+constexpr double kRollLevelResponseDegreesPerSecond = 120.0;
+constexpr double kMaxPitchDegrees = 10.0;
+constexpr double kMaxRollDegrees = 30.0;
 constexpr double kGravityMetersPerSecondSquared = 9.81;
-constexpr double kClimbPitchBiasDegrees = 4.0;
-constexpr double kSettledHeadingStepDegrees = 0.08;
-constexpr double kSettledHeadingErrorDegrees = 0.75;
+constexpr double kClimbPitchBiasDegrees = 1.5;
+constexpr double kSettledHeadingStepDegrees = 0.5;
+constexpr double kSettledHeadingErrorDegrees = 1.0;
+constexpr int kAltitudeCaptureToleranceMeters = 50;
 
 double clampStep(double currentValue, double targetValue, double maxStep) {
   const double delta = targetValue - currentValue;
@@ -147,6 +147,13 @@ void normalizeGroundKinematics(Entity& entity) {
   entity.rollDegrees = 0.0;
 }
 
+void settleCapturedVerticalIntent(Entity& entity) {
+  if (qAbs(entity.currentTask.targetAltitudeMeters - entity.altitude) <=
+      kAltitudeCaptureToleranceMeters) {
+    entity.verticalSpeedMetersPerSecond = 0.0;
+  }
+}
+
 void updateDerivedKinematicAttitude(
     Entity& entity,
     double previousHeadingDegrees,
@@ -167,8 +174,13 @@ void updateDerivedKinematicAttitude(
     return;
   }
 
+  const double effectiveVerticalSpeedMetersPerSecond =
+      qAbs(entity.currentTask.targetAltitudeMeters - entity.altitude) <=
+              kAltitudeCaptureToleranceMeters
+          ? 0.0
+          : entity.verticalSpeedMetersPerSecond;
   const double flightPathPitchDegrees = qRadiansToDegrees(qAtan2(
-      entity.verticalSpeedMetersPerSecond,
+      effectiveVerticalSpeedMetersPerSecond,
       horizontalSpeedMetersPerSecond));
   const double headingStepDegrees =
       shortestSignedAngle(previousHeadingDegrees, entity.headingDegrees);
@@ -182,17 +194,21 @@ void updateDerivedKinematicAttitude(
       kGravityMetersPerSecondSquared));
   const double climbBiasDegrees = qBound(
       -kClimbPitchBiasDegrees,
-      (entity.verticalSpeedMetersPerSecond / kClimbRateMetersPerSecond) *
+      (effectiveVerticalSpeedMetersPerSecond / kClimbRateMetersPerSecond) *
           kClimbPitchBiasDegrees,
       kClimbPitchBiasDegrees);
   const double rawPitchDegrees = flightPathPitchDegrees + climbBiasDegrees;
   const bool onTarget = entity.currentTask.status == QStringLiteral("On target");
 
-  const double safePitchDegrees = std::isfinite(rawPitchDegrees) ? rawPitchDegrees : 0.0;
+  double safePitchDegrees = std::isfinite(rawPitchDegrees) ? rawPitchDegrees : 0.0;
+  if (qAbs(effectiveVerticalSpeedMetersPerSecond) < 0.5) {
+    safePitchDegrees = 0.0;
+  }
   double safeRollDegrees = std::isfinite(rawRollDegrees) ? rawRollDegrees : 0.0;
-  if (onTarget ||
+  const bool headingSettled =
       qAbs(headingStepDegrees) <= kSettledHeadingStepDegrees ||
-      qAbs(headingErrorDegrees) <= kSettledHeadingErrorDegrees) {
+      qAbs(headingErrorDegrees) <= kSettledHeadingErrorDegrees;
+  if (onTarget || headingSettled) {
     safeRollDegrees = 0.0;
   }
   entity.pitchDegrees = smoothAttitudeDegrees(
@@ -205,7 +221,9 @@ void updateDerivedKinematicAttitude(
       entity.rollDegrees,
       safeRollDegrees,
       kMaxRollDegrees,
-      kRollResponseDegreesPerSecond,
+      qFuzzyIsNull(safeRollDegrees)
+          ? kRollLevelResponseDegreesPerSecond
+          : kRollResponseDegreesPerSecond,
       deltaSeconds);
 }
 
@@ -481,9 +499,7 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
           entity,
           application::movementIntentFromTask(entity.currentTask),
           deltaSeconds,
-          {kHeadingRateDegreesPerSecond,
-           kAccelerationKnotsPerSecond,
-           kClimbRateMetersPerSecond});
+          application::movementControllerLimitsForEntity(entity));
           
       if (entity.currentTask.status == QStringLiteral("On target") ||
           entity.currentTask.status == QStringLiteral("Completed")) {
@@ -517,9 +533,7 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
         entity,
         application::movementIntentFromTask(entity.currentTask),
         deltaSeconds,
-        {kHeadingRateDegreesPerSecond,
-         kAccelerationKnotsPerSecond,
-         kClimbRateMetersPerSecond});
+        application::movementControllerLimitsForEntity(entity));
 
     entity.currentTask.status = QStringLiteral("Running");
     if (!isAttackAirTask && distance < 200.0) {
@@ -872,5 +886,6 @@ void FlightDynamicsEngine::advanceEntity(
 #endif
 
   applyKinematicStep(entity, deltaSeconds);
+  settleCapturedVerticalIntent(entity);
   updateDerivedKinematicAttitude(entity, previousHeadingDegrees, deltaSeconds);
 }

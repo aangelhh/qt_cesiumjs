@@ -1198,6 +1198,83 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         };
       }
 
+      function normalizeTrackAttitude(track) {
+        return {
+          headingDegrees: Number(track && track.headingDegrees || 0.0),
+          pitchDegrees: Number(track && track.pitchDegrees || 0.0),
+          rollDegrees: Number(track && track.rollDegrees || 0.0),
+        };
+      }
+
+      function shortestAngleDegrees(currentDegrees, targetDegrees) {
+        let delta = Number(targetDegrees || 0.0) - Number(currentDegrees || 0.0);
+        while (delta > 180.0) {
+          delta -= 360.0;
+        }
+        while (delta < -180.0) {
+          delta += 360.0;
+        }
+        return delta;
+      }
+
+      function lerpAngleDegrees(currentDegrees, targetDegrees, t) {
+        return Number(currentDegrees || 0.0) +
+          shortestAngleDegrees(currentDegrees, targetDegrees) * t;
+      }
+
+      function createInterpolatedAttitudeState(track) {
+        const attitude = normalizeTrackAttitude(track);
+        return {
+          previousAttitude: Object.assign({}, attitude),
+          targetAttitude: Object.assign({}, attitude),
+          startTimeMs: performance.now(),
+          durationMs: 140.0,
+        };
+      }
+
+      function attitudeStateDegrees(entity, track) {
+        if (!entity._qtAttitudeState) {
+          entity._qtAttitudeState = createInterpolatedAttitudeState(track);
+        }
+        const attitudeState = entity._qtAttitudeState;
+        const elapsed = performance.now() - attitudeState.startTimeMs;
+        const t = Cesium.Math.clamp(elapsed / attitudeState.durationMs, 0.0, 1.0);
+        return {
+          headingDegrees: lerpAngleDegrees(
+            attitudeState.previousAttitude.headingDegrees,
+            attitudeState.targetAttitude.headingDegrees,
+            t
+          ),
+          pitchDegrees: Cesium.Math.lerp(
+            attitudeState.previousAttitude.pitchDegrees,
+            attitudeState.targetAttitude.pitchDegrees,
+            t
+          ),
+          rollDegrees: Cesium.Math.lerp(
+            attitudeState.previousAttitude.rollDegrees,
+            attitudeState.targetAttitude.rollDegrees,
+            t
+          ),
+        };
+      }
+
+      function updateInterpolatedAttitude(entity, track) {
+        const currentAttitude = attitudeStateDegrees(entity, entity._qtTrackData || track);
+        entity._qtAttitudeState = {
+          previousAttitude: currentAttitude,
+          targetAttitude: normalizeTrackAttitude(track),
+          startTimeMs: performance.now(),
+          durationMs: 140.0,
+        };
+      }
+
+      function visualPitchDegrees(attitude) {
+        const pitchDegrees = Number(attitude && attitude.pitchDegrees || 0.0);
+        const rollMagnitude = Math.abs(Number(attitude && attitude.rollDegrees || 0.0));
+        const turnPitchGain = 1.0 + Cesium.Math.clamp(rollMagnitude / 30.0, 0.0, 1.0) * 0.25;
+        return Cesium.Math.clamp(pitchDegrees * turnPitchGain, -12.0, 12.0);
+      }
+
       function motionStatePosition(motionState) {
         const elapsed = performance.now() - motionState.startTimeMs;
         const t = Cesium.Math.clamp(elapsed / motionState.durationMs, 0.0, 1.0);
@@ -1714,9 +1791,12 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             return Cesium.Quaternion.IDENTITY;
           }
 
-          const headingRadians = Cesium.Math.toRadians(Number(track.headingDegrees || 0.0));
-          const pitchRadians = Cesium.Math.toRadians(Number(track.pitchDegrees || 0.0));
-          const rollRadians = Cesium.Math.toRadians(Number(track.rollDegrees || 0.0));
+          const attitude = attitudeStateDegrees(entity, track);
+          const headingRadians = Cesium.Math.toRadians(Number(attitude.headingDegrees || 0.0));
+          // Positive simulation pitch means nose up and matches Cesium HPR.
+          // Roll remains inverted to match the aircraft model's local axes.
+          const pitchRadians = Cesium.Math.toRadians(visualPitchDegrees(attitude));
+          const rollRadians = Cesium.Math.toRadians(-Number(attitude.rollDegrees || 0.0));
           const headingPitchRoll = new Cesium.HeadingPitchRoll(
             headingRadians,
             pitchRadians,
@@ -2331,6 +2411,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           }
           entity = viewer.entities.add(entityOptions);
           installInterpolatedPosition(entity, position);
+          entity._qtAttitudeState = createInterpolatedAttitudeState(track);
           entity._qtTrackData = Object.assign({}, track);
           if (hasModel) {
             entity.orientation = buildEntityOrientationProperty(entity);
@@ -2338,6 +2419,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           qtEntitiesByName.set(track.name, entity);
         } else {
           updateInterpolatedPosition(entity, position, track);
+          updateInterpolatedAttitude(entity, track);
           entity.name = track.name;
           entity._qtTrackData = Object.assign({}, track);
           entity.point.show = isPendingBombTargetLine

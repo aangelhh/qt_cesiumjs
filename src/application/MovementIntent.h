@@ -16,6 +16,9 @@ struct MovementControllerLimits {
   double headingRateDegreesPerSecond = 3.0;
   double accelerationKnotsPerSecond = 8.0;
   double climbRateMetersPerSecond = 20.0;
+  double maxSpeedKnots = 650.0;
+  double maxAltitudeMeters = 12000.0;
+  double altitudeCaptureToleranceMeters = 25.0;
 };
 
 struct MovementIntent {
@@ -26,6 +29,8 @@ struct MovementIntent {
 };
 
 MovementIntent movementIntentFromTask(const EntityTask& task);
+
+MovementControllerLimits movementControllerLimitsForEntity(const Entity& entity);
 
 void applyMovementIntent(
     Entity& entity,
