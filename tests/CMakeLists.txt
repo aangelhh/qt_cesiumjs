@@ -24,6 +24,7 @@ add_executable(qttest_unit_tests
     domain/GeoMathTest.cpp
     domain/BombReleaseGateTest.cpp
     domain/CombatRulesTest.cpp
+    domain/SensorTest.cpp
     application/EventBusTest.cpp
     application/AttackTaskProcessorTest.cpp
     application/TaskApplicatorTest.cpp
@@ -31,6 +32,7 @@ add_executable(qttest_unit_tests
     application/MovementIntentTest.cpp
     application/MunitionSimulatorTest.cpp
     application/BehaviorEngineTest.cpp
+    application/SensorEngineTest.cpp
     application/ScenarioQueriesTest.cpp
     application/ScenarioSerializerTest.cpp
     application/TacticalGraphicRepositoryTest.cpp
@@ -64,6 +66,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/domain/GeoMath.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/BombReleaseGate.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/CombatRules.cpp
+    ${CMAKE_SOURCE_DIR}/src/domain/Sensor.cpp
     ${CMAKE_SOURCE_DIR}/src/application/ScenarioState.cpp
     ${CMAKE_SOURCE_DIR}/src/application/TacticalGraphicRepository.cpp
     ${CMAKE_SOURCE_DIR}/src/application/ScenarioSerializer.cpp

@@ -325,6 +325,7 @@ QVariantMap makeEntityTrackSummary(
         {QStringLiteral("id"),                    sensor.id},
         {QStringLiteral("name"),                  sensor.name},
         {QStringLiteral("sensorType"),            sensor.sensorType},
+        {QStringLiteral("sensorSubType"),         sensor.sensorSubType},
         {QStringLiteral("enabled"),               sensor.enabled},
         {QStringLiteral("emitting"),              sensor.emitting},
         {QStringLiteral("maxRangeMeters"),         sensor.maxRangeMeters},
@@ -341,6 +342,8 @@ QVariantMap makeEntityTrackSummary(
   for (const SensorContact& contact : entity.sensorContacts) {
     contacts.push_back(QVariantMap{
         {QStringLiteral("sensorId"),         contact.sensorId},
+        {QStringLiteral("sensorType"),       contact.sensorType},
+        {QStringLiteral("sensorSubType"),    contact.sensorSubType},
         {QStringLiteral("targetEntityName"), contact.targetEntityName},
         {QStringLiteral("rangeMeters"),      contact.rangeMeters},
         {QStringLiteral("bearingDegrees"),   contact.bearingDegrees},

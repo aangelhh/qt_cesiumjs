@@ -3,10 +3,26 @@
 #include <QString>
 #include <QVector>
 
+enum class SensorType {
+  Radar,
+  Infrared,
+  Visual,
+  Unknown,
+};
+
+enum class SensorSubType {
+  Generic,
+  AirborneRadar,
+  GroundRadar,
+  NavalRadar,
+  Unknown,
+};
+
 struct SensorDefinition {
   QString id;
   QString name;
   QString sensorType = QStringLiteral("radar");
+  QString sensorSubType = QStringLiteral("generic");
   bool enabled = true;
   bool emitting = true;
   double maxRangeMeters = 250000.0;
@@ -27,6 +43,8 @@ struct SensorDefinition {
 
 struct SensorContact {
   QString sensorId;
+  QString sensorType;
+  QString sensorSubType;
   QString targetEntityName;
   double rangeMeters = 0.0;
   double bearingDegrees = 0.0;
@@ -36,3 +54,17 @@ struct SensorContact {
 
 using SensorDefinitions = QVector<SensorDefinition>;
 using SensorContacts = QVector<SensorContact>;
+
+namespace sensor {
+
+SensorType typeFromString(const QString& value);
+QString typeToString(SensorType type);
+
+SensorSubType subTypeFromString(const QString& value);
+QString subTypeToString(SensorSubType subType);
+
+bool canDetectDomain(const SensorDefinition& definition, const QString& domain);
+bool canOperateFromDomain(const SensorDefinition& definition, const QString& domain);
+bool supportsTargetDomain(const SensorDefinition& definition, const QString& domain);
+
+} // namespace sensor

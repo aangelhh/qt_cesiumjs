@@ -926,14 +926,17 @@ Entity AddEntityDialog::entity() const {
         ? QStringLiteral("Primary Radar")
         : _radarNameEdit->text().trimmed();
     radar.sensorType = QStringLiteral("radar");
+    radar.sensorSubType = isGround
+        ? QStringLiteral("groundRadar")
+        : QStringLiteral("airborneRadar");
     radar.maxRangeMeters = _radarRangeSpin->value() * 1000.0;
     radar.azimuthWidthDegrees = _radarAzimuthSpin->value();
     radar.elevationCenterDegrees = _radarElevationCenterSpin->value();
     radar.elevationWidthDegrees = _radarElevationWidthSpin->value();
     radar.maxTracks = _radarMaxTracksSpin->value();
     radar.canDetectAir = true;
-    radar.canDetectGround = true;
-    radar.canDetectSurface = true;
+    radar.canDetectGround = false;
+    radar.canDetectSurface = false;
     entity.sensors.push_back(radar);
   }
 

@@ -136,6 +136,9 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
       if (!sensor.enabled || !sensor.emitting || sensor.maxRangeMeters <= 0.0) {
         continue;
       }
+      if (!sensor::canOperateFromDomain(sensor, source.domain)) {
+        continue;
+      }
 
       int tracksAdded = 0;
       for (int targetIndex = 0; targetIndex < entities.size(); ++targetIndex) {
@@ -148,6 +151,9 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
           continue;
         }
         if (!isEnemyTarget(source, target)) {
+          continue;
+        }
+        if (!sensor::supportsTargetDomain(sensor, target.domain)) {
           continue;
         }
 
@@ -166,6 +172,8 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
 
         SensorContact contact;
         contact.sensorId = sensor.id;
+        contact.sensorType = sensor.sensorType;
+        contact.sensorSubType = sensor.sensorSubType;
         contact.targetEntityName = target.name;
         contact.rangeMeters = range;
         contact.bearingDegrees = bearingDegrees(source, target);

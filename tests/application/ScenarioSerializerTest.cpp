@@ -148,6 +148,66 @@ TEST(ScenarioSerializer, RoundTripWeapons) {
   EXPECT_EQ(loaded.entities.at(0).weapons.size(), 2);
 }
 
+TEST(ScenarioSerializer, RoundTripSensorTypeMetadata) {
+  ScenarioSnapshot snapshot;
+  Entity entity = makeSimpleEntity(QStringLiteral("SensorPlatform"));
+  SensorDefinition sensor;
+  sensor.id = QStringLiteral("radar-primary");
+  sensor.sensorType = QStringLiteral("radar");
+  sensor.sensorSubType = QStringLiteral("airborneRadar");
+  entity.sensors.push_back(sensor);
+
+  SensorContact contact;
+  contact.sensorId = sensor.id;
+  contact.sensorType = sensor.sensorType;
+  contact.sensorSubType = sensor.sensorSubType;
+  contact.targetEntityName = QStringLiteral("Target");
+  contact.detected = true;
+  entity.sensorContacts.push_back(contact);
+  snapshot.entities.push_back(entity);
+
+  const QString path = tempFilePath();
+  ASSERT_TRUE(saveScenario(path, snapshot));
+  const ScenarioSnapshot loaded = loadScenario(path);
+  QFile::remove(path);
+
+  ASSERT_EQ(loaded.entities.size(), 1);
+  ASSERT_EQ(loaded.entities.front().sensors.size(), 1);
+  EXPECT_EQ(
+      loaded.entities.front().sensors.front().sensorSubType,
+      QStringLiteral("airborneRadar"));
+  ASSERT_EQ(loaded.entities.front().sensorContacts.size(), 1);
+  EXPECT_EQ(
+      loaded.entities.front().sensorContacts.front().sensorType,
+      QStringLiteral("radar"));
+  EXPECT_EQ(
+      loaded.entities.front().sensorContacts.front().sensorSubType,
+      QStringLiteral("airborneRadar"));
+}
+
+TEST(ScenarioSerializer, LegacySensorWithoutSubTypeLoadsAsGeneric) {
+  QTemporaryFile file;
+  ASSERT_TRUE(file.open());
+  file.write(R"({
+    "waypoints": [],
+    "routes": [],
+    "areas": [],
+    "entities": [{
+      "name": "LegacyRadar",
+      "sensors": [{"id": "legacy", "sensorType": "radar"}]
+    }]
+  })");
+  file.close();
+
+  const ScenarioSnapshot loaded = loadScenario(file.fileName());
+
+  ASSERT_EQ(loaded.entities.size(), 1);
+  ASSERT_EQ(loaded.entities.front().sensors.size(), 1);
+  EXPECT_EQ(
+      loaded.entities.front().sensors.front().sensorSubType,
+      QStringLiteral("generic"));
+}
+
 // ── Waypoints ─────────────────────────────────────────────────────────────────
 
 TEST(ScenarioSerializer, RoundTripWaypoints) {

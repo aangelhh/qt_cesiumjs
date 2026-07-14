@@ -76,6 +76,7 @@ qt_add_executable(qttest
     src/domain/Entity.h
     src/domain/GeoMath.cpp
     src/domain/GeoMath.h
+    src/domain/Sensor.cpp
     src/domain/Sensor.h
     src/domain/Task.cpp
     src/domain/Task.h
