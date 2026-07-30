@@ -1,6 +1,8 @@
 #include "application/ScenarioState.h"
 
 #include "application/BehaviorEngine.h"
+#include "application/Event.h"
+#include "application/EventBus.h"
 #include "application/FlightDynamicsEngine.h"
 #include "application/MunitionSimulator.h"
 #include "application/ScenarioSerializer.h"
@@ -10,6 +12,8 @@
 
 #include <QDir>
 #include <QtMath>
+#include <cmath>
+#include <utility>
 
 namespace {
 
@@ -665,12 +669,34 @@ void ScenarioState::advanceBehaviors(double deltaSeconds) {
 }
 
 void ScenarioState::advanceSimulation(double deltaSeconds) {
+  if (!std::isfinite(deltaSeconds) || deltaSeconds <= 0.0) {
+    return;
+  }
+
+  QVector<application::KinematicsTelemetrySnapshot> telemetrySnapshots;
+  {
+    ScopedLock lock(_mutex);
+    _simulationTimeSeconds += deltaSeconds;
+    FlightDynamicsEngine::advanceEntities(_entities, _taskStacks, deltaSeconds);
+    this->advanceBehaviors(deltaSeconds);
+    this->advanceActiveMunitions(deltaSeconds);
+    this->advanceTransientEffects(deltaSeconds);
+    this->refreshSensors();
+    telemetrySnapshots = _kinematicsTelemetryPublisher.advance(
+        _entities,
+        _simulationTimeSeconds,
+        deltaSeconds);
+  }
+
+  for (auto& snapshot : telemetrySnapshots) {
+    application::EventBus::instance().publish(
+        application::EventKinematicsTelemetryUpdated(std::move(snapshot)));
+  }
+}
+
+double ScenarioState::simulationTimeSeconds() const {
   ScopedLock lock(_mutex);
-  FlightDynamicsEngine::advanceEntities(_entities, _taskStacks, deltaSeconds);
-  this->advanceBehaviors(deltaSeconds);
-  this->advanceActiveMunitions(deltaSeconds);
-  this->advanceTransientEffects(deltaSeconds);
-  this->refreshSensors();
+  return _simulationTimeSeconds;
 }
 
 void ScenarioState::stopMission() {
@@ -689,6 +715,8 @@ void ScenarioState::stopMission() {
   _taskStacks.clear();
   _behaviorMissileCooldownSeconds.clear();
   _behaviorDamageReactionLevel.clear();
+  _simulationTimeSeconds = 0.0;
+  _kinematicsTelemetryPublisher.reset();
   this->refreshSensors();
   this->save();
 }
@@ -712,6 +740,8 @@ bool ScenarioState::load() {
   _behaviorMissileCooldownSeconds.clear();
   _behaviorDamageReactionLevel.clear();
   _nextMunitionSerial = 1;
+  _simulationTimeSeconds = 0.0;
+  _kinematicsTelemetryPublisher.reset();
 
   const application::ScenarioSnapshot snapshot =
       application::loadScenario(this->storagePath());
@@ -741,6 +771,8 @@ void ScenarioState::reset() {
   _behaviorMissileCooldownSeconds.clear();
   _behaviorDamageReactionLevel.clear();
   _nextMunitionSerial = 1;
+  _simulationTimeSeconds = 0.0;
+  _kinematicsTelemetryPublisher.reset();
   this->save();
 }
 

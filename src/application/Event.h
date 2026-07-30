@@ -1,6 +1,9 @@
 #pragma once
 
+#include "application/KinematicsTelemetry.h"
+
 #include <QString>
+#include <utility>
 
 namespace application {
 
@@ -22,6 +25,15 @@ struct EventKinematicsUpdated : public IEvent {
 
     EventKinematicsUpdated(int id, const QString& name, double lat, double lon, double alt, double heading, double speed, const QString& team = "blue")
         : entityId(id), entityName(name), latitude(lat), longitude(lon), altitudeMeters(alt), headingDegrees(heading), speedKnots(speed), team(team) {}
+};
+
+// Carries an ownership-independent telemetry value for diagnostics consumers.
+struct EventKinematicsTelemetryUpdated : public IEvent {
+    KinematicsTelemetrySnapshot snapshot;
+
+    explicit EventKinematicsTelemetryUpdated(
+        KinematicsTelemetrySnapshot telemetrySnapshot)
+        : snapshot(std::move(telemetrySnapshot)) {}
 };
 
 } // namespace application

@@ -30,6 +30,7 @@ add_executable(qttest_unit_tests
     application/TaskApplicatorTest.cpp
     application/FlightDynamicsEngineConsistencyTest.cpp
     application/MovementIntentTest.cpp
+    application/KinematicsTelemetryTest.cpp
     application/MunitionSimulatorTest.cpp
     application/BehaviorEngineTest.cpp
     application/SensorEngineTest.cpp
@@ -76,6 +77,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/application/AttackTaskProcessor.cpp
     ${CMAKE_SOURCE_DIR}/src/application/TaskApplicator.cpp
     ${CMAKE_SOURCE_DIR}/src/application/MovementIntent.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/KinematicsTelemetry.cpp
     ${CMAKE_SOURCE_DIR}/src/application/Command.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/CesiumScenePage.cpp
     ${CMAKE_SOURCE_DIR}/src/application/SimulationEngine.cpp

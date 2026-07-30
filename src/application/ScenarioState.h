@@ -1,5 +1,6 @@
 #pragma once
 
+#include "application/KinematicsTelemetry.h"
 #include "domain/Entity.h"
 #include "domain/Munition.h"
 #include "domain/TacticalGraphic.h"
@@ -57,6 +58,7 @@ public:
   domain::TaskStack* getTaskStack(const QString& entityName);
   void refreshSensors();
   void advanceSimulation(double deltaSeconds);
+  double simulationTimeSeconds() const;
   void stopMission();
   bool save() const;
   bool load();
@@ -76,6 +78,8 @@ private:
   QVector<RouteGraphic> _routes;
   QVector<AreaDefinition> _areas;
   int _nextMunitionSerial = 1;
+  double _simulationTimeSeconds = 0.0;
+  application::KinematicsTelemetryPublisher _kinematicsTelemetryPublisher;
 
   void applyDamageWithSource(
       const QString& targetName,

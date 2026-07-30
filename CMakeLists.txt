@@ -59,6 +59,8 @@ qt_add_executable(qttest
     src/application/TaskApplicator.h
     src/application/MovementIntent.cpp
     src/application/MovementIntent.h
+    src/application/KinematicsTelemetry.cpp
+    src/application/KinematicsTelemetry.h
     src/application/Command.cpp
     src/application/Command.h
     src/application/Event.h
