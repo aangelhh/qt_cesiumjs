@@ -1,6 +1,7 @@
 #include "application/KinematicsTelemetry.h"
 
 #include "application/MovementIntent.h"
+#include "application/FlightDynamicsEngine.h"
 #include "domain/GeoMath.h"
 
 #include <cmath>
@@ -61,6 +62,9 @@ KinematicsTelemetrySnapshot makeKinematicsTelemetrySnapshot(
   snapshot.taskType = entity.currentTask.taskType;
   snapshot.taskStatus = entity.currentTask.status;
   snapshot.dynamicsModel = normalizedDynamicsModel(entity);
+  snapshot.systems = FlightDynamicsEngine::systemsTelemetryForEntity(
+      entity,
+      limits.maxSpeedKnots);
   snapshot.taskEnabled = entity.currentTask.enabled;
   snapshot.destroyed = entity.destroyed;
   return snapshot;

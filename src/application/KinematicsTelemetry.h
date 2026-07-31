@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/Entity.h"
+#include "application/SystemsTelemetry.h"
 
 #include <QString>
 #include <QVector>
@@ -46,6 +47,7 @@ struct KinematicsTelemetrySnapshot {
   QString taskType;
   QString taskStatus;
   QString dynamicsModel;
+  SystemsTelemetrySnapshot systems;
   bool taskEnabled = false;
   bool destroyed = false;
 };

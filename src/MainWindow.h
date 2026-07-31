@@ -12,6 +12,7 @@
 #include <QVariantMap>
 #include <QVector>
 
+#include <cstdint>
 #include <memory>
 
 #include "application/AttackTaskProcessor.h"
@@ -41,6 +42,7 @@ class QStandardItemModel;
 class QTimer;
 class QPoint;
 class QEvent;
+class QDockWidget;
 class QToolButton;
 class QWidget;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
@@ -57,6 +59,7 @@ class EntityPlanDialog;
 class EntityPlanExecutor;
 class EntityVisualStateManager;
 class GraphicPickCoordinator;
+class KinematicsCockpitWidget;
 class PlanStepConfigurator;
 }
 
@@ -203,6 +206,8 @@ private:
   void beginBombCoordinatePick();
   void beginGraphicCoordinatePick();
   void updateSimulationControls();
+  void initializeKinematicsCockpit();
+  void refreshKinematicsCockpitForEntity(const struct Entity* entity);
   void createTaskQuickBar();
   void populateTaskQuickBarButtons(QFrame* panel, QHBoxLayout* layout);
   void positionTaskQuickBar();
@@ -249,6 +254,13 @@ private:
   Ui::MainWindow* _ui;
   QWidget* _contentWidget;
   QWidget* _taskQuickBar;
+  QDockWidget* _kinematicsCockpitDock;
+  presentation::KinematicsCockpitWidget* _kinematicsCockpitWidget;
+  QDockWidget* _qflightCockpitDock;
+  presentation::KinematicsCockpitWidget* _qflightCockpitWidget;
+  QDockWidget* _ecamCockpitDock;
+  presentation::KinematicsCockpitWidget* _ecamCockpitWidget;
+  std::uint64_t _kinematicsTelemetrySubscriptionId;
   MapBridge* _mapBridge;
   ScenarioState* _scenarioState;
   QStandardItemModel* _objectsModel;

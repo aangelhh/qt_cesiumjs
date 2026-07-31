@@ -80,6 +80,8 @@ struct Entity {
   bool flightDynamicsEnabled = false;
   QString flightDynamicsMode = QStringLiteral("kinematic");
   QString jsbsimAircraftModel;
+  QString systemsDisplayProfileId;
+  int engineCount = 0;
   double speedKnots = 0.0;
   double verticalSpeedMetersPerSecond = 0.0;
   bool destroyed = false;

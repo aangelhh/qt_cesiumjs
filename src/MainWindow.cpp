@@ -6,6 +6,9 @@
 #include "application/ScenarioState.h"
 #include "application/SimulationEngine.h"
 #include "application/Command.h"
+#include "application/Event.h"
+#include "application/EventBus.h"
+#include "application/KinematicsTelemetry.h"
 #include "application/ScenarioQueries.h"
 #include "application/TaskApplicator.h"
 #include "domain/BombReleaseGate.h"
@@ -15,6 +18,7 @@
 #include "presentation/EntityPlanExecutor.h"
 #include "presentation/BombTargetMapSync.h"
 #include "presentation/MapBridgeScripts.h"
+#include "presentation/KinematicsCockpitWidget.h"
 #include "presentation/EntityContextMenuBuilder.h"
 #include "presentation/EntityContextMenuStateBuilder.h"
 #include "presentation/TrackSetSyncer.h"
@@ -45,6 +49,7 @@
 #include <QFileInfo>
 #include <QColor>
 #include <QDialog>
+#include <QDockWidget>
 #include <QEventLoop>
 #include <QFrame>
 #include <QHeaderView>
@@ -67,6 +72,7 @@
 #include <QSizePolicy>
 #include <QStandardItem>
 #include <QStandardItemModel>
+#include <QScrollBar>
 #include <QSet>
 #include <QToolButton>
 #include <QVariantList>
@@ -163,6 +169,13 @@ MainWindow::MainWindow(QWidget* parent)
       _ui(new Ui::MainWindow),
       _contentWidget(nullptr),
       _taskQuickBar(nullptr),
+      _kinematicsCockpitDock(nullptr),
+      _kinematicsCockpitWidget(nullptr),
+      _qflightCockpitDock(nullptr),
+      _qflightCockpitWidget(nullptr),
+      _ecamCockpitDock(nullptr),
+      _ecamCockpitWidget(nullptr),
+      _kinematicsTelemetrySubscriptionId(0),
       _mapBridge(new MapBridge(this)),
       _scenarioState(new ScenarioState()),
       _objectsModel(new QStandardItemModel(this)),
@@ -245,6 +258,7 @@ MainWindow::MainWindow(QWidget* parent)
   this->_ui->viewerHost->setMinimumSize(960, 640);
   this->_ui->viewerHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
+  this->initializeKinematicsCockpit();
   this->initializeModels();
   this->populateTaskCommands();
   this->_entityVisualStateManager->load();
@@ -754,8 +768,114 @@ MainWindow::MainWindow(QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
+  if (this->_kinematicsTelemetrySubscriptionId != 0) {
+    application::EventBus::instance()
+        .unsubscribe<application::EventKinematicsTelemetryUpdated>(
+            this->_kinematicsTelemetrySubscriptionId);
+  }
   delete this->_scenarioState;
   delete this->_ui;
+}
+
+void MainWindow::initializeKinematicsCockpit() {
+  this->_kinematicsCockpitDock = new QDockWidget(
+      QStringLiteral("Modern PFD"),
+      this);
+  this->_kinematicsCockpitDock->setObjectName(
+      QStringLiteral("kinematicsCockpitDockWidget"));
+  this->_kinematicsCockpitDock->setAllowedAreas(
+      Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
+  this->_kinematicsCockpitWidget =
+      new presentation::KinematicsCockpitWidget(
+          this->_kinematicsCockpitDock,
+          presentation::KinematicsCockpitWidget::PanelMode::ModernPfd);
+  this->_kinematicsCockpitDock->setWidget(this->_kinematicsCockpitWidget);
+  this->_kinematicsCockpitDock->setFeatures(
+      QDockWidget::DockWidgetClosable |
+      QDockWidget::DockWidgetMovable |
+      QDockWidget::DockWidgetFloatable);
+  this->addDockWidget(Qt::BottomDockWidgetArea, this->_kinematicsCockpitDock);
+  this->_ui->menuView->addAction(
+      this->_kinematicsCockpitDock->toggleViewAction());
+
+  this->_qflightCockpitDock = new QDockWidget(
+      QStringLiteral("QFlight EADI"),
+      this);
+  this->_qflightCockpitDock->setObjectName(
+      QStringLiteral("qflightCockpitDockWidget"));
+  this->_qflightCockpitWidget =
+      new presentation::KinematicsCockpitWidget(
+          this->_qflightCockpitDock,
+          presentation::KinematicsCockpitWidget::PanelMode::QFlightEadi);
+  this->_qflightCockpitDock->setWidget(this->_qflightCockpitWidget);
+  this->_qflightCockpitDock->setFeatures(
+      QDockWidget::DockWidgetClosable |
+      QDockWidget::DockWidgetMovable |
+      QDockWidget::DockWidgetFloatable);
+  this->addDockWidget(Qt::BottomDockWidgetArea, this->_qflightCockpitDock);
+  this->_ui->menuView->addAction(
+      this->_qflightCockpitDock->toggleViewAction());
+
+  this->_ecamCockpitDock = new QDockWidget(
+      QStringLiteral("ECAM Engine Display"),
+      this);
+  this->_ecamCockpitDock->setObjectName(
+      QStringLiteral("ecamCockpitDockWidget"));
+  this->_ecamCockpitWidget =
+      new presentation::KinematicsCockpitWidget(
+          this->_ecamCockpitDock,
+          presentation::KinematicsCockpitWidget::PanelMode::EcamEngine);
+  this->_ecamCockpitDock->setWidget(this->_ecamCockpitWidget);
+  this->_ecamCockpitDock->setFeatures(
+      QDockWidget::DockWidgetClosable |
+      QDockWidget::DockWidgetMovable |
+      QDockWidget::DockWidgetFloatable);
+  this->addDockWidget(Qt::BottomDockWidgetArea, this->_ecamCockpitDock);
+  this->_ui->menuView->addAction(
+      this->_ecamCockpitDock->toggleViewAction());
+  this->tabifyDockWidget(
+      this->_kinematicsCockpitDock,
+      this->_qflightCockpitDock);
+  this->tabifyDockWidget(
+      this->_qflightCockpitDock,
+      this->_ecamCockpitDock);
+  this->_kinematicsCockpitDock->raise();
+
+  this->_kinematicsTelemetrySubscriptionId =
+      application::EventBus::instance()
+          .subscribe<application::EventKinematicsTelemetryUpdated>(
+              [this](const application::EventKinematicsTelemetryUpdated& event) {
+                const application::KinematicsTelemetrySnapshot snapshot =
+                    event.snapshot;
+                QMetaObject::invokeMethod(
+                    this,
+                    [this, snapshot]() {
+                      if (snapshot.entityName == this->selectedEntityName()) {
+                        this->_kinematicsCockpitWidget->applySnapshot(snapshot);
+                        this->_qflightCockpitWidget->applySnapshot(snapshot);
+                        this->_ecamCockpitWidget->applySnapshot(snapshot);
+                      }
+                    },
+                    Qt::QueuedConnection);
+              });
+}
+
+void MainWindow::refreshKinematicsCockpitForEntity(const Entity* entity) {
+  if (!entity) {
+    this->_kinematicsCockpitWidget->clear();
+    this->_qflightCockpitWidget->clear();
+    this->_ecamCockpitWidget->clear();
+    return;
+  }
+
+  const application::KinematicsTelemetrySnapshot snapshot =
+      application::makeKinematicsTelemetrySnapshot(
+          *entity,
+          this->_scenarioState->simulationTimeSeconds(),
+          0.0);
+  this->_kinematicsCockpitWidget->applySnapshot(snapshot);
+  this->_qflightCockpitWidget->applySnapshot(snapshot);
+  this->_ecamCockpitWidget->applySnapshot(snapshot);
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
@@ -775,6 +895,10 @@ void MainWindow::appendLogMessage(const QString& message) {
 }
 
 void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
+  if (summary.isEmpty() && this->_kinematicsCockpitWidget) {
+    this->refreshKinematicsCockpitForEntity(nullptr);
+  }
+
   const auto value = [&summary](const char* key, const QString& fallback = QStringLiteral("-")) {
     const QString text = summary.value(QString::fromLatin1(key)).toString().trimmed();
     return text.isEmpty() ? fallback : text;
@@ -850,8 +974,21 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
   this->_ui->selectionStateValueLabel->setStyleSheet(QString());
   this->_ui->selectionStateValueLabel->setText(operationalState);
   this->_ui->selectionPositionValueLabel->setText(position);
-  this->_ui->operationalStatusPlainTextEdit->setPlainText(
-      this->buildSelectedEntityOperationalStatus(summary, selectedEntity));
+  const QString operationalStatus =
+      this->buildSelectedEntityOperationalStatus(summary, selectedEntity);
+  if (this->_ui->operationalStatusPlainTextEdit->toPlainText() !=
+      operationalStatus) {
+    QScrollBar* verticalScrollBar =
+        this->_ui->operationalStatusPlainTextEdit->verticalScrollBar();
+    QScrollBar* horizontalScrollBar =
+        this->_ui->operationalStatusPlainTextEdit->horizontalScrollBar();
+    const int verticalScrollPosition = verticalScrollBar->value();
+    const int horizontalScrollPosition = horizontalScrollBar->value();
+
+    this->_ui->operationalStatusPlainTextEdit->setPlainText(operationalStatus);
+    verticalScrollBar->setValue(verticalScrollPosition);
+    horizontalScrollBar->setValue(horizontalScrollPosition);
+  }
 }
 
 QString MainWindow::buildSelectedEntityOperationalStatus(
@@ -1433,6 +1570,7 @@ void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QMod
   const QVariantMap summary = current.data(kTrackSummaryRole).toMap();
   if (summary.isEmpty()) {
     this->setSelectedTrackDetails(QVariantMap{});
+    this->refreshKinematicsCockpitForEntity(nullptr);
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
     if (!this->_applyingMapSelection) {
       clearQtTrackSelectionInMap(this->_webView);
@@ -1451,6 +1589,7 @@ void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QMod
   }
 
   if (!this->currentSelectionIsEntity()) {
+    this->refreshKinematicsCockpitForEntity(nullptr);
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
     if (!this->_applyingMapSelection) {
       clearQtTrackSelectionInMap(this->_webView);
@@ -1459,6 +1598,9 @@ void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QMod
     this->updateTaskQuickBarState();
     return;
   }
+
+  this->refreshKinematicsCockpitForEntity(
+      this->findEntityByName(selectedName));
 
   if (!this->_applyingMapSelection) {
     this->sendTrackToMap(summary, true);
@@ -1670,6 +1812,13 @@ void MainWindow::syncDetectedContactsToUi() {
     return;
   }
 
+  QScrollBar* verticalScrollBar =
+      this->_ui->contactsTableView->verticalScrollBar();
+  QScrollBar* horizontalScrollBar =
+      this->_ui->contactsTableView->horizontalScrollBar();
+  const int verticalScrollPosition = verticalScrollBar->value();
+  const int horizontalScrollPosition = horizontalScrollBar->value();
+
   QString selectedObserverName;
   QString selectedContactName;
   const QModelIndex currentIndex = this->_ui->contactsTableView->currentIndex();
@@ -1730,6 +1879,9 @@ void MainWindow::syncDetectedContactsToUi() {
   } else {
     this->_ui->contactsTableView->clearSelection();
   }
+
+  verticalScrollBar->setValue(verticalScrollPosition);
+  horizontalScrollBar->setValue(horizontalScrollPosition);
 }
 
 void MainWindow::syncScenarioStateToUi() {

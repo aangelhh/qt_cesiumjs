@@ -9,6 +9,8 @@ struct ModelCatalogEntry {
   QString category;
   QString relativePath;
   QString absolutePath;
+  QString systemsDisplayProfileId;
+  int engineCount = 0;
   int entityKind = 0;
   int entityDomain = 0;
   int entityCountry = 0;

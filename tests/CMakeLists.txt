@@ -31,6 +31,7 @@ add_executable(qttest_unit_tests
     application/FlightDynamicsEngineConsistencyTest.cpp
     application/MovementIntentTest.cpp
     application/KinematicsTelemetryTest.cpp
+    application/SystemsTelemetryTest.cpp
     application/MunitionSimulatorTest.cpp
     application/BehaviorEngineTest.cpp
     application/SensorEngineTest.cpp
@@ -47,6 +48,7 @@ add_executable(qttest_unit_tests
     presentation/EntityStatusFormatterTest.cpp
     presentation/EntityTrackSummaryTest.cpp
     presentation/DetectedContactsPresenterTest.cpp
+    presentation/KinematicsCockpitModelTest.cpp
     presentation/WeaponActionsControllerTest.cpp
     presentation/EntityStateActionsControllerTest.cpp
     presentation/TaskAssignmentControllerTest.cpp
@@ -78,6 +80,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/application/TaskApplicator.cpp
     ${CMAKE_SOURCE_DIR}/src/application/MovementIntent.cpp
     ${CMAKE_SOURCE_DIR}/src/application/KinematicsTelemetry.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/SystemsTelemetry.cpp
     ${CMAKE_SOURCE_DIR}/src/application/Command.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/CesiumScenePage.cpp
     ${CMAKE_SOURCE_DIR}/src/application/SimulationEngine.cpp
@@ -104,6 +107,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/presentation/TrackSummaryBuilder.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/EntityStatusFormatter.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/DetectedContactsPresenter.cpp
+    ${CMAKE_SOURCE_DIR}/src/presentation/KinematicsCockpitModel.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/EntityPlanExecutor.cpp
 )
 
@@ -125,3 +129,44 @@ endif()
 
 include(GoogleTest)
 gtest_discover_tests(qttest_unit_tests)
+
+if(TARGET qflightinstruments OR QTTEST_HAS_MODERN_PFD)
+    add_executable(qttest_kinematics_cockpit_smoke
+        presentation/KinematicsCockpitWidgetSmoke.cpp
+        ${CMAKE_SOURCE_DIR}/src/presentation/KinematicsCockpitModel.cpp
+        ${CMAKE_SOURCE_DIR}/src/presentation/KinematicsCockpitWidget.cpp
+    )
+    if(QTTEST_HAS_MODERN_PFD)
+        target_sources(qttest_kinematics_cockpit_smoke PRIVATE
+            ${KINEMATICS_PFD_RESOURCE}
+        )
+        target_link_libraries(qttest_kinematics_cockpit_smoke PRIVATE
+            Qt6::Quick
+            Qt6::QuickWidgets
+            Qt6::Qml
+        )
+        target_compile_definitions(qttest_kinematics_cockpit_smoke PRIVATE
+            QTTEST_HAS_MODERN_PFD=1
+        )
+    endif()
+    target_include_directories(qttest_kinematics_cockpit_smoke PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(qttest_kinematics_cockpit_smoke PRIVATE Qt6::Widgets)
+    if(TARGET qflightinstruments)
+        target_link_libraries(qttest_kinematics_cockpit_smoke PRIVATE
+            qflightinstruments
+        )
+        target_compile_definitions(qttest_kinematics_cockpit_smoke PRIVATE
+            QTTEST_HAS_QFLIGHTINSTRUMENTS=1
+        )
+    endif()
+    add_test(
+        NAME KinematicsCockpitWidget.RendersInstrumentPanels
+        COMMAND qttest_kinematics_cockpit_smoke
+    )
+    set_tests_properties(
+        KinematicsCockpitWidget.RendersInstrumentPanels
+        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
+    )
+endif()

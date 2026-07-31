@@ -3,6 +3,7 @@
 
 #if defined(QTTEST_HAS_JSBSIM)
 #include <FGFDMExec.h>
+#include <models/FGPropulsion.h>
 #endif
 
 #include <QCoreApplication>
@@ -28,7 +29,7 @@ constexpr double kMaxPitchDegrees = 10.0;
 constexpr double kMaxRollDegrees = 30.0;
 constexpr double kGravityMetersPerSecondSquared = 9.81;
 constexpr double kClimbPitchBiasDegrees = 1.5;
-constexpr double kSettledHeadingStepDegrees = 0.5;
+constexpr double kSettledYawRateDegreesPerSecond = 0.5;
 constexpr double kSettledHeadingErrorDegrees = 1.0;
 constexpr int kAltitudeCaptureToleranceMeters = 50;
 
@@ -189,6 +190,7 @@ void updateDerivedKinematicAttitude(
       entity.currentTask.targetHeadingDegrees);
   const double yawRateRadiansPerSecond =
       qDegreesToRadians(headingStepDegrees) / deltaSeconds;
+  const double yawRateDegreesPerSecond = headingStepDegrees / deltaSeconds;
   const double rawRollDegrees = qRadiansToDegrees(qAtan(
       (horizontalSpeedMetersPerSecond * yawRateRadiansPerSecond) /
       kGravityMetersPerSecondSquared));
@@ -206,7 +208,7 @@ void updateDerivedKinematicAttitude(
   }
   double safeRollDegrees = std::isfinite(rawRollDegrees) ? rawRollDegrees : 0.0;
   const bool headingSettled =
-      qAbs(headingStepDegrees) <= kSettledHeadingStepDegrees ||
+      qAbs(yawRateDegreesPerSecond) <= kSettledYawRateDegreesPerSecond ||
       qAbs(headingErrorDegrees) <= kSettledHeadingErrorDegrees;
   if (onTarget || headingSettled) {
     safeRollDegrees = 0.0;
@@ -674,7 +676,13 @@ void applyControlCommands(JSBSim::FGFDMExec& exec, const ControlCommands& comman
   exec.SetPropertyValue("fcs/aileron-cmd-norm", commands.aileronNorm);
   exec.SetPropertyValue("fcs/rudder-cmd-norm", commands.rudderNorm);
   exec.SetPropertyValue("fcs/elevator-cmd-norm", commands.elevatorNorm);
-  exec.SetPropertyValue("fcs/throttle-cmd-norm", commands.throttleNorm);
+  const int engineCount = static_cast<int>(
+      exec.GetPropulsion()->GetNumEngines());
+  for (int index = 0; index < engineCount; ++index) {
+    exec.SetPropertyValue(
+        "fcs/throttle-cmd-norm[" + std::to_string(index) + "]",
+        commands.throttleNorm);
+  }
 }
 
 bool ensureJsbsimSession(Entity& entity, double deltaSeconds) {
@@ -717,6 +725,13 @@ bool ensureJsbsimSession(Entity& entity, double deltaSeconds) {
   exec->SetPropertyValue("ic/gamma-deg", 0.0);
   if (!exec->RunIC()) {
     return false;
+  }
+  const int engineCount = static_cast<int>(
+      exec->GetPropulsion()->GetNumEngines());
+  for (int index = 0; index < engineCount; ++index) {
+    exec->SetPropertyValue(
+        "propulsion/engine[" + std::to_string(index) + "]/set-running",
+        1.0);
   }
 
   session->modelName = modelName;
@@ -804,6 +819,92 @@ void FlightDynamicsEngine::advanceEntities(QVector<Entity>& entities, std::unord
   for (Entity& entity : entities) {
     advanceEntity(entity, taskStacks, snapshot, deltaSeconds);
   }
+}
+
+application::SystemsTelemetrySnapshot
+FlightDynamicsEngine::systemsTelemetryForEntity(
+    const Entity& entity,
+    double maximumSpeedKnots) {
+  application::SystemsTelemetrySnapshot snapshot =
+      application::makeEstimatedSystemsTelemetrySnapshot(
+          entity,
+          maximumSpeedKnots);
+#if defined(QTTEST_HAS_JSBSIM)
+  const auto sessionIt = jsbsimSessions().constFind(entity.name);
+  if (sessionIt == jsbsimSessions().constEnd() || !sessionIt.value() ||
+      !sessionIt.value()->exec) {
+    return snapshot;
+  }
+
+  JSBSim::FGFDMExec& exec = *sessionIt.value()->exec;
+  const int engineCount = static_cast<int>(
+      exec.GetPropulsion()->GetNumEngines());
+  if (engineCount <= 0) {
+    return snapshot;
+  }
+
+  constexpr double kPoundsPerSecondToKilogramsPerHour = 1632.932532;
+  constexpr double kPoundsForceToKilonewtons = 0.0044482216153;
+  snapshot.dataSource = QStringLiteral("JSBSim | %1")
+                            .arg(sessionIt.value()->modelName);
+  snapshot.engines.clear();
+  snapshot.engines.reserve(engineCount);
+  for (int index = 0; index < engineCount; ++index) {
+    const std::string base =
+        "propulsion/engine[" + std::to_string(index) + "]";
+    auto hasProperty = [&exec](const std::string& name) {
+      return jsbsimHasProperty(exec, name);
+    };
+    auto readProperty = [&exec](const std::string& name) {
+      const double value = exec.GetPropertyValue(name);
+      return std::isfinite(value) ? value : 0.0;
+    };
+
+    application::EngineTelemetry engine;
+    engine.engineId = QStringLiteral("ENG %1").arg(index + 1);
+    const bool running = readProperty(base + "/set-running") > 0.5;
+    engine.state = entity.destroyed
+        ? QStringLiteral("FAILED")
+        : (running ? QStringLiteral("RUNNING") : QStringLiteral("OFF"));
+    engine.n1Available = hasProperty(base + "/n1");
+    engine.n2Available = hasProperty(base + "/n2");
+    const bool rpmAvailable = hasProperty(base + "/engine-rpm");
+    engine.n1Percent = engine.n1Available
+        ? readProperty(base + "/n1")
+        : (rpmAvailable ? readProperty(base + "/engine-rpm") : 0.0);
+    engine.n1Available = engine.n1Available || rpmAvailable;
+    engine.n2Percent = engine.n2Available
+        ? readProperty(base + "/n2")
+        : 0.0;
+
+    const bool egtCelsiusAvailable = hasProperty(base + "/egt-degC");
+    const bool egtFahrenheitAvailable = hasProperty(base + "/egt-degF");
+    engine.exhaustTemperatureAvailable =
+        egtCelsiusAvailable || egtFahrenheitAvailable;
+    engine.exhaustTemperatureCelsius = egtCelsiusAvailable
+        ? readProperty(base + "/egt-degC")
+        : (egtFahrenheitAvailable
+               ? (readProperty(base + "/egt-degF") - 32.0) * 5.0 / 9.0
+               : 0.0);
+
+    engine.fuelFlowAvailable =
+        hasProperty(base + "/fuel-flow-rate-pps");
+    engine.fuelFlowKilogramsPerHour = engine.fuelFlowAvailable
+        ? readProperty(base + "/fuel-flow-rate-pps") *
+              kPoundsPerSecondToKilogramsPerHour
+        : 0.0;
+    engine.thrustAvailable = hasProperty(base + "/thrust-lbs");
+    engine.thrustKilonewtons = engine.thrustAvailable
+        ? readProperty(base + "/thrust-lbs") * kPoundsForceToKilonewtons
+        : 0.0;
+    engine.available = engine.n1Available || engine.n2Available ||
+        engine.exhaustTemperatureAvailable || engine.fuelFlowAvailable ||
+        engine.thrustAvailable;
+    engine.estimated = false;
+    snapshot.engines.push_back(engine);
+  }
+#endif
+  return snapshot;
 }
 
 void FlightDynamicsEngine::advanceEntity(

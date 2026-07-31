@@ -1,5 +1,7 @@
 #include "AddEntityDialog.h"
 
+#include "application/SystemsTelemetry.h"
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -905,9 +907,18 @@ Entity AddEntityDialog::entity() const {
       entity.modelName,
       modelPath);
   if (selectedEntry) {
+    entity.systemsDisplayProfileId = selectedEntry->systemsDisplayProfileId;
+    entity.engineCount = selectedEntry->engineCount;
     if (entity.modelName == selectedEntry->name && entity.type == entity.category) {
       entity.type = selectedEntry->name;
     }
+  }
+  if (entity.engineCount <= 0) {
+    entity.engineCount = application::engineCountForEntity(entity);
+  }
+  if (entity.systemsDisplayProfileId.isEmpty()) {
+    entity.systemsDisplayProfileId =
+        application::systemsDisplayProfileForEntity(entity);
   }
 
   if (_attachMissilesCheck->isChecked()) {

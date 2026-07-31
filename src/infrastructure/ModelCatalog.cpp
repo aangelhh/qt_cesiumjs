@@ -186,6 +186,17 @@ QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
       pendingEntry.entityExtra = parseTrailingInteger(line, QStringLiteral("Extra:"));
       continue;
     }
+    if (line.startsWith(QStringLiteral("systemsDisplayProfile:"))) {
+      pendingEntry.systemsDisplayProfileId = trimValue(
+          line.mid(QStringLiteral("systemsDisplayProfile:").size()));
+      continue;
+    }
+    if (line.startsWith(QStringLiteral("engineCount:"))) {
+      pendingEntry.engineCount = parseTrailingInteger(
+          line,
+          QStringLiteral("engineCount:"));
+      continue;
+    }
 
     if (line.startsWith(QStringLiteral("urlLocation:"))) {
       const QString relativePath = trimValue(line.mid(QStringLiteral("urlLocation:").size()));

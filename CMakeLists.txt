@@ -7,9 +7,73 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebEngineCore WebChannel Positioning)
+
+option(QTTEST_ENABLE_MODERN_PFD "Enable the embedded modern kinematics PFD" ON)
+if(QTTEST_ENABLE_MODERN_PFD)
+    find_package(Qt6 QUIET COMPONENTS Quick QuickWidgets Qml)
+    if(Qt6Quick_FOUND AND Qt6QuickWidgets_FOUND AND Qt6Qml_FOUND)
+        set(KINEMATICS_PFD_RESOURCE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/KinematicsPfd.qrc
+        )
+        set(QTTEST_HAS_MODERN_PFD TRUE)
+    else()
+        message(WARNING "Modern kinematics PFD disabled: Qt6 Quick/QuickWidgets/Qml not available")
+    endif()
+endif()
+
+option(QTTEST_ENABLE_QFLIGHTINSTRUMENTS "Enable the embedded QFlightInstruments cockpit" ON)
+set(QTTEST_QFLIGHTINSTRUMENTS_GIT_TAG
+    "b1401ba9f96cc954d44d59559efebad2ea36e3f9"
+    CACHE STRING "Pinned QFlightInstruments revision")
+
+if(QTTEST_ENABLE_QFLIGHTINSTRUMENTS)
+    find_package(Qt6 QUIET COMPONENTS Svg SvgWidgets)
+    if(Qt6Svg_FOUND AND Qt6SvgWidgets_FOUND)
+        include(FetchContent)
+        FetchContent_Declare(
+            qflightinstruments
+            GIT_REPOSITORY https://github.com/marek-cel/QFlightInstruments.git
+            GIT_TAG ${QTTEST_QFLIGHTINSTRUMENTS_GIT_TAG}
+            GIT_SHALLOW FALSE
+            SOURCE_SUBDIR qttest-no-upstream-build
+        )
+        FetchContent_MakeAvailable(qflightinstruments)
+
+        qt6_add_resources(QFLIGHTINSTRUMENTS_RESOURCE_SOURCES
+            ${qflightinstruments_SOURCE_DIR}/qfi/qfi.qrc
+        )
+
+        add_library(qflightinstruments STATIC
+            ${qflightinstruments_SOURCE_DIR}/qfi/qfi_Colors.cpp
+            ${qflightinstruments_SOURCE_DIR}/qfi/qfi_Colors.h
+            ${qflightinstruments_SOURCE_DIR}/qfi/qfi_EADI.cpp
+            ${qflightinstruments_SOURCE_DIR}/qfi/qfi_EADI.h
+            ${qflightinstruments_SOURCE_DIR}/qfi/qfi_Fonts.cpp
+            ${qflightinstruments_SOURCE_DIR}/qfi/qfi_Fonts.h
+            ${qflightinstruments_SOURCE_DIR}/qfi/qfi_defs.h
+            ${QFLIGHTINSTRUMENTS_RESOURCE_SOURCES}
+        )
+        target_include_directories(qflightinstruments PUBLIC
+            ${qflightinstruments_SOURCE_DIR}
+        )
+        target_link_libraries(qflightinstruments PUBLIC
+            Qt6::Widgets
+            Qt6::Svg
+            Qt6::SvgWidgets
+        )
+        set_target_properties(qflightinstruments PROPERTIES
+            CXX_STANDARD 17
+            CXX_STANDARD_REQUIRED ON
+        )
+        set(QTTEST_HAS_QFLIGHTINSTRUMENTS TRUE)
+    else()
+        message(WARNING "QFlightInstruments disabled: Qt6 Svg/SvgWidgets not available")
+    endif()
+endif()
 
 qt_standard_project_setup()
 
@@ -29,6 +93,8 @@ qt_add_executable(qttest
     src/AssignTaskDialog.h
     src/AddEntityDialog.cpp
     src/AddEntityDialog.h
+    src/application/SystemsTelemetry.cpp
+    src/application/SystemsTelemetry.h
     src/EntityDetailsDialog.cpp
     src/EntityDetailsDialog.h
     src/infrastructure/CesiumScenePage.cpp
@@ -110,6 +176,10 @@ qt_add_executable(qttest
     src/presentation/PlanStepConfigurator.h
     src/presentation/DetectedContactsPresenter.cpp
     src/presentation/DetectedContactsPresenter.h
+    src/presentation/KinematicsCockpitModel.cpp
+    src/presentation/KinematicsCockpitModel.h
+    src/presentation/KinematicsCockpitWidget.cpp
+    src/presentation/KinematicsCockpitWidget.h
     src/presentation/EntityContextMenuBuilder.cpp
     src/presentation/EntityContextMenuBuilder.h
     src/presentation/EntityContextMenuStateBuilder.cpp
@@ -136,11 +206,22 @@ qt_add_executable(qttest
     src/presentation/TrackSummaryBuilder.h
 )
 
+if(QTTEST_HAS_MODERN_PFD)
+    target_sources(qttest PRIVATE ${KINEMATICS_PFD_RESOURCE})
+    target_link_libraries(qttest PRIVATE Qt6::Quick Qt6::QuickWidgets Qt6::Qml)
+    target_compile_definitions(qttest PRIVATE QTTEST_HAS_MODERN_PFD=1)
+endif()
+
 target_link_libraries(qttest
     PRIVATE
         Qt6::Widgets
         Qt6::Gui
 )
+
+if(QTTEST_HAS_QFLIGHTINSTRUMENTS)
+    target_link_libraries(qttest PRIVATE qflightinstruments)
+    target_compile_definitions(qttest PRIVATE QTTEST_HAS_QFLIGHTINSTRUMENTS=1)
+endif()
 
 if(TARGET libJSBSim)
     target_link_libraries(qttest PRIVATE libJSBSim)

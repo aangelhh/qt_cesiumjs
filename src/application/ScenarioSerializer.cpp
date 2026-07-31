@@ -266,6 +266,8 @@ QJsonObject toJson(const Entity& entity) {
       {QStringLiteral("flightDynamicsEnabled"), entity.flightDynamicsEnabled},
       {QStringLiteral("flightDynamicsMode"), entity.flightDynamicsMode},
       {QStringLiteral("jsbsimAircraftModel"), entity.jsbsimAircraftModel},
+      {QStringLiteral("systemsDisplayProfileId"), entity.systemsDisplayProfileId},
+      {QStringLiteral("engineCount"), entity.engineCount},
       {QStringLiteral("speedKnots"), entity.speedKnots},
       {QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond},
       {QStringLiteral("destroyed"), entity.destroyed},
@@ -304,6 +306,11 @@ Entity entityFromJson(const QJsonObject& object) {
   entity.flightDynamicsEnabled = object.value(QStringLiteral("flightDynamicsEnabled")).toBool(false);
   entity.flightDynamicsMode = object.value(QStringLiteral("flightDynamicsMode")).toString(QStringLiteral("kinematic"));
   entity.jsbsimAircraftModel = object.value(QStringLiteral("jsbsimAircraftModel")).toString();
+  entity.systemsDisplayProfileId =
+      object.value(QStringLiteral("systemsDisplayProfileId")).toString();
+  entity.engineCount = qMax(
+      0,
+      object.value(QStringLiteral("engineCount")).toInt(0));
   entity.speedKnots = object.value(QStringLiteral("speedKnots")).toDouble(0.0);
   entity.verticalSpeedMetersPerSecond = object.value(QStringLiteral("verticalSpeedMetersPerSecond")).toDouble(0.0);
   entity.destroyed = object.value(QStringLiteral("destroyed")).toBool(false);

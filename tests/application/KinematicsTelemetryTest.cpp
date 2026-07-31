@@ -156,3 +156,47 @@ TEST(ScenarioStateTelemetry, PublishesSnapshotsFromAuthoritativeSimulationClock)
   EXPECT_DOUBLE_EQ(received.front().simulationTimeSeconds, 0.1);
   EXPECT_EQ(received.front().entityName, QStringLiteral("Viper 1"));
 }
+
+TEST(ScenarioStateTelemetry, PublishesChangingDerivedRollDuringKinematicTurn) {
+  ScenarioState state;
+  Entity entity = makeTelemetryEntity();
+  entity.headingDegrees = 0.0;
+  entity.pitchDegrees = 0.0;
+  entity.rollDegrees = 0.0;
+  entity.speedKnots = 300.0;
+  entity.currentTask.taskType = QStringLiteral("MoveToLocation");
+  entity.currentTask.targetLatitude = entity.latitude;
+  entity.currentTask.targetLongitude = entity.longitude + 1.0;
+  entity.currentTask.targetAltitudeMeters = entity.altitude;
+  entity.currentTask.targetSpeedKnots = entity.speedKnots;
+  {
+    auto lock = state.lock();
+    state.entitiesMutable().push_back(entity);
+  }
+
+  QVector<application::KinematicsTelemetrySnapshot> received;
+  auto& eventBus = application::EventBus::instance();
+  const application::SubscriptionId subscriptionId =
+      eventBus.subscribe<application::EventKinematicsTelemetryUpdated>(
+          [&received](const application::EventKinematicsTelemetryUpdated& event) {
+            if (event.snapshot.entityName == QStringLiteral("Viper 1")) {
+              received.push_back(event.snapshot);
+            }
+          });
+
+  state.advanceSimulation(0.05);
+  state.advanceSimulation(0.05);
+  ASSERT_EQ(received.size(), 1);
+  const double firstPublishedRollDegrees = received.front().rollDegrees;
+
+  state.advanceSimulation(0.05);
+  state.advanceSimulation(0.05);
+  eventBus.unsubscribe<application::EventKinematicsTelemetryUpdated>(
+      subscriptionId);
+
+  ASSERT_EQ(received.size(), 2);
+  EXPECT_GT(firstPublishedRollDegrees, 0.0);
+  EXPECT_GT(received.back().rollDegrees, firstPublishedRollDegrees);
+  EXPECT_GT(received.back().headingDegrees, received.front().headingDegrees);
+  EXPECT_EQ(received.back().dynamicsModel, QStringLiteral("kinematic"));
+}
