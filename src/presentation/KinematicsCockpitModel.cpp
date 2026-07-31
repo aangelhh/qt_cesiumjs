@@ -23,15 +23,21 @@ KinematicsCockpitData makeKinematicsCockpitData(
   data.climbRateThousandsFeetPerMinute =
       snapshot.verticalSpeedMetersPerSecond *
       kMetersPerSecondToThousandsFeetPerMinute;
-  data.selectedHeadingDegrees = snapshot.targetHeadingDegrees;
-  data.selectedAirspeedKnots = qMax(0.0, snapshot.targetSpeedKnots);
-  data.selectedAltitudeFeet = snapshot.targetAltitudeMeters * kMetersToFeet;
   data.maximumAirspeedKnots = qMax(0.0, snapshot.maxSpeedKnots);
   data.flightDirectorActive =
       snapshot.taskEnabled &&
       snapshot.taskStatus.compare(
           QStringLiteral("Running"),
           Qt::CaseInsensitive) == 0;
+  data.selectedHeadingDegrees = data.flightDirectorActive
+      ? snapshot.targetHeadingDegrees
+      : snapshot.headingDegrees;
+  data.selectedAirspeedKnots = data.flightDirectorActive
+      ? qMax(0.0, snapshot.targetSpeedKnots)
+      : data.airspeedKnots;
+  data.selectedAltitudeFeet = data.flightDirectorActive
+      ? snapshot.targetAltitudeMeters * kMetersToFeet
+      : data.altitudeFeet;
   data.systemsProfileId = snapshot.systems.profileId;
   data.systemsDataSource = snapshot.systems.dataSource;
   for (const application::EngineTelemetry& engine : snapshot.systems.engines) {

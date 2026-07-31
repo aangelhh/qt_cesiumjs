@@ -118,13 +118,44 @@ int main(int argc, char** argv) {
     return 3;
   }
 
+  QString requestedEntity;
+  double requestedHeading = 0.0;
+  int requestedAltitudeMeters = 0;
+  double requestedSpeed = 0.0;
+  QObject::connect(
+      &widget,
+      &presentation::KinematicsCockpitWidget::setpointsRequested,
+      [&](const QString& entityName, double heading, int altitude, double speed) {
+        requestedEntity = entityName;
+        requestedHeading = heading;
+        requestedAltitudeMeters = altitude;
+        requestedSpeed = speed;
+      });
+  widget.setControlActive(true);
+  if (!modernPfd->rootObject()->property("controlActive").toBool()) {
+    return 4;
+  }
+  if (!QMetaObject::invokeMethod(
+          modernPfd->rootObject(),
+          "setpointsRequested",
+          Q_ARG(double, 285.0),
+          Q_ARG(double, 10000.0),
+          Q_ARG(double, 360.0))) {
+    return 5;
+  }
+  application.processEvents();
+  if (requestedEntity != snapshot.entityName || requestedHeading != 285.0 ||
+      requestedAltitudeMeters != 3048 || requestedSpeed != 360.0) {
+    return 6;
+  }
+
   auto* ecam = widget.findChild<QQuickWidget*>(
       QStringLiteral("dynamicEcamEngine"));
   if (!ecam || !ecam->rootObject() ||
       ecam->rootObject()->property("profileId").toString() !=
           QStringLiteral("air-turbine-2-engine") ||
       ecam->rootObject()->property("engineModel").toList().size() != 2) {
-    return 4;
+    return 7;
   }
 
   snapshot.rollDegrees = 18.0;
@@ -133,7 +164,7 @@ int main(int argc, char** argv) {
   application.processEvents();
   if (modernPfd->rootObject()->property("rollDegrees").toDouble() != 18.0 ||
       modernPfd->rootObject()->property("pitchDegrees").toDouble() != -6.0) {
-    return 5;
+    return 8;
   }
 #endif
 
@@ -141,7 +172,7 @@ int main(int argc, char** argv) {
     tabs->setCurrentIndex(index);
     application.processEvents();
     if (!rendersContent(widget)) {
-      return index + 6;
+      return index + 9;
     }
   }
 
@@ -156,7 +187,7 @@ int main(int argc, char** argv) {
       QStringLiteral("kinematicsCockpitTabs"));
   if (!ecamTabs || ecamTabs->count() != 1 || ecamTabs->tabBar()->isVisible() ||
       !rendersContent(ecamPanel)) {
-    return 10;
+    return 13;
   }
 
   return 0;

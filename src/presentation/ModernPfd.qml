@@ -15,6 +15,15 @@ Item {
     property real selectedAirspeedKnots: 0
     property real selectedAltitudeFeet: 0
     property bool flightDirectorActive: false
+    property bool controlActive: false
+
+    signal takeControlRequested(real headingDegrees,
+                                real altitudeFeet,
+                                real speedKnots)
+    signal setpointsRequested(real headingDegrees,
+                              real altitudeFeet,
+                              real speedKnots)
+    signal releaseControlRequested()
 
     readonly property color ink: "#f2f5f7"
     readonly property color cyan: "#43d9ff"
@@ -33,6 +42,7 @@ Item {
         id: display
         anchors.fill: parent
         anchors.margins: 8
+        anchors.bottomMargin: 58
 
         function normalizedHeading(value) {
             var result = value % 360
@@ -245,6 +255,181 @@ Item {
         Component.onCompleted: requestPaint()
         onWidthChanged: requestPaint()
         onHeightChanged: requestPaint()
+    }
+
+    Rectangle {
+        id: controlStrip
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 6
+        height: 46
+        color: "#11191d"
+        border.color: root.controlActive ? root.cyan : "#56656d"
+        border.width: 1
+
+        component StepControl: Rectangle {
+            property string caption: ""
+            property string valueText: ""
+            signal decrease()
+            signal increase()
+
+            width: 96
+            height: 34
+            color: "#090d10"
+            border.color: "#3a474d"
+
+            Rectangle {
+                width: 24
+                height: parent.height
+                color: minusArea.pressed ? "#26333a" : "transparent"
+                Text {
+                    anchors.centerIn: parent
+                    text: "-"
+                    color: root.ink
+                    font.pixelSize: 18
+                }
+                MouseArea {
+                    id: minusArea
+                    anchors.fill: parent
+                    onClicked: parent.parent.decrease()
+                }
+            }
+
+            Column {
+                anchors.centerIn: parent
+                spacing: 0
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: parent.parent.caption
+                    color: "#9bacb5"
+                    font.pixelSize: 8
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: parent.parent.valueText
+                    color: root.magenta
+                    font.family: "monospace"
+                    font.pixelSize: 11
+                    font.bold: true
+                }
+            }
+
+            Rectangle {
+                anchors.right: parent.right
+                width: 24
+                height: parent.height
+                color: plusArea.pressed ? "#26333a" : "transparent"
+                Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: root.ink
+                    font.pixelSize: 16
+                }
+                MouseArea {
+                    id: plusArea
+                    anchors.fill: parent
+                    onClicked: parent.parent.increase()
+                }
+            }
+        }
+
+        Row {
+            anchors.centerIn: parent
+            spacing: 5
+
+            StepControl {
+                caption: "HDG"
+                valueText: Math.round(root.selectedHeadingDegrees)
+                           .toString().padStart(3, "0")
+                onDecrease: {
+                    root.selectedHeadingDegrees =
+                            (root.selectedHeadingDegrees + 355) % 360
+                    if (root.controlActive)
+                        root.setpointsRequested(root.selectedHeadingDegrees,
+                                                root.selectedAltitudeFeet,
+                                                root.selectedAirspeedKnots)
+                }
+                onIncrease: {
+                    root.selectedHeadingDegrees =
+                            (root.selectedHeadingDegrees + 5) % 360
+                    if (root.controlActive)
+                        root.setpointsRequested(root.selectedHeadingDegrees,
+                                                root.selectedAltitudeFeet,
+                                                root.selectedAirspeedKnots)
+                }
+            }
+
+            StepControl {
+                caption: "ALT FT"
+                valueText: Math.round(root.selectedAltitudeFeet).toString()
+                onDecrease: {
+                    root.selectedAltitudeFeet =
+                            Math.max(0, root.selectedAltitudeFeet - 500)
+                    if (root.controlActive)
+                        root.setpointsRequested(root.selectedHeadingDegrees,
+                                                root.selectedAltitudeFeet,
+                                                root.selectedAirspeedKnots)
+                }
+                onIncrease: {
+                    root.selectedAltitudeFeet += 500
+                    if (root.controlActive)
+                        root.setpointsRequested(root.selectedHeadingDegrees,
+                                                root.selectedAltitudeFeet,
+                                                root.selectedAirspeedKnots)
+                }
+            }
+
+            StepControl {
+                caption: "SPD KT"
+                valueText: Math.round(root.selectedAirspeedKnots).toString()
+                onDecrease: {
+                    root.selectedAirspeedKnots =
+                            Math.max(0, root.selectedAirspeedKnots - 10)
+                    if (root.controlActive)
+                        root.setpointsRequested(root.selectedHeadingDegrees,
+                                                root.selectedAltitudeFeet,
+                                                root.selectedAirspeedKnots)
+                }
+                onIncrease: {
+                    root.selectedAirspeedKnots += 10
+                    if (root.controlActive)
+                        root.setpointsRequested(root.selectedHeadingDegrees,
+                                                root.selectedAltitudeFeet,
+                                                root.selectedAirspeedKnots)
+                }
+            }
+
+            Rectangle {
+                width: 80
+                height: 34
+                color: controlArea.pressed
+                       ? "#26333a"
+                       : (root.controlActive ? "#14343d" : "#172126")
+                border.color: root.controlActive ? root.cyan : "#72838b"
+                Text {
+                    anchors.centerIn: parent
+                    text: root.controlActive ? "RELEASE" : "TAKE"
+                    color: root.controlActive ? root.cyan : root.ink
+                    font.pixelSize: 11
+                    font.bold: true
+                }
+                MouseArea {
+                    id: controlArea
+                    anchors.fill: parent
+                    onClicked: {
+                        if (root.controlActive) {
+                            root.releaseControlRequested()
+                        } else {
+                            root.takeControlRequested(
+                                        root.selectedHeadingDegrees,
+                                        root.selectedAltitudeFeet,
+                                        root.selectedAirspeedKnots)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     function refresh() {

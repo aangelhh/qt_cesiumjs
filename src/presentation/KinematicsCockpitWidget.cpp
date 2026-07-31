@@ -7,6 +7,7 @@
 #include <QTabBar>
 #include <QStackedWidget>
 #include <QVBoxLayout>
+#include <QtMath>
 
 #if defined(QTTEST_HAS_MODERN_PFD)
 #include <QQuickItem>
@@ -32,6 +33,8 @@ public:
   QStackedWidget* stack = nullptr;
   QLabel* unavailableLabel = nullptr;
   QTabWidget* instrumentTabs = nullptr;
+  QString entityName;
+  bool controlActive = false;
 #if defined(QTTEST_HAS_MODERN_PFD)
   QQuickWidget* modernPfd = nullptr;
   QQuickWidget* ecamEngine = nullptr;
@@ -85,6 +88,23 @@ KinematicsCockpitWidget::KinematicsCockpitWidget(
     _impl->modernPfd->setSource(
         QUrl(QStringLiteral("qrc:/kinematics/ModernPfd.qml")));
     _impl->modernPfd->setMinimumSize(400, 320);
+    if (_impl->modernPfd->rootObject()) {
+      QObject::connect(
+          _impl->modernPfd->rootObject(),
+          SIGNAL(takeControlRequested(double,double,double)),
+          this,
+          SLOT(handleTakeControlRequested(double,double,double)));
+      QObject::connect(
+          _impl->modernPfd->rootObject(),
+          SIGNAL(setpointsRequested(double,double,double)),
+          this,
+          SLOT(handleSetpointsRequested(double,double,double)));
+      QObject::connect(
+          _impl->modernPfd->rootObject(),
+          SIGNAL(releaseControlRequested()),
+          this,
+          SLOT(handleReleaseControlRequested()));
+    }
     _impl->instrumentTabs->addTab(
         _impl->modernPfd,
         QStringLiteral("Modern PFD"));
@@ -168,6 +188,7 @@ KinematicsCockpitWidget::~KinematicsCockpitWidget() = default;
 void KinematicsCockpitWidget::applySnapshot(
     const application::KinematicsTelemetrySnapshot& snapshot) {
   const KinematicsCockpitData data = makeKinematicsCockpitData(snapshot);
+  _impl->entityName = data.entityName;
   _impl->entityLabel->setText(
       data.entityName.isEmpty() ? QStringLiteral("Unnamed entity") : data.entityName);
   _impl->statusLabel->setText(data.statusText);
@@ -189,6 +210,7 @@ void KinematicsCockpitWidget::applySnapshot(
     root->setProperty("selectedAirspeedKnots", data.selectedAirspeedKnots);
     root->setProperty("selectedAltitudeFeet", data.selectedAltitudeFeet);
     root->setProperty("flightDirectorActive", data.flightDirectorActive);
+    root->setProperty("controlActive", _impl->controlActive);
   }
   if (data.available && _impl->ecamEngine && _impl->ecamEngine->rootObject()) {
     QQuickItem* root = _impl->ecamEngine->rootObject();
@@ -230,12 +252,49 @@ void KinematicsCockpitWidget::applySnapshot(
   _impl->stack->setCurrentWidget(_impl->unavailableLabel);
 }
 
+void KinematicsCockpitWidget::setControlActive(bool active) {
+  _impl->controlActive = active;
+#if defined(QTTEST_HAS_MODERN_PFD)
+  if (_impl->modernPfd && _impl->modernPfd->rootObject()) {
+    _impl->modernPfd->rootObject()->setProperty("controlActive", active);
+  }
+#endif
+}
+
 void KinematicsCockpitWidget::clear() {
+  _impl->entityName.clear();
+  setControlActive(false);
   _impl->entityLabel->setText(QStringLiteral("No air entity selected"));
   _impl->statusLabel->setText(QStringLiteral("Waiting for telemetry"));
   _impl->unavailableLabel->setText(
       QStringLiteral("Select an air entity to inspect its kinematics."));
   _impl->stack->setCurrentWidget(_impl->unavailableLabel);
+}
+
+void KinematicsCockpitWidget::handleTakeControlRequested(
+    double headingDegrees,
+    double altitudeFeet,
+    double speedKnots) {
+  emit takeControlRequested(
+      _impl->entityName,
+      headingDegrees,
+      qRound(altitudeFeet / 3.28083989501312),
+      speedKnots);
+}
+
+void KinematicsCockpitWidget::handleSetpointsRequested(
+    double headingDegrees,
+    double altitudeFeet,
+    double speedKnots) {
+  emit setpointsRequested(
+      _impl->entityName,
+      headingDegrees,
+      qRound(altitudeFeet / 3.28083989501312),
+      speedKnots);
+}
+
+void KinematicsCockpitWidget::handleReleaseControlRequested() {
+  emit releaseControlRequested(_impl->entityName);
 }
 
 } // namespace presentation

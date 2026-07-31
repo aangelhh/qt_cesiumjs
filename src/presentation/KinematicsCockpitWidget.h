@@ -9,6 +9,8 @@
 namespace presentation {
 
 class KinematicsCockpitWidget : public QWidget {
+  Q_OBJECT
+
 public:
   enum class PanelMode {
     All,
@@ -23,7 +25,32 @@ public:
   ~KinematicsCockpitWidget() override;
 
   void applySnapshot(const application::KinematicsTelemetrySnapshot& snapshot);
+  void setControlActive(bool active);
   void clear();
+
+signals:
+  void takeControlRequested(
+      const QString& entityName,
+      double headingDegrees,
+      int altitudeMeters,
+      double speedKnots);
+  void setpointsRequested(
+      const QString& entityName,
+      double headingDegrees,
+      int altitudeMeters,
+      double speedKnots);
+  void releaseControlRequested(const QString& entityName);
+
+private slots:
+  void handleTakeControlRequested(
+      double headingDegrees,
+      double altitudeFeet,
+      double speedKnots);
+  void handleSetpointsRequested(
+      double headingDegrees,
+      double altitudeFeet,
+      double speedKnots);
+  void handleReleaseControlRequested();
 
 private:
   class Impl;

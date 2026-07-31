@@ -93,6 +93,8 @@ qt_add_executable(qttest
     src/AssignTaskDialog.h
     src/AddEntityDialog.cpp
     src/AddEntityDialog.h
+    src/application/CockpitControlService.cpp
+    src/application/CockpitControlService.h
     src/application/SystemsTelemetry.cpp
     src/application/SystemsTelemetry.h
     src/EntityDetailsDialog.cpp

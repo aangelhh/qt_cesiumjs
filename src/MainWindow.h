@@ -16,6 +16,7 @@
 #include <memory>
 
 #include "application/AttackTaskProcessor.h"
+#include "application/CockpitControlService.h"
 #include "application/SimulationEngine.h"
 #include "presentation/BombReleaseController.h"
 #include "presentation/EntityPlanExecutor.h"
@@ -208,6 +209,17 @@ private:
   void updateSimulationControls();
   void initializeKinematicsCockpit();
   void refreshKinematicsCockpitForEntity(const struct Entity* entity);
+  void takeCockpitControl(
+      const QString& entityName,
+      double headingDegrees,
+      int altitudeMeters,
+      double speedKnots);
+  void updateCockpitSetpoints(
+      const QString& entityName,
+      double headingDegrees,
+      int altitudeMeters,
+      double speedKnots);
+  void releaseCockpitControl(const QString& entityName);
   void createTaskQuickBar();
   void populateTaskQuickBarButtons(QFrame* panel, QHBoxLayout* layout);
   void positionTaskQuickBar();
@@ -288,6 +300,7 @@ private:
   std::unique_ptr<presentation::BombReleaseController> _bombReleaseController;
   std::unique_ptr<application::AttackTaskProcessor> _attackTaskProcessor;
   std::unique_ptr<presentation::EntityPlanExecutor> _planExecutor;
+  std::unique_ptr<application::CockpitControlService> _cockpitControlService;
   std::unique_ptr<presentation::EntityVisualStateManager> _entityVisualStateManager;
   std::unique_ptr<presentation::EntityHomePositionTracker> _entityHomePositionTracker;
   std::unique_ptr<presentation::GraphicPickCoordinator> _graphicPickCoordinator;

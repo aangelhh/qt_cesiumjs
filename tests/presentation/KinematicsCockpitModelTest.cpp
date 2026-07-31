@@ -88,3 +88,19 @@ TEST(KinematicsCockpitModel, FlightDirectorRequiresRunningEnabledTask) {
   EXPECT_FALSE(
       presentation::makeKinematicsCockpitData(snapshot).flightDirectorActive);
 }
+
+TEST(KinematicsCockpitModel, UsesCurrentTelemetryAsSetpointsWithoutRunningTask) {
+  auto snapshot = makeSnapshot();
+  snapshot.taskEnabled = false;
+  snapshot.taskStatus = QStringLiteral("Idle");
+  snapshot.targetHeadingDegrees = 0.0;
+  snapshot.targetAltitudeMeters = 0.0;
+  snapshot.targetSpeedKnots = 0.0;
+
+  const auto data = presentation::makeKinematicsCockpitData(snapshot);
+
+  EXPECT_FALSE(data.flightDirectorActive);
+  EXPECT_DOUBLE_EQ(data.selectedHeadingDegrees, snapshot.headingDegrees);
+  EXPECT_DOUBLE_EQ(data.selectedAirspeedKnots, snapshot.speedKnots);
+  EXPECT_DOUBLE_EQ(data.selectedAltitudeFeet, data.altitudeFeet);
+}

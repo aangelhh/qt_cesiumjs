@@ -222,6 +222,15 @@ MainWindow::MainWindow(QWidget* parent)
           [this](const QString& msg) { this->appendLogMessage(msg); },
           [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
           this)),
+      _cockpitControlService(std::make_unique<application::CockpitControlService>(
+          _scenarioState,
+          [this](const QString& name, const EntityTask& task, bool sync) {
+            return this->applyEntityTask(name, task, sync);
+          },
+          [this](const QString& name, bool clearTask) {
+            this->stopEntityPlan(name, clearTask);
+          },
+          [this](const QString& msg) { this->appendLogMessage(msg); })),
       _entityVisualStateManager(std::make_unique<presentation::EntityVisualStateManager>(
           QDir(projectRootPath()).absoluteFilePath(QStringLiteral("Data/entity_visual_state.json")))),
       _entityHomePositionTracker(std::make_unique<presentation::EntityHomePositionTracker>()),
@@ -790,6 +799,21 @@ void MainWindow::initializeKinematicsCockpit() {
           this->_kinematicsCockpitDock,
           presentation::KinematicsCockpitWidget::PanelMode::ModernPfd);
   this->_kinematicsCockpitDock->setWidget(this->_kinematicsCockpitWidget);
+  connect(
+      this->_kinematicsCockpitWidget,
+      &presentation::KinematicsCockpitWidget::takeControlRequested,
+      this,
+      &MainWindow::takeCockpitControl);
+  connect(
+      this->_kinematicsCockpitWidget,
+      &presentation::KinematicsCockpitWidget::setpointsRequested,
+      this,
+      &MainWindow::updateCockpitSetpoints);
+  connect(
+      this->_kinematicsCockpitWidget,
+      &presentation::KinematicsCockpitWidget::releaseControlRequested,
+      this,
+      &MainWindow::releaseCockpitControl);
   this->_kinematicsCockpitDock->setFeatures(
       QDockWidget::DockWidgetClosable |
       QDockWidget::DockWidgetMovable |
@@ -851,6 +875,15 @@ void MainWindow::initializeKinematicsCockpit() {
                     this,
                     [this, snapshot]() {
                       if (snapshot.entityName == this->selectedEntityName()) {
+                        EntityTask activeTask;
+                        activeTask.enabled = snapshot.taskEnabled;
+                        activeTask.taskType = snapshot.taskType;
+                        this->_cockpitControlService->reconcile(
+                            snapshot.entityName,
+                            activeTask);
+                        this->_kinematicsCockpitWidget->setControlActive(
+                            this->_cockpitControlService->hasControl(
+                                snapshot.entityName));
                         this->_kinematicsCockpitWidget->applySnapshot(snapshot);
                         this->_qflightCockpitWidget->applySnapshot(snapshot);
                         this->_ecamCockpitWidget->applySnapshot(snapshot);
@@ -873,9 +906,46 @@ void MainWindow::refreshKinematicsCockpitForEntity(const Entity* entity) {
           *entity,
           this->_scenarioState->simulationTimeSeconds(),
           0.0);
+  this->_cockpitControlService->reconcile(entity->name, entity->currentTask);
+  this->_kinematicsCockpitWidget->setControlActive(
+      this->_cockpitControlService->hasControl(entity->name));
   this->_kinematicsCockpitWidget->applySnapshot(snapshot);
   this->_qflightCockpitWidget->applySnapshot(snapshot);
   this->_ecamCockpitWidget->applySnapshot(snapshot);
+}
+
+void MainWindow::takeCockpitControl(
+    const QString& entityName,
+    double headingDegrees,
+    int altitudeMeters,
+    double speedKnots) {
+  const application::FlightControlCommand command{
+      entityName, headingDegrees, altitudeMeters, speedKnots};
+  const bool acquired = this->_cockpitControlService->takeControl(command);
+  this->_kinematicsCockpitWidget->setControlActive(acquired);
+  this->_ui->statusLabel->setText(
+      acquired
+          ? QStringLiteral("Control de cockpit activo para %1.").arg(entityName)
+          : QStringLiteral("No se pudo tomar control de %1.").arg(entityName));
+}
+
+void MainWindow::updateCockpitSetpoints(
+    const QString& entityName,
+    double headingDegrees,
+    int altitudeMeters,
+    double speedKnots) {
+  this->_cockpitControlService->updateSetpoints(
+      {entityName, headingDegrees, altitudeMeters, speedKnots});
+}
+
+void MainWindow::releaseCockpitControl(const QString& entityName) {
+  const bool released = this->_cockpitControlService->releaseControl(entityName);
+  this->_kinematicsCockpitWidget->setControlActive(false);
+  if (released) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Control de cockpit liberado para %1.").arg(entityName));
+    this->syncScenarioStateToUi();
+  }
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
@@ -2308,6 +2378,12 @@ bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind,
 }
 
 bool MainWindow::startEntityPlan(const QString& entityName) {
+  if (this->_cockpitControlService->hasControl(entityName)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Libera el control de cockpit antes de iniciar el plan de %1.")
+            .arg(entityName));
+    return false;
+  }
   return this->_planExecutor->startPlan(entityName);
 }
 
