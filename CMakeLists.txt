@@ -109,6 +109,8 @@ qt_add_executable(qttest
     src/infrastructure/DisEntityCatalog.h
     src/infrastructure/ModelCatalog.cpp
     src/infrastructure/ModelCatalog.h
+    src/infrastructure/ModelOrientation.cpp
+    src/infrastructure/ModelOrientation.h
     src/application/ScenarioState.cpp
     src/application/ScenarioState.h
     src/application/TacticalGraphicRepository.cpp
@@ -129,6 +131,8 @@ qt_add_executable(qttest
     src/application/MovementIntent.h
     src/application/KinematicsTelemetry.cpp
     src/application/KinematicsTelemetry.h
+    src/application/JsbsimSetpointController.cpp
+    src/application/JsbsimSetpointController.h
     src/application/Command.cpp
     src/application/Command.h
     src/application/Event.h
@@ -144,6 +148,7 @@ qt_add_executable(qttest
     src/domain/CombatRules.cpp
     src/domain/CombatRules.h
     src/domain/Entity.h
+    src/domain/EntityIdentity.h
     src/domain/GeoMath.cpp
     src/domain/GeoMath.h
     src/domain/Sensor.cpp

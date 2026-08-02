@@ -2,6 +2,7 @@
 #include "application/ScenarioQueries.h"
 #include "application/ScenarioState.h"
 #include "domain/BombReleaseGate.h"
+#include "domain/EntityIdentity.h"
 #include "presentation/TrackSummaryBuilder.h"
 
 #include <QHash>
@@ -138,13 +139,23 @@ void WeaponActionsController::launchMissileAtSelected() {
 
   QStringList options;
   QHash<QString, QString> nameByOption;
+  QHash<QString, int> labelCounts;
+  for (const application::MissileTargetCandidate& c : candidates) {
+    if (c.entity) {
+      ++labelCounts[presentation::missileTargetDisplayLabel(*c.entity, c.rangeMeters)];
+    }
+  }
   for (const application::MissileTargetCandidate& c : candidates) {
     if (!c.entity) {
       continue;
     }
-    const QString label = presentation::missileTargetDisplayLabel(*c.entity, c.rangeMeters);
+    const QString baseLabel = presentation::missileTargetDisplayLabel(*c.entity, c.rangeMeters);
+    const QString label = labelCounts.value(baseLabel) > 1
+        ? QStringLiteral("%1 [%2]")
+              .arg(baseLabel, domain::entityKey(*c.entity).left(8))
+        : baseLabel;
     options.push_back(label);
-    nameByOption.insert(label, c.entity->name);
+    nameByOption.insert(label, domain::entityKey(*c.entity));
   }
 
   const QString selected = _pickTarget(options);

@@ -1,6 +1,7 @@
 #include "application/ScenarioQueries.h"
 #include "application/ScenarioState.h"
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 #include "domain/Munition.h"
 #include "domain/TacticalGraphic.h"
 #include <QSet>
@@ -25,15 +26,17 @@ QVector<MissileTargetCandidate> detectedMissileTargetsInRange(
       continue;
     }
 
-    const QString targetName = contact.targetEntityName.trimmed();
-    const QString targetKey = targetName.toCaseFolded();
-    if (targetName.isEmpty() || addedTargetNames.contains(targetKey)) {
+    const QString targetReference = contact.targetEntityId.trimmed().isEmpty()
+        ? contact.targetEntityName.trimmed()
+        : contact.targetEntityId.trimmed();
+    const QString targetKey = targetReference.toCaseFolded();
+    if (targetReference.isEmpty() || addedTargetNames.contains(targetKey)) {
       continue;
     }
 
     for (const Entity& candidate : scenarioState->entities()) {
-      if (candidate.name.compare(targetName, Qt::CaseInsensitive) != 0 ||
-          candidate.name == launcher.name ||
+      if (!domain::entityMatchesReference(candidate, targetReference) ||
+          domain::entityKey(candidate) == domain::entityKey(launcher) ||
           candidate.destroyed ||
           candidate.forceIdentifier == launcher.forceIdentifier ||
           candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
@@ -56,13 +59,33 @@ bool activeMissileInFlightForTarget(
     return false;
   }
 
+  const Entity* launcher = nullptr;
+  const Entity* target = nullptr;
+  for (const Entity& entity : scenarioState->entities()) {
+    if (!launcher && domain::entityMatchesReference(entity, launcherName)) {
+      launcher = &entity;
+    }
+    if (!target && domain::entityMatchesReference(entity, targetName)) {
+      target = &entity;
+    }
+  }
+  if (!launcher || !target) {
+    return false;
+  }
+
   for (const ActiveMunition& munition : scenarioState->activeMunitions()) {
     if (!munition.active ||
         munition.munitionType.compare(QStringLiteral("Missile"), Qt::CaseInsensitive) != 0) {
       continue;
     }
-    if (munition.launcherEntityName.compare(launcherName, Qt::CaseInsensitive) == 0 &&
-        munition.targetEntityName.compare(targetName, Qt::CaseInsensitive) == 0) {
+    const QString launcherReference = munition.launcherEntityId.trimmed().isEmpty()
+        ? munition.launcherEntityName
+        : munition.launcherEntityId;
+    const QString targetReference = munition.targetEntityId.trimmed().isEmpty()
+        ? munition.targetEntityName
+        : munition.targetEntityId;
+    if (domain::entityMatchesReference(*launcher, launcherReference) &&
+        domain::entityMatchesReference(*target, targetReference)) {
       return true;
     }
   }
@@ -77,7 +100,7 @@ int entityAltitudeMeters(
   }
 
   for (const Entity& entity : scenarioState->entities()) {
-    if (entity.name == entityName) {
+    if (domain::entityMatchesReference(entity, entityName)) {
       return entity.altitude;
     }
   }
@@ -93,7 +116,7 @@ QVector<const Entity*> validBombReleaseTargets(
   }
 
   for (const Entity& candidate : scenarioState->entities()) {
-    if (candidate.name == launcher.name ||
+    if (domain::entityKey(candidate) == domain::entityKey(launcher) ||
         candidate.destroyed ||
         candidate.forceIdentifier == launcher.forceIdentifier ||
         candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
@@ -114,14 +137,16 @@ const Entity* bestDetectedSurfaceBombTarget(
   const Entity* selectedTarget = nullptr;
   double selectedRangeMeters = -1.0;
   for (const SensorContact& contact : launcher.sensorContacts) {
-    if (!contact.detected || contact.targetEntityName.trimmed().isEmpty()) {
+    const QString targetReference = contact.targetEntityId.trimmed().isEmpty()
+        ? contact.targetEntityName.trimmed()
+        : contact.targetEntityId.trimmed();
+    if (!contact.detected || targetReference.isEmpty()) {
       continue;
     }
 
-    const QString targetName = contact.targetEntityName.trimmed();
     for (const Entity& candidate : scenarioState->entities()) {
-      if (candidate.name.compare(targetName, Qt::CaseInsensitive) != 0 ||
-          candidate.name == launcher.name ||
+      if (!domain::entityMatchesReference(candidate, targetReference) ||
+          domain::entityKey(candidate) == domain::entityKey(launcher) ||
           candidate.destroyed ||
           candidate.forceIdentifier == launcher.forceIdentifier ||
           candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {

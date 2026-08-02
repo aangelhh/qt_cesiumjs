@@ -45,6 +45,7 @@ struct SensorContact {
   QString sensorId;
   QString sensorType;
   QString sensorSubType;
+  QString targetEntityId;
   QString targetEntityName;
   double rangeMeters = 0.0;
   double bearingDegrees = 0.0;

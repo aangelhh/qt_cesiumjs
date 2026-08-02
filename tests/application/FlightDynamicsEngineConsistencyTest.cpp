@@ -93,6 +93,26 @@ TEST(FlightDynamicsEngineConsistency, DisabledTaskDoesNotMoveEntity) {
   EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
 }
 
+TEST(FlightDynamicsEngineConsistency, EmptyFuelStopsEntityAndFailsActiveTask) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.fuelCapacityKilograms = 3200.0;
+  entity.fuelRemainingKilograms = 0.0;
+  QVector<Entity> entities = {entity};
+  const Entity before = entities.first();
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 10.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  expectPositionUnchanged(before, entities.first());
+  EXPECT_DOUBLE_EQ(entities.first().speedKnots, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
+  EXPECT_EQ(entities.first().currentTask.status, QStringLiteral("Failed"));
+  EXPECT_EQ(
+      entities.first().activeDynamicsBackend,
+      QStringLiteral("fuel-exhausted"));
+}
+
 TEST(FlightDynamicsEngineConsistency, GroundTerminalTaskKeepsGroundKinematicsSafe) {
   Entity entity = makeMovingAirEntity(QStringLiteral("Completed"));
   entity.domain = QStringLiteral("Ground");

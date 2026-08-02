@@ -121,6 +121,7 @@ private slots:
   void setSelectedEntityHeading();
   void setSelectedEntityAltitude();
   void setSelectedEntitySpeed();
+  void setSelectedEntityFuel();
   void setSelectedEntityBehaviorMode(const QString& behaviorMode);
   void destroySelectedEntity();
   void restoreSelectedEntity();

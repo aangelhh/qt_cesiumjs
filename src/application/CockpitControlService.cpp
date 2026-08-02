@@ -1,7 +1,7 @@
 #include "application/CockpitControlService.h"
 
-#include "application/MovementIntent.h"
 #include "application/ScenarioState.h"
+#include "domain/EntityIdentity.h"
 #include "domain/GeoMath.h"
 
 #include <QtGlobal>
@@ -72,25 +72,14 @@ bool CockpitControlService::releaseControl(const QString& entityName) {
     return false;
   }
 
-  const bool taskCleared = _state->clearTask(trimmedName);
-  if (!taskCleared) {
-    _authorities.remove(trimmedName);
-    return false;
-  }
-
-  {
-    auto lock = _state->lock();
-    for (Entity& entity : _state->entitiesMutable()) {
-      if (entity.name == trimmedName) {
-        stopMovementIntent(entity);
-        break;
-      }
-    }
-  }
-  _state->save();
+  // There is no direct/manual pilot authority yet. Releasing the screen must
+  // therefore retain the last autopilot task; clearing it would set airspeed
+  // to zero and leave an airborne entity without a safe flight intent.
   _authorities.remove(trimmedName);
   if (_log) {
-    _log(QStringLiteral("Cockpit control released for %1.").arg(trimmedName));
+    _log(QStringLiteral(
+             "Cockpit control released for %1; last flight setpoints retained.")
+             .arg(trimmedName));
   }
   return true;
 }
@@ -144,7 +133,7 @@ bool CockpitControlService::commandIsValid(
 
   auto lock = _state->lock();
   for (const Entity& entity : _state->entities()) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
     return !entity.destroyed &&

@@ -1,6 +1,7 @@
 #include "TrackSummaryBuilder.h"
 #include "../domain/CombatRules.h"
 #include "../domain/Entity.h"
+#include "../domain/EntityIdentity.h"
 #include "../domain/GeoMath.h"
 #include "../domain/Munition.h"
 #include "../domain/TacticalGraphic.h"
@@ -54,6 +55,10 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("flightDynamicsEnabled"), false},
       {QStringLiteral("flightDynamicsMode"), QStringLiteral("kinematic")},
       {QStringLiteral("jsbsimAircraftModel"), QString()},
+      {QStringLiteral("controlProfileId"), QString()},
+      {QStringLiteral("cesiumModelAxes"), QString()},
+      {QStringLiteral("fuelCapacityKilograms"), 0.0},
+      {QStringLiteral("fuelRemainingKilograms"), 0.0},
       {QStringLiteral("speedKnots"), 0.0},
       {QStringLiteral("verticalSpeedMetersPerSecond"), 0.0},
       {QStringLiteral("taskType"), QString()},
@@ -253,6 +258,7 @@ QVariantMap makeEntityTrackSummary(
       entity.latitude,
       entity.longitude);
 
+  summary.insert(QStringLiteral("entityId"),            domain::entityKey(entity));
   summary.insert(QStringLiteral("domain"),              entity.domain);
   summary.insert(QStringLiteral("category"),            entity.category);
   summary.insert(QStringLiteral("callsign"),            entity.callsign);
@@ -273,6 +279,10 @@ QVariantMap makeEntityTrackSummary(
   summary.insert(QStringLiteral("flightDynamicsEnabled"),  entity.flightDynamicsEnabled);
   summary.insert(QStringLiteral("flightDynamicsMode"),     entity.flightDynamicsMode);
   summary.insert(QStringLiteral("jsbsimAircraftModel"),    entity.jsbsimAircraftModel);
+  summary.insert(QStringLiteral("controlProfileId"),       entity.controlProfileId);
+  summary.insert(QStringLiteral("cesiumModelAxes"),        entity.cesiumModelAxes);
+  summary.insert(QStringLiteral("fuelCapacityKilograms"),  entity.fuelCapacityKilograms);
+  summary.insert(QStringLiteral("fuelRemainingKilograms"), entity.fuelRemainingKilograms);
   summary.insert(QStringLiteral("speedKnots"),          entity.speedKnots);
   summary.insert(QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond);
   summary.insert(QStringLiteral("destroyed"),           entity.destroyed);
@@ -282,6 +292,7 @@ QVariantMap makeEntityTrackSummary(
       entity.behaviorMode.trimmed().isEmpty()
           ? QStringLiteral("Manual")
           : entity.behaviorMode);
+  summary.insert(QStringLiteral("behaviorTargetEntityId"), entity.behaviorTargetEntityId);
   summary.insert(QStringLiteral("behaviorTargetEntityName"), entity.behaviorTargetEntityName);
   summary.insert(QStringLiteral("hidden"),               visualState.hidden);
   summary.insert(QStringLiteral("radarCoverageVisible"), visualState.radarCoverageVisible);
@@ -294,6 +305,7 @@ QVariantMap makeEntityTrackSummary(
   summary.insert(QStringLiteral("taskTargetSpeedKnots"),        entity.currentTask.targetSpeedKnots);
   summary.insert(QStringLiteral("taskTargetLatitude"),          entity.currentTask.targetLatitude);
   summary.insert(QStringLiteral("taskTargetLongitude"),         entity.currentTask.targetLongitude);
+  summary.insert(QStringLiteral("taskTargetEntityId"),          entity.currentTask.targetEntityId);
   summary.insert(QStringLiteral("taskTargetEntityName"),        entity.currentTask.targetEntityName);
   summary.insert(QStringLiteral("taskTargetWaypointName"),      entity.currentTask.targetWaypointName);
   summary.insert(QStringLiteral("taskTargetRouteName"),         entity.currentTask.targetRouteName);
@@ -344,6 +356,7 @@ QVariantMap makeEntityTrackSummary(
         {QStringLiteral("sensorId"),         contact.sensorId},
         {QStringLiteral("sensorType"),       contact.sensorType},
         {QStringLiteral("sensorSubType"),    contact.sensorSubType},
+        {QStringLiteral("targetEntityId"),   contact.targetEntityId},
         {QStringLiteral("targetEntityName"), contact.targetEntityName},
         {QStringLiteral("rangeMeters"),      contact.rangeMeters},
         {QStringLiteral("bearingDegrees"),   contact.bearingDegrees},

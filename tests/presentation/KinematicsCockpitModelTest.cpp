@@ -24,6 +24,13 @@ application::KinematicsTelemetrySnapshot makeSnapshot() {
   snapshot.dynamicsModel = QStringLiteral("kinematic");
   snapshot.systems.profileId = QStringLiteral("air-turbine-1-engine");
   snapshot.systems.dataSource = QStringLiteral("Kinematic estimate");
+  snapshot.systems.fuelCapacityKilograms = 6000.0;
+  snapshot.systems.fuelRemainingKilograms = 1500.0;
+  snapshot.systems.fuelPercent = 25.0;
+  snapshot.systems.totalFuelFlowKilogramsPerHour = 1200.0;
+  snapshot.systems.estimatedEnduranceSeconds = 4500.0;
+  snapshot.systems.fuelAvailable = true;
+  snapshot.systems.enduranceAvailable = true;
   application::EngineTelemetry engine;
   engine.engineId = QStringLiteral("ENG 1");
   engine.state = QStringLiteral("RUNNING");
@@ -59,6 +66,13 @@ TEST(KinematicsCockpitModel, MapsActualAndSelectedFlightValues) {
   EXPECT_TRUE(data.flightDirectorActive);
   EXPECT_TRUE(data.available);
   EXPECT_EQ(data.systemsProfileId, QStringLiteral("air-turbine-1-engine"));
+  EXPECT_DOUBLE_EQ(data.fuelCapacityKilograms, 6000.0);
+  EXPECT_DOUBLE_EQ(data.fuelRemainingKilograms, 1500.0);
+  EXPECT_DOUBLE_EQ(data.fuelPercent, 25.0);
+  EXPECT_DOUBLE_EQ(data.totalFuelFlowKilogramsPerHour, 1200.0);
+  EXPECT_DOUBLE_EQ(data.estimatedEnduranceSeconds, 4500.0);
+  EXPECT_TRUE(data.fuelAvailable);
+  EXPECT_TRUE(data.enduranceAvailable);
   ASSERT_EQ(data.engines.size(), 1);
   EXPECT_DOUBLE_EQ(
       data.engines.front().toMap().value(QStringLiteral("n1Percent")).toDouble(),

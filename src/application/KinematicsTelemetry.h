@@ -10,6 +10,7 @@ namespace application {
 
 // Read-only-by-contract value snapshot. It never retains references to runtime state.
 struct KinematicsTelemetrySnapshot {
+  QString entityId;
   QString entityName;
   QString domain;
   QString category;

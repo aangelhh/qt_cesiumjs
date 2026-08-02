@@ -1,5 +1,7 @@
 #include "application/SensorEngine.h"
 
+#include "domain/EntityIdentity.h"
+
 #include <QtMath>
 
 namespace {
@@ -174,6 +176,7 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
         contact.sensorId = sensor.id;
         contact.sensorType = sensor.sensorType;
         contact.sensorSubType = sensor.sensorSubType;
+        contact.targetEntityId = domain::entityKey(target);
         contact.targetEntityName = target.name;
         contact.rangeMeters = range;
         contact.bearingDegrees = bearingDegrees(source, target);

@@ -7,6 +7,23 @@ Item {
     property string profileId: ""
     property string dataSource: ""
     property var engineModel: []
+    property real fuelCapacityKilograms: 0
+    property real fuelRemainingKilograms: 0
+    property real fuelPercent: 0
+    property real totalFuelFlowKilogramsPerHour: 0
+    property real estimatedEnduranceSeconds: 0
+    property bool fuelAvailable: false
+    property bool enduranceAvailable: false
+
+    function enduranceText() {
+        if (!root.enduranceAvailable)
+            return "--:--"
+        var totalMinutes = Math.floor(root.estimatedEnduranceSeconds / 60)
+        var hours = Math.floor(totalMinutes / 60)
+        var minutes = totalMinutes % 60
+        return (hours < 10 ? "0" : "") + hours + ":" +
+               (minutes < 10 ? "0" : "") + minutes
+    }
 
     readonly property color background: "#070b0d"
     readonly property color panel: "#10181b"
@@ -65,7 +82,7 @@ Item {
         Grid {
             id: engineGrid
             width: parent.width
-            height: parent.height - 96
+            height: parent.height - 166
             columns: root.engineModel.length <= 2 ? Math.max(1, root.engineModel.length) : 2
             spacing: 8
 
@@ -183,6 +200,83 @@ Item {
                             font.family: "monospace"
                             font.pixelSize: 10
                         }
+                    }
+                }
+            }
+
+            Text {
+                width: engineGrid.width
+                height: engineGrid.height
+                visible: root.engineModel.length === 0
+                text: "NO ENGINE TELEMETRY"
+                color: root.amber
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                font.family: "monospace"
+                font.pixelSize: 18
+            }
+        }
+
+        Rectangle {
+            id: fuelPanel
+            width: parent.width
+            height: 58
+            color: root.panel
+            border.color: root.lineColor
+            border.width: 1
+            radius: 4
+
+            readonly property color fuelColor:
+                !root.fuelAvailable ? root.amber
+                : root.fuelPercent <= 10 ? root.red
+                : root.fuelPercent <= 20 ? root.amber
+                : root.green
+
+            Row {
+                anchors.fill: parent
+                anchors.margins: 9
+                spacing: 24
+
+                Column {
+                    width: (parent.width - parent.spacing * 3) * 0.28
+                    Text { text: "FUEL"; color: root.cyan; font.family: "monospace"; font.pixelSize: 10 }
+                    Text {
+                        text: root.fuelAvailable ? Math.round(root.fuelRemainingKilograms) + " KG" : "--"
+                        color: fuelPanel.fuelColor
+                        font.family: "monospace"
+                        font.pixelSize: 17
+                        font.bold: true
+                    }
+                }
+                Column {
+                    width: (parent.width - parent.spacing * 3) * 0.18
+                    Text { text: "LEVEL"; color: root.cyan; font.family: "monospace"; font.pixelSize: 10 }
+                    Text {
+                        text: root.fuelAvailable ? Math.round(root.fuelPercent) + " %" : "--"
+                        color: fuelPanel.fuelColor
+                        font.family: "monospace"
+                        font.pixelSize: 17
+                        font.bold: true
+                    }
+                }
+                Column {
+                    width: (parent.width - parent.spacing * 3) * 0.28
+                    Text { text: "TOTAL FLOW"; color: root.cyan; font.family: "monospace"; font.pixelSize: 10 }
+                    Text {
+                        text: root.fuelAvailable ? Math.round(root.totalFuelFlowKilogramsPerHour) + " KG/H" : "--"
+                        color: root.ink
+                        font.family: "monospace"
+                        font.pixelSize: 15
+                    }
+                }
+                Column {
+                    width: (parent.width - parent.spacing * 3) * 0.26
+                    Text { text: "ENDURANCE"; color: root.cyan; font.family: "monospace"; font.pixelSize: 10 }
+                    Text {
+                        text: root.enduranceText()
+                        color: root.ink
+                        font.family: "monospace"
+                        font.pixelSize: 17
                     }
                 }
             }

@@ -1,4 +1,5 @@
 #include "application/ScenarioState.h"
+#include "domain/EntityIdentity.h"
 
 #include "application/BehaviorEngine.h"
 #include "application/Event.h"
@@ -101,6 +102,7 @@ void normalizeGroundEntity(Entity& entity) {
   entity.flightDynamicsEnabled = false;
   entity.flightDynamicsMode = QStringLiteral("kinematic");
   entity.jsbsimAircraftModel.clear();
+  entity.controlProfileId.clear();
   entity.speedKnots = 0.0;
   entity.verticalSpeedMetersPerSecond = 0.0;
   entity.currentTask = EntityTask{};
@@ -110,25 +112,22 @@ bool entityIsValidMissileTarget(
     const Entity& launcher,
     const Entity& target) {
   return !target.destroyed &&
-         target.name != launcher.name &&
+         domain::entityKey(target) != domain::entityKey(launcher) &&
          target.forceIdentifier != launcher.forceIdentifier &&
          target.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0;
 }
 
 double detectedTargetRangeMeters(
     const Entity& launcher,
-    const QString& targetName) {
-  const QString trimmedTargetName = targetName.trimmed();
-  if (trimmedTargetName.isEmpty()) {
-    return -1.0;
-  }
-
+    const Entity& target) {
   double closestRangeMeters = -1.0;
   for (const SensorContact& contact : launcher.sensorContacts) {
+    const QString contactTargetReference =
+        contact.targetEntityId.trimmed().isEmpty()
+            ? contact.targetEntityName.trimmed()
+            : contact.targetEntityId.trimmed();
     if (!contact.detected ||
-        contact.targetEntityName.trimmed().compare(
-            trimmedTargetName,
-            Qt::CaseInsensitive) != 0) {
+        !domain::entityMatchesReference(target, contactTargetReference)) {
       continue;
     }
 
@@ -168,10 +167,18 @@ ScenarioState::ScenarioState() {
 void ScenarioState::addEntity(const Entity& entity) {
   ScopedLock lock(_mutex);
   Entity newEntity = entity; // Create a mutable copy
+  domain::ensureEntityId(newEntity);
+  for (const Entity& existing : _entities) {
+    if (domain::entityKey(existing).compare(
+            domain::entityKey(newEntity), Qt::CaseInsensitive) == 0) {
+      newEntity.entityId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+      break;
+    }
+  }
   normalizeGroundEntity(newEntity);
   newEntity.currentTask = EntityTask{}; // CRITICAL: Ensure new entity starts with clean task state
   _entities.push_back(newEntity);
-  _taskStacks[newEntity.name] = domain::TaskStack(); // CRITICAL: Initialize empty stack for new entity
+  _taskStacks[domain::entityKey(newEntity)] = domain::TaskStack(); // CRITICAL: Initialize empty stack for new entity
   this->refreshSensors();
   this->save();
 }
@@ -195,19 +202,29 @@ double ScenarioState::missileMaxRangeMeters() {
 bool ScenarioState::removeEntity(const QString& entityName) {
   ScopedLock lock(_mutex);
   for (qsizetype index = 0; index < _entities.size(); ++index) {
-    if (_entities.at(index).name == entityName) {
+    if (domain::entityMatchesReference(_entities.at(index), entityName)) {
+      const QString removedEntityId = domain::entityKey(_entities.at(index));
       const QString removedEntityName = _entities.at(index).name;
       _entities.removeAt(index);
-      _taskStacks.erase(removedEntityName); // Clean up stack for removed entity
-      _behaviorMissileCooldownSeconds.erase(removedEntityName);
+      _taskStacks.erase(removedEntityId); // Clean up stack for removed entity
+      _behaviorMissileCooldownSeconds.erase(removedEntityId);
 
       for (Entity& entity : _entities) {
-        if (entity.behaviorTargetEntityName.compare(
+        const bool matchesRemovedId =
+            !entity.behaviorTargetEntityId.trimmed().isEmpty() &&
+            entity.behaviorTargetEntityId.compare(
+                removedEntityId,
+                Qt::CaseInsensitive) == 0;
+        const bool matchesLegacyName =
+            entity.behaviorTargetEntityId.trimmed().isEmpty() &&
+            entity.behaviorTargetEntityName.compare(
                 removedEntityName,
-                Qt::CaseInsensitive) != 0) {
+                Qt::CaseInsensitive) == 0;
+        if (!matchesRemovedId && !matchesLegacyName) {
           continue;
         }
 
+        entity.behaviorTargetEntityId.clear();
         entity.behaviorTargetEntityName.clear();
         _pendingEventLogMessages.push_back(
             QStringLiteral("Behavior target cleared: target removed (%1 -> %2)")
@@ -276,7 +293,7 @@ bool ScenarioState::removeArea(const QString& areaName) {
 bool ScenarioState::assignTask(const QString& entityName, const EntityTask& task) {
   ScopedLock lock(_mutex);
   for (Entity& entity : _entities) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
     if (entity.destroyed) {
@@ -306,7 +323,7 @@ bool ScenarioState::clearTask(const QString& entityName) {
 bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed) {
   ScopedLock lock(_mutex);
   for (Entity& entity : _entities) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
 
@@ -323,8 +340,9 @@ bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed
         ? QStringLiteral("Destroyed")
         : QStringLiteral("Idle");
     if (destroyed) {
+      entity.behaviorTargetEntityId.clear();
       entity.behaviorTargetEntityName.clear();
-      _behaviorMissileCooldownSeconds.erase(entity.name);
+      _behaviorMissileCooldownSeconds.erase(domain::entityKey(entity));
     }
     entity.flightDynamicsEnabled = false;
     entity.speedKnots = 0.0;
@@ -350,7 +368,7 @@ bool ScenarioState::setEntityBehaviorMode(
   ScopedLock lock(_mutex);
   const QString normalizedMode = normalizedBehaviorMode(behaviorMode);
   for (Entity& entity : _entities) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
 
@@ -360,11 +378,51 @@ bool ScenarioState::setEntityBehaviorMode(
 
     entity.behaviorMode = normalizedMode;
     if (normalizedMode == QStringLiteral("Manual")) {
+      entity.behaviorTargetEntityId.clear();
       entity.behaviorTargetEntityName.clear();
     }
     _pendingEventLogMessages.push_back(
         QStringLiteral("%1 behavior mode set to %2")
             .arg(entity.name, entity.behaviorMode));
+    this->save();
+    return true;
+  }
+  return false;
+}
+
+bool ScenarioState::entityFuelState(
+    const QString& entityName,
+    double& remainingKilograms,
+    double& capacityKilograms) const {
+  ScopedLock lock(_mutex);
+  for (const Entity& entity : _entities) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
+      continue;
+    }
+    if (entity.domain.compare(
+            QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
+      return false;
+    }
+    Entity configured = entity;
+    application::ensureFuelConfiguration(configured);
+    remainingKilograms = configured.fuelRemainingKilograms;
+    capacityKilograms = configured.fuelCapacityKilograms;
+    return capacityKilograms > 0.0;
+  }
+  return false;
+}
+
+bool ScenarioState::setEntityFuelRemaining(
+    const QString& entityName,
+    double kilograms) {
+  ScopedLock lock(_mutex);
+  for (Entity& entity : _entities) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
+      continue;
+    }
+    if (!FlightDynamicsEngine::setFuelRemaining(entity, kilograms)) {
+      return false;
+    }
     this->save();
     return true;
   }
@@ -385,7 +443,7 @@ void ScenarioState::applyDamageWithSource(
   }
 
   for (Entity& entity : _entities) {
-    if (entity.name != trimmedTargetName || entity.destroyed) {
+    if (!domain::entityMatchesReference(entity, trimmedTargetName) || entity.destroyed) {
       continue;
     }
 
@@ -399,7 +457,7 @@ void ScenarioState::applyDamageWithSource(
       _pendingEventLogMessages.push_back(
           QStringLiteral("%1 hit %2: Destroyed")
               .arg(trimmedSourceLabel, entity.name));
-      this->setEntityDestroyed(entity.name, true);
+      this->setEntityDestroyed(domain::entityKey(entity), true);
       return;
     }
 
@@ -426,7 +484,8 @@ void ScenarioState::applyMissileDamage(
 void ScenarioState::applyBombBlastDamage(const ActiveMunition& munition) {
   for (const application::BombBlastHit& hit :
        application::computeBombBlastHits(munition, _entities)) {
-    this->applyDamageWithSource(hit.targetName, hit.damageAmount, QStringLiteral("Bomb"));
+    this->applyDamageWithSource(
+        hit.targetEntityId, hit.damageAmount, QStringLiteral("Bomb"));
   }
 }
 
@@ -437,7 +496,7 @@ bool ScenarioState::addMissileToEntity(const QString& entityName, int quantity) 
   }
 
   for (Entity& entity : _entities) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
     if (!entityCanCarryMissiles(entity)) {
@@ -467,7 +526,7 @@ bool ScenarioState::addBombToEntity(const QString& entityName, int quantity) {
   }
 
   for (Entity& entity : _entities) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
     if (!entityCanCarryBombs(entity)) {
@@ -493,7 +552,7 @@ bool ScenarioState::addBombToEntity(const QString& entityName, int quantity) {
 bool ScenarioState::launchMissile(const QString& entityName) {
   ScopedLock lock(_mutex);
   for (Entity& entity : _entities) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
     if (!entityCanCarryMissiles(entity)) {
@@ -529,7 +588,7 @@ bool ScenarioState::launchMissile(const QString& entityName) {
 bool ScenarioState::releaseBomb(const QString& entityName) {
   ScopedLock lock(_mutex);
   for (Entity& entity : _entities) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
     if (!entityCanCarryBombs(entity)) {
@@ -566,7 +625,7 @@ bool ScenarioState::launchMissileAt(
 
   const Entity* validatedTarget = nullptr;
   for (const Entity& entity : _entities) {
-    if (entity.name != trimmedTargetName) {
+    if (!domain::entityMatchesReference(entity, trimmedTargetName)) {
       continue;
     }
     validatedTarget = &entity;
@@ -577,7 +636,7 @@ bool ScenarioState::launchMissileAt(
   }
 
   for (Entity& launcher : _entities) {
-    if (launcher.name != trimmedLauncherName) {
+    if (!domain::entityMatchesReference(launcher, trimmedLauncherName)) {
       continue;
     }
     if (!entityCanCarryMissiles(launcher) ||
@@ -592,7 +651,7 @@ bool ScenarioState::launchMissileAt(
     }
 
     const double targetRangeMeters =
-        detectedTargetRangeMeters(launcher, validatedTarget->name);
+        detectedTargetRangeMeters(launcher, *validatedTarget);
     if (targetRangeMeters < 0.0 ||
         targetRangeMeters > kDefaultMissileMaxRangeMeters) {
       return false;
@@ -601,6 +660,7 @@ bool ScenarioState::launchMissileAt(
     --item->quantity;
 
     ActiveMunition munition = application::makeMissileMunition(launcher, _nextMunitionSerial++);
+    munition.targetEntityId = domain::entityKey(*validatedTarget);
     munition.targetEntityName = validatedTarget->name;
     munition.guidanceActive = true;
     munition.status = QStringLiteral("Tracking");
@@ -629,7 +689,12 @@ QStringList ScenarioState::takePendingEventLogMessages() {
 }
 
 domain::TaskStack* ScenarioState::getTaskStack(const QString& entityName) {
-  return &_taskStacks[entityName];
+  for (const Entity& entity : _entities) {
+    if (domain::entityMatchesReference(entity, entityName)) {
+      return &_taskStacks[domain::entityKey(entity)];
+    }
+  }
+  return nullptr;
 }
 
 void ScenarioState::refreshSensors() {
@@ -746,9 +811,16 @@ bool ScenarioState::load() {
   const application::ScenarioSnapshot snapshot =
       application::loadScenario(this->storagePath());
 
+  QSet<QString> loadedEntityIds;
   for (const Entity& entity : snapshot.entities) {
-    _taskStacks[entity.name] = domain::TaskStack();
-    _entities.push_back(entity);
+    Entity loadedEntity = entity;
+    domain::ensureEntityId(loadedEntity);
+    while (loadedEntityIds.contains(domain::entityKey(loadedEntity).toCaseFolded())) {
+      loadedEntity.entityId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    }
+    loadedEntityIds.insert(domain::entityKey(loadedEntity).toCaseFolded());
+    _taskStacks[domain::entityKey(loadedEntity)] = domain::TaskStack();
+    _entities.push_back(loadedEntity);
   }
   _waypoints = snapshot.waypoints;
   _routes    = snapshot.routes;

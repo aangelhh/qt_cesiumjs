@@ -4,6 +4,7 @@
 #include "domain/CombatRules.h"
 #include "domain/BombReleaseGate.h"
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 
 #include <QVariantMap>
 
@@ -30,6 +31,9 @@ EntityContextMenuState buildEntityContextMenuState(
   result.entityDestroyed   = entityDestroyed;
   result.simulationRunning = simulationRunning;
   result.entityName        = entity ? entity->name : QString{};
+  result.canConfigureFuel =
+      entity &&
+      entity->domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0;
 
   result.canUseWeapons = entity && domain::entityCanUseMissileActions(*entity);
   result.missileCount  = entity ? domain::weaponQuantity(*entity, QStringLiteral("Missile")) : 0;
@@ -40,7 +44,7 @@ EntityContextMenuState buildEntityContextMenuState(
   result.bombReleasePendingForThisEntity =
       pendingRelease.pending &&
       entity &&
-      pendingRelease.launcherEntityName.compare(entity->name, Qt::CaseInsensitive) == 0;
+      domain::entityMatchesReference(*entity, pendingRelease.launcherReference());
 
   result.currentBehaviorMode = entity && !entity->behaviorMode.trimmed().isEmpty()
       ? entity->behaviorMode.trimmed()

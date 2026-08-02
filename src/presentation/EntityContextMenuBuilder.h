@@ -44,6 +44,7 @@ struct EntityContextMenuSlots {
   std::function<void()> setSelectedEntityHeading;
   std::function<void()> setSelectedEntityAltitude;
   std::function<void()> setSelectedEntitySpeed;
+  std::function<void()> setSelectedEntityFuel;
   std::function<void(const QString& mode)> setSelectedEntityBehaviorMode;
   std::function<void()> openEntityPlanDialog;
   std::function<void()> addMissileToSelectedEntity;
@@ -70,6 +71,7 @@ struct EntityContextMenuSlots {
 /// State needed to configure enable/disable/check of context menu items.
 struct EntityContextMenuState {
   bool entityDestroyed{false};
+  bool canConfigureFuel{false};
   bool canUseWeapons{false};
   int missileCount{0};
   int bombCount{0};

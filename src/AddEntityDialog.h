@@ -41,6 +41,7 @@ private:
   void syncModelFromDisSelection();
   void applyModelSelectionToDisFields();
   void syncDynamicsControls();
+  void syncFuelControls();
   void syncWeaponControls();
 
   QVector<ModelCatalogEntry> _modelCatalog;
@@ -64,6 +65,8 @@ private:
   QCheckBox* _enableDynamicsCheck;
   QComboBox* _dynamicsModeCombo;
   QComboBox* _jsbsimModelCombo;
+  QDoubleSpinBox* _fuelCapacitySpin;
+  QDoubleSpinBox* _initialFuelSpin;
   QDoubleSpinBox* _speedSpin;
   QDoubleSpinBox* _verticalSpeedSpin;
   QCheckBox* _enableFlightTaskCheck;

@@ -25,6 +25,7 @@
 #include "presentation/EntityPlanDialog.h"
 #include "domain/CombatRules.h"
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 #include "domain/GeoMath.h"
 #include "infrastructure/CesiumScenePage.h"
 #include "infrastructure/MapBridge.h"
@@ -157,6 +158,18 @@ void clearQtTrackSelectionInMap(QWebEngineView* webView) {
 
 void setTrackData(QStandardItem* item, const QVariantMap& summary) {
   item->setData(summary, kTrackSummaryRole);
+}
+
+QString entityTreeLabel(const Entity& entity, const QVector<Entity>& entities) {
+  int matchingNames = 0;
+  for (const Entity& candidate : entities) {
+    if (candidate.name.compare(entity.name, Qt::CaseInsensitive) == 0) {
+      ++matchingNames;
+    }
+  }
+  return matchingNames > 1
+      ? QStringLiteral("%1 [%2]").arg(entity.name, domain::entityKey(entity).left(8))
+      : entity.name;
 }
 
 // forceColorFromLabel, categoryGlyph, makeTacticalGraphicIcon, makeTrackIcon
@@ -471,7 +484,7 @@ MainWindow::MainWindow(QWidget* parent)
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
-      validNames.insert(entity.name);
+      validNames.insert(domain::entityKey(entity));
     }
     this->_entityVisualStateManager->pruneTo(validNames);
   }
@@ -874,16 +887,19 @@ void MainWindow::initializeKinematicsCockpit() {
                 QMetaObject::invokeMethod(
                     this,
                     [this, snapshot]() {
-                      if (snapshot.entityName == this->selectedEntityName()) {
+                      const QString entityReference = snapshot.entityId.trimmed().isEmpty()
+                          ? snapshot.entityName
+                          : snapshot.entityId;
+                      if (entityReference == this->selectedEntityName()) {
                         EntityTask activeTask;
                         activeTask.enabled = snapshot.taskEnabled;
                         activeTask.taskType = snapshot.taskType;
                         this->_cockpitControlService->reconcile(
-                            snapshot.entityName,
+                            entityReference,
                             activeTask);
                         this->_kinematicsCockpitWidget->setControlActive(
                             this->_cockpitControlService->hasControl(
-                                snapshot.entityName));
+                                entityReference));
                         this->_kinematicsCockpitWidget->applySnapshot(snapshot);
                         this->_qflightCockpitWidget->applySnapshot(snapshot);
                         this->_ecamCockpitWidget->applySnapshot(snapshot);
@@ -906,9 +922,10 @@ void MainWindow::refreshKinematicsCockpitForEntity(const Entity* entity) {
           *entity,
           this->_scenarioState->simulationTimeSeconds(),
           0.0);
-  this->_cockpitControlService->reconcile(entity->name, entity->currentTask);
+  const QString entityReference = domain::entityKey(*entity);
+  this->_cockpitControlService->reconcile(entityReference, entity->currentTask);
   this->_kinematicsCockpitWidget->setControlActive(
-      this->_cockpitControlService->hasControl(entity->name));
+      this->_cockpitControlService->hasControl(entityReference));
   this->_kinematicsCockpitWidget->applySnapshot(snapshot);
   this->_qflightCockpitWidget->applySnapshot(snapshot);
   this->_ecamCockpitWidget->applySnapshot(snapshot);
@@ -1039,7 +1056,11 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
       taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
           ? status
           : QStringLiteral("%1 (%2)").arg(displayTaskType(taskType), displayTaskStatus(taskType, taskStatus));
-  const Entity* selectedEntity = this->findEntityByName(name);
+  const QString selectedEntityReference =
+      summary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+          ? name
+          : summary.value(QStringLiteral("entityId")).toString();
+  const Entity* selectedEntity = this->findEntityByName(selectedEntityReference);
   this->_ui->selectionStateValueLabel->setWordWrap(false);
   this->_ui->selectionStateValueLabel->setStyleSheet(QString());
   this->_ui->selectionStateValueLabel->setText(operationalState);
@@ -1214,7 +1235,8 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
           0.0,
           0.0));
 
-  auto* item = new QStandardItem(entity.name);
+  auto* item = new QStandardItem(
+      entityTreeLabel(entity, this->_scenarioState->entities()));
   item->setIcon(presentation::makeTrackIcon(domain::forceIdentifierLabel(entity.forceIdentifier), category, false));
   setTrackData(item, summary);
   categoryItem->appendRow(item);
@@ -1229,7 +1251,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
 
 QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
   const presentation::EntityVisualState visualState =
-      this->_entityVisualStateManager->stateFor(entity.name);
+      this->_entityVisualStateManager->stateFor(domain::entityKey(entity));
   return presentation::makeEntityTrackSummary(entity, visualState);
 }
 
@@ -1305,10 +1327,23 @@ bool MainWindow::captureTaskConfiguration(
     this->_taskDialog = nullptr;
   }
 
-  QStringList availableTargets;
+  QHash<QString, int> duplicateCounts;
+  for (const Entity& candidate : this->_scenarioState->entities()) {
+    ++duplicateCounts[candidate.name.toCaseFolded()];
+  }
+
+  QVector<EntityTargetOption> availableTargets;
   for (const Entity& entity : this->_scenarioState->entities()) {
-    if (entity.name != entityName) {
-      availableTargets.append(entity.name);
+    if (!domain::entityMatchesReference(entity, entityName)) {
+      const QString id = domain::entityKey(entity);
+      const bool duplicateName = duplicateCounts.value(entity.name.toCaseFolded()) > 1;
+      availableTargets.push_back(EntityTargetOption{
+          id,
+          entity.name,
+          duplicateName
+              ? QStringLiteral("%1 [%2]").arg(entity.name, id.left(8))
+              : entity.name,
+      });
     }
   }
 
@@ -1322,7 +1357,9 @@ bool MainWindow::captureTaskConfiguration(
   }
 
   QPointer<AssignTaskDialog> dialog = new AssignTaskDialog(
-      entityName,
+      this->findEntityByName(entityName)
+          ? this->findEntityByName(entityName)->name
+          : entityName,
       availableTargets,
       availableWaypoints,
       availableRoutes,
@@ -1459,15 +1496,15 @@ void MainWindow::onEntityDialogAccepted(const Entity& entity) {
         return sensor.sensorType.compare(QStringLiteral("radar"), Qt::CaseInsensitive) == 0;
       });
   if (hasRadarSensor && !entity.name.trimmed().isEmpty() &&
-      !this->_entityVisualStateManager->contains(entity.name)) {
+      !this->_entityVisualStateManager->contains(domain::entityKey(entity))) {
     presentation::EntityVisualState& visualState =
-        this->_entityVisualStateManager->ensureState(entity.name);
+        this->_entityVisualStateManager->ensureState(domain::entityKey(entity));
     visualState.radarCoverageVisible = true;
     visualState.trackHistoryVisible = false;
     this->_entityVisualStateManager->save();
   }
   this->_scenarioState->addEntity(entity);
-  this->appendEntityToUi(entity);
+  this->syncScenarioStateToUi();
   this->_ui->statusLabel->setText(EntityTextFormatter::statusMessage(entity));
 }
 
@@ -1669,8 +1706,12 @@ void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QMod
     return;
   }
 
+  const QString selectedReference =
+      summary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+          ? selectedName
+          : summary.value(QStringLiteral("entityId")).toString();
   this->refreshKinematicsCockpitForEntity(
-      this->findEntityByName(selectedName));
+      this->findEntityByName(selectedReference));
 
   if (!this->_applyingMapSelection) {
     this->sendTrackToMap(summary, true);
@@ -1690,9 +1731,12 @@ void MainWindow::handleDetectedContactSelection(const QModelIndex& current, cons
     return;
   }
 
+  const Entity* observer = this->findEntityByName(observerName);
+  const Entity* contact = this->findEntityByName(contactName);
   this->_ui->statusLabel->setText(
       QStringLiteral("Contacto seleccionado: %1 detecta a %2.")
-          .arg(observerName, contactName));
+          .arg(observer ? observer->name : observerName,
+               contact ? contact->name : contactName));
 }
 
 void MainWindow::handleMapTrackSelection(const QString& trackName) {
@@ -1909,8 +1953,8 @@ void MainWindow::syncDetectedContactsToUi() {
 
   for (const presentation::DetectedContactRow& row : rows) {
     auto* observerItem = new QStandardItem(row.observerName);
-    observerItem->setData(row.observerName, kDetectedContactObserverRole);
-    observerItem->setData(row.targetName, kDetectedContactTargetRole);
+    observerItem->setData(row.observerEntityId, kDetectedContactObserverRole);
+    observerItem->setData(row.targetEntityId, kDetectedContactTargetRole);
 
     QList<QStandardItem*> rowItems{
         observerItem,
@@ -1931,8 +1975,8 @@ void MainWindow::syncDetectedContactsToUi() {
 
     this->_detectedContactsModel->appendRow(rowItems);
 
-    if (row.observerName == selectedObserverName &&
-        row.targetName == selectedContactName) {
+    if (row.observerEntityId == selectedObserverName &&
+        row.targetEntityId == selectedContactName) {
       restoredRow = this->_detectedContactsModel->rowCount() - 1;
     }
   }
@@ -2013,19 +2057,23 @@ bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync)
         }
         continue;
       }
-      const QString name =
-          child->data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+      const QVariantMap childSummary = child->data(kTrackSummaryRole).toMap();
+      const QString name = childSummary.value(QStringLiteral("name")).toString();
+      const QString entityReference =
+          childSummary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+              ? name
+              : childSummary.value(QStringLiteral("entityId")).toString();
       bool exists = false;
       for (const Entity& entity : this->_scenarioState->entities()) {
-        if (entity.name == name) {
+        if (domain::entityMatchesReference(entity, entityReference)) {
           exists = true;
           break;
         }
       }
       if (!exists) {
-        if (!name.isEmpty()) {
-          this->removeTrackFromMap(name);
-          if (name == selectedEntityNameBeforeSync) {
+        if (!entityReference.isEmpty()) {
+          this->removeTrackFromMap(entityReference);
+          if (entityReference == selectedEntityNameBeforeSync) {
             selectedEntityRemoved = true;
           }
         }
@@ -2041,7 +2089,7 @@ bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync)
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
-      validNames.insert(entity.name);
+      validNames.insert(domain::entityKey(entity));
     }
     this->_entityVisualStateManager->pruneTo(validNames);
     this->_entityHomePositionTracker->pruneTo(validNames);
@@ -2051,12 +2099,13 @@ bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync)
   for (const Entity& entity : this->_scenarioState->entities()) {
     this->_entityHomePositionTracker->remember(entity);
 
-    QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entity.name);
+    const QString entityReference = domain::entityKey(entity);
+    QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entityReference);
     if (!item) {
-      item = this->findTrackItemByName(this->_opposingRootItem, entity.name);
+      item = this->findTrackItemByName(this->_opposingRootItem, entityReference);
     }
     if (!item) {
-      item = this->findTrackItemByName(this->_neutralRootItem, entity.name);
+      item = this->findTrackItemByName(this->_neutralRootItem, entityReference);
     }
 
     const QVariantMap summary = this->makeEntityTrackSummary(entity);
@@ -2065,6 +2114,7 @@ bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync)
       continue;
     }
 
+    item->setText(entityTreeLabel(entity, this->_scenarioState->entities()));
     setTrackData(item, summary);
     this->sendTrackToMap(summary, false);
     if (this->_ui->objectsTreeView->currentIndex() == item->index()) {
@@ -2324,6 +2374,7 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   actions.setSelectedEntityHeading          = [this]() { this->setSelectedEntityHeading(); };
   actions.setSelectedEntityAltitude         = [this]() { this->setSelectedEntityAltitude(); };
   actions.setSelectedEntitySpeed            = [this]() { this->setSelectedEntitySpeed(); };
+  actions.setSelectedEntityFuel             = [this]() { this->setSelectedEntityFuel(); };
   actions.setSelectedEntityBehaviorMode     = [this](const QString& m) { this->setSelectedEntityBehaviorMode(m); };
   actions.openEntityPlanDialog              = [this]() { this->openEntityPlanDialog(); };
   actions.addMissileToSelectedEntity        = [this]() { this->addMissileToSelectedEntity(); };
@@ -2415,7 +2466,9 @@ bool MainWindow::resolveSelectedEntityFlyTargets(
 
   const int currentEntityAltitudeMeters = application::entityAltitudeMeters(
       this->_scenarioState,
-      summary.value(QStringLiteral("name")).toString());
+      summary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+          ? summary.value(QStringLiteral("name")).toString()
+          : summary.value(QStringLiteral("entityId")).toString());
 
   return presentation::resolveFlyTargetsFromSummary(
       summary, currentEntityAltitudeMeters, headingDegrees, altitudeMeters, speedKnots);
@@ -2451,6 +2504,10 @@ void MainWindow::setSelectedEntityAltitude() {
 
 void MainWindow::setSelectedEntitySpeed() {
   this->_entityStateActionsController->setSelectedSpeed();
+}
+
+void MainWindow::setSelectedEntityFuel() {
+  this->_entityStateActionsController->setSelectedFuel();
 }
 
 void MainWindow::setSelectedEntityBehaviorMode(const QString& behaviorMode) {
@@ -2756,7 +2813,11 @@ QStandardItem* MainWindow::findTrackItemByName(QStandardItem* parent, const QStr
     }
 
     const QVariantMap summary = child->data(kTrackSummaryRole).toMap();
-    if (summary.value(QStringLiteral("name")).toString() == trackName) {
+    const QString entityReference =
+        summary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+            ? summary.value(QStringLiteral("name")).toString()
+            : summary.value(QStringLiteral("entityId")).toString();
+    if (entityReference == trackName) {
       return child;
     }
 
@@ -2770,7 +2831,7 @@ QStandardItem* MainWindow::findTrackItemByName(QStandardItem* parent, const QStr
 
 const Entity* MainWindow::findEntityByName(const QString& entityName) const {
   for (const Entity& entity : this->_scenarioState->entities()) {
-    if (entity.name == entityName) {
+    if (domain::entityMatchesReference(entity, entityName)) {
       return &entity;
     }
   }
@@ -2781,7 +2842,12 @@ QString MainWindow::selectedEntityName() const {
   if (!this->currentSelectionIsEntity()) {
     return QString();
   }
-  return this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+  const QVariantMap summary =
+      this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  const QString entityId = summary.value(QStringLiteral("entityId")).toString();
+  return entityId.trimmed().isEmpty()
+      ? summary.value(QStringLiteral("name")).toString()
+      : entityId;
 }
 
 QString MainWindow::selectedObjectName() const {
@@ -2789,7 +2855,14 @@ QString MainWindow::selectedObjectName() const {
   if (!currentIndex.isValid()) {
     return QString();
   }
-  return currentIndex.data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+  const QVariantMap summary = currentIndex.data(kTrackSummaryRole).toMap();
+  if (this->currentSelectionIsEntity()) {
+    const QString entityId = summary.value(QStringLiteral("entityId")).toString();
+    if (!entityId.trimmed().isEmpty()) {
+      return entityId;
+    }
+  }
+  return summary.value(QStringLiteral("name")).toString();
 }
 
 bool MainWindow::currentSelectionIsEntity() const {

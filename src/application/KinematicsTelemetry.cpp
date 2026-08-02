@@ -3,6 +3,7 @@
 #include "application/MovementIntent.h"
 #include "application/FlightDynamicsEngine.h"
 #include "domain/GeoMath.h"
+#include "domain/EntityIdentity.h"
 
 #include <cmath>
 
@@ -12,6 +13,10 @@ namespace {
 constexpr double kDefaultPublicationPeriodSeconds = 0.1;
 
 QString normalizedDynamicsModel(const Entity& entity) {
+  const QString activeBackend = entity.activeDynamicsBackend.trimmed();
+  if (!activeBackend.isEmpty()) {
+    return activeBackend;
+  }
   const QString model = entity.flightDynamicsMode.trimmed();
   return model.isEmpty() ? QStringLiteral("kinematic") : model;
 }
@@ -26,6 +31,7 @@ KinematicsTelemetrySnapshot makeKinematicsTelemetrySnapshot(
       movementControllerLimitsForEntity(entity);
 
   KinematicsTelemetrySnapshot snapshot;
+  snapshot.entityId = domain::entityKey(entity);
   snapshot.entityName = entity.name;
   snapshot.domain = entity.domain;
   snapshot.category = entity.category;

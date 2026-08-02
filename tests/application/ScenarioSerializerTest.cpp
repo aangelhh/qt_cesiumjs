@@ -54,6 +54,42 @@ TEST(ScenarioSerializer, RoundTripEntity) {
   EXPECT_EQ(loaded.entities.at(1).forceIdentifier, 2);
 }
 
+TEST(ScenarioSerializer, RoundTripPreservesDistinctIdsForDuplicateDisplayNames) {
+  ScenarioSnapshot snapshot;
+  Entity first = makeSimpleEntity(QStringLiteral("mirage2000"), 1);
+  Entity second = makeSimpleEntity(QStringLiteral("mirage2000"), 2);
+  ASSERT_NE(first.entityId, second.entityId);
+  snapshot.entities = {first, second};
+
+  const QString path = tempFilePath();
+  ASSERT_TRUE(saveScenario(path, snapshot));
+  const ScenarioSnapshot loaded = loadScenario(path);
+  QFile::remove(path);
+
+  ASSERT_EQ(loaded.entities.size(), 2);
+  EXPECT_EQ(loaded.entities.at(0).name, loaded.entities.at(1).name);
+  EXPECT_EQ(loaded.entities.at(0).entityId, first.entityId);
+  EXPECT_EQ(loaded.entities.at(1).entityId, second.entityId);
+  EXPECT_NE(loaded.entities.at(0).entityId, loaded.entities.at(1).entityId);
+}
+
+TEST(ScenarioSerializer, LegacyDuplicateNamesReceiveDistinctStableIds) {
+  QTemporaryFile file;
+  ASSERT_TRUE(file.open());
+  file.write(R"({
+    "waypoints": [], "routes": [], "areas": [],
+    "entities": [{"name": "legacy"}, {"name": "legacy"}]
+  })");
+  file.close();
+
+  const ScenarioSnapshot loaded = loadScenario(file.fileName());
+
+  ASSERT_EQ(loaded.entities.size(), 2);
+  EXPECT_FALSE(loaded.entities.at(0).entityId.isEmpty());
+  EXPECT_FALSE(loaded.entities.at(1).entityId.isEmpty());
+  EXPECT_NE(loaded.entities.at(0).entityId, loaded.entities.at(1).entityId);
+}
+
 TEST(ScenarioSerializer, RoundTripEntityFields) {
   ScenarioSnapshot snapshot;
   Entity e = makeSimpleEntity(QStringLiteral("E"));
@@ -63,7 +99,11 @@ TEST(ScenarioSerializer, RoundTripEntityFields) {
   e.headingDegrees = 90.0;
   e.damagePercent = 25.0;
   e.systemsDisplayProfileId = QStringLiteral("air-turbine-2-engine");
+  e.controlProfileId = QStringLiteral("fighter-generic");
+  e.cesiumModelAxes = QStringLiteral("x-forward-y-up");
   e.engineCount = 2;
+  e.fuelCapacityKilograms = 6400.0;
+  e.fuelRemainingKilograms = 2750.0;
   snapshot.entities.push_back(e);
 
   const QString path = tempFilePath();
@@ -81,7 +121,11 @@ TEST(ScenarioSerializer, RoundTripEntityFields) {
   EXPECT_EQ(
       le.systemsDisplayProfileId,
       QStringLiteral("air-turbine-2-engine"));
+  EXPECT_EQ(le.controlProfileId, QStringLiteral("fighter-generic"));
+  EXPECT_EQ(le.cesiumModelAxes, QStringLiteral("x-forward-y-up"));
   EXPECT_EQ(le.engineCount, 2);
+  EXPECT_DOUBLE_EQ(le.fuelCapacityKilograms, 6400.0);
+  EXPECT_DOUBLE_EQ(le.fuelRemainingKilograms, 2750.0);
 }
 
 TEST(ScenarioSerializer, RuntimeStateResetOnLoad) {
@@ -114,6 +158,7 @@ TEST(ScenarioSerializer, GroundEntityLoadPreservesConfiguredAltitude) {
   ground.domain = QStringLiteral("Ground");
   ground.category = QStringLiteral("Vehicle");
   ground.altitude = 350;
+  ground.cesiumModelAxes = QStringLiteral("x-forward-y-up");
   ground.pitchDegrees = 12.0;
   ground.rollDegrees = -8.0;
   ground.speedKnots = 25.0;
@@ -130,6 +175,9 @@ TEST(ScenarioSerializer, GroundEntityLoadPreservesConfiguredAltitude) {
   const Entity& loadedGround = loaded.entities.at(0);
   EXPECT_EQ(loadedGround.domain, QStringLiteral("Ground"));
   EXPECT_EQ(loadedGround.altitude, 350);
+  EXPECT_EQ(
+      loadedGround.cesiumModelAxes,
+      QStringLiteral("x-forward-y-up"));
   EXPECT_DOUBLE_EQ(loadedGround.pitchDegrees, 0.0);
   EXPECT_DOUBLE_EQ(loadedGround.rollDegrees, 0.0);
   EXPECT_DOUBLE_EQ(loadedGround.speedKnots, 0.0);
@@ -212,6 +260,72 @@ TEST(ScenarioSerializer, LegacySensorWithoutSubTypeLoadsAsGeneric) {
   EXPECT_EQ(
       loaded.entities.front().sensors.front().sensorSubType,
       QStringLiteral("generic"));
+}
+
+TEST(ScenarioSerializer, LegacyF16InfersCesiumModelAxes) {
+  QTemporaryFile file;
+  ASSERT_TRUE(file.open());
+  file.write(R"({
+    "waypoints": [],
+    "routes": [],
+    "areas": [],
+    "entities": [{
+      "name": "LegacyF16",
+      "modelUri": "file:///models/Air/Fighter/f-16_fighting_falcon.glb"
+    }]
+  })");
+  file.close();
+
+  const ScenarioSnapshot loaded = loadScenario(file.fileName());
+
+  ASSERT_EQ(loaded.entities.size(), 1);
+  EXPECT_EQ(
+      loaded.entities.front().cesiumModelAxes,
+      QStringLiteral("x-forward-y-up"));
+}
+
+TEST(ScenarioSerializer, LegacyMirageInfersCesiumModelAxes) {
+  QTemporaryFile file;
+  ASSERT_TRUE(file.open());
+  file.write(R"({
+    "waypoints": [],
+    "routes": [],
+    "areas": [],
+    "entities": [{
+      "name": "LegacyMirage",
+      "modelUri": "file:///models/Air/Fighter/dassault_mirage_2000.glb"
+    }]
+  })");
+  file.close();
+
+  const ScenarioSnapshot loaded = loadScenario(file.fileName());
+
+  ASSERT_EQ(loaded.entities.size(), 1);
+  EXPECT_EQ(
+      loaded.entities.front().cesiumModelAxes,
+      QStringLiteral("x-forward-y-up"));
+}
+
+TEST(ScenarioSerializer, LegacyA10InfersZForwardCesiumModelAxes) {
+  QTemporaryFile file;
+  ASSERT_TRUE(file.open());
+  file.write(R"({
+    "waypoints": [],
+    "routes": [],
+    "areas": [],
+    "entities": [{
+      "name": "LegacyA10",
+      "modelUri": "file:///models/Air/Fighter/a-10_thunderbolt_ii.glb"
+    }]
+  })");
+  file.close();
+
+  const ScenarioSnapshot loaded = loadScenario(file.fileName());
+
+  ASSERT_EQ(loaded.entities.size(), 1);
+  EXPECT_EQ(
+      loaded.entities.front().cesiumModelAxes,
+      QStringLiteral("z-forward-y-up"));
 }
 
 // ── Waypoints ─────────────────────────────────────────────────────────────────

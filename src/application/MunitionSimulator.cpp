@@ -1,4 +1,5 @@
 #include "application/MunitionSimulator.h"
+#include "domain/EntityIdentity.h"
 
 #include "domain/Entity.h"
 #include "domain/GeoMath.h"
@@ -101,7 +102,7 @@ const Entity* findEntityByName(
     const QVector<Entity>& entities,
     const QString& name) {
   for (const Entity& entity : entities) {
-    if (entity.name == name) {
+    if (domain::entityMatchesReference(entity, name)) {
       return &entity;
     }
   }
@@ -172,9 +173,10 @@ namespace application {
 
 ActiveMunition makeMissileMunition(const Entity& entity, int serial) {
   ActiveMunition munition;
-  munition.id = QStringLiteral("%1-missile-%2")
-                    .arg(entity.name)
+  munition.id = QStringLiteral("%1-%2-missile-%3")
+                    .arg(entity.name, domain::entityKey(entity).left(8))
                     .arg(serial);
+  munition.launcherEntityId = domain::entityKey(entity);
   munition.launcherEntityName = entity.name;
   munition.forceIdentifier = entity.forceIdentifier;
   munition.munitionType = QStringLiteral("Missile");
@@ -196,9 +198,10 @@ ActiveMunition makeMissileMunition(const Entity& entity, int serial) {
 
 ActiveMunition makeBombMunition(const Entity& entity, int serial) {
   ActiveMunition munition;
-  munition.id = QStringLiteral("%1-bomb-%2")
-                    .arg(entity.name)
+  munition.id = QStringLiteral("%1-%2-bomb-%3")
+                    .arg(entity.name, domain::entityKey(entity).left(8))
                     .arg(serial);
+  munition.launcherEntityId = domain::entityKey(entity);
   munition.launcherEntityName = entity.name;
   munition.forceIdentifier = entity.forceIdentifier;
   munition.munitionType = QStringLiteral("Bomb");
@@ -247,7 +250,12 @@ QVector<BombBlastHit> computeBombBlastHits(
 
   QVector<BombBlastHit> hits;
   for (const Entity& entity : entities) {
-    if (entity.destroyed || entity.name == munition.launcherEntityName) {
+    const QString launcherReference =
+        munition.launcherEntityId.trimmed().isEmpty()
+            ? munition.launcherEntityName
+            : munition.launcherEntityId;
+    if (entity.destroyed ||
+        domain::entityMatchesReference(entity, launcherReference)) {
       continue;
     }
 
@@ -269,7 +277,7 @@ QVector<BombBlastHit> computeBombBlastHits(
       continue;
     }
 
-    hits.push_back(BombBlastHit{entity.name, damage});
+    hits.push_back(BombBlastHit{domain::entityKey(entity), damage});
   }
   return hits;
 }
@@ -299,12 +307,16 @@ void advanceActiveMunitions(
 
     const double previousAgeSeconds = munition.ageSeconds;
     const bool isBomb = munitionIsBomb(munition);
+    const QString targetReference =
+        munition.targetEntityId.trimmed().isEmpty()
+            ? munition.targetEntityName
+            : munition.targetEntityId;
     const bool hasGuidedTarget =
-        !isBomb && !munition.targetEntityName.trimmed().isEmpty();
+        !isBomb && !targetReference.trimmed().isEmpty();
     const Entity* trackedTarget = nullptr;
 
     if (hasGuidedTarget && munition.guidanceActive) {
-      trackedTarget = findEntityByName(entities, munition.targetEntityName);
+      trackedTarget = findEntityByName(entities, targetReference);
       if (trackedTarget && !trackedTarget->destroyed) {
         const double desiredHeadingDegrees = domain::bearingDegrees(
             munition.latitude, munition.longitude,
@@ -393,7 +405,7 @@ void advanceActiveMunitions(
             munition.altitudeMeters -
             static_cast<double>(trackedTarget->altitude));
         if (qSqrt(qPow(hz, 2.0) + qPow(vz, 2.0)) <= munition.hitRadiusMeters) {
-          applyDamageFn(trackedTarget->name, 25.0);
+          applyDamageFn(domain::entityKey(*trackedTarget), 25.0);
           if (isBomb) {
             appendBombImpactEffects(effects, munition);
           } else {
@@ -413,8 +425,12 @@ void advanceActiveMunitions(
       QString impactedEntityName;
       double bestImpactRange = munition.hitRadiusMeters;
       for (const Entity& entity : entities) {
+        const QString launcherReference =
+            munition.launcherEntityId.trimmed().isEmpty()
+                ? munition.launcherEntityName
+                : munition.launcherEntityId;
         if (entity.destroyed ||
-            entity.name == munition.launcherEntityName ||
+            domain::entityMatchesReference(entity, launcherReference) ||
             entity.forceIdentifier == munition.forceIdentifier) {
           continue;
         }
@@ -426,7 +442,7 @@ void advanceActiveMunitions(
         const double slant = qSqrt(qPow(hz, 2.0) + qPow(vz, 2.0));
         if (slant <= bestImpactRange) {
           bestImpactRange = slant;
-          impactedEntityName = entity.name;
+          impactedEntityName = domain::entityKey(entity);
         }
       }
 

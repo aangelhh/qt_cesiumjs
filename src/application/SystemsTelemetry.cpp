@@ -2,6 +2,8 @@
 
 #include <QtGlobal>
 
+#include <cmath>
+
 namespace application {
 namespace {
 
@@ -48,6 +50,43 @@ int inferredEngineCount(const Entity& entity) {
       : 0;
 }
 
+bool isAirEntity(const Entity& entity) {
+  return entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0;
+}
+
+struct FuelDefaults {
+  double capacityKilograms = 0.0;
+  double initialKilograms = 0.0;
+};
+
+FuelDefaults inferredFuelDefaults(const Entity& entity) {
+  if (!isAirEntity(entity)) {
+    return {};
+  }
+
+  const QString model = (entity.modelName + QLatin1Char(' ') +
+                         entity.jsbsimAircraftModel)
+                            .trimmed()
+                            .toLower();
+  if (containsAny(model, {
+          QStringLiteral("f-16"),
+          QStringLiteral("f16")})) {
+    return {5875.0, 3200.0};
+  }
+
+  const QString category = entity.category.trimmed().toLower();
+  if (category == QStringLiteral("bomber")) {
+    return {18000.0, 14000.0};
+  }
+  if (category == QStringLiteral("transport")) {
+    return {15000.0, 12000.0};
+  }
+  if (category == QStringLiteral("helicopter")) {
+    return {900.0, 700.0};
+  }
+  return {3200.0, 2400.0};
+}
+
 } // namespace
 
 QString systemsDisplayProfileForEntity(const Entity& entity) {
@@ -71,9 +110,67 @@ int engineCountForEntity(const Entity& entity) {
       : inferredEngineCount(entity);
 }
 
+double defaultFuelCapacityKilograms(const Entity& entity) {
+  return inferredFuelDefaults(entity).capacityKilograms;
+}
+
+double defaultInitialFuelKilograms(const Entity& entity) {
+  return inferredFuelDefaults(entity).initialKilograms;
+}
+
+void ensureFuelConfiguration(Entity& entity) {
+  if (!isAirEntity(entity)) {
+    return;
+  }
+
+  const bool unconfigured = entity.fuelCapacityKilograms <= 0.0;
+  if (unconfigured) {
+    const FuelDefaults defaults = inferredFuelDefaults(entity);
+    entity.fuelCapacityKilograms = defaults.capacityKilograms;
+    entity.fuelRemainingKilograms = defaults.initialKilograms;
+  }
+  entity.fuelRemainingKilograms = qBound(
+      0.0,
+      entity.fuelRemainingKilograms,
+      qMax(0.0, entity.fuelCapacityKilograms));
+}
+
+void updateFuelTelemetrySummary(
+    SystemsTelemetrySnapshot& snapshot,
+    double capacityKilograms,
+    double remainingKilograms) {
+  snapshot.fuelCapacityKilograms = qMax(0.0, capacityKilograms);
+  snapshot.fuelRemainingKilograms = qBound(
+      0.0,
+      remainingKilograms,
+      snapshot.fuelCapacityKilograms);
+  snapshot.fuelAvailable = snapshot.fuelCapacityKilograms > 0.0;
+  snapshot.fuelPercent = snapshot.fuelAvailable
+      ? snapshot.fuelRemainingKilograms /
+            snapshot.fuelCapacityKilograms * 100.0
+      : 0.0;
+  snapshot.totalFuelFlowKilogramsPerHour = 0.0;
+  for (const EngineTelemetry& engine : snapshot.engines) {
+    if (engine.fuelFlowAvailable) {
+      snapshot.totalFuelFlowKilogramsPerHour +=
+          qMax(0.0, engine.fuelFlowKilogramsPerHour);
+    }
+  }
+  snapshot.enduranceAvailable =
+      snapshot.fuelAvailable &&
+      snapshot.totalFuelFlowKilogramsPerHour > 0.0;
+  snapshot.estimatedEnduranceSeconds = snapshot.enduranceAvailable
+      ? snapshot.fuelRemainingKilograms /
+            snapshot.totalFuelFlowKilogramsPerHour * 3600.0
+      : 0.0;
+}
+
 SystemsTelemetrySnapshot makeEstimatedSystemsTelemetrySnapshot(
     const Entity& entity,
     double maximumSpeedKnots) {
+  Entity effectiveEntity = entity;
+  ensureFuelConfiguration(effectiveEntity);
+
   SystemsTelemetrySnapshot snapshot;
   snapshot.entityName = entity.name;
   snapshot.profileId = systemsDisplayProfileForEntity(entity);
@@ -109,7 +206,28 @@ SystemsTelemetrySnapshot makeEstimatedSystemsTelemetrySnapshot(
     engine.estimated = true;
     snapshot.engines.push_back(engine);
   }
+  updateFuelTelemetrySummary(
+      snapshot,
+      effectiveEntity.fuelCapacityKilograms,
+      effectiveEntity.fuelRemainingKilograms);
   return snapshot;
+}
+
+void consumeEstimatedFuel(
+    Entity& entity,
+    double deltaSeconds,
+    double maximumSpeedKnots) {
+  if (deltaSeconds <= 0.0 || !isAirEntity(entity)) {
+    return;
+  }
+  ensureFuelConfiguration(entity);
+  const SystemsTelemetrySnapshot snapshot =
+      makeEstimatedSystemsTelemetrySnapshot(entity, maximumSpeedKnots);
+  const double consumedKilograms =
+      snapshot.totalFuelFlowKilogramsPerHour * deltaSeconds / 3600.0;
+  entity.fuelRemainingKilograms = qMax(
+      0.0,
+      entity.fuelRemainingKilograms - consumedKilograms);
 }
 
 } // namespace application

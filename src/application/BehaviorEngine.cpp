@@ -1,6 +1,7 @@
 #include "application/BehaviorEngine.h"
 
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 
 namespace {
 
@@ -40,7 +41,7 @@ const Entity* findEntityByName(
     const QVector<Entity>& entities,
     const QString& name) {
   for (const Entity& entity : entities) {
-    if (entity.name == name) {
+    if (domain::entityMatchesReference(entity, name)) {
       return &entity;
     }
   }
@@ -51,34 +52,37 @@ bool entityIsValidBehaviorTarget(
     const Entity& observer,
     const Entity& target) {
   return !target.destroyed &&
-         target.name != observer.name &&
+         domain::entityKey(target) != domain::entityKey(observer) &&
          target.forceIdentifier != observer.forceIdentifier;
 }
 
-QString selectBestBehaviorTargetName(
+const Entity* selectBestBehaviorTarget(
     const Entity& observer,
     const QVector<Entity>& entities) {
-  QString selectedTargetName;
+  const Entity* selectedTarget = nullptr;
   double selectedRangeMeters = -1.0;
 
   for (const SensorContact& contact : observer.sensorContacts) {
-    if (!contact.detected || contact.targetEntityName.trimmed().isEmpty()) {
+    const QString targetReference = contact.targetEntityId.trimmed().isEmpty()
+        ? contact.targetEntityName.trimmed()
+        : contact.targetEntityId.trimmed();
+    if (!contact.detected || targetReference.isEmpty()) {
       continue;
     }
 
     const Entity* target =
-        findEntityByName(entities, contact.targetEntityName.trimmed());
+        findEntityByName(entities, targetReference);
     if (!target || !entityIsValidBehaviorTarget(observer, *target)) {
       continue;
     }
 
     if (selectedRangeMeters < 0.0 || contact.rangeMeters < selectedRangeMeters) {
       selectedRangeMeters = contact.rangeMeters;
-      selectedTargetName = target->name;
+      selectedTarget = target;
     }
   }
 
-  return selectedTargetName;
+  return selectedTarget;
 }
 
 int behaviorDamageReactionLevel(const Entity& entity) {
@@ -121,7 +125,7 @@ bool entityPassesAutoMissileQuickValidation(
          !target.destroyed &&
          !launcher.name.trimmed().isEmpty() &&
          !target.name.trimmed().isEmpty() &&
-         launcher.name != target.name &&
+         domain::entityKey(launcher) != domain::entityKey(target) &&
          launcher.forceIdentifier != target.forceIdentifier &&
          weaponQuantity(launcher, QStringLiteral("Missile")) > 0;
 }
@@ -151,27 +155,52 @@ QStringList advanceBehaviors(
   }
 
   for (Entity& entity : entities) {
+    const QString entityKey = domain::entityKey(entity);
+    const auto cooldownKey = [&]() {
+      return cooldowns.find(entityKey) != cooldowns.end() ||
+             cooldowns.find(entity.name) == cooldowns.end()
+          ? entityKey
+          : entity.name;
+    }();
+    const auto reactionKey = [&]() {
+      return reactions.find(entityKey) != reactions.end() ||
+             reactions.find(entity.name) == reactions.end()
+          ? entityKey
+          : entity.name;
+    }();
     if (entity.destroyed) {
+      entity.behaviorTargetEntityId.clear();
       entity.behaviorTargetEntityName.clear();
+      cooldowns.erase(entityKey);
       cooldowns.erase(entity.name);
+      reactions.erase(entityKey);
       reactions.erase(entity.name);
       continue;
     }
 
     const QString behaviorMode = normalizedBehaviorMode(entity.behaviorMode);
     if (behaviorMode == QStringLiteral("Manual")) {
+      entity.behaviorTargetEntityId.clear();
       entity.behaviorTargetEntityName.clear();
       continue;
     }
 
     if (entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
+      entity.behaviorTargetEntityId.clear();
       entity.behaviorTargetEntityName.clear();
       continue;
     }
 
-    const QString selectedTargetName = selectBestBehaviorTargetName(entity, entities);
-    if (entity.behaviorTargetEntityName != selectedTargetName) {
+    const Entity* selectedTarget = selectBestBehaviorTarget(entity, entities);
+    const QString selectedTargetId = selectedTarget
+        ? domain::entityKey(*selectedTarget)
+        : QString{};
+    const QString selectedTargetName = selectedTarget
+        ? selectedTarget->name
+        : QString{};
+    if (entity.behaviorTargetEntityId != selectedTargetId) {
       const QString previousTargetName = entity.behaviorTargetEntityName;
+      entity.behaviorTargetEntityId = selectedTargetId;
       entity.behaviorTargetEntityName = selectedTargetName;
       if (!selectedTargetName.isEmpty()) {
         logMessages.push_back(
@@ -185,18 +214,18 @@ QStringList advanceBehaviors(
     }
 
     if (behaviorMode != QStringLiteral("Aggressive") ||
-        entity.behaviorTargetEntityName.trimmed().isEmpty()) {
-      reactions.erase(entity.name);
+        entity.behaviorTargetEntityId.trimmed().isEmpty()) {
+      reactions.erase(reactionKey);
       continue;
     }
 
     const int damageReactionLevel = behaviorDamageReactionLevel(entity);
-    const auto reactionIt = reactions.find(entity.name);
+    const auto reactionIt = reactions.find(reactionKey);
     const int previousReactionLevel =
         reactionIt == reactions.end() ? -1 : reactionIt->second;
     if (damageReactionLevel != previousReactionLevel) {
       logMessages.push_back(behaviorDamageReactionMessage(entity, damageReactionLevel));
-      reactions[entity.name] = damageReactionLevel;
+      reactions[reactionKey] = damageReactionLevel;
     }
 
     const QString taskType = entity.currentTask.taskType.trimmed();
@@ -214,24 +243,36 @@ QStringList advanceBehaviors(
       continue;
     }
 
-    const auto cooldownIt = cooldowns.find(entity.name);
+    const auto cooldownIt = cooldowns.find(cooldownKey);
     if (cooldownIt != cooldowns.end() && cooldownIt->second > 0.0) {
       continue;
     }
 
     const Entity* target =
-        findEntityByName(entities, entity.behaviorTargetEntityName.trimmed());
+        findEntityByName(entities, entity.behaviorTargetEntityId.trimmed());
     if (!target || !entityPassesAutoMissileQuickValidation(entity, *target)) {
       continue;
     }
 
-    const QString launcherName = entity.name;
-    const QString targetName = target->name;
+    bool contactUsesStableId = false;
+    for (const SensorContact& contact : entity.sensorContacts) {
+      if (contact.detected &&
+          !contact.targetEntityId.trimmed().isEmpty() &&
+          domain::entityMatchesReference(*target, contact.targetEntityId)) {
+        contactUsesStableId = true;
+        break;
+      }
+    }
+    const QString launcherName = contactUsesStableId ? entityKey : entity.name;
+    const QString targetName = contactUsesStableId
+        ? domain::entityKey(*target)
+        : target->name;
     if (!launchFn(launcherName, targetName)) {
       continue;
     }
 
-    cooldowns[launcherName] = kBehaviorAutoMissileCooldownSeconds;
+    cooldowns[contactUsesStableId ? entityKey : entity.name] =
+        kBehaviorAutoMissileCooldownSeconds;
     logMessages.push_back(
         QStringLiteral("%1 auto-launched missile at %2")
             .arg(launcherName, targetName));

@@ -3,6 +3,7 @@
 #include "application/ScenarioState.h"
 #include "domain/CombatRules.h"
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 
 #include <QAction>
 #include <QHBoxLayout>
@@ -34,7 +35,14 @@ EntityPlanDialog::EntityPlanDialog(
   , _status(std::move(status))
   , _syncUi(std::move(syncUi)) {
 
-  this->setWindowTitle(QStringLiteral("Plan for %1").arg(entityName));
+  QString entityDisplayName = entityName;
+  for (const Entity& entity : _scenarioState->entities()) {
+    if (domain::entityMatchesReference(entity, entityName)) {
+      entityDisplayName = entity.name;
+      break;
+    }
+  }
+  this->setWindowTitle(QStringLiteral("Plan for %1").arg(entityDisplayName));
   this->resize(520, 420);
   this->setWindowModality(Qt::WindowModal);
 
@@ -131,7 +139,7 @@ void EntityPlanDialog::refreshButtons() {
 
   const Entity* entity = nullptr;
   for (const Entity& e : _scenarioState->entities()) {
-    if (e.name == _entityName) { entity = &e; break; }
+    if (domain::entityMatchesReference(e, _entityName)) { entity = &e; break; }
   }
 
   _addButton->setEnabled(editable);

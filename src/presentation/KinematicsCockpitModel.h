@@ -8,6 +8,7 @@
 namespace presentation {
 
 struct KinematicsCockpitData {
+  QString entityId;
   QString entityName;
   QString statusText;
   double rollDegrees = 0.0;
@@ -24,6 +25,13 @@ struct KinematicsCockpitData {
   bool available = false;
   QString systemsProfileId;
   QString systemsDataSource;
+  double fuelCapacityKilograms = 0.0;
+  double fuelRemainingKilograms = 0.0;
+  double fuelPercent = 0.0;
+  double totalFuelFlowKilogramsPerHour = 0.0;
+  double estimatedEnduranceSeconds = 0.0;
+  bool fuelAvailable = false;
+  bool enduranceAvailable = false;
   QVariantList engines;
 };
 

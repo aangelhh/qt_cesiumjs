@@ -237,6 +237,45 @@ TEST_F(AttackTaskProcessorTest, AttackOnceWithMissileCompletesAfterSingleLaunch)
   EXPECT_EQ(state->activeMunitions().first().targetEntityName, QStringLiteral("Mig29"));
 }
 
+TEST_F(AttackTaskProcessorTest, AttackOnceTargetsDuplicateNameByStableId) {
+  Entity launcher = makeAirEntity(QStringLiteral("F16"), 1);
+  Entity firstTarget = makeAirEntity(QStringLiteral("Bandit"), 2);
+  Entity secondTarget = makeAirEntity(QStringLiteral("Bandit"), 2);
+  firstTarget.longitude = -2.9;
+  secondTarget.longitude = -2.8;
+  const QString launcherId = launcher.entityId;
+  const QString secondTargetId = secondTarget.entityId;
+  state->addEntity(launcher);
+  state->addEntity(firstTarget);
+  state->addEntity(secondTarget);
+  addWeapon(QStringLiteral("F16"), QStringLiteral("Missile"), 1);
+
+  for (Entity& entity : state->entitiesMutable()) {
+    if (entity.entityId != launcherId) {
+      continue;
+    }
+    SensorContact contact;
+    contact.targetEntityId = secondTargetId;
+    contact.targetEntityName = QStringLiteral("Bandit");
+    contact.rangeMeters = 10000.0;
+    contact.detected = true;
+    entity.sensorContacts.push_back(contact);
+    EntityTask task;
+    task.enabled = true;
+    task.taskType = QStringLiteral("AttackOnce");
+    task.targetEntityId = secondTargetId;
+    task.targetEntityName = QStringLiteral("Bandit");
+    task.weaponType = QStringLiteral("Missile");
+    task.status = QStringLiteral("Running");
+    entity.currentTask = task;
+  }
+
+  processor->processAttackTasks(0.033, true);
+
+  ASSERT_EQ(state->activeMunitions().size(), 1);
+  EXPECT_EQ(state->activeMunitions().front().targetEntityId, secondTargetId);
+}
+
 TEST_F(AttackTaskProcessorTest, AttackOnceWithBombCompletesAfterQueueingRelease) {
   state->addEntity(makeAirEntity(QStringLiteral("F16"), 1));
   addWeapon(QStringLiteral("F16"), QStringLiteral("Bomb"), 2);
@@ -263,7 +302,7 @@ TEST_F(AttackTaskProcessorTest, AttackOnceWithBombCompletesAfterQueueingRelease)
   processor->processAttackTasks(0.033, true);
 
   EXPECT_EQ(bombsQueued.size(), 1);
-  EXPECT_EQ(bombsQueued.first(), QStringLiteral("F16"));
+  EXPECT_EQ(bombsQueued.first(), state->entities().first().entityId);
   const Entity& updated = state->entities().first();
   EXPECT_EQ(updated.currentTask.status, QStringLiteral("Completed"));
 }
@@ -466,7 +505,7 @@ TEST_F(AttackTaskProcessorTest, FireOnPositionQueuesBombAndCompletes) {
   processor->processAttackTasks(0.033, true);
 
   EXPECT_EQ(bombsQueued.size(), 1);
-  EXPECT_EQ(bombsQueued.first(), QStringLiteral("F16"));
+  EXPECT_EQ(bombsQueued.first(), state->entities().first().entityId);
   const Entity& updated = state->entities().first();
   EXPECT_EQ(updated.currentTask.status, QStringLiteral("Completed"));
 }
@@ -603,7 +642,7 @@ TEST_F(AttackTaskProcessorTest, AttackSurfaceQueuesBomb) {
   processor->processAttackTasks(0.033, true);
 
   EXPECT_EQ(bombsQueued.size(), 1);
-  EXPECT_EQ(bombsQueued.first(), QStringLiteral("F16"));
+  EXPECT_EQ(bombsQueued.first(), state->entities().first().entityId);
   const Entity& updated = state->entities().first();
   EXPECT_EQ(updated.currentTask.status, QStringLiteral("Completed"));
 }

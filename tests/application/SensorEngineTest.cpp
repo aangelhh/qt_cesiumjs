@@ -2,6 +2,8 @@
 
 #include "application/SensorEngine.h"
 
+#include <QSet>
+
 namespace {
 
 Entity makeEntity(
@@ -55,6 +57,31 @@ TEST(SensorEngine, ContactCarriesProducingSensorTypeAndSubType) {
   EXPECT_EQ(contact.sensorType, QStringLiteral("radar"));
   EXPECT_EQ(contact.sensorSubType, QStringLiteral("airborneRadar"));
   EXPECT_EQ(contact.targetEntityName, QStringLiteral("Target"));
+}
+
+TEST(SensorEngine, DuplicateTargetNamesProduceContactsWithDistinctIds) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(
+      QStringLiteral("Observer"), 1, QStringLiteral("Air"), 0.0);
+  observer.sensors.push_back(makeRadar());
+  Entity first = makeEntity(
+      QStringLiteral("Bandit"), 2, QStringLiteral("Air"), 0.1);
+  Entity second = makeEntity(
+      QStringLiteral("Bandit"), 2, QStringLiteral("Air"), 0.2);
+  const QString firstId = first.entityId;
+  const QString secondId = second.entityId;
+  entities = {observer, first, second};
+
+  SensorEngine::updateEntityContacts(entities);
+
+  ASSERT_EQ(entities.at(0).sensorContacts.size(), 2);
+  QSet<QString> targetIds;
+  for (const SensorContact& contact : entities.at(0).sensorContacts) {
+    EXPECT_EQ(contact.targetEntityName, QStringLiteral("Bandit"));
+    targetIds.insert(contact.targetEntityId);
+  }
+  EXPECT_TRUE(targetIds.contains(firstId));
+  EXPECT_TRUE(targetIds.contains(secondId));
 }
 
 TEST(SensorEngine, RejectsTargetDomainsDisabledBySensorConfiguration) {

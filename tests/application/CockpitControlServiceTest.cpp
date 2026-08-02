@@ -92,7 +92,7 @@ TEST(CockpitControlService, OnlyUpdatesSetpointsWhileOwningAuthority) {
   EXPECT_EQ(state.entities().front().currentTask.targetAltitudeMeters, 7000);
 }
 
-TEST(CockpitControlService, ReleaseClearsTaskAndStopsResidualMovement) {
+TEST(CockpitControlService, ReleaseRetainsLastFlightSetpoints) {
   ScenarioState state;
   state.addEntity(makeAirEntity());
   int stoppedPlans = 0;
@@ -104,10 +104,15 @@ TEST(CockpitControlService, ReleaseClearsTaskAndStopsResidualMovement) {
   ASSERT_TRUE(service.releaseControl(command.entityName));
   EXPECT_FALSE(service.hasControl(command.entityName));
   const Entity& entity = state.entities().front();
-  EXPECT_FALSE(entity.currentTask.enabled);
-  EXPECT_EQ(entity.currentTask.status, QStringLiteral("Idle"));
-  EXPECT_DOUBLE_EQ(entity.speedKnots, 0.0);
-  EXPECT_DOUBLE_EQ(entity.verticalSpeedMetersPerSecond, 0.0);
+  EXPECT_TRUE(entity.currentTask.enabled);
+  EXPECT_EQ(
+      entity.currentTask.taskType,
+      QStringLiteral("FlyHeadingAltitudeSpeed"));
+  EXPECT_EQ(entity.currentTask.status, QStringLiteral("Running"));
+  EXPECT_DOUBLE_EQ(entity.currentTask.targetHeadingDegrees, 180.0);
+  EXPECT_EQ(entity.currentTask.targetAltitudeMeters, 6000);
+  EXPECT_DOUBLE_EQ(entity.currentTask.targetSpeedKnots, 450.0);
+  EXPECT_DOUBLE_EQ(entity.speedKnots, 300.0);
 }
 
 TEST(CockpitControlService, ReconcileDropsAuthorityAfterTaskOverride) {

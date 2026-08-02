@@ -69,6 +69,13 @@ int main(int argc, char** argv) {
   snapshot.dynamicsModel = QStringLiteral("kinematic");
   snapshot.systems.profileId = QStringLiteral("air-turbine-2-engine");
   snapshot.systems.dataSource = QStringLiteral("Kinematic estimate");
+  snapshot.systems.fuelCapacityKilograms = 6400.0;
+  snapshot.systems.fuelRemainingKilograms = 3200.0;
+  snapshot.systems.fuelPercent = 50.0;
+  snapshot.systems.totalFuelFlowKilogramsPerHour = 2400.0;
+  snapshot.systems.estimatedEnduranceSeconds = 4800.0;
+  snapshot.systems.fuelAvailable = true;
+  snapshot.systems.enduranceAvailable = true;
   for (int index = 0; index < 2; ++index) {
     application::EngineTelemetry engine;
     engine.engineId = QStringLiteral("ENG %1").arg(index + 1);
@@ -135,18 +142,34 @@ int main(int argc, char** argv) {
   if (!modernPfd->rootObject()->property("controlActive").toBool()) {
     return 4;
   }
+  modernPfd->rootObject()->setProperty("selectedHeadingDegrees", 285.0);
+  modernPfd->rootObject()->setProperty("selectedAltitudeFeet", 10000.0);
+  modernPfd->rootObject()->setProperty("selectedAirspeedKnots", 360.0);
+  application::KinematicsTelemetrySnapshot delayedSnapshot = snapshot;
+  delayedSnapshot.targetHeadingDegrees = 0.0;
+  delayedSnapshot.targetAltitudeMeters = 0.0;
+  delayedSnapshot.targetSpeedKnots = 0.0;
+  widget.applySnapshot(delayedSnapshot);
+  if (modernPfd->rootObject()
+          ->property("selectedHeadingDegrees").toDouble() != 285.0 ||
+      modernPfd->rootObject()
+          ->property("selectedAltitudeFeet").toDouble() != 10000.0 ||
+      modernPfd->rootObject()
+          ->property("selectedAirspeedKnots").toDouble() != 360.0) {
+    return 5;
+  }
   if (!QMetaObject::invokeMethod(
           modernPfd->rootObject(),
           "setpointsRequested",
           Q_ARG(double, 285.0),
           Q_ARG(double, 10000.0),
           Q_ARG(double, 360.0))) {
-    return 5;
+    return 6;
   }
   application.processEvents();
   if (requestedEntity != snapshot.entityName || requestedHeading != 285.0 ||
       requestedAltitudeMeters != 3048 || requestedSpeed != 360.0) {
-    return 6;
+    return 7;
   }
 
   auto* ecam = widget.findChild<QQuickWidget*>(
@@ -154,8 +177,11 @@ int main(int argc, char** argv) {
   if (!ecam || !ecam->rootObject() ||
       ecam->rootObject()->property("profileId").toString() !=
           QStringLiteral("air-turbine-2-engine") ||
-      ecam->rootObject()->property("engineModel").toList().size() != 2) {
-    return 7;
+      ecam->rootObject()->property("engineModel").toList().size() != 2 ||
+      ecam->rootObject()->property("fuelPercent").toDouble() != 50.0 ||
+      ecam->rootObject()->property("fuelRemainingKilograms").toDouble() !=
+          3200.0) {
+    return 8;
   }
 
   snapshot.rollDegrees = 18.0;

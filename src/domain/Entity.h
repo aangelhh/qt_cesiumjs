@@ -4,6 +4,7 @@
 #include "domain/Task.h"
 
 #include <QString>
+#include <QUuid>
 #include <QVector>
 
 struct WeaponInventoryItem {
@@ -54,6 +55,7 @@ struct Entity {
     return QStringLiteral("Intact");
   }
 
+  QString entityId = QUuid::createUuid().toString(QUuid::WithoutBraces);
   QString name;
   QString type = QStringLiteral("Entity");
   QString domain = QStringLiteral("Air");
@@ -79,14 +81,21 @@ struct Entity {
   double rollDegrees = 0.0;
   bool flightDynamicsEnabled = false;
   QString flightDynamicsMode = QStringLiteral("kinematic");
+  // Runtime-only backend used by the most recent simulation tick.
+  QString activeDynamicsBackend;
   QString jsbsimAircraftModel;
+  QString controlProfileId;
   QString systemsDisplayProfileId;
+  QString cesiumModelAxes;
   int engineCount = 0;
+  double fuelCapacityKilograms = 0.0;
+  double fuelRemainingKilograms = 0.0;
   double speedKnots = 0.0;
   double verticalSpeedMetersPerSecond = 0.0;
   bool destroyed = false;
   double damagePercent = 0.0;
   QString behaviorMode = QStringLiteral("Manual");
+  QString behaviorTargetEntityId;
   QString behaviorTargetEntityName;
   EntityTask currentTask;
   QVector<WeaponInventoryItem> weapons;

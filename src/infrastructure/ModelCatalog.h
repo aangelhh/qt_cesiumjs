@@ -9,8 +9,14 @@ struct ModelCatalogEntry {
   QString category;
   QString relativePath;
   QString absolutePath;
+  QString dynamicsBackend;
+  QString jsbsimAircraftModel;
+  QString controlProfileId;
   QString systemsDisplayProfileId;
+  QString cesiumAxes;
   int engineCount = 0;
+  double fuelCapacityKilograms = 0.0;
+  double initialFuelKilograms = 0.0;
   int entityKind = 0;
   int entityDomain = 0;
   int entityCountry = 0;

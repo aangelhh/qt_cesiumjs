@@ -1,20 +1,31 @@
 #include "presentation/EntityHomePositionTracker.h"
 
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 
 namespace presentation {
 
 void EntityHomePositionTracker::remember(const Entity& entity) {
-    if (entity.name.trimmed().isEmpty() || m_positions.contains(entity.name)) {
+    const QString entityName = entity.name.trimmed();
+    const QString entityKey = domain::entityKey(entity);
+    if (entityName.isEmpty() || entityKey.isEmpty()) {
         return;
     }
 
-    m_positions.insert(entity.name, EntityHomePosition{
+    const EntityHomePosition position{
                                         entity.latitude,
                                         entity.longitude,
                                         entity.altitude,
                                         true,
-                                    });
+                                    };
+    if (!m_positions.contains(entityKey)) {
+        m_positions.insert(entityKey, position);
+    }
+    // Legacy callers may still query by display name. The first entity keeps
+    // that alias; UUID lookups remain unambiguous for duplicate names.
+    if (!m_positions.contains(entityName)) {
+        m_positions.insert(entityName, position);
+    }
 }
 
 EntityHomePosition EntityHomePositionTracker::positionFor(const QString& entityName) const {

@@ -39,6 +39,7 @@ TEST(KinematicsTelemetry, CapturesEntityStateSetpointsAndUnits) {
   const application::KinematicsTelemetrySnapshot snapshot =
       application::makeKinematicsTelemetrySnapshot(entity, 12.5, 0.033);
 
+  EXPECT_EQ(snapshot.entityId, entity.entityId);
   EXPECT_EQ(snapshot.entityName, QStringLiteral("Viper 1"));
   EXPECT_EQ(snapshot.domain, QStringLiteral("Air"));
   EXPECT_DOUBLE_EQ(snapshot.simulationTimeSeconds, 12.5);

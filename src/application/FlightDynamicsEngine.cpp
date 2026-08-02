@@ -1,9 +1,12 @@
 #include "application/FlightDynamicsEngine.h"
+#include "application/JsbsimSetpointController.h"
 #include "application/MovementIntent.h"
+#include "domain/EntityIdentity.h"
 
 #if defined(QTTEST_HAS_JSBSIM)
 #include <FGFDMExec.h>
 #include <models/FGPropulsion.h>
+#include <models/propulsion/FGTank.h>
 #endif
 
 #include <QCoreApplication>
@@ -21,6 +24,10 @@ constexpr double kKnotsToMetersPerSecond = 0.514444;
 constexpr double kClimbRateMetersPerSecond = 20.0;
 constexpr double kMetersToFeet = 3.28084;
 constexpr double kFeetToMeters = 1.0 / kMetersToFeet;
+#if defined(QTTEST_HAS_JSBSIM)
+constexpr double kPoundsToKilograms = 0.45359237;
+constexpr double kKilogramsToPounds = 1.0 / kPoundsToKilograms;
+#endif
 constexpr double kMinimumAttitudeSpeedMetersPerSecond = 5.0;
 constexpr double kPitchResponseDegreesPerSecond = 18.0;
 constexpr double kRollResponseDegreesPerSecond = 45.0;
@@ -138,6 +145,18 @@ bool taskStatusIsTerminal(const QString& status) {
   return status == QStringLiteral("Completed") ||
          status == QStringLiteral("Failed") ||
          status == QStringLiteral("Target unavailable");
+}
+
+void stopForFuelExhaustion(Entity& entity, double deltaSeconds) {
+  entity.fuelRemainingKilograms = 0.0;
+  entity.speedKnots = 0.0;
+  entity.verticalSpeedMetersPerSecond = 0.0;
+  entity.activeDynamicsBackend = QStringLiteral("fuel-exhausted");
+  if (entity.currentTask.enabled &&
+      !taskStatusIsTerminal(entity.currentTask.status)) {
+    entity.currentTask.status = QStringLiteral("Failed");
+  }
+  relaxDerivedAttitude(entity, deltaSeconds);
 }
 
 void applyKinematicStep(Entity& entity, double deltaSeconds);
@@ -292,6 +311,18 @@ QString defaultJsbsimAircraftModel(const Entity& entity) {
   return QStringLiteral("c172x");
 }
 
+QString defaultJsbsimControlProfile(const QString& modelName) {
+  const QString normalized = modelName.trimmed().toLower();
+  if (normalized == QStringLiteral("f16") ||
+      normalized == QStringLiteral("f22") ||
+      normalized == QStringLiteral("f15") ||
+      normalized == QStringLiteral("a4") ||
+      normalized == QStringLiteral("t38")) {
+    return QStringLiteral("fighter-generic");
+  }
+  return QStringLiteral("aircraft-generic");
+}
+
 QString findJsbsimRoot() {
 #ifdef QTTEST_SOURCE_DIR
     const QString sourceRoot =
@@ -363,13 +394,18 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
     return;
   }
   
-  auto it = taskStacks.find(entity.name);
+  auto it = taskStacks.find(domain::entityKey(entity));
+  if (it == taskStacks.end() && domain::entityKey(entity) != entity.name) {
+    it = taskStacks.find(entity.name);
+  }
   if (it != taskStacks.end() && !it->second.isEmpty()) {
       // Feed external world data into specific task types before evaluation
       domain::ITask* topTask = it->second.top();
       auto findActiveTarget = [&]() -> const Entity* {
+          const QString targetReference =
+              domain::targetEntityReference(entity.currentTask);
           for (const Entity& target : snapshot) {
-              if (target.name == entity.currentTask.targetEntityName && !target.destroyed) {
+              if (domain::entityMatchesReference(target, targetReference) && !target.destroyed) {
                   return &target;
               }
           }
@@ -563,17 +599,11 @@ struct AircraftState {
   double verticalSpeedMetersPerSecond = 0.0;
 };
 
-struct ControlCommands {
-  double aileronNorm = 0.0;
-  double elevatorNorm = 0.0;
-  double rudderNorm = 0.0;
-  double throttleNorm = 0.5;
-};
-
 struct JsbsimSession {
   std::unique_ptr<JSBSim::FGFDMExec> exec;
   QString modelName;
   JsbsimControlMode controlMode = JsbsimControlMode::DirectFcs;
+  application::JsbsimControlOutput previousControl;
 };
 
 QHash<QString, JsbsimSession*>& jsbsimSessions() {
@@ -582,8 +612,15 @@ QHash<QString, JsbsimSession*>& jsbsimSessions() {
 }
 
 bool jsbsimHasProperty(JSBSim::FGFDMExec& exec, const std::string& propertyName) {
+  std::string catalogName = propertyName;
+  const std::string zeroIndex = "[0]";
+  if (const std::size_t index = catalogName.find(zeroIndex);
+      index != std::string::npos) {
+    catalogName.erase(index, zeroIndex.size());
+  }
   for (const std::string& catalogEntry : exec.GetPropertyCatalog()) {
-    if (catalogEntry.rfind(propertyName, 0) == 0) {
+    if (catalogEntry.rfind(propertyName, 0) == 0 ||
+        catalogEntry.rfind(catalogName, 0) == 0) {
       return true;
     }
   }
@@ -599,14 +636,6 @@ JsbsimControlMode detectJsbsimControlMode(JSBSim::FGFDMExec& exec) {
     return JsbsimControlMode::NativeAp;
   }
   return JsbsimControlMode::DirectFcs;
-}
-
-double clampNormalizedCommand(double value) {
-  return qBound(-1.0, value, 1.0);
-}
-
-double clampNormalizedThrottle(double value) {
-  return qBound(0.0, value, 1.0);
 }
 
 bool readJsbsimAircraftState(JSBSim::FGFDMExec& exec, AircraftState& state) {
@@ -641,56 +670,90 @@ bool readJsbsimAircraftState(JSBSim::FGFDMExec& exec, AircraftState& state) {
   return true;
 }
 
-ControlCommands computeControlCommands(
-    const AircraftState& aircraftState,
-    const EntityTask& task) {
-  ControlCommands commands;
-
-  const double headingErrorDeg = shortestSignedAngle(
-      aircraftState.headingDeg,
-      task.targetHeadingDegrees);
-  const double bankTargetDeg = qBound(-25.0, headingErrorDeg * 0.35, 25.0);
-  const double currentBankDeg = qRadiansToDegrees(aircraftState.bankRad);
-  const double bankErrorDeg = bankTargetDeg - currentBankDeg;
-  const double altitudeErrorMeters =
-      static_cast<double>(task.targetAltitudeMeters) - aircraftState.altitudeMeters;
-  const double speedErrorKnots =
-      task.targetSpeedKnots - aircraftState.trueAirspeedKnots;
-
-  // Conservative initial gains. Elevator sign may need model-specific tuning.
-  constexpr double kBankToAileron = 0.04;
-  constexpr double kHeadingToRudder = 0.0015;
-  constexpr double kAltitudeToElevator = -0.0008;
-  constexpr double kSpeedToThrottle = 0.004;
-
-  commands.aileronNorm = clampNormalizedCommand(bankErrorDeg * kBankToAileron);
-  commands.rudderNorm = clampNormalizedCommand(headingErrorDeg * kHeadingToRudder);
-  commands.elevatorNorm =
-      clampNormalizedCommand(altitudeErrorMeters * kAltitudeToElevator);
-  commands.throttleNorm =
-      clampNormalizedThrottle(0.5 + speedErrorKnots * kSpeedToThrottle);
-  return commands;
-}
-
-void applyControlCommands(JSBSim::FGFDMExec& exec, const ControlCommands& commands) {
-  exec.SetPropertyValue("fcs/aileron-cmd-norm", commands.aileronNorm);
-  exec.SetPropertyValue("fcs/rudder-cmd-norm", commands.rudderNorm);
-  exec.SetPropertyValue("fcs/elevator-cmd-norm", commands.elevatorNorm);
+void applyControlCommands(
+    JSBSim::FGFDMExec& exec,
+    const application::JsbsimControlOutput& commands) {
+  exec.SetPropertyValue(
+      "fcs/aileron-cmd-norm",
+      commands.aileronNormalized);
+  exec.SetPropertyValue(
+      "fcs/rudder-cmd-norm",
+      commands.rudderNormalized);
+  exec.SetPropertyValue(
+      "fcs/elevator-cmd-norm",
+      commands.elevatorNormalized);
   const int engineCount = static_cast<int>(
       exec.GetPropulsion()->GetNumEngines());
   for (int index = 0; index < engineCount; ++index) {
     exec.SetPropertyValue(
         "fcs/throttle-cmd-norm[" + std::to_string(index) + "]",
-        commands.throttleNorm);
+        commands.throttleNormalized);
   }
+}
+
+void initializeJsbsimFuel(
+    Entity& entity,
+    JSBSim::FGPropulsion& propulsion) {
+  application::ensureFuelConfiguration(entity);
+
+  double physicalCapacityPounds = 0.0;
+  for (unsigned int index = 0; index < propulsion.GetNumTanks(); ++index) {
+    const auto tank = propulsion.GetTank(index);
+    if (tank && tank->GetType() == JSBSim::FGTank::ttFUEL) {
+      physicalCapacityPounds += qMax(0.0, tank->GetCapacity());
+    }
+  }
+  if (physicalCapacityPounds <= 0.0) {
+    return;
+  }
+
+  const double physicalCapacityKilograms =
+      physicalCapacityPounds * kPoundsToKilograms;
+  entity.fuelCapacityKilograms = qMin(
+      entity.fuelCapacityKilograms,
+      physicalCapacityKilograms);
+  entity.fuelRemainingKilograms = qBound(
+      0.0,
+      entity.fuelRemainingKilograms,
+      entity.fuelCapacityKilograms);
+
+  const double requestedFuelPounds =
+      entity.fuelRemainingKilograms * kKilogramsToPounds;
+  for (unsigned int index = 0; index < propulsion.GetNumTanks(); ++index) {
+    const auto tank = propulsion.GetTank(index);
+    if (!tank || tank->GetType() != JSBSim::FGTank::ttFUEL) {
+      continue;
+    }
+    const double tankShare = tank->GetCapacity() / physicalCapacityPounds;
+    tank->SetContents(requestedFuelPounds * tankShare);
+  }
+}
+
+void updateFuelFromJsbsim(
+    Entity& entity,
+    const JSBSim::FGPropulsion& propulsion) {
+  double remainingPounds = 0.0;
+  for (unsigned int index = 0; index < propulsion.GetNumTanks(); ++index) {
+    const auto tank = propulsion.GetTank(index);
+    if (tank && tank->GetType() == JSBSim::FGTank::ttFUEL) {
+      remainingPounds += qMax(0.0, tank->GetContents());
+    }
+  }
+  entity.fuelRemainingKilograms = qBound(
+      0.0,
+      remainingPounds * kPoundsToKilograms,
+      entity.fuelCapacityKilograms);
 }
 
 bool ensureJsbsimSession(Entity& entity, double deltaSeconds) {
   const QString modelName = defaultJsbsimAircraftModel(entity);
   entity.jsbsimAircraftModel = modelName;
+  if (entity.controlProfileId.trimmed().isEmpty()) {
+    entity.controlProfileId = defaultJsbsimControlProfile(modelName);
+  }
 
   auto& sessions = jsbsimSessions();
-  JsbsimSession*& session = sessions[entity.name];
+  JsbsimSession*& session = sessions[domain::entityKey(entity)];
   if (!session) {
     session = new JsbsimSession();
   }
@@ -726,6 +789,7 @@ bool ensureJsbsimSession(Entity& entity, double deltaSeconds) {
   if (!exec->RunIC()) {
     return false;
   }
+  initializeJsbsimFuel(entity, *exec->GetPropulsion());
   const int engineCount = static_cast<int>(
       exec->GetPropulsion()->GetNumEngines());
   for (int index = 0; index < engineCount; ++index) {
@@ -736,6 +800,7 @@ bool ensureJsbsimSession(Entity& entity, double deltaSeconds) {
 
   session->modelName = modelName;
   session->controlMode = detectJsbsimControlMode(*exec);
+  session->previousControl = application::JsbsimControlOutput{};
   qDebug() << "JSBSim control mode:"
            << (session->controlMode == JsbsimControlMode::NativeAp ? "NativeAp" : "DirectFcs");
   session->exec = std::move(exec);
@@ -743,18 +808,25 @@ bool ensureJsbsimSession(Entity& entity, double deltaSeconds) {
 }
 
 bool applyJsbsimStep(Entity& entity, double deltaSeconds) {
-  if (!ensureJsbsimSession(entity, deltaSeconds)) {
+  constexpr double kMaximumJsbsimStepSeconds = 1.0 / 120.0;
+  const int substepCount = qBound(
+      1,
+      static_cast<int>(std::ceil(deltaSeconds / kMaximumJsbsimStepSeconds)),
+      64);
+  const double substepSeconds = deltaSeconds / substepCount;
+
+  if (!ensureJsbsimSession(entity, substepSeconds)) {
     return false;
   }
 
   auto& sessions = jsbsimSessions();
-  auto sessionIt = sessions.find(entity.name);
+  auto sessionIt = sessions.find(domain::entityKey(entity));
   if (sessionIt == sessions.end() || !sessionIt.value() || !sessionIt.value()->exec) {
     return false;
   }
   JsbsimSession* session = sessionIt.value();
 
-  session->exec->Setdt(deltaSeconds);
+  session->exec->Setdt(substepSeconds);
 
   const bool preferDirectFcs =
       entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
@@ -774,18 +846,42 @@ bool applyJsbsimStep(Entity& entity, double deltaSeconds) {
       session->exec->SetPropertyValue("ap/heading_hold", 0.0);
       session->exec->SetPropertyValue("ap/altitude_hold", 0.0);
     }
-  } else {
-    AircraftState aircraftState;
-    if (!readJsbsimAircraftState(*session->exec, aircraftState)) {
-      return false;
-    }
-    const ControlCommands commands =
-        computeControlCommands(aircraftState, entity.currentTask);
-    applyControlCommands(*session->exec, commands);
   }
 
-  if (!session->exec->Run()) {
-    return false;
+  for (int substep = 0; substep < substepCount; ++substep) {
+    if (activeControlMode == JsbsimControlMode::DirectFcs) {
+      AircraftState aircraftState;
+      if (!readJsbsimAircraftState(*session->exec, aircraftState)) {
+        return false;
+      }
+      const application::JsbsimControlState controlState{
+          aircraftState.headingDeg,
+          qRadiansToDegrees(aircraftState.pitchRad),
+          qRadiansToDegrees(aircraftState.bankRad),
+          aircraftState.altitudeMeters,
+          aircraftState.trueAirspeedKnots,
+          aircraftState.verticalSpeedMetersPerSecond,
+      };
+      const application::JsbsimControlSetpoint setpoint{
+          entity.currentTask.targetHeadingDegrees,
+          static_cast<double>(entity.currentTask.targetAltitudeMeters),
+          entity.currentTask.targetSpeedKnots,
+      };
+      const application::JsbsimControlOutput requested =
+          application::computeJsbsimSetpointControl(
+              controlState,
+              setpoint,
+              entity.controlProfileId);
+      session->previousControl = application::rateLimitJsbsimControl(
+          session->previousControl,
+          requested,
+          substepSeconds,
+          entity.controlProfileId);
+      applyControlCommands(*session->exec, session->previousControl);
+    }
+    if (!session->exec->Run()) {
+      return false;
+    }
   }
 
   AircraftState aircraftState;
@@ -804,6 +900,7 @@ bool applyJsbsimStep(Entity& entity, double deltaSeconds) {
   entity.speedKnots = qMax(0.0, aircraftState.trueAirspeedKnots);
   entity.verticalSpeedMetersPerSecond =
       aircraftState.verticalSpeedMetersPerSecond;
+  updateFuelFromJsbsim(entity, *session->exec->GetPropulsion());
   return true;
 }
 #endif
@@ -829,8 +926,29 @@ FlightDynamicsEngine::systemsTelemetryForEntity(
       application::makeEstimatedSystemsTelemetrySnapshot(
           entity,
           maximumSpeedKnots);
+  const bool configuredForJsbsim =
+      entity.flightDynamicsEnabled &&
+      entity.flightDynamicsMode.compare(
+          QStringLiteral("jsbsim"), Qt::CaseInsensitive) == 0;
+  if (configuredForJsbsim &&
+      entity.activeDynamicsBackend.compare(
+          QStringLiteral("jsbsim"), Qt::CaseInsensitive) != 0) {
+    snapshot.dataSource = entity.activeDynamicsBackend.compare(
+                              QStringLiteral("kinematic-fallback"),
+                              Qt::CaseInsensitive) == 0
+        ? QStringLiteral("Kinematic estimate | JSBSim fallback")
+        : (entity.activeDynamicsBackend.compare(
+               QStringLiteral("fuel-exhausted"),
+               Qt::CaseInsensitive) == 0
+               ? QStringLiteral("Fuel exhausted")
+               : QStringLiteral("Kinematic estimate | JSBSim inactive"));
+  }
 #if defined(QTTEST_HAS_JSBSIM)
-  const auto sessionIt = jsbsimSessions().constFind(entity.name);
+  if (entity.activeDynamicsBackend.compare(
+          QStringLiteral("jsbsim"), Qt::CaseInsensitive) != 0) {
+    return snapshot;
+  }
+  const auto sessionIt = jsbsimSessions().constFind(domain::entityKey(entity));
   if (sessionIt == jsbsimSessions().constEnd() || !sessionIt.value() ||
       !sessionIt.value()->exec) {
     return snapshot;
@@ -903,8 +1021,37 @@ FlightDynamicsEngine::systemsTelemetryForEntity(
     engine.estimated = false;
     snapshot.engines.push_back(engine);
   }
+  application::updateFuelTelemetrySummary(
+      snapshot,
+      entity.fuelCapacityKilograms,
+      entity.fuelRemainingKilograms);
 #endif
   return snapshot;
+}
+
+bool FlightDynamicsEngine::setFuelRemaining(
+    Entity& entity,
+    double kilograms) {
+  if (entity.domain.compare(
+          QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
+    return false;
+  }
+  application::ensureFuelConfiguration(entity);
+  if (entity.fuelCapacityKilograms <= 0.0) {
+    return false;
+  }
+  entity.fuelRemainingKilograms = qBound(
+      0.0,
+      kilograms,
+      entity.fuelCapacityKilograms);
+#if defined(QTTEST_HAS_JSBSIM)
+  const auto sessionIt = jsbsimSessions().find(domain::entityKey(entity));
+  if (sessionIt != jsbsimSessions().end() &&
+      sessionIt.value() && sessionIt.value()->exec) {
+    initializeJsbsimFuel(entity, *sessionIt.value()->exec->GetPropulsion());
+  }
+#endif
+  return true;
 }
 
 void FlightDynamicsEngine::advanceEntity(
@@ -912,10 +1059,12 @@ void FlightDynamicsEngine::advanceEntity(
     std::unordered_map<QString, domain::TaskStack>& taskStacks,
     const QVector<Entity>& snapshot,
     double deltaSeconds) {
+  application::ensureFuelConfiguration(entity);
   // An entity must only move when it has an active task.
   // flightDynamicsEnabled / flightDynamicsMode only control how movement is simulated,
   // not whether the entity should move at all.
   if (entityIsGround(entity)) {
+    entity.activeDynamicsBackend = QStringLiteral("kinematic-ground");
     normalizeGroundKinematics(entity);
     if (!entity.currentTask.enabled) {
       entity.speedKnots = 0.0;
@@ -943,22 +1092,36 @@ void FlightDynamicsEngine::advanceEntity(
   }
 
   if (!entity.currentTask.enabled) {
+    entity.activeDynamicsBackend = QStringLiteral("inactive");
     entity.speedKnots = 0.0;
     entity.verticalSpeedMetersPerSecond = 0.0;
     relaxDerivedAttitude(entity, deltaSeconds);
     return;
   }
   if (taskStatusIsTerminal(entity.currentTask.status)) {
+    entity.activeDynamicsBackend = QStringLiteral("inactive");
     entity.speedKnots = 0.0;
     entity.verticalSpeedMetersPerSecond = 0.0;
     relaxDerivedAttitude(entity, deltaSeconds);
     return;
   }
 
+  if (entity.fuelCapacityKilograms > 0.0 &&
+      entity.fuelRemainingKilograms <= 0.0) {
+    stopForFuelExhaustion(entity, deltaSeconds);
+    return;
+  }
+
   const double previousHeadingDegrees = entity.headingDegrees;
   if (!isMovementTaskType(entity.currentTask.taskType)) {
+    entity.activeDynamicsBackend = QStringLiteral("kinematic");
     entity.verticalSpeedMetersPerSecond = 0.0;
     applyKinematicStep(entity, deltaSeconds);
+    application::consumeEstimatedFuel(entity, deltaSeconds);
+    if (entity.fuelRemainingKilograms <= 0.0) {
+      stopForFuelExhaustion(entity, deltaSeconds);
+      return;
+    }
     updateDerivedKinematicAttitude(entity, previousHeadingDegrees, deltaSeconds);
     return;
   }
@@ -966,27 +1129,31 @@ void FlightDynamicsEngine::advanceEntity(
   resolveTaskTargets(entity, taskStacks, snapshot, deltaSeconds);
 
 #if defined(QTTEST_HAS_JSBSIM)
-  const bool preferKinematicGuidance =
-      entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
-      entity.currentTask.taskType == QStringLiteral("WaitOnLocation") ||
-      entity.currentTask.taskType == QStringLiteral("MoveToWaypoint") ||
-      entity.currentTask.taskType == QStringLiteral("MoveAlongRoute") ||
-      entity.currentTask.taskType == QStringLiteral("FollowRoute") ||
-      entity.currentTask.taskType == QStringLiteral("PatrolArea") ||
-      entity.currentTask.taskType == QStringLiteral("OrbitArea") ||
-      entity.currentTask.taskType == QStringLiteral("HoldRacetrack") ||
-      entity.currentTask.taskType == QStringLiteral("FollowEntity") ||
-      isInterceptEntityTaskType(entity.currentTask.taskType) ||
-      entity.currentTask.taskType == QStringLiteral("AttackAir") ||
-      entity.currentTask.taskType == QStringLiteral("AttackUntilDestroyed");
-  if (!preferKinematicGuidance &&
-      entity.flightDynamicsMode == QStringLiteral("jsbsim") &&
-      applyJsbsimStep(entity, deltaSeconds)) {
-    return;
+  if (entity.flightDynamicsEnabled &&
+      entity.flightDynamicsMode.compare(
+          QStringLiteral("jsbsim"), Qt::CaseInsensitive) == 0) {
+    if (applyJsbsimStep(entity, deltaSeconds)) {
+      if (entity.fuelRemainingKilograms <= 0.0) {
+        stopForFuelExhaustion(entity, deltaSeconds);
+        return;
+      }
+      entity.activeDynamicsBackend = QStringLiteral("jsbsim");
+      return;
+    }
+    entity.activeDynamicsBackend = QStringLiteral("kinematic-fallback");
+  } else {
+    entity.activeDynamicsBackend = QStringLiteral("kinematic");
   }
+#else
+  entity.activeDynamicsBackend = QStringLiteral("kinematic");
 #endif
 
   applyKinematicStep(entity, deltaSeconds);
+  application::consumeEstimatedFuel(entity, deltaSeconds);
+  if (entity.fuelRemainingKilograms <= 0.0) {
+    stopForFuelExhaustion(entity, deltaSeconds);
+    return;
+  }
   settleCapturedVerticalIntent(entity);
   updateDerivedKinematicAttitude(entity, previousHeadingDegrees, deltaSeconds);
 }

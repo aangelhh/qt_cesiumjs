@@ -33,7 +33,7 @@ public:
   QStackedWidget* stack = nullptr;
   QLabel* unavailableLabel = nullptr;
   QTabWidget* instrumentTabs = nullptr;
-  QString entityName;
+  QString entityReference;
   bool controlActive = false;
 #if defined(QTTEST_HAS_MODERN_PFD)
   QQuickWidget* modernPfd = nullptr;
@@ -188,7 +188,9 @@ KinematicsCockpitWidget::~KinematicsCockpitWidget() = default;
 void KinematicsCockpitWidget::applySnapshot(
     const application::KinematicsTelemetrySnapshot& snapshot) {
   const KinematicsCockpitData data = makeKinematicsCockpitData(snapshot);
-  _impl->entityName = data.entityName;
+  _impl->entityReference = data.entityId.trimmed().isEmpty()
+      ? data.entityName
+      : data.entityId;
   _impl->entityLabel->setText(
       data.entityName.isEmpty() ? QStringLiteral("Unnamed entity") : data.entityName);
   _impl->statusLabel->setText(data.statusText);
@@ -206,9 +208,14 @@ void KinematicsCockpitWidget::applySnapshot(
     root->setProperty(
         "verticalSpeedFpm",
         data.climbRateThousandsFeetPerMinute * 1000.0);
-    root->setProperty("selectedHeadingDegrees", data.selectedHeadingDegrees);
-    root->setProperty("selectedAirspeedKnots", data.selectedAirspeedKnots);
-    root->setProperty("selectedAltitudeFeet", data.selectedAltitudeFeet);
+    // While the cockpit owns control, QML is the source of the selected
+    // setpoints. Reapplying a delayed telemetry snapshot here can roll a
+    // freshly edited HDG/ALT/SPD value back to the previous target.
+    if (!_impl->controlActive) {
+      root->setProperty("selectedHeadingDegrees", data.selectedHeadingDegrees);
+      root->setProperty("selectedAirspeedKnots", data.selectedAirspeedKnots);
+      root->setProperty("selectedAltitudeFeet", data.selectedAltitudeFeet);
+    }
     root->setProperty("flightDirectorActive", data.flightDirectorActive);
     root->setProperty("controlActive", _impl->controlActive);
   }
@@ -217,6 +224,17 @@ void KinematicsCockpitWidget::applySnapshot(
     root->setProperty("entityName", data.entityName);
     root->setProperty("profileId", data.systemsProfileId);
     root->setProperty("dataSource", data.systemsDataSource);
+    root->setProperty("fuelCapacityKilograms", data.fuelCapacityKilograms);
+    root->setProperty("fuelRemainingKilograms", data.fuelRemainingKilograms);
+    root->setProperty("fuelPercent", data.fuelPercent);
+    root->setProperty(
+        "totalFuelFlowKilogramsPerHour",
+        data.totalFuelFlowKilogramsPerHour);
+    root->setProperty(
+        "estimatedEnduranceSeconds",
+        data.estimatedEnduranceSeconds);
+    root->setProperty("fuelAvailable", data.fuelAvailable);
+    root->setProperty("enduranceAvailable", data.enduranceAvailable);
     root->setProperty("engineModel", data.engines);
   }
 #endif
@@ -262,7 +280,7 @@ void KinematicsCockpitWidget::setControlActive(bool active) {
 }
 
 void KinematicsCockpitWidget::clear() {
-  _impl->entityName.clear();
+  _impl->entityReference.clear();
   setControlActive(false);
   _impl->entityLabel->setText(QStringLiteral("No air entity selected"));
   _impl->statusLabel->setText(QStringLiteral("Waiting for telemetry"));
@@ -276,7 +294,7 @@ void KinematicsCockpitWidget::handleTakeControlRequested(
     double altitudeFeet,
     double speedKnots) {
   emit takeControlRequested(
-      _impl->entityName,
+      _impl->entityReference,
       headingDegrees,
       qRound(altitudeFeet / 3.28083989501312),
       speedKnots);
@@ -287,14 +305,14 @@ void KinematicsCockpitWidget::handleSetpointsRequested(
     double altitudeFeet,
     double speedKnots) {
   emit setpointsRequested(
-      _impl->entityName,
+      _impl->entityReference,
       headingDegrees,
       qRound(altitudeFeet / 3.28083989501312),
       speedKnots);
 }
 
 void KinematicsCockpitWidget::handleReleaseControlRequested() {
-  emit releaseControlRequested(_impl->entityName);
+  emit releaseControlRequested(_impl->entityReference);
 }
 
 } // namespace presentation

@@ -1,5 +1,7 @@
 #include "infrastructure/ModelCatalog.h"
 
+#include "infrastructure/ModelOrientation.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -129,6 +131,22 @@ int parseTrailingInteger(const QString& line, const QString& key) {
   return ok ? parsed : 0;
 }
 
+double parseTrailingDouble(const QString& line, const QString& key) {
+  if (!line.startsWith(key)) {
+    return 0.0;
+  }
+
+  QString value = line.mid(key.size()).trimmed();
+  const int commentIndex = value.indexOf('#');
+  if (commentIndex >= 0) {
+    value = value.left(commentIndex).trimmed();
+  }
+
+  bool ok = false;
+  const double parsed = value.toDouble(&ok);
+  return ok ? parsed : 0.0;
+}
+
 } // namespace
 
 QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
@@ -191,10 +209,42 @@ QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
           line.mid(QStringLiteral("systemsDisplayProfile:").size()));
       continue;
     }
+    if (line.startsWith(QStringLiteral("dynamicsBackend:"))) {
+      pendingEntry.dynamicsBackend = trimValue(
+          line.mid(QStringLiteral("dynamicsBackend:").size())).toLower();
+      continue;
+    }
+    if (line.startsWith(QStringLiteral("jsbsimAircraftModel:"))) {
+      pendingEntry.jsbsimAircraftModel = trimValue(
+          line.mid(QStringLiteral("jsbsimAircraftModel:").size()));
+      continue;
+    }
+    if (line.startsWith(QStringLiteral("controlProfile:"))) {
+      pendingEntry.controlProfileId = trimValue(
+          line.mid(QStringLiteral("controlProfile:").size()));
+      continue;
+    }
+    if (line.startsWith(QStringLiteral("cesiumAxes:"))) {
+      pendingEntry.cesiumAxes = trimValue(
+          line.mid(QStringLiteral("cesiumAxes:").size())).toLower();
+      continue;
+    }
     if (line.startsWith(QStringLiteral("engineCount:"))) {
       pendingEntry.engineCount = parseTrailingInteger(
           line,
           QStringLiteral("engineCount:"));
+      continue;
+    }
+    if (line.startsWith(QStringLiteral("fuelCapacityKilograms:"))) {
+      pendingEntry.fuelCapacityKilograms = parseTrailingDouble(
+          line,
+          QStringLiteral("fuelCapacityKilograms:"));
+      continue;
+    }
+    if (line.startsWith(QStringLiteral("initialFuelKilograms:"))) {
+      pendingEntry.initialFuelKilograms = parseTrailingDouble(
+          line,
+          QStringLiteral("initialFuelKilograms:"));
       continue;
     }
 
@@ -204,6 +254,9 @@ QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
       pendingEntry.absolutePath = normalizeAbsolutePath(relativePath);
       pendingEntry.domain = inferDomain(relativePath);
       pendingEntry.category = inferCategory(relativePath);
+      pendingEntry.cesiumAxes = ModelOrientation::resolveCesiumAxes(
+          pendingEntry.cesiumAxes,
+          relativePath);
       if (QFileInfo::exists(pendingEntry.absolutePath)) {
         entries.push_back(pendingEntry);
       }

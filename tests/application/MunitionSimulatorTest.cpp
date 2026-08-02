@@ -280,7 +280,7 @@ TEST(MunitionSimulator_advance, MissileHitsNearbyEnemy) {
     [](const ActiveMunition&) {},
     0.01);
 
-  EXPECT_EQ(damagedName, QStringLiteral("Red-1"));
+  EXPECT_EQ(damagedName, entities.first().entityId);
   EXPECT_GT(damagedAmount, 0.0);
   EXPECT_TRUE(munitions.isEmpty());
   EXPECT_FALSE(effects.isEmpty());
@@ -340,7 +340,7 @@ TEST(MunitionSimulator, BombBlastHitsEntityInRadius) {
   target.destroyed = false;
   const auto hits = computeBombBlastHits(bomb, {target});
   ASSERT_EQ(hits.size(), 1);
-  EXPECT_EQ(hits.at(0).targetName, QStringLiteral("T1"));
+  EXPECT_EQ(hits.at(0).targetEntityId, target.entityId);
   EXPECT_GT(hits.at(0).damageAmount, 0.0);
   EXPECT_LE(hits.at(0).damageAmount, 100.0);
 }

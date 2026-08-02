@@ -47,6 +47,11 @@ public:
   bool clearTask(const QString& entityName);
   bool setEntityDestroyed(const QString& entityName, bool destroyed);
   bool setEntityBehaviorMode(const QString& entityName, const QString& behaviorMode);
+  bool entityFuelState(
+      const QString& entityName,
+      double& remainingKilograms,
+      double& capacityKilograms) const;
+  bool setEntityFuelRemaining(const QString& entityName, double kilograms);
   void applyMissileDamage(const QString& targetName, double damageAmount);
   bool addMissileToEntity(const QString& entityName, int quantity = 1);
   bool addBombToEntity(const QString& entityName, int quantity = 1);

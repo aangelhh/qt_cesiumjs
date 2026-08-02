@@ -1,5 +1,7 @@
 #include "application/ScenarioSerializer.h"
 
+#include "infrastructure/ModelOrientation.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -44,6 +46,9 @@ void normalizeGroundEntity(Entity& entity) {
   entity.flightDynamicsEnabled = false;
   entity.flightDynamicsMode = QStringLiteral("kinematic");
   entity.jsbsimAircraftModel.clear();
+  entity.controlProfileId.clear();
+  entity.fuelCapacityKilograms = 0.0;
+  entity.fuelRemainingKilograms = 0.0;
   entity.speedKnots = 0.0;
   entity.verticalSpeedMetersPerSecond = 0.0;
   entity.currentTask = EntityTask{};
@@ -125,6 +130,7 @@ QJsonObject toJson(const SensorContact& contact) {
       {QStringLiteral("sensorId"), contact.sensorId},
       {QStringLiteral("sensorType"), contact.sensorType},
       {QStringLiteral("sensorSubType"), contact.sensorSubType},
+      {QStringLiteral("targetEntityId"), contact.targetEntityId},
       {QStringLiteral("targetEntityName"), contact.targetEntityName},
       {QStringLiteral("rangeMeters"), contact.rangeMeters},
       {QStringLiteral("bearingDegrees"), contact.bearingDegrees},
@@ -138,6 +144,7 @@ SensorContact sensorContactFromJson(const QJsonObject& object) {
   contact.sensorId = object.value(QStringLiteral("sensorId")).toString();
   contact.sensorType = object.value(QStringLiteral("sensorType")).toString();
   contact.sensorSubType = object.value(QStringLiteral("sensorSubType")).toString();
+  contact.targetEntityId = object.value(QStringLiteral("targetEntityId")).toString();
   contact.targetEntityName = object.value(QStringLiteral("targetEntityName")).toString();
   contact.rangeMeters = object.value(QStringLiteral("rangeMeters")).toDouble(0.0);
   contact.bearingDegrees = object.value(QStringLiteral("bearingDegrees")).toDouble(0.0);
@@ -158,6 +165,7 @@ QJsonObject toJson(const EntityTask& task) {
       {QStringLiteral("targetSpeedKnots"), task.targetSpeedKnots},
       {QStringLiteral("targetLatitude"), task.targetLatitude},
       {QStringLiteral("targetLongitude"), task.targetLongitude},
+      {QStringLiteral("targetEntityId"), task.targetEntityId},
       {QStringLiteral("targetEntityName"), task.targetEntityName},
       {QStringLiteral("targetWaypointName"), task.targetWaypointName},
       {QStringLiteral("targetRouteName"), task.targetRouteName},
@@ -197,6 +205,7 @@ EntityTask taskFromJson(const QJsonObject& object) {
   task.targetSpeedKnots = object.value(QStringLiteral("targetSpeedKnots")).toDouble(0.0);
   task.targetLatitude = object.value(QStringLiteral("targetLatitude")).toDouble(0.0);
   task.targetLongitude = object.value(QStringLiteral("targetLongitude")).toDouble(0.0);
+  task.targetEntityId = object.value(QStringLiteral("targetEntityId")).toString();
   task.targetEntityName = object.value(QStringLiteral("targetEntityName")).toString();
   task.targetWaypointName = object.value(QStringLiteral("targetWaypointName")).toString();
   task.targetRouteName = object.value(QStringLiteral("targetRouteName")).toString();
@@ -242,6 +251,7 @@ QJsonObject toJson(const Entity& entity) {
     weapons.append(toJson(weapon));
   }
   return {
+      {QStringLiteral("entityId"), entity.entityId},
       {QStringLiteral("name"), entity.name},
       {QStringLiteral("type"), entity.type},
       {QStringLiteral("domain"), entity.domain},
@@ -266,13 +276,19 @@ QJsonObject toJson(const Entity& entity) {
       {QStringLiteral("flightDynamicsEnabled"), entity.flightDynamicsEnabled},
       {QStringLiteral("flightDynamicsMode"), entity.flightDynamicsMode},
       {QStringLiteral("jsbsimAircraftModel"), entity.jsbsimAircraftModel},
+      {QStringLiteral("controlProfileId"), entity.controlProfileId},
       {QStringLiteral("systemsDisplayProfileId"), entity.systemsDisplayProfileId},
+      {QStringLiteral("cesiumModelAxes"), entity.cesiumModelAxes},
       {QStringLiteral("engineCount"), entity.engineCount},
+      {QStringLiteral("fuelCapacityKilograms"), entity.fuelCapacityKilograms},
+      {QStringLiteral("fuelRemainingKilograms"), entity.fuelRemainingKilograms},
       {QStringLiteral("speedKnots"), entity.speedKnots},
       {QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond},
       {QStringLiteral("destroyed"), entity.destroyed},
       {QStringLiteral("damagePercent"), entity.damagePercent},
       {QStringLiteral("behaviorMode"), normalizedBehaviorMode(entity.behaviorMode)},
+      {QStringLiteral("behaviorTargetEntityId"), entity.behaviorTargetEntityId},
+      {QStringLiteral("behaviorTargetEntityName"), entity.behaviorTargetEntityName},
       {QStringLiteral("currentTask"), toJson(entity.currentTask)},
       {QStringLiteral("weapons"), weapons},
       {QStringLiteral("sensors"), sensors},
@@ -282,6 +298,11 @@ QJsonObject toJson(const Entity& entity) {
 
 Entity entityFromJson(const QJsonObject& object) {
   Entity entity;
+  const QString persistedEntityId =
+      object.value(QStringLiteral("entityId")).toString().trimmed();
+  if (!persistedEntityId.isEmpty()) {
+    entity.entityId = persistedEntityId;
+  }
   entity.name = object.value(QStringLiteral("name")).toString();
   entity.type = object.value(QStringLiteral("type")).toString(QStringLiteral("Entity"));
   entity.domain = object.value(QStringLiteral("domain")).toString(QStringLiteral("Air"));
@@ -306,11 +327,22 @@ Entity entityFromJson(const QJsonObject& object) {
   entity.flightDynamicsEnabled = object.value(QStringLiteral("flightDynamicsEnabled")).toBool(false);
   entity.flightDynamicsMode = object.value(QStringLiteral("flightDynamicsMode")).toString(QStringLiteral("kinematic"));
   entity.jsbsimAircraftModel = object.value(QStringLiteral("jsbsimAircraftModel")).toString();
+  entity.controlProfileId = object.value(QStringLiteral("controlProfileId")).toString();
   entity.systemsDisplayProfileId =
       object.value(QStringLiteral("systemsDisplayProfileId")).toString();
+  entity.cesiumModelAxes = ModelOrientation::resolveCesiumAxes(
+      object.value(QStringLiteral("cesiumModelAxes")).toString(),
+      entity.modelUri);
   entity.engineCount = qMax(
       0,
       object.value(QStringLiteral("engineCount")).toInt(0));
+  entity.fuelCapacityKilograms = qMax(
+      0.0,
+      object.value(QStringLiteral("fuelCapacityKilograms")).toDouble(0.0));
+  entity.fuelRemainingKilograms = qBound(
+      0.0,
+      object.value(QStringLiteral("fuelRemainingKilograms")).toDouble(0.0),
+      entity.fuelCapacityKilograms);
   entity.speedKnots = object.value(QStringLiteral("speedKnots")).toDouble(0.0);
   entity.verticalSpeedMetersPerSecond = object.value(QStringLiteral("verticalSpeedMetersPerSecond")).toDouble(0.0);
   entity.destroyed = object.value(QStringLiteral("destroyed")).toBool(false);
@@ -321,6 +353,10 @@ Entity entityFromJson(const QJsonObject& object) {
   entity.behaviorMode =
       normalizedBehaviorMode(
           object.value(QStringLiteral("behaviorMode")).toString(QStringLiteral("Manual")));
+  entity.behaviorTargetEntityId =
+      object.value(QStringLiteral("behaviorTargetEntityId")).toString();
+  entity.behaviorTargetEntityName =
+      object.value(QStringLiteral("behaviorTargetEntityName")).toString();
   entity.currentTask = taskFromJson(object.value(QStringLiteral("currentTask")).toObject());
 
   const QJsonArray weapons = object.value(QStringLiteral("weapons")).toArray();

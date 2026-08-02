@@ -100,6 +100,9 @@ void populateEntityContextMenu(
       actions.setSelectedEntityAltitude);
   addSlotAction(setMenu, QStringLiteral("Speed..."),
       actions.setSelectedEntitySpeed);
+  QAction* fuelAction = addSlotAction(setMenu, QStringLiteral("Fuel..."),
+      actions.setSelectedEntityFuel);
+  fuelAction->setEnabled(!s.entityDestroyed && s.canConfigureFuel);
   setMenu->setEnabled(!s.entityDestroyed);
 
   // ── Behavior submenu ────────────────────────────────────────────────────

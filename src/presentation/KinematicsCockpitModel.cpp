@@ -14,6 +14,7 @@ constexpr double kMetersPerSecondToThousandsFeetPerMinute =
 KinematicsCockpitData makeKinematicsCockpitData(
     const application::KinematicsTelemetrySnapshot& snapshot) {
   KinematicsCockpitData data;
+  data.entityId = snapshot.entityId;
   data.entityName = snapshot.entityName;
   data.rollDegrees = snapshot.rollDegrees;
   data.pitchDegrees = snapshot.pitchDegrees;
@@ -40,6 +41,14 @@ KinematicsCockpitData makeKinematicsCockpitData(
       : data.altitudeFeet;
   data.systemsProfileId = snapshot.systems.profileId;
   data.systemsDataSource = snapshot.systems.dataSource;
+  data.fuelCapacityKilograms = snapshot.systems.fuelCapacityKilograms;
+  data.fuelRemainingKilograms = snapshot.systems.fuelRemainingKilograms;
+  data.fuelPercent = snapshot.systems.fuelPercent;
+  data.totalFuelFlowKilogramsPerHour =
+      snapshot.systems.totalFuelFlowKilogramsPerHour;
+  data.estimatedEnduranceSeconds = snapshot.systems.estimatedEnduranceSeconds;
+  data.fuelAvailable = snapshot.systems.fuelAvailable;
+  data.enduranceAvailable = snapshot.systems.enduranceAvailable;
   for (const application::EngineTelemetry& engine : snapshot.systems.engines) {
     QVariantMap values;
     values.insert(QStringLiteral("engineId"), engine.engineId);

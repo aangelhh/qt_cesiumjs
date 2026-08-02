@@ -4,6 +4,7 @@
 #include "domain/BombReleaseGate.h"
 #include "domain/CombatRules.h"
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 #include "domain/GeoMath.h"
 #include "presentation/BombReleaseController.h"
 
@@ -63,17 +64,18 @@ void AttackTaskProcessor::processAttackTasks(double deltaSeconds, bool simulatio
   for (const Entity& entity : _state->entities()) {
     const QString taskType = entity.currentTask.taskType.trimmed();
     const QString taskStatus = entity.currentTask.status.trimmed();
+    const QString entityKey = domain::entityKey(entity);
     if (entity.destroyed) {
-      _attackAirElapsedSeconds.remove(entity.name);
-      _attackAirMissileCooldownSeconds.remove(entity.name);
+      _attackAirElapsedSeconds.remove(entityKey);
+      _attackAirMissileCooldownSeconds.remove(entityKey);
     }
     if ((taskType == QStringLiteral("AttackAir") ||
          taskType == QStringLiteral("AttackUntilDestroyed") ||
          taskType == QStringLiteral("FireInDirection") ||
          taskType == QStringLiteral("AttackOnce")) &&
         domain::attackTaskStatusIsTerminal(taskStatus)) {
-      _attackAirElapsedSeconds.remove(entity.name);
-      _attackAirMissileCooldownSeconds.remove(entity.name);
+      _attackAirElapsedSeconds.remove(entityKey);
+      _attackAirMissileCooldownSeconds.remove(entityKey);
     }
     if (!entity.currentTask.enabled ||
         entity.destroyed ||
@@ -87,13 +89,13 @@ void AttackTaskProcessor::processAttackTasks(double deltaSeconds, bool simulatio
         domain::attackTaskStatusIsTerminal(taskStatus)) {
       continue;
     }
-    taskEntityNames.push_back(entity.name);
+    taskEntityNames.push_back(entityKey);
   }
 
   for (const QString& entityName : taskEntityNames) {
     const Entity* entity = nullptr;
     for (const Entity& e : _state->entities()) {
-      if (e.name == entityName) { entity = &e; break; }
+      if (domain::entityMatchesReference(e, entityName)) { entity = &e; break; }
     }
     if (!entity || entity->destroyed) {
       setEntityTaskStatus(entityName, QStringLiteral("Target unavailable"));
@@ -137,6 +139,7 @@ void AttackTaskProcessor::processAutoBombing(double deltaSeconds, bool simulatio
   }
 
   for (const Entity& launcher : _state->entities()) {
+    const QString launcherKey = domain::entityKey(launcher);
     const QString taskType = launcher.currentTask.taskType.trimmed();
     if (launcher.currentTask.enabled &&
         (taskType == QStringLiteral("AttackOnce") ||
@@ -156,15 +159,15 @@ void AttackTaskProcessor::processAutoBombing(double deltaSeconds, bool simulatio
         launcher.destroyed ||
         launcher.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0 ||
         domain::weaponQuantity(launcher, QStringLiteral("Bomb")) <= 0) {
-      _autoBehaviorDamageReactionLevel.remove(launcher.name);
+      _autoBehaviorDamageReactionLevel.remove(launcherKey);
       continue;
     }
 
     const int damageReactionLevel = domain::autoBehaviorDamageReactionLevel(launcher);
     const int previousReactionLevel =
-        _autoBehaviorDamageReactionLevel.value(launcher.name, -1);
+        _autoBehaviorDamageReactionLevel.value(launcherKey, -1);
     if (damageReactionLevel != previousReactionLevel) {
-      _autoBehaviorDamageReactionLevel.insert(launcher.name, damageReactionLevel);
+      _autoBehaviorDamageReactionLevel.insert(launcherKey, damageReactionLevel);
       if (damageReactionLevel >= 2) {
         _log(QStringLiteral("%1 auto bombing blocked: critical damage (%2%).")
                  .arg(launcher.name).arg(launcher.damagePercent, 0, 'f', 0));
@@ -180,7 +183,7 @@ void AttackTaskProcessor::processAutoBombing(double deltaSeconds, bool simulatio
       continue;
     }
 
-    const auto cooldownIt = _autoBombReleaseCooldownSeconds.constFind(launcher.name);
+    const auto cooldownIt = _autoBombReleaseCooldownSeconds.constFind(launcherKey);
     if (cooldownIt != _autoBombReleaseCooldownSeconds.constEnd() &&
         cooldownIt.value() > 0.0) {
       continue;
@@ -193,17 +196,17 @@ void AttackTaskProcessor::processAutoBombing(double deltaSeconds, bool simulatio
     }
 
     _queueBomb(
-        launcher.name,
+        launcherKey,
         target->latitude,
         target->longitude,
         static_cast<double>(target->altitude),
         target->name,
         QStringLiteral("Auto Behavior"),
-        target->name,
+        domain::entityKey(*target),
         false,
         false);
     _autoBombReleaseCooldownSeconds.insert(
-        launcher.name, kAutoBombReleaseCooldownSeconds);
+        launcherKey, kAutoBombReleaseCooldownSeconds);
     _log(QStringLiteral("%1 auto-armed bomb release at %2")
              .arg(launcher.name, target->name));
     _setStatus(QStringLiteral("%1 auto-armed bomb release at %2.")
@@ -238,7 +241,7 @@ bool AttackTaskProcessor::processAttackOnceTask(
     const QString& entityName, double deltaSeconds) {
   const Entity* launcher = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == entityName) { launcher = &e; break; }
+    if (domain::entityMatchesReference(e, entityName)) { launcher = &e; break; }
   }
   if (!launcher || launcher->destroyed) {
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -257,7 +260,7 @@ bool AttackTaskProcessor::processAttackOnceTask(
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
   }
 
-  const QString targetName = launcher->currentTask.targetEntityName.trimmed();
+  const QString targetName = domain::targetEntityReference(launcher->currentTask);
   if (targetName.isEmpty()) {
     _attackAirElapsedSeconds.remove(entityName);
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -265,9 +268,10 @@ bool AttackTaskProcessor::processAttackOnceTask(
 
   const Entity* target = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == targetName) { target = &e; break; }
+    if (domain::entityMatchesReference(e, targetName)) { target = &e; break; }
   }
-  if (!target || target->destroyed || target->name == launcher->name ||
+  if (!target || target->destroyed ||
+      domain::entityKey(*target) == domain::entityKey(*launcher) ||
       target->forceIdentifier == launcher->forceIdentifier) {
     _attackAirElapsedSeconds.remove(entityName);
     _log(QStringLiteral("Attack Once task failed for %1: target no longer valid.")
@@ -315,7 +319,7 @@ bool AttackTaskProcessor::processAttackOnceTask(
         static_cast<double>(target->altitude),
         target->name,
         QStringLiteral("Attack Once Task"),
-        target->name,
+        domain::entityKey(*target),
         false,
         false);
     _attackAirElapsedSeconds.remove(entityName);
@@ -333,20 +337,20 @@ bool AttackTaskProcessor::processAttackUntilDestroyedTask(
     const QString& entityName, double deltaSeconds) {
   const Entity* launcher = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == entityName) { launcher = &e; break; }
+    if (domain::entityMatchesReference(e, entityName)) { launcher = &e; break; }
   }
   if (!launcher || launcher->destroyed) {
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
   }
 
-  const QString targetName = launcher->currentTask.targetEntityName.trimmed();
+  const QString targetName = domain::targetEntityReference(launcher->currentTask);
   if (targetName.isEmpty()) {
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
   }
 
   const Entity* target = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == targetName) { target = &e; break; }
+    if (domain::entityMatchesReference(e, targetName)) { target = &e; break; }
   }
   if (target && target->destroyed) {
     setEntityTaskStatus(entityName, QStringLiteral("Completed"));
@@ -358,7 +362,7 @@ bool AttackTaskProcessor::processAttackUntilDestroyedTask(
                    .arg(entityName));
     return true;
   }
-  if (!target || target->name == launcher->name ||
+  if (!target || domain::entityKey(*target) == domain::entityKey(*launcher) ||
       target->forceIdentifier == launcher->forceIdentifier) {
     setEntityTaskStatus(entityName, QStringLiteral("Failed"));
     _attackAirElapsedSeconds.remove(entityName);
@@ -401,7 +405,7 @@ bool AttackTaskProcessor::processAttackUntilDestroyedTask(
 
     Entity* mutableLauncher = nullptr;
     for (Entity& e : _state->entitiesMutable()) {
-      if (e.name == entityName) { mutableLauncher = &e; break; }
+      if (domain::entityMatchesReference(e, entityName)) { mutableLauncher = &e; break; }
     }
     if (!mutableLauncher) {
       return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -475,7 +479,7 @@ bool AttackTaskProcessor::processAttackUntilDestroyedTask(
         static_cast<double>(target->altitude),
         target->name,
         QStringLiteral("Attack Until Destroyed Task"),
-        target->name,
+        domain::entityKey(*target),
         false,
         false);
     _attackAirMissileCooldownSeconds[entityName] = shotCooldownSeconds;
@@ -492,7 +496,7 @@ bool AttackTaskProcessor::processAttackUntilDestroyedTask(
 bool AttackTaskProcessor::processFireOnPositionTask(const QString& entityName) {
   const Entity* launcher = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == entityName) { launcher = &e; break; }
+    if (domain::entityMatchesReference(e, entityName)) { launcher = &e; break; }
   }
   if (!launcher || launcher->destroyed) {
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -540,7 +544,7 @@ bool AttackTaskProcessor::processFireInDirectionTask(
     const QString& entityName, double deltaSeconds) {
   const Entity* launcher = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == entityName) { launcher = &e; break; }
+    if (domain::entityMatchesReference(e, entityName)) { launcher = &e; break; }
   }
   if (!launcher || launcher->destroyed) {
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -570,7 +574,7 @@ bool AttackTaskProcessor::processFireInDirectionTask(
 
   Entity* mutableLauncher = nullptr;
   for (Entity& e : _state->entitiesMutable()) {
-    if (e.name == entityName) { mutableLauncher = &e; break; }
+    if (domain::entityMatchesReference(e, entityName)) { mutableLauncher = &e; break; }
   }
   if (mutableLauncher) {
     mutableLauncher->currentTask.status = QStringLiteral("Running");
@@ -583,7 +587,7 @@ bool AttackTaskProcessor::processFireInDirectionTask(
 bool AttackTaskProcessor::processStopWeaponsTask(const QString& entityName) {
   const Entity* launcher = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == entityName) { launcher = &e; break; }
+    if (domain::entityMatchesReference(e, entityName)) { launcher = &e; break; }
   }
   if (!launcher || launcher->destroyed) {
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -591,7 +595,7 @@ bool AttackTaskProcessor::processStopWeaponsTask(const QString& entityName) {
 
   const bool hadPendingRelease =
       _bombCtrl->isPending() &&
-      _bombCtrl->pendingRelease().launcherEntityName.compare(
+      _bombCtrl->pendingRelease().launcherReference().compare(
           entityName, Qt::CaseInsensitive) == 0;
   if (hadPendingRelease) {
     _bombCtrl->cancelActiveAndArmNext();
@@ -612,20 +616,20 @@ bool AttackTaskProcessor::processAttackAirTask(
     const QString& entityName, double deltaSeconds) {
   const Entity* launcher = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == entityName) { launcher = &e; break; }
+    if (domain::entityMatchesReference(e, entityName)) { launcher = &e; break; }
   }
   if (!launcher || launcher->destroyed) {
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
   }
 
-  const QString targetName = launcher->currentTask.targetEntityName.trimmed();
+  const QString targetName = domain::targetEntityReference(launcher->currentTask);
   if (targetName.isEmpty()) {
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
   }
 
   const Entity* target = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == targetName) { target = &e; break; }
+    if (domain::entityMatchesReference(e, targetName)) { target = &e; break; }
   }
   if (target && target->destroyed) {
     setEntityTaskStatus(entityName, QStringLiteral("Completed"));
@@ -637,7 +641,7 @@ bool AttackTaskProcessor::processAttackAirTask(
         QStringLiteral("Attack Air completado para %1: target destruido.").arg(entityName));
     return true;
   }
-  if (!target || target->name == launcher->name) {
+  if (!target || domain::entityKey(*target) == domain::entityKey(*launcher)) {
     setEntityTaskStatus(entityName, QStringLiteral("Failed"));
     _attackAirElapsedSeconds.remove(entityName);
     _attackAirMissileCooldownSeconds.remove(entityName);
@@ -666,7 +670,7 @@ bool AttackTaskProcessor::processAttackAirTask(
 
   Entity* mutableLauncher = nullptr;
   for (Entity& e : _state->entitiesMutable()) {
-    if (e.name == entityName) { mutableLauncher = &e; break; }
+    if (domain::entityMatchesReference(e, entityName)) { mutableLauncher = &e; break; }
   }
   if (!mutableLauncher) {
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -722,7 +726,7 @@ bool AttackTaskProcessor::processAttackAirTask(
 bool AttackTaskProcessor::processAttackSurfaceTask(const QString& entityName) {
   const Entity* launcher = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == entityName) { launcher = &e; break; }
+    if (domain::entityMatchesReference(e, entityName)) { launcher = &e; break; }
   }
   if (!launcher || launcher->destroyed) {
     return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -735,7 +739,7 @@ bool AttackTaskProcessor::processAttackSurfaceTask(const QString& entityName) {
   setEntityTaskStatus(entityName, QStringLiteral("Running"));
 
   if (_bombCtrl->isPending()) {
-    if (_bombCtrl->pendingRelease().launcherEntityName.compare(
+    if (_bombCtrl->pendingRelease().launcherReference().compare(
             entityName, Qt::CaseInsensitive) == 0) {
       return setEntityTaskStatus(entityName, QStringLiteral("Completed"));
     }
@@ -744,7 +748,7 @@ bool AttackTaskProcessor::processAttackSurfaceTask(const QString& entityName) {
   }
 
   const EntityTask task = launcher->currentTask;
-  const QString targetName = task.targetEntityName.trimmed();
+  const QString targetName = domain::targetEntityReference(task);
   QString targetLabel;
   QString targetEntityName;
   double targetLatitude = task.targetLatitude;
@@ -754,7 +758,7 @@ bool AttackTaskProcessor::processAttackSurfaceTask(const QString& entityName) {
   if (!targetName.isEmpty()) {
     const Entity* target = nullptr;
     for (const Entity& e : _state->entities()) {
-      if (e.name == targetName) { target = &e; break; }
+      if (domain::entityMatchesReference(e, targetName)) { target = &e; break; }
     }
     if (!target || target->destroyed) {
       setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -762,7 +766,7 @@ bool AttackTaskProcessor::processAttackSurfaceTask(const QString& entityName) {
                .arg(entityName));
       return true;
     }
-    if (target->name == launcher->name ||
+    if (domain::entityKey(*target) == domain::entityKey(*launcher) ||
         target->forceIdentifier == launcher->forceIdentifier ||
         target->domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0) {
       return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -772,7 +776,7 @@ bool AttackTaskProcessor::processAttackSurfaceTask(const QString& entityName) {
     targetLongitude = target->longitude;
     targetAltitudeMeters = static_cast<double>(target->altitude);
     targetLabel = target->name;
-    targetEntityName = target->name;
+    targetEntityName = domain::entityKey(*target);
   } else {
     if (!domain::attackSurfaceCoordinatesAreUsable(targetLatitude, targetLongitude)) {
       return setEntityTaskStatus(entityName, QStringLiteral("Failed"));
@@ -794,7 +798,7 @@ bool AttackTaskProcessor::processAttackSurfaceTask(const QString& entityName) {
 bool AttackTaskProcessor::setEntityTaskStatus(
     const QString& entityName, const QString& status) {
   for (Entity& entity : _state->entitiesMutable()) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
     const bool terminalAttackPursuit =

@@ -1,4 +1,5 @@
 #include "application/TaskApplicator.h"
+#include "domain/EntityIdentity.h"
 #include "application/Command.h"
 #include "application/ScenarioState.h"
 #include "application/SimulationEngine.h"
@@ -216,7 +217,7 @@ bool applyEntityTask(
   if (isRouteTaskType(taskToApply.taskType)) {
     if (taskToApply.arrivalToleranceMeters <= 0.0) {
       for (const Entity& entity : state->entities()) {
-        if (entity.name == entityName) {
+        if (domain::entityMatchesReference(entity, entityName)) {
           taskToApply.arrivalToleranceMeters = defaultRouteArrivalToleranceMeters(entity);
           break;
         }
@@ -291,7 +292,7 @@ bool applyEntityTask(
   Entity resolvedEntity;
   bool foundEntity = false;
   for (const Entity& entity : state->entities()) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
     resolvedEntity = entity;
@@ -317,7 +318,7 @@ bool applyEntityTask(
   log(QStringLiteral("Task %1 assigned to %2").arg(taskToApply.taskType, entityName));
 
   for (const Entity& entity : state->entities()) {
-    if (entity.name != entityName) {
+    if (!domain::entityMatchesReference(entity, entityName)) {
       continue;
     }
     resolvedEntity = entity;
@@ -326,7 +327,7 @@ bool applyEntityTask(
 
   auto updateAppliedTask = [&](const EntityTask& updatedTask) {
     for (Entity& entity : state->entitiesMutable()) {
-      if (entity.name == entityName) {
+      if (domain::entityMatchesReference(entity, entityName)) {
         entity.currentTask = updatedTask;
         break;
       }
@@ -474,7 +475,7 @@ bool applyEntityTask(
     } else if (taskToApply.taskType == "FollowEntity") {
       simulationEngine->enqueueCommand(std::make_unique<CmdAssignFollowTask>(
           entityName,
-          taskToApply.targetEntityName,
+          domain::targetEntityReference(taskToApply),
           taskToApply.targetAltitudeMeters,
           taskToApply.targetSpeedKnots,
           taskToApply.followDistanceMeters,
@@ -483,7 +484,7 @@ bool applyEntityTask(
     } else if (isInterceptEntityTaskType(taskToApply.taskType)) {
       simulationEngine->enqueueCommand(std::make_unique<CmdAssignInterceptEntity3DTask>(
           entityName,
-          taskToApply.targetEntityName,
+          domain::targetEntityReference(taskToApply),
           taskToApply.targetSpeedKnots,
           taskToApply.interceptDistanceMeters,
           taskToApply.altitudeToleranceMeters,

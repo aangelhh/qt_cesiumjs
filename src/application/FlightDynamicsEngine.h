@@ -13,6 +13,7 @@ public:
   static application::SystemsTelemetrySnapshot systemsTelemetryForEntity(
       const Entity& entity,
       double maximumSpeedKnots);
+  static bool setFuelRemaining(Entity& entity, double kilograms);
 
 private:
   static void advanceEntity(Entity& entity, std::unordered_map<QString, domain::TaskStack>& taskStacks, const QVector<Entity>& snapshot, double deltaSeconds);

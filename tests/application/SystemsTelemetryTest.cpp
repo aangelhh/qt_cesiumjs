@@ -48,3 +48,40 @@ TEST(SystemsTelemetry, KinematicEstimateIsDynamicAndClearlyMarked) {
   EXPECT_EQ(snapshot.engines.front().state, QStringLiteral("RUNNING"));
   EXPECT_DOUBLE_EQ(snapshot.engines.front().n1Percent, 67.5);
 }
+
+TEST(SystemsTelemetry, ReportsFuelLevelFlowAndEndurance) {
+  Entity entity;
+  entity.domain = QStringLiteral("Air");
+  entity.category = QStringLiteral("Fighter");
+  entity.modelName = QStringLiteral("F-16C");
+  entity.speedKnots = 450.0;
+  entity.fuelCapacityKilograms = 3200.0;
+  entity.fuelRemainingKilograms = 1600.0;
+
+  const auto snapshot =
+      application::makeEstimatedSystemsTelemetrySnapshot(entity, 900.0);
+
+  EXPECT_TRUE(snapshot.fuelAvailable);
+  EXPECT_DOUBLE_EQ(snapshot.fuelCapacityKilograms, 3200.0);
+  EXPECT_DOUBLE_EQ(snapshot.fuelRemainingKilograms, 1600.0);
+  EXPECT_DOUBLE_EQ(snapshot.fuelPercent, 50.0);
+  EXPECT_GT(snapshot.totalFuelFlowKilogramsPerHour, 0.0);
+  EXPECT_TRUE(snapshot.enduranceAvailable);
+  EXPECT_GT(snapshot.estimatedEnduranceSeconds, 0.0);
+}
+
+TEST(SystemsTelemetry, KinematicConsumptionDecreasesFuelWithoutGoingNegative) {
+  Entity entity;
+  entity.domain = QStringLiteral("Air");
+  entity.category = QStringLiteral("Fighter");
+  entity.speedKnots = 450.0;
+  entity.fuelCapacityKilograms = 100.0;
+  entity.fuelRemainingKilograms = 10.0;
+
+  application::consumeEstimatedFuel(entity, 60.0, 900.0);
+  EXPECT_LT(entity.fuelRemainingKilograms, 10.0);
+  EXPECT_GE(entity.fuelRemainingKilograms, 0.0);
+
+  application::consumeEstimatedFuel(entity, 36000.0, 900.0);
+  EXPECT_DOUBLE_EQ(entity.fuelRemainingKilograms, 0.0);
+}
