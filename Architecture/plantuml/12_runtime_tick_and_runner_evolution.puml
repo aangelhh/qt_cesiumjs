@@ -1,0 +1,45 @@
+@startuml
+title Runtime Tick - Current Loop and Target Runner
+
+skinparam shadowing false
+
+actor Operator
+participant "Qt timer / MainWindow" as UI
+participant "ScenarioState" as State
+participant "FlightDynamicsEngine" as FDE
+participant "BehaviorEngine" as Behavior
+participant "MunitionSimulator" as Munition
+participant "SensorEngine" as Sensor
+participant "EntityPlanExecutor" as Plans
+participant "SimulationRunner (target)" as Runner
+
+group Current interactive loop
+  Operator -> UI: commands
+  loop approximately every 33 ms
+    UI -> Plans: coordinate active plans
+    UI -> State: advanceSimulation(deltaTime)
+    State -> FDE: advance entities
+    State -> Behavior: advance behaviors
+    State -> Munition: advance munitions and effects
+    State -> Sensor: refresh contacts
+    UI -> UI: refresh Qt / Cesium / cockpit
+  end
+end
+
+group Target common execution contract
+  UI -> Runner: RealTimeScheduler.step(time, dt)
+  Runner -> Runner: drain ordered commands
+  Runner -> Plans: evaluate plans / tasks / behaviors
+  Runner -> FDE: advance models
+  Runner -> Munition: resolve weapons and effects
+  Runner -> Sensor: evaluate sensors
+  Runner -> Runner: publish events, snapshots and recording
+end
+
+note right of Runner
+The same ordered pipeline is used by
+real-time, fast-time, headless and replay.
+The scheduler changes pacing only.
+end note
+
+@enduml
