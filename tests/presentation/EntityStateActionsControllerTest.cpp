@@ -267,6 +267,43 @@ TEST(EntityStateActionsController, setSpeedAppliesTask) {
   delete ctrl;
 }
 
+TEST(EntityStateActionsController, setFuelUpdatesSelectedAirEntity) {
+  Fixture f;
+  f.addEntity(QStringLiteral("Tanker"));
+  f.selectedName = QStringLiteral("Tanker");
+  f.askDoubleRet = 1800.0;
+  f.askDoubleOk = true;
+  auto* ctrl = f.makeController();
+
+  ctrl->setSelectedFuel();
+
+  double remaining = 0.0;
+  double capacity = 0.0;
+  ASSERT_TRUE(f.state.entityFuelState(
+      QStringLiteral("Tanker"), remaining, capacity));
+  EXPECT_DOUBLE_EQ(remaining, 1800.0);
+  EXPECT_GT(capacity, remaining);
+  EXPECT_TRUE(f.synced);
+  EXPECT_FALSE(f.lastStatus.isEmpty());
+  delete ctrl;
+}
+
+TEST(EntityStateActionsController, setFuelRejectsGroundEntity) {
+  Fixture f;
+  Entity ground = f.addEntity(QStringLiteral("Ground"));
+  f.state.removeEntity(QStringLiteral("Ground"));
+  ground.domain = QStringLiteral("Ground");
+  f.state.addEntity(ground);
+  f.selectedName = QStringLiteral("Ground");
+  auto* ctrl = f.makeController();
+
+  ctrl->setSelectedFuel();
+
+  EXPECT_FALSE(f.synced);
+  EXPECT_TRUE(f.lastStatus.contains(QStringLiteral("Air")));
+  delete ctrl;
+}
+
 TEST(EntityStateActionsController, setHeadingNoFlyTargetsDoesNothing) {
   Fixture f;
   f.selectedName  = QStringLiteral("November");

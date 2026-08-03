@@ -31,6 +31,7 @@ EntityTask AssignTaskController::taskFromSummary(const QVariantMap& summary) {
   task.targetSpeedKnots       = summary.value(QStringLiteral("taskTargetSpeedKnots")).toDouble();
   task.targetLatitude         = summary.value(QStringLiteral("taskTargetLatitude")).toDouble();
   task.targetLongitude        = summary.value(QStringLiteral("taskTargetLongitude")).toDouble();
+  task.targetEntityId         = summary.value(QStringLiteral("taskTargetEntityId")).toString();
   task.targetEntityName       = summary.value(QStringLiteral("taskTargetEntityName")).toString();
   task.targetWaypointName     = summary.value(QStringLiteral("taskTargetWaypointName")).toString();
   task.targetRouteName        = summary.value(QStringLiteral("taskTargetRouteName")).toString();

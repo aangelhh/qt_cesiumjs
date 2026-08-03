@@ -1,6 +1,7 @@
 #include "presentation/BombReleaseActionsController.h"
 #include "presentation/BombReleaseController.h"
 #include "domain/BombReleaseGate.h"
+#include "domain/EntityIdentity.h"
 #include <QHash>
 
 namespace presentation {
@@ -61,14 +62,18 @@ void BombReleaseActionsController::releaseBombAtSurfaceEntity() {
   }
 
   QStringList options;
-  QHash<QString, QString> targetNameByOption;
+  QHash<QString, const Entity*> targetByOption;
   for (const Entity* target : targets) {
     if (!target) {
       continue;
     }
-    const QString option = _targetLabel(*target);
+    QString option = _targetLabel(*target);
+    if (targetByOption.contains(option)) {
+      option = QStringLiteral("%1 [%2]")
+          .arg(option, domain::entityKey(*target).left(8));
+    }
     options.push_back(option);
-    targetNameByOption.insert(option, target->name);
+    targetByOption.insert(option, target);
   }
 
   bool ok = false;
@@ -81,8 +86,7 @@ void BombReleaseActionsController::releaseBombAtSurfaceEntity() {
     return;
   }
 
-  const QString targetName = targetNameByOption.value(selectedOption).trimmed();
-  const Entity* target = _findEntity(targetName);
+  const Entity* target = targetByOption.value(selectedOption, nullptr);
   if (!target) {
     _bombController->clear();
     return;
@@ -130,14 +134,18 @@ void BombReleaseActionsController::addBombTargetToQueue() {
   }
 
   QStringList options;
-  QHash<QString, QString> targetNameByOption;
+  QHash<QString, const Entity*> targetByOption;
   for (const Entity* target : targets) {
     if (!target) {
       continue;
     }
-    const QString option = _targetLabel(*target);
+    QString option = _targetLabel(*target);
+    if (targetByOption.contains(option)) {
+      option = QStringLiteral("%1 [%2]")
+          .arg(option, domain::entityKey(*target).left(8));
+    }
     options.push_back(option);
-    targetNameByOption.insert(option, target->name);
+    targetByOption.insert(option, target);
   }
 
   bool ok = false;
@@ -149,8 +157,7 @@ void BombReleaseActionsController::addBombTargetToQueue() {
     return;
   }
 
-  const QString targetName = targetNameByOption.value(selectedOption).trimmed();
-  const Entity* target = _findEntity(targetName);
+  const Entity* target = targetByOption.value(selectedOption, nullptr);
   if (!target) {
     return;
   }
@@ -238,7 +245,7 @@ void BombReleaseActionsController::queueBombReleaseAtEntity(
       static_cast<double>(target.altitude),
       target.name,
       QStringLiteral("Surface Entity"),
-      target.name);
+      domain::entityKey(target));
 }
 
 void BombReleaseActionsController::addBombTargetToQueueAtEntity(
@@ -250,7 +257,7 @@ void BombReleaseActionsController::addBombTargetToQueueAtEntity(
       static_cast<double>(target.altitude),
       target.name,
       QStringLiteral("Surface Entity"),
-      target.name);
+      domain::entityKey(target));
 }
 
 } // namespace presentation

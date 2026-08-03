@@ -15,7 +15,9 @@ inline constexpr QLatin1StringView CompletedWithFailures("CompletedWithFailures"
 
 /// Represents a pending bomb release targeting a specific location.
 struct PendingBombRelease {
+  QString launcherEntityId;
   QString launcherEntityName;
+  QString targetEntityId;
   QString targetEntityName;
   double targetLatitude = 0.0;
   double targetLongitude = 0.0;
@@ -25,19 +27,45 @@ struct PendingBombRelease {
   bool pending = false;
   bool releaseCommandIssued = false;
 
+  QString launcherReference() const {
+    return launcherEntityId.trimmed().isEmpty()
+        ? launcherEntityName.trimmed()
+        : launcherEntityId.trimmed();
+  }
+
+  QString targetReference() const {
+    return targetEntityId.trimmed().isEmpty()
+        ? targetEntityName.trimmed()
+        : targetEntityId.trimmed();
+  }
+
   void clear() {
     *this = PendingBombRelease{};
   }
 };
 
 struct BombTargetQueueItem {
+  QString launcherEntityId;
   QString launcherEntityName;
+  QString targetEntityId;
   QString targetEntityName;
   double targetLatitude = 0.0;
   double targetLongitude = 0.0;
   double targetAltitudeMeters = 0.0;
   QString targetLabel;
   QString sourceDescription;
+
+  QString launcherReference() const {
+    return launcherEntityId.trimmed().isEmpty()
+        ? launcherEntityName.trimmed()
+        : launcherEntityId.trimmed();
+  }
+
+  QString targetReference() const {
+    return targetEntityId.trimmed().isEmpty()
+        ? targetEntityName.trimmed()
+        : targetEntityId.trimmed();
+  }
 };
 
 enum class PlanStepKind {

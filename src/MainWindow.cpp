@@ -6,6 +6,9 @@
 #include "application/ScenarioState.h"
 #include "application/SimulationEngine.h"
 #include "application/Command.h"
+#include "application/Event.h"
+#include "application/EventBus.h"
+#include "application/KinematicsTelemetry.h"
 #include "application/ScenarioQueries.h"
 #include "application/TaskApplicator.h"
 #include "domain/BombReleaseGate.h"
@@ -15,12 +18,14 @@
 #include "presentation/EntityPlanExecutor.h"
 #include "presentation/BombTargetMapSync.h"
 #include "presentation/MapBridgeScripts.h"
+#include "presentation/KinematicsCockpitWidget.h"
 #include "presentation/EntityContextMenuBuilder.h"
 #include "presentation/EntityContextMenuStateBuilder.h"
 #include "presentation/TrackSetSyncer.h"
 #include "presentation/EntityPlanDialog.h"
 #include "domain/CombatRules.h"
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 #include "domain/GeoMath.h"
 #include "infrastructure/CesiumScenePage.h"
 #include "infrastructure/MapBridge.h"
@@ -45,6 +50,7 @@
 #include <QFileInfo>
 #include <QColor>
 #include <QDialog>
+#include <QDockWidget>
 #include <QEventLoop>
 #include <QFrame>
 #include <QHeaderView>
@@ -67,6 +73,7 @@
 #include <QSizePolicy>
 #include <QStandardItem>
 #include <QStandardItemModel>
+#include <QScrollBar>
 #include <QSet>
 #include <QToolButton>
 #include <QVariantList>
@@ -153,6 +160,18 @@ void setTrackData(QStandardItem* item, const QVariantMap& summary) {
   item->setData(summary, kTrackSummaryRole);
 }
 
+QString entityTreeLabel(const Entity& entity, const QVector<Entity>& entities) {
+  int matchingNames = 0;
+  for (const Entity& candidate : entities) {
+    if (candidate.name.compare(entity.name, Qt::CaseInsensitive) == 0) {
+      ++matchingNames;
+    }
+  }
+  return matchingNames > 1
+      ? QStringLiteral("%1 [%2]").arg(entity.name, domain::entityKey(entity).left(8))
+      : entity.name;
+}
+
 // forceColorFromLabel, categoryGlyph, makeTacticalGraphicIcon, makeTrackIcon
 // moved to presentation/TrackIconProvider.h
 
@@ -163,6 +182,13 @@ MainWindow::MainWindow(QWidget* parent)
       _ui(new Ui::MainWindow),
       _contentWidget(nullptr),
       _taskQuickBar(nullptr),
+      _kinematicsCockpitDock(nullptr),
+      _kinematicsCockpitWidget(nullptr),
+      _qflightCockpitDock(nullptr),
+      _qflightCockpitWidget(nullptr),
+      _ecamCockpitDock(nullptr),
+      _ecamCockpitWidget(nullptr),
+      _kinematicsTelemetrySubscriptionId(0),
       _mapBridge(new MapBridge(this)),
       _scenarioState(new ScenarioState()),
       _objectsModel(new QStandardItemModel(this)),
@@ -209,6 +235,15 @@ MainWindow::MainWindow(QWidget* parent)
           [this](const QString& msg) { this->appendLogMessage(msg); },
           [this](const QString& msg) { this->_ui->statusLabel->setText(msg); },
           this)),
+      _cockpitControlService(std::make_unique<application::CockpitControlService>(
+          _scenarioState,
+          [this](const QString& name, const EntityTask& task, bool sync) {
+            return this->applyEntityTask(name, task, sync);
+          },
+          [this](const QString& name, bool clearTask) {
+            this->stopEntityPlan(name, clearTask);
+          },
+          [this](const QString& msg) { this->appendLogMessage(msg); })),
       _entityVisualStateManager(std::make_unique<presentation::EntityVisualStateManager>(
           QDir(projectRootPath()).absoluteFilePath(QStringLiteral("Data/entity_visual_state.json")))),
       _entityHomePositionTracker(std::make_unique<presentation::EntityHomePositionTracker>()),
@@ -245,6 +280,7 @@ MainWindow::MainWindow(QWidget* parent)
   this->_ui->viewerHost->setMinimumSize(960, 640);
   this->_ui->viewerHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
+  this->initializeKinematicsCockpit();
   this->initializeModels();
   this->populateTaskCommands();
   this->_entityVisualStateManager->load();
@@ -448,7 +484,7 @@ MainWindow::MainWindow(QWidget* parent)
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
-      validNames.insert(entity.name);
+      validNames.insert(domain::entityKey(entity));
     }
     this->_entityVisualStateManager->pruneTo(validNames);
   }
@@ -754,8 +790,179 @@ MainWindow::MainWindow(QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
+  if (this->_kinematicsTelemetrySubscriptionId != 0) {
+    application::EventBus::instance()
+        .unsubscribe<application::EventKinematicsTelemetryUpdated>(
+            this->_kinematicsTelemetrySubscriptionId);
+  }
   delete this->_scenarioState;
   delete this->_ui;
+}
+
+void MainWindow::initializeKinematicsCockpit() {
+  this->_kinematicsCockpitDock = new QDockWidget(
+      QStringLiteral("Modern PFD"),
+      this);
+  this->_kinematicsCockpitDock->setObjectName(
+      QStringLiteral("kinematicsCockpitDockWidget"));
+  this->_kinematicsCockpitDock->setAllowedAreas(
+      Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
+  this->_kinematicsCockpitWidget =
+      new presentation::KinematicsCockpitWidget(
+          this->_kinematicsCockpitDock,
+          presentation::KinematicsCockpitWidget::PanelMode::ModernPfd);
+  this->_kinematicsCockpitDock->setWidget(this->_kinematicsCockpitWidget);
+  connect(
+      this->_kinematicsCockpitWidget,
+      &presentation::KinematicsCockpitWidget::takeControlRequested,
+      this,
+      &MainWindow::takeCockpitControl);
+  connect(
+      this->_kinematicsCockpitWidget,
+      &presentation::KinematicsCockpitWidget::setpointsRequested,
+      this,
+      &MainWindow::updateCockpitSetpoints);
+  connect(
+      this->_kinematicsCockpitWidget,
+      &presentation::KinematicsCockpitWidget::releaseControlRequested,
+      this,
+      &MainWindow::releaseCockpitControl);
+  this->_kinematicsCockpitDock->setFeatures(
+      QDockWidget::DockWidgetClosable |
+      QDockWidget::DockWidgetMovable |
+      QDockWidget::DockWidgetFloatable);
+  this->addDockWidget(Qt::BottomDockWidgetArea, this->_kinematicsCockpitDock);
+  this->_ui->menuView->addAction(
+      this->_kinematicsCockpitDock->toggleViewAction());
+
+  this->_qflightCockpitDock = new QDockWidget(
+      QStringLiteral("QFlight EADI"),
+      this);
+  this->_qflightCockpitDock->setObjectName(
+      QStringLiteral("qflightCockpitDockWidget"));
+  this->_qflightCockpitWidget =
+      new presentation::KinematicsCockpitWidget(
+          this->_qflightCockpitDock,
+          presentation::KinematicsCockpitWidget::PanelMode::QFlightEadi);
+  this->_qflightCockpitDock->setWidget(this->_qflightCockpitWidget);
+  this->_qflightCockpitDock->setFeatures(
+      QDockWidget::DockWidgetClosable |
+      QDockWidget::DockWidgetMovable |
+      QDockWidget::DockWidgetFloatable);
+  this->addDockWidget(Qt::BottomDockWidgetArea, this->_qflightCockpitDock);
+  this->_ui->menuView->addAction(
+      this->_qflightCockpitDock->toggleViewAction());
+
+  this->_ecamCockpitDock = new QDockWidget(
+      QStringLiteral("ECAM Engine Display"),
+      this);
+  this->_ecamCockpitDock->setObjectName(
+      QStringLiteral("ecamCockpitDockWidget"));
+  this->_ecamCockpitWidget =
+      new presentation::KinematicsCockpitWidget(
+          this->_ecamCockpitDock,
+          presentation::KinematicsCockpitWidget::PanelMode::EcamEngine);
+  this->_ecamCockpitDock->setWidget(this->_ecamCockpitWidget);
+  this->_ecamCockpitDock->setFeatures(
+      QDockWidget::DockWidgetClosable |
+      QDockWidget::DockWidgetMovable |
+      QDockWidget::DockWidgetFloatable);
+  this->addDockWidget(Qt::BottomDockWidgetArea, this->_ecamCockpitDock);
+  this->_ui->menuView->addAction(
+      this->_ecamCockpitDock->toggleViewAction());
+  this->tabifyDockWidget(
+      this->_kinematicsCockpitDock,
+      this->_qflightCockpitDock);
+  this->tabifyDockWidget(
+      this->_qflightCockpitDock,
+      this->_ecamCockpitDock);
+  this->_kinematicsCockpitDock->raise();
+
+  this->_kinematicsTelemetrySubscriptionId =
+      application::EventBus::instance()
+          .subscribe<application::EventKinematicsTelemetryUpdated>(
+              [this](const application::EventKinematicsTelemetryUpdated& event) {
+                const application::KinematicsTelemetrySnapshot snapshot =
+                    event.snapshot;
+                QMetaObject::invokeMethod(
+                    this,
+                    [this, snapshot]() {
+                      const QString entityReference = snapshot.entityId.trimmed().isEmpty()
+                          ? snapshot.entityName
+                          : snapshot.entityId;
+                      if (entityReference == this->selectedEntityName()) {
+                        EntityTask activeTask;
+                        activeTask.enabled = snapshot.taskEnabled;
+                        activeTask.taskType = snapshot.taskType;
+                        this->_cockpitControlService->reconcile(
+                            entityReference,
+                            activeTask);
+                        this->_kinematicsCockpitWidget->setControlActive(
+                            this->_cockpitControlService->hasControl(
+                                entityReference));
+                        this->_kinematicsCockpitWidget->applySnapshot(snapshot);
+                        this->_qflightCockpitWidget->applySnapshot(snapshot);
+                        this->_ecamCockpitWidget->applySnapshot(snapshot);
+                      }
+                    },
+                    Qt::QueuedConnection);
+              });
+}
+
+void MainWindow::refreshKinematicsCockpitForEntity(const Entity* entity) {
+  if (!entity) {
+    this->_kinematicsCockpitWidget->clear();
+    this->_qflightCockpitWidget->clear();
+    this->_ecamCockpitWidget->clear();
+    return;
+  }
+
+  const application::KinematicsTelemetrySnapshot snapshot =
+      application::makeKinematicsTelemetrySnapshot(
+          *entity,
+          this->_scenarioState->simulationTimeSeconds(),
+          0.0);
+  const QString entityReference = domain::entityKey(*entity);
+  this->_cockpitControlService->reconcile(entityReference, entity->currentTask);
+  this->_kinematicsCockpitWidget->setControlActive(
+      this->_cockpitControlService->hasControl(entityReference));
+  this->_kinematicsCockpitWidget->applySnapshot(snapshot);
+  this->_qflightCockpitWidget->applySnapshot(snapshot);
+  this->_ecamCockpitWidget->applySnapshot(snapshot);
+}
+
+void MainWindow::takeCockpitControl(
+    const QString& entityName,
+    double headingDegrees,
+    int altitudeMeters,
+    double speedKnots) {
+  const application::FlightControlCommand command{
+      entityName, headingDegrees, altitudeMeters, speedKnots};
+  const bool acquired = this->_cockpitControlService->takeControl(command);
+  this->_kinematicsCockpitWidget->setControlActive(acquired);
+  this->_ui->statusLabel->setText(
+      acquired
+          ? QStringLiteral("Control de cockpit activo para %1.").arg(entityName)
+          : QStringLiteral("No se pudo tomar control de %1.").arg(entityName));
+}
+
+void MainWindow::updateCockpitSetpoints(
+    const QString& entityName,
+    double headingDegrees,
+    int altitudeMeters,
+    double speedKnots) {
+  this->_cockpitControlService->updateSetpoints(
+      {entityName, headingDegrees, altitudeMeters, speedKnots});
+}
+
+void MainWindow::releaseCockpitControl(const QString& entityName) {
+  const bool released = this->_cockpitControlService->releaseControl(entityName);
+  this->_kinematicsCockpitWidget->setControlActive(false);
+  if (released) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Control de cockpit liberado para %1.").arg(entityName));
+    this->syncScenarioStateToUi();
+  }
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
@@ -775,6 +982,10 @@ void MainWindow::appendLogMessage(const QString& message) {
 }
 
 void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
+  if (summary.isEmpty() && this->_kinematicsCockpitWidget) {
+    this->refreshKinematicsCockpitForEntity(nullptr);
+  }
+
   const auto value = [&summary](const char* key, const QString& fallback = QStringLiteral("-")) {
     const QString text = summary.value(QString::fromLatin1(key)).toString().trimmed();
     return text.isEmpty() ? fallback : text;
@@ -845,13 +1056,30 @@ void MainWindow::setSelectedTrackDetails(const QVariantMap& summary) {
       taskType == QStringLiteral("-") || taskType == QStringLiteral("No current tasks")
           ? status
           : QStringLiteral("%1 (%2)").arg(displayTaskType(taskType), displayTaskStatus(taskType, taskStatus));
-  const Entity* selectedEntity = this->findEntityByName(name);
+  const QString selectedEntityReference =
+      summary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+          ? name
+          : summary.value(QStringLiteral("entityId")).toString();
+  const Entity* selectedEntity = this->findEntityByName(selectedEntityReference);
   this->_ui->selectionStateValueLabel->setWordWrap(false);
   this->_ui->selectionStateValueLabel->setStyleSheet(QString());
   this->_ui->selectionStateValueLabel->setText(operationalState);
   this->_ui->selectionPositionValueLabel->setText(position);
-  this->_ui->operationalStatusPlainTextEdit->setPlainText(
-      this->buildSelectedEntityOperationalStatus(summary, selectedEntity));
+  const QString operationalStatus =
+      this->buildSelectedEntityOperationalStatus(summary, selectedEntity);
+  if (this->_ui->operationalStatusPlainTextEdit->toPlainText() !=
+      operationalStatus) {
+    QScrollBar* verticalScrollBar =
+        this->_ui->operationalStatusPlainTextEdit->verticalScrollBar();
+    QScrollBar* horizontalScrollBar =
+        this->_ui->operationalStatusPlainTextEdit->horizontalScrollBar();
+    const int verticalScrollPosition = verticalScrollBar->value();
+    const int horizontalScrollPosition = horizontalScrollBar->value();
+
+    this->_ui->operationalStatusPlainTextEdit->setPlainText(operationalStatus);
+    verticalScrollBar->setValue(verticalScrollPosition);
+    horizontalScrollBar->setValue(horizontalScrollPosition);
+  }
 }
 
 QString MainWindow::buildSelectedEntityOperationalStatus(
@@ -1007,7 +1235,8 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
           0.0,
           0.0));
 
-  auto* item = new QStandardItem(entity.name);
+  auto* item = new QStandardItem(
+      entityTreeLabel(entity, this->_scenarioState->entities()));
   item->setIcon(presentation::makeTrackIcon(domain::forceIdentifierLabel(entity.forceIdentifier), category, false));
   setTrackData(item, summary);
   categoryItem->appendRow(item);
@@ -1022,7 +1251,7 @@ void MainWindow::appendEntityToUi(const Entity& entity) {
 
 QVariantMap MainWindow::makeEntityTrackSummary(const Entity& entity) const {
   const presentation::EntityVisualState visualState =
-      this->_entityVisualStateManager->stateFor(entity.name);
+      this->_entityVisualStateManager->stateFor(domain::entityKey(entity));
   return presentation::makeEntityTrackSummary(entity, visualState);
 }
 
@@ -1098,10 +1327,23 @@ bool MainWindow::captureTaskConfiguration(
     this->_taskDialog = nullptr;
   }
 
-  QStringList availableTargets;
+  QHash<QString, int> duplicateCounts;
+  for (const Entity& candidate : this->_scenarioState->entities()) {
+    ++duplicateCounts[candidate.name.toCaseFolded()];
+  }
+
+  QVector<EntityTargetOption> availableTargets;
   for (const Entity& entity : this->_scenarioState->entities()) {
-    if (entity.name != entityName) {
-      availableTargets.append(entity.name);
+    if (!domain::entityMatchesReference(entity, entityName)) {
+      const QString id = domain::entityKey(entity);
+      const bool duplicateName = duplicateCounts.value(entity.name.toCaseFolded()) > 1;
+      availableTargets.push_back(EntityTargetOption{
+          id,
+          entity.name,
+          duplicateName
+              ? QStringLiteral("%1 [%2]").arg(entity.name, id.left(8))
+              : entity.name,
+      });
     }
   }
 
@@ -1115,7 +1357,9 @@ bool MainWindow::captureTaskConfiguration(
   }
 
   QPointer<AssignTaskDialog> dialog = new AssignTaskDialog(
-      entityName,
+      this->findEntityByName(entityName)
+          ? this->findEntityByName(entityName)->name
+          : entityName,
       availableTargets,
       availableWaypoints,
       availableRoutes,
@@ -1252,15 +1496,15 @@ void MainWindow::onEntityDialogAccepted(const Entity& entity) {
         return sensor.sensorType.compare(QStringLiteral("radar"), Qt::CaseInsensitive) == 0;
       });
   if (hasRadarSensor && !entity.name.trimmed().isEmpty() &&
-      !this->_entityVisualStateManager->contains(entity.name)) {
+      !this->_entityVisualStateManager->contains(domain::entityKey(entity))) {
     presentation::EntityVisualState& visualState =
-        this->_entityVisualStateManager->ensureState(entity.name);
+        this->_entityVisualStateManager->ensureState(domain::entityKey(entity));
     visualState.radarCoverageVisible = true;
     visualState.trackHistoryVisible = false;
     this->_entityVisualStateManager->save();
   }
   this->_scenarioState->addEntity(entity);
-  this->appendEntityToUi(entity);
+  this->syncScenarioStateToUi();
   this->_ui->statusLabel->setText(EntityTextFormatter::statusMessage(entity));
 }
 
@@ -1433,6 +1677,7 @@ void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QMod
   const QVariantMap summary = current.data(kTrackSummaryRole).toMap();
   if (summary.isEmpty()) {
     this->setSelectedTrackDetails(QVariantMap{});
+    this->refreshKinematicsCockpitForEntity(nullptr);
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
     if (!this->_applyingMapSelection) {
       clearQtTrackSelectionInMap(this->_webView);
@@ -1451,6 +1696,7 @@ void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QMod
   }
 
   if (!this->currentSelectionIsEntity()) {
+    this->refreshKinematicsCockpitForEntity(nullptr);
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
     if (!this->_applyingMapSelection) {
       clearQtTrackSelectionInMap(this->_webView);
@@ -1459,6 +1705,13 @@ void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QMod
     this->updateTaskQuickBarState();
     return;
   }
+
+  const QString selectedReference =
+      summary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+          ? selectedName
+          : summary.value(QStringLiteral("entityId")).toString();
+  this->refreshKinematicsCockpitForEntity(
+      this->findEntityByName(selectedReference));
 
   if (!this->_applyingMapSelection) {
     this->sendTrackToMap(summary, true);
@@ -1478,9 +1731,12 @@ void MainWindow::handleDetectedContactSelection(const QModelIndex& current, cons
     return;
   }
 
+  const Entity* observer = this->findEntityByName(observerName);
+  const Entity* contact = this->findEntityByName(contactName);
   this->_ui->statusLabel->setText(
       QStringLiteral("Contacto seleccionado: %1 detecta a %2.")
-          .arg(observerName, contactName));
+          .arg(observer ? observer->name : observerName,
+               contact ? contact->name : contactName));
 }
 
 void MainWindow::handleMapTrackSelection(const QString& trackName) {
@@ -1670,6 +1926,13 @@ void MainWindow::syncDetectedContactsToUi() {
     return;
   }
 
+  QScrollBar* verticalScrollBar =
+      this->_ui->contactsTableView->verticalScrollBar();
+  QScrollBar* horizontalScrollBar =
+      this->_ui->contactsTableView->horizontalScrollBar();
+  const int verticalScrollPosition = verticalScrollBar->value();
+  const int horizontalScrollPosition = horizontalScrollBar->value();
+
   QString selectedObserverName;
   QString selectedContactName;
   const QModelIndex currentIndex = this->_ui->contactsTableView->currentIndex();
@@ -1690,8 +1953,8 @@ void MainWindow::syncDetectedContactsToUi() {
 
   for (const presentation::DetectedContactRow& row : rows) {
     auto* observerItem = new QStandardItem(row.observerName);
-    observerItem->setData(row.observerName, kDetectedContactObserverRole);
-    observerItem->setData(row.targetName, kDetectedContactTargetRole);
+    observerItem->setData(row.observerEntityId, kDetectedContactObserverRole);
+    observerItem->setData(row.targetEntityId, kDetectedContactTargetRole);
 
     QList<QStandardItem*> rowItems{
         observerItem,
@@ -1712,8 +1975,8 @@ void MainWindow::syncDetectedContactsToUi() {
 
     this->_detectedContactsModel->appendRow(rowItems);
 
-    if (row.observerName == selectedObserverName &&
-        row.targetName == selectedContactName) {
+    if (row.observerEntityId == selectedObserverName &&
+        row.targetEntityId == selectedContactName) {
       restoredRow = this->_detectedContactsModel->rowCount() - 1;
     }
   }
@@ -1730,6 +1993,9 @@ void MainWindow::syncDetectedContactsToUi() {
   } else {
     this->_ui->contactsTableView->clearSelection();
   }
+
+  verticalScrollBar->setValue(verticalScrollPosition);
+  horizontalScrollBar->setValue(horizontalScrollPosition);
 }
 
 void MainWindow::syncScenarioStateToUi() {
@@ -1791,19 +2057,23 @@ bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync)
         }
         continue;
       }
-      const QString name =
-          child->data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+      const QVariantMap childSummary = child->data(kTrackSummaryRole).toMap();
+      const QString name = childSummary.value(QStringLiteral("name")).toString();
+      const QString entityReference =
+          childSummary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+              ? name
+              : childSummary.value(QStringLiteral("entityId")).toString();
       bool exists = false;
       for (const Entity& entity : this->_scenarioState->entities()) {
-        if (entity.name == name) {
+        if (domain::entityMatchesReference(entity, entityReference)) {
           exists = true;
           break;
         }
       }
       if (!exists) {
-        if (!name.isEmpty()) {
-          this->removeTrackFromMap(name);
-          if (name == selectedEntityNameBeforeSync) {
+        if (!entityReference.isEmpty()) {
+          this->removeTrackFromMap(entityReference);
+          if (entityReference == selectedEntityNameBeforeSync) {
             selectedEntityRemoved = true;
           }
         }
@@ -1819,7 +2089,7 @@ bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync)
   {
     QSet<QString> validNames;
     for (const Entity& entity : this->_scenarioState->entities()) {
-      validNames.insert(entity.name);
+      validNames.insert(domain::entityKey(entity));
     }
     this->_entityVisualStateManager->pruneTo(validNames);
     this->_entityHomePositionTracker->pruneTo(validNames);
@@ -1829,12 +2099,13 @@ bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync)
   for (const Entity& entity : this->_scenarioState->entities()) {
     this->_entityHomePositionTracker->remember(entity);
 
-    QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entity.name);
+    const QString entityReference = domain::entityKey(entity);
+    QStandardItem* item = this->findTrackItemByName(this->_friendlyRootItem, entityReference);
     if (!item) {
-      item = this->findTrackItemByName(this->_opposingRootItem, entity.name);
+      item = this->findTrackItemByName(this->_opposingRootItem, entityReference);
     }
     if (!item) {
-      item = this->findTrackItemByName(this->_neutralRootItem, entity.name);
+      item = this->findTrackItemByName(this->_neutralRootItem, entityReference);
     }
 
     const QVariantMap summary = this->makeEntityTrackSummary(entity);
@@ -1843,6 +2114,7 @@ bool MainWindow::syncEntityTreeToUi(const QString& selectedEntityNameBeforeSync)
       continue;
     }
 
+    item->setText(entityTreeLabel(entity, this->_scenarioState->entities()));
     setTrackData(item, summary);
     this->sendTrackToMap(summary, false);
     if (this->_ui->objectsTreeView->currentIndex() == item->index()) {
@@ -2102,6 +2374,7 @@ void MainWindow::populateEntityContextMenu(QMenu& menu) {
   actions.setSelectedEntityHeading          = [this]() { this->setSelectedEntityHeading(); };
   actions.setSelectedEntityAltitude         = [this]() { this->setSelectedEntityAltitude(); };
   actions.setSelectedEntitySpeed            = [this]() { this->setSelectedEntitySpeed(); };
+  actions.setSelectedEntityFuel             = [this]() { this->setSelectedEntityFuel(); };
   actions.setSelectedEntityBehaviorMode     = [this](const QString& m) { this->setSelectedEntityBehaviorMode(m); };
   actions.openEntityPlanDialog              = [this]() { this->openEntityPlanDialog(); };
   actions.addMissileToSelectedEntity        = [this]() { this->addMissileToSelectedEntity(); };
@@ -2156,6 +2429,12 @@ bool MainWindow::configurePlanStep(const QString& entityName, PlanStepKind kind,
 }
 
 bool MainWindow::startEntityPlan(const QString& entityName) {
+  if (this->_cockpitControlService->hasControl(entityName)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("Libera el control de cockpit antes de iniciar el plan de %1.")
+            .arg(entityName));
+    return false;
+  }
   return this->_planExecutor->startPlan(entityName);
 }
 
@@ -2187,7 +2466,9 @@ bool MainWindow::resolveSelectedEntityFlyTargets(
 
   const int currentEntityAltitudeMeters = application::entityAltitudeMeters(
       this->_scenarioState,
-      summary.value(QStringLiteral("name")).toString());
+      summary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+          ? summary.value(QStringLiteral("name")).toString()
+          : summary.value(QStringLiteral("entityId")).toString());
 
   return presentation::resolveFlyTargetsFromSummary(
       summary, currentEntityAltitudeMeters, headingDegrees, altitudeMeters, speedKnots);
@@ -2223,6 +2504,10 @@ void MainWindow::setSelectedEntityAltitude() {
 
 void MainWindow::setSelectedEntitySpeed() {
   this->_entityStateActionsController->setSelectedSpeed();
+}
+
+void MainWindow::setSelectedEntityFuel() {
+  this->_entityStateActionsController->setSelectedFuel();
 }
 
 void MainWindow::setSelectedEntityBehaviorMode(const QString& behaviorMode) {
@@ -2528,7 +2813,11 @@ QStandardItem* MainWindow::findTrackItemByName(QStandardItem* parent, const QStr
     }
 
     const QVariantMap summary = child->data(kTrackSummaryRole).toMap();
-    if (summary.value(QStringLiteral("name")).toString() == trackName) {
+    const QString entityReference =
+        summary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+            ? summary.value(QStringLiteral("name")).toString()
+            : summary.value(QStringLiteral("entityId")).toString();
+    if (entityReference == trackName) {
       return child;
     }
 
@@ -2542,7 +2831,7 @@ QStandardItem* MainWindow::findTrackItemByName(QStandardItem* parent, const QStr
 
 const Entity* MainWindow::findEntityByName(const QString& entityName) const {
   for (const Entity& entity : this->_scenarioState->entities()) {
-    if (entity.name == entityName) {
+    if (domain::entityMatchesReference(entity, entityName)) {
       return &entity;
     }
   }
@@ -2553,7 +2842,12 @@ QString MainWindow::selectedEntityName() const {
   if (!this->currentSelectionIsEntity()) {
     return QString();
   }
-  return this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+  const QVariantMap summary =
+      this->_ui->objectsTreeView->currentIndex().data(kTrackSummaryRole).toMap();
+  const QString entityId = summary.value(QStringLiteral("entityId")).toString();
+  return entityId.trimmed().isEmpty()
+      ? summary.value(QStringLiteral("name")).toString()
+      : entityId;
 }
 
 QString MainWindow::selectedObjectName() const {
@@ -2561,7 +2855,14 @@ QString MainWindow::selectedObjectName() const {
   if (!currentIndex.isValid()) {
     return QString();
   }
-  return currentIndex.data(kTrackSummaryRole).toMap().value(QStringLiteral("name")).toString();
+  const QVariantMap summary = currentIndex.data(kTrackSummaryRole).toMap();
+  if (this->currentSelectionIsEntity()) {
+    const QString entityId = summary.value(QStringLiteral("entityId")).toString();
+    if (!entityId.trimmed().isEmpty()) {
+      return entityId;
+    }
+  }
+  return summary.value(QStringLiteral("name")).toString();
 }
 
 bool MainWindow::currentSelectionIsEntity() const {

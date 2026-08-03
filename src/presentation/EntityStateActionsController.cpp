@@ -187,6 +187,47 @@ void EntityStateActionsController::setSelectedSpeed() {
   this->applyFlyTask(heading, alt, newSpeed);
 }
 
+void EntityStateActionsController::setSelectedFuel() {
+  const QString entityName = _selectedName();
+  if (entityName.isEmpty() || _isDestroyed()) {
+    return;
+  }
+
+  double remainingKilograms = 0.0;
+  double capacityKilograms = 0.0;
+  if (!_state->entityFuelState(
+          entityName,
+          remainingKilograms,
+          capacityKilograms)) {
+    _setStatus(QStringLiteral("Fuel is only configurable for Air entities."));
+    return;
+  }
+
+  bool ok = false;
+  const double selectedKilograms = _askDouble(
+      QStringLiteral("Set Fuel"),
+      QStringLiteral("Fuel remaining (kg)"),
+      remainingKilograms,
+      0.0,
+      capacityKilograms,
+      ok);
+  if (!ok) {
+    return;
+  }
+  if (!_state->setEntityFuelRemaining(entityName, selectedKilograms)) {
+    _setStatus(QStringLiteral("Could not update fuel for %1.").arg(entityName));
+    return;
+  }
+  _syncUi();
+  _log(QStringLiteral("Entity %1 fuel set to %2 kg")
+           .arg(entityName)
+           .arg(selectedKilograms, 0, 'f', 0));
+  _setStatus(QStringLiteral("%1 fuel: %2 / %3 kg.")
+                 .arg(entityName)
+                 .arg(selectedKilograms, 0, 'f', 0)
+                 .arg(capacityKilograms, 0, 'f', 0));
+}
+
 void EntityStateActionsController::applyFlyTask(
     double headingDeg, int altMeters, double speedKnots) {
   const QString entityName = _selectedName();

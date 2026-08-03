@@ -1,6 +1,7 @@
 #include "Command.h"
 
 #include "ScenarioState.h"
+#include "domain/EntityIdentity.h"
 #include "domain/Task.h"
 
 #include <memory>
@@ -123,7 +124,13 @@ void CmdAssignFollowTask::apply(ScenarioState& scenario) const {
     EntityTask task;
     task.enabled = true;
     task.taskType = "FollowEntity";
-    task.targetEntityName = followEntityName;
+    for (const Entity& candidate : scenario.entities()) {
+        if (domain::entityMatchesReference(candidate, followEntityName)) {
+            task.targetEntityId = domain::entityKey(candidate);
+            task.targetEntityName = candidate.name;
+            break;
+        }
+    }
     task.targetAltitudeMeters = static_cast<int>(targetAltitudeMeters);
     task.targetSpeedKnots = targetSpeedKnots;
     task.followDistanceMeters = followDistanceMeters;
@@ -133,7 +140,7 @@ void CmdAssignFollowTask::apply(ScenarioState& scenario) const {
     scenario.assignTask(targetName, task);
 
     for (const Entity& entity : scenario.entities()) {
-        if (entity.name == targetName) {
+        if (domain::entityMatchesReference(entity, targetName)) {
             task = entity.currentTask;
             break;
         }
@@ -158,7 +165,13 @@ void CmdAssignInterceptEntity2DTask::apply(ScenarioState& scenario) const {
     EntityTask task;
     task.enabled = true;
     task.taskType = "InterceptEntity";
-    task.targetEntityName = interceptEntityName;
+    for (const Entity& candidate : scenario.entities()) {
+        if (domain::entityMatchesReference(candidate, interceptEntityName)) {
+            task.targetEntityId = domain::entityKey(candidate);
+            task.targetEntityName = candidate.name;
+            break;
+        }
+    }
     task.targetSpeedKnots = targetSpeedKnots;
     task.interceptDistanceMeters = interceptDistanceMeters;
     task.altitudeToleranceMeters = 100.0;
@@ -167,7 +180,7 @@ void CmdAssignInterceptEntity2DTask::apply(ScenarioState& scenario) const {
     scenario.assignTask(targetName, task);
 
     for (const Entity& entity : scenario.entities()) {
-        if (entity.name == targetName) {
+        if (domain::entityMatchesReference(entity, targetName)) {
             task = entity.currentTask;
             break;
         }
@@ -191,7 +204,13 @@ void CmdAssignInterceptEntity3DTask::apply(ScenarioState& scenario) const {
     EntityTask task;
     task.enabled = true;
     task.taskType = "InterceptEntity";
-    task.targetEntityName = interceptEntityName;
+    for (const Entity& candidate : scenario.entities()) {
+        if (domain::entityMatchesReference(candidate, interceptEntityName)) {
+            task.targetEntityId = domain::entityKey(candidate);
+            task.targetEntityName = candidate.name;
+            break;
+        }
+    }
     task.targetSpeedKnots = targetSpeedKnots;
     task.interceptDistanceMeters = interceptDistanceMeters;
     task.altitudeToleranceMeters = altitudeToleranceMeters;
@@ -200,7 +219,7 @@ void CmdAssignInterceptEntity3DTask::apply(ScenarioState& scenario) const {
     scenario.assignTask(targetName, task);
 
     for (const Entity& entity : scenario.entities()) {
-        if (entity.name == targetName) {
+        if (domain::entityMatchesReference(entity, targetName)) {
             task = entity.currentTask;
             break;
         }

@@ -2,6 +2,7 @@
 #include "application/ScenarioState.h"
 #include "domain/BombReleaseGate.h"
 #include "domain/CombatRules.h"
+#include "domain/EntityIdentity.h"
 #include "domain/GeoMath.h"
 #include "presentation/EntityPlanExecutor.h"
 
@@ -12,9 +13,9 @@ namespace presentation {
 
 namespace {
 
-const Entity* findEntity(const QVector<Entity>& entities, const QString& name) {
+const Entity* findEntity(const QVector<Entity>& entities, const QString& reference) {
   for (const Entity& e : entities) {
-    if (e.name == name) {
+    if (domain::entityMatchesReference(e, reference)) {
       return &e;
     }
   }
@@ -113,13 +114,21 @@ QString buildEntityOperationalStatus(
   const QString behaviorMode = entity->behaviorMode.trimmed().isEmpty()
       ? QStringLiteral("Manual")
       : entity->behaviorMode.trimmed();
-  const QString behaviorTargetName = entity->behaviorTargetEntityName.trimmed();
-  const Entity* behaviorTarget = findEntity(ctx.entities, behaviorTargetName);
+  const QString behaviorTargetReference = entity->behaviorTargetEntityId.trimmed().isEmpty()
+      ? entity->behaviorTargetEntityName.trimmed()
+      : entity->behaviorTargetEntityId.trimmed();
+  const Entity* behaviorTarget = findEntity(ctx.entities, behaviorTargetReference);
+  const QString behaviorTargetName = behaviorTarget
+      ? behaviorTarget->name
+      : entity->behaviorTargetEntityName.trimmed();
 
   bool behaviorTargetDetected = false;
   double behaviorTargetRangeMeters = -1.0;
   for (const SensorContact& contact : entity->sensorContacts) {
-    if (contact.targetEntityName.compare(behaviorTargetName, Qt::CaseInsensitive) != 0) {
+    const QString contactReference = contact.targetEntityId.trimmed().isEmpty()
+        ? contact.targetEntityName.trimmed()
+        : contact.targetEntityId.trimmed();
+    if (contactReference.compare(behaviorTargetReference, Qt::CaseInsensitive) != 0) {
       continue;
     }
     if (contact.detected) {
@@ -159,15 +168,18 @@ QString buildEntityOperationalStatus(
   };
   QVector<ContactDebugLine> contactLines;
   for (const SensorContact& contact : entity->sensorContacts) {
-    const QString targetName = contact.targetEntityName.trimmed();
-    const Entity* target = findEntity(ctx.entities, targetName);
+    const QString targetReference = contact.targetEntityId.trimmed().isEmpty()
+        ? contact.targetEntityName.trimmed()
+        : contact.targetEntityId.trimmed();
+    const Entity* target = findEntity(ctx.entities, targetReference);
+    const QString targetName = target ? target->name : contact.targetEntityName.trimmed();
     const bool friendly = target && target->forceIdentifier == entity->forceIdentifier;
     const bool destroyed = target && target->destroyed;
     const bool validBehaviorTarget =
         contact.detected &&
         target &&
         !destroyed &&
-        target->name != entityName &&
+        domain::entityKey(*target) != domain::entityKey(*entity) &&
         !friendly;
 
     contactLines.push_back(ContactDebugLine{
@@ -217,7 +229,7 @@ QString buildEntityOperationalStatus(
       ? QStringLiteral("-")
       : ctx.nextQueuedBombTargetLabel.trimmed();
   if (ctx.pendingRelease.pending &&
-      ctx.pendingRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0) {
+      domain::entityMatchesReference(*entity, ctx.pendingRelease.launcherReference())) {
     const domain::BombReleaseGateEvaluation evaluation = domain::evaluateBombReleaseGate(
         *entity,
         ctx.pendingRelease.targetLatitude,
@@ -255,7 +267,10 @@ QString buildEntityOperationalStatus(
     }
   } else {
     for (const ActiveMunition& munition : ctx.activeMunitions) {
-      if (munition.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0 &&
+      const QString launcherReference = munition.launcherEntityId.trimmed().isEmpty()
+          ? munition.launcherEntityName
+          : munition.launcherEntityId;
+      if (domain::entityMatchesReference(*entity, launcherReference) &&
           munition.munitionType.compare(QStringLiteral("Bomb"), Qt::CaseInsensitive) == 0) {
         bombReleaseState = QStringLiteral("Released");
         bombTargetText = munition.id;
@@ -271,7 +286,7 @@ QString buildEntityOperationalStatus(
   bool hasMissileTargetInRange = false;
   const double missileMaxRangeMeters = ScenarioState::missileMaxRangeMeters();
   for (const Entity& candidate : ctx.entities) {
-    if (candidate.name == entityName ||
+    if (domain::entityKey(candidate) == domain::entityKey(*entity) ||
         candidate.destroyed ||
         candidate.forceIdentifier == entity->forceIdentifier ||
         candidate.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) != 0) {
@@ -280,7 +295,11 @@ QString buildEntityOperationalStatus(
     hasAirTarget = true;
     for (const SensorContact& contact : entity->sensorContacts) {
       if (!contact.detected ||
-          contact.targetEntityName.compare(candidate.name, Qt::CaseInsensitive) != 0) {
+          !domain::entityMatchesReference(
+              candidate,
+              contact.targetEntityId.trimmed().isEmpty()
+                  ? contact.targetEntityName
+                  : contact.targetEntityId)) {
         continue;
       }
       hasDetectedAirTarget = true;
@@ -329,11 +348,14 @@ QString buildEntityOperationalStatus(
 
   const bool cancelBombAvailable =
       ctx.pendingRelease.pending &&
-      ctx.pendingRelease.launcherEntityName.compare(entityName, Qt::CaseInsensitive) == 0;
-  const auto activePlanIt = ctx.plans.constFind(entityName);
-  const EntityPlan* activePlan = (activePlanIt != ctx.plans.constEnd())
-      ? &activePlanIt.value()
-      : nullptr;
+      domain::entityMatchesReference(*entity, ctx.pendingRelease.launcherReference());
+  auto activePlanIt = ctx.plans.constFind(domain::entityKey(*entity));
+  if (activePlanIt == ctx.plans.constEnd()) {
+    activePlanIt = ctx.plans.constFind(entityName);
+  }
+  const EntityPlan* activePlan = activePlanIt == ctx.plans.constEnd()
+      ? nullptr
+      : &activePlanIt.value();
   const QString planStatus = (!activePlan || activePlan->status.trimmed().isEmpty())
       ? QString(plan_status::NotStarted)
       : domain::planStatusDisplayLabel(activePlan->status.trimmed());
@@ -362,6 +384,19 @@ QString buildEntityOperationalStatus(
                            summary.value(QStringLiteral("damagePercent"), 0.0).toDouble(),
                            'f',
                            0)))
+        << fieldLine(
+               QStringLiteral("Fuel"),
+               entity->fuelCapacityKilograms > 0.0
+                   ? QStringLiteral("%1 / %2 kg (%3%)")
+                         .arg(entity->fuelRemainingKilograms, 0, 'f', 0)
+                         .arg(entity->fuelCapacityKilograms, 0, 'f', 0)
+                         .arg(
+                             entity->fuelRemainingKilograms /
+                                 entity->fuelCapacityKilograms * 100.0,
+                             0,
+                             'f',
+                             0)
+                   : QStringLiteral("-"))
         << QStringLiteral("")
         << QStringLiteral("")
         << QStringLiteral("[WEAPONS]")

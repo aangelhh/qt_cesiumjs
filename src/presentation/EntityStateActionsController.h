@@ -64,6 +64,7 @@ public:
   void setSelectedHeading();
   void setSelectedAltitude();
   void setSelectedSpeed();
+  void setSelectedFuel();
 
 private:
   void applyFlyTask(double headingDeg, int altMeters, double speedKnots);

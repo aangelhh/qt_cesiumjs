@@ -1,5 +1,7 @@
 #include "AddEntityDialog.h"
 
+#include "application/SystemsTelemetry.h"
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -128,6 +130,8 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
       _enableDynamicsCheck(new QCheckBox(QStringLiteral("Enable flight dynamics"), this)),
       _dynamicsModeCombo(new QComboBox(this)),
       _jsbsimModelCombo(new QComboBox(this)),
+      _fuelCapacitySpin(new QDoubleSpinBox(this)),
+      _initialFuelSpin(new QDoubleSpinBox(this)),
       _speedSpin(new QDoubleSpinBox(this)),
       _verticalSpeedSpin(new QDoubleSpinBox(this)),
       _enableFlightTaskCheck(new QCheckBox(QStringLiteral("Assign initial flight task"), this)),
@@ -231,6 +235,16 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   _verticalSpeedSpin->setSingleStep(1.0);
   _verticalSpeedSpin->setSuffix(QStringLiteral(" m/s"));
 
+  _fuelCapacitySpin->setRange(0.0, 100000.0);
+  _fuelCapacitySpin->setDecimals(0);
+  _fuelCapacitySpin->setSingleStep(100.0);
+  _fuelCapacitySpin->setSuffix(QStringLiteral(" kg"));
+
+  _initialFuelSpin->setRange(0.0, 100000.0);
+  _initialFuelSpin->setDecimals(0);
+  _initialFuelSpin->setSingleStep(100.0);
+  _initialFuelSpin->setSuffix(QStringLiteral(" kg"));
+
   _taskHeadingSpin->setRange(0.0, 359.0);
   _taskHeadingSpin->setDecimals(1);
   _taskHeadingSpin->setSingleStep(5.0);
@@ -288,16 +302,21 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
     this->populateModelCombo();
     this->populateJsbsimModelCombo();
     this->syncDynamicsControls();
+    this->syncFuelControls();
     this->syncWeaponControls();
   });
   QObject::connect(_categoryCombo, &QComboBox::currentTextChanged, this, [this]() {
     this->populateModelCombo();
     this->populateJsbsimModelCombo();
     this->syncDynamicsControls();
+    this->syncFuelControls();
     this->syncWeaponControls();
   });
   QObject::connect(_modelCombo, &QComboBox::currentTextChanged, this, [this]() {
     this->applyModelSelectionToDisFields();
+    this->populateJsbsimModelCombo();
+    this->syncDynamicsControls();
+    this->syncFuelControls();
   });
   QObject::connect(_disKindCombo, &QComboBox::currentIndexChanged, this, [this](int) {
     this->populateDisDomainCombo();
@@ -353,6 +372,16 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   QObject::connect(_dynamicsModeCombo, &QComboBox::currentIndexChanged, this, [this](int) {
     this->syncDynamicsControls();
   });
+  QObject::connect(_jsbsimModelCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+    this->syncFuelControls();
+  });
+  QObject::connect(
+      _fuelCapacitySpin,
+      &QDoubleSpinBox::valueChanged,
+      this,
+      [this](double capacityKilograms) {
+        _initialFuelSpin->setMaximum(capacityKilograms);
+      });
   QObject::connect(_enableFlightTaskCheck, &QCheckBox::toggled, this, [this](bool enabled) {
     _taskHeadingSpin->setEnabled(enabled);
     _taskAltitudeSpin->setEnabled(enabled);
@@ -380,6 +409,8 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   formLayout->addRow(QStringLiteral("Dynamics"), _enableDynamicsCheck);
   formLayout->addRow(QStringLiteral("Dynamics Mode"), _dynamicsModeCombo);
   formLayout->addRow(QStringLiteral("JSBSim Aircraft"), _jsbsimModelCombo);
+  formLayout->addRow(QStringLiteral("Fuel Capacity"), _fuelCapacitySpin);
+  formLayout->addRow(QStringLiteral("Initial Fuel"), _initialFuelSpin);
   formLayout->addRow(QStringLiteral("Speed"), _speedSpin);
   formLayout->addRow(QStringLiteral("Vertical Speed"), _verticalSpeedSpin);
   formLayout->addRow(QStringLiteral("Initial Task"), _enableFlightTaskCheck);
@@ -413,6 +444,7 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   _radarElevationWidthSpin->setEnabled(_addRadarCheck->isChecked());
   _radarMaxTracksSpin->setEnabled(_addRadarCheck->isChecked());
   this->syncDynamicsControls();
+  this->syncFuelControls();
   this->syncWeaponControls();
   _taskHeadingSpin->setEnabled(_enableFlightTaskCheck->isChecked());
   _taskAltitudeSpin->setEnabled(_enableFlightTaskCheck->isChecked());
@@ -677,7 +709,6 @@ void AddEntityDialog::populateDisExtraCombo() {
 
 void AddEntityDialog::populateJsbsimModelCombo() {
   QSignalBlocker blocker(_jsbsimModelCombo);
-  const QString previous = _jsbsimModelCombo->currentText();
   _jsbsimModelCombo->clear();
 
   const QStringList models = availableJsbsimAircraftModels();
@@ -685,7 +716,16 @@ void AddEntityDialog::populateJsbsimModelCombo() {
     _jsbsimModelCombo->addItem(model, model);
   }
 
-  QString preferred = previous;
+  const ModelCatalogEntry* selectedEntry = findSelectedModelEntry(
+      _modelCatalog,
+      _domainCombo->currentText().trimmed(),
+      _categoryCombo->currentText().trimmed(),
+      _modelCombo->currentText(),
+      _modelCombo->currentData().toString());
+
+  QString preferred = selectedEntry
+      ? selectedEntry->jsbsimAircraftModel.trimmed()
+      : QString();
   if (preferred.isEmpty()) {
     preferred = suggestedJsbsimModel(
         _domainCombo->currentText(),
@@ -749,6 +789,17 @@ void AddEntityDialog::applyModelSelectionToDisFields() {
       modelPath);
   if (!selectedEntry) {
     return;
+  }
+
+  const QString configuredBackend = selectedEntry->dynamicsBackend.trimmed().toLower();
+  if (!configuredBackend.isEmpty() && !isGroundDomain(_domainCombo->currentText())) {
+    const int backendIndex = _dynamicsModeCombo->findData(configuredBackend);
+    if (backendIndex >= 0) {
+      QSignalBlocker enabledBlocker(_enableDynamicsCheck);
+      QSignalBlocker modeBlocker(_dynamicsModeCombo);
+      _enableDynamicsCheck->setChecked(true);
+      _dynamicsModeCombo->setCurrentIndex(backendIndex);
+    }
   }
 
   {
@@ -849,6 +900,52 @@ void AddEntityDialog::syncWeaponControls() {
   _missileCountSpin->setEnabled(!isGround && _attachMissilesCheck->isChecked());
 }
 
+void AddEntityDialog::syncFuelControls() {
+  const QString domain = _domainCombo->currentText().trimmed();
+  const bool isAir =
+      domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0;
+  if (!isAir) {
+    QSignalBlocker capacityBlocker(_fuelCapacitySpin);
+    QSignalBlocker initialBlocker(_initialFuelSpin);
+    _fuelCapacitySpin->setValue(0.0);
+    _initialFuelSpin->setMaximum(0.0);
+    _initialFuelSpin->setValue(0.0);
+    _fuelCapacitySpin->setEnabled(false);
+    _initialFuelSpin->setEnabled(false);
+    return;
+  }
+
+  Entity defaults;
+  defaults.domain = domain;
+  defaults.category = _categoryCombo->currentText().trimmed();
+  defaults.modelName = _modelCombo->currentText();
+  defaults.jsbsimAircraftModel = _jsbsimModelCombo->currentData().toString();
+
+  const QString modelPath = _modelCombo->currentData().toString();
+  const ModelCatalogEntry* selectedEntry = findSelectedModelEntry(
+      _modelCatalog,
+      defaults.domain,
+      defaults.category,
+      defaults.modelName,
+      modelPath);
+  const double capacityKilograms = selectedEntry &&
+          selectedEntry->fuelCapacityKilograms > 0.0
+      ? selectedEntry->fuelCapacityKilograms
+      : application::defaultFuelCapacityKilograms(defaults);
+  const double initialKilograms = selectedEntry &&
+          selectedEntry->initialFuelKilograms > 0.0
+      ? selectedEntry->initialFuelKilograms
+      : application::defaultInitialFuelKilograms(defaults);
+
+  QSignalBlocker capacityBlocker(_fuelCapacitySpin);
+  QSignalBlocker initialBlocker(_initialFuelSpin);
+  _fuelCapacitySpin->setEnabled(true);
+  _initialFuelSpin->setEnabled(true);
+  _fuelCapacitySpin->setValue(capacityKilograms);
+  _initialFuelSpin->setMaximum(capacityKilograms);
+  _initialFuelSpin->setValue(qMin(initialKilograms, capacityKilograms));
+}
+
 Entity AddEntityDialog::entity() const {
   Entity entity;
   entity.name = _nameEdit->text().trimmed();
@@ -863,6 +960,8 @@ Entity AddEntityDialog::entity() const {
   entity.callsign = _callsignEdit->text().trimmed();
   entity.headingDegrees = _headingSpin->value();
   const bool isGround = isGroundDomain(entity.domain);
+  const bool isAir =
+      entity.domain.compare(QStringLiteral("Air"), Qt::CaseInsensitive) == 0;
   entity.flightDynamicsEnabled = !isGround && _enableDynamicsCheck->isChecked();
   entity.flightDynamicsMode = entity.flightDynamicsEnabled
       ? _dynamicsModeCombo->currentData().toString()
@@ -871,6 +970,8 @@ Entity AddEntityDialog::entity() const {
           entity.flightDynamicsMode == QStringLiteral("jsbsim")
       ? _jsbsimModelCombo->currentData().toString()
       : QString();
+  entity.fuelCapacityKilograms = isAir ? _fuelCapacitySpin->value() : 0.0;
+  entity.fuelRemainingKilograms = isAir ? _initialFuelSpin->value() : 0.0;
   entity.speedKnots = _speedSpin->value();
   entity.verticalSpeedMetersPerSecond = isGround ? 0.0 : _verticalSpeedSpin->value();
   entity.currentTask.enabled = !isGround && _enableFlightTaskCheck->isChecked();
@@ -905,9 +1006,20 @@ Entity AddEntityDialog::entity() const {
       entity.modelName,
       modelPath);
   if (selectedEntry) {
+    entity.controlProfileId = selectedEntry->controlProfileId;
+    entity.systemsDisplayProfileId = selectedEntry->systemsDisplayProfileId;
+    entity.cesiumModelAxes = selectedEntry->cesiumAxes;
+    entity.engineCount = selectedEntry->engineCount;
     if (entity.modelName == selectedEntry->name && entity.type == entity.category) {
       entity.type = selectedEntry->name;
     }
+  }
+  if (entity.engineCount <= 0) {
+    entity.engineCount = application::engineCountForEntity(entity);
+  }
+  if (entity.systemsDisplayProfileId.isEmpty()) {
+    entity.systemsDisplayProfileId =
+        application::systemsDisplayProfileForEntity(entity);
   }
 
   if (_attachMissilesCheck->isChecked()) {

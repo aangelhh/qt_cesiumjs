@@ -237,6 +237,10 @@ void EntityDetailsDialog::populateStateData() {
   rows.append({QStringLiteral("Flight Dynamics"), this->value("flightDynamicsEnabled", QStringLiteral("false")) == QStringLiteral("true") ? QStringLiteral("Enabled") : QStringLiteral("Disabled")});
   rows.append({QStringLiteral("Dynamics Mode"), this->value("flightDynamicsMode", QStringLiteral("-"))});
   rows.append({QStringLiteral("JSBSim Aircraft"), this->value("jsbsimAircraftModel", QStringLiteral("-"))});
+  rows.append({QStringLiteral("Control Profile"), this->value("controlProfileId", QStringLiteral("-"))});
+  rows.append({QStringLiteral("Fuel Remaining"), QStringLiteral("%1 / %2 kg")
+                                                   .arg(this->value("fuelRemainingKilograms", QStringLiteral("0")))
+                                                   .arg(this->value("fuelCapacityKilograms", QStringLiteral("0")))});
   rows.append({QStringLiteral("Speed"), QStringLiteral("%1 kts").arg(this->value("speedKnots", QStringLiteral("0")))});
   rows.append({QStringLiteral("Vertical Speed"), QStringLiteral("%1 m/s").arg(this->value("verticalSpeedMetersPerSecond", QStringLiteral("0")))});
   rows.append({QStringLiteral("Current Task"), this->value("taskType", QStringLiteral("-"))});

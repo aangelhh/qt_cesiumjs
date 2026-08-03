@@ -4,11 +4,13 @@
 
 struct ActiveMunition {
   QString id;
+  QString launcherEntityId;
   QString launcherEntityName;
   int forceIdentifier = 0;
 
   QString munitionType;
   QString modelUri;
+  QString targetEntityId;
   QString targetEntityName;
   bool guidanceActive = false;
   QString status = QStringLiteral("Flying");

@@ -9,7 +9,9 @@ namespace presentation {
 
 /// Data for one row in the detected-contacts table.
 struct DetectedContactRow {
+  QString observerEntityId;
   QString observerName;
+  QString targetEntityId;
   QString targetName;
   QString forceLabel;
   QString typeLabel;   ///< target->type if non-empty, otherwise category

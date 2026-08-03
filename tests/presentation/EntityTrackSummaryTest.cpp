@@ -44,6 +44,17 @@ TEST(EntityTrackSummaryTest, ContainsEntityName) {
   EXPECT_EQ(summary.value(QStringLiteral("name")).toString(), QStringLiteral("Bravo"));
 }
 
+TEST(EntityTrackSummaryTest, ContainsStableEntityIdSeparateFromDisplayName) {
+  const Entity e = makeBasicEntity(QStringLiteral("mirage2000"));
+  const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
+
+  EXPECT_EQ(summary.value(QStringLiteral("entityId")).toString(), e.entityId);
+  EXPECT_EQ(summary.value(QStringLiteral("name")).toString(), e.name);
+  EXPECT_NE(
+      summary.value(QStringLiteral("entityId")).toString(),
+      summary.value(QStringLiteral("name")).toString());
+}
+
 TEST(EntityTrackSummaryTest, ContainsDomain) {
   const Entity e = makeBasicEntity();
   const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
@@ -64,6 +75,32 @@ TEST(EntityTrackSummaryTest, ContainsPosition) {
   const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
   EXPECT_DOUBLE_EQ(summary.value(QStringLiteral("latitude")).toDouble(), 41.5);
   EXPECT_DOUBLE_EQ(summary.value(QStringLiteral("longitude")).toDouble(), 2.1);
+}
+
+TEST(EntityTrackSummaryTest, ContainsCesiumModelAxes) {
+  Entity e = makeBasicEntity();
+  e.cesiumModelAxes = QStringLiteral("x-forward-y-up");
+
+  const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
+
+  EXPECT_EQ(
+      summary.value(QStringLiteral("cesiumModelAxes")).toString(),
+      QStringLiteral("x-forward-y-up"));
+}
+
+TEST(EntityTrackSummaryTest, ContainsFuelState) {
+  Entity e = makeBasicEntity();
+  e.fuelCapacityKilograms = 5875.0;
+  e.fuelRemainingKilograms = 2500.0;
+
+  const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
+
+  EXPECT_DOUBLE_EQ(
+      summary.value(QStringLiteral("fuelCapacityKilograms")).toDouble(),
+      5875.0);
+  EXPECT_DOUBLE_EQ(
+      summary.value(QStringLiteral("fuelRemainingKilograms")).toDouble(),
+      2500.0);
 }
 
 TEST(EntityTrackSummaryTest, BehaviorModeDefaultsToManualWhenEmpty) {

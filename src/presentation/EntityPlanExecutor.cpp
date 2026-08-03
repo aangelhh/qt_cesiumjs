@@ -2,6 +2,7 @@
 #include "application/ScenarioState.h"
 #include "domain/CombatRules.h"
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 #include "domain/GeoMath.h"
 
 #include <QSet>
@@ -83,7 +84,7 @@ QString EntityPlanExecutor::planStepDisplayLabel(const PlanStep& step) {
 bool EntityPlanExecutor::startPlan(const QString& entityName) {
   const Entity* entity = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == entityName) { entity = &e; break; }
+    if (domain::entityMatchesReference(e, entityName)) { entity = &e; break; }
   }
   if (!entity || entity->destroyed) {
     return false;
@@ -146,13 +147,15 @@ void EntityPlanExecutor::stopPlan(const QString& entityName, bool clearCurrentTa
 }
 
 void EntityPlanExecutor::prunePlans() {
-  QSet<QString> validEntityNames;
-  for (const Entity& entity : _state->entities()) {
-    validEntityNames.insert(entity.name);
-  }
-
   for (auto it = _entityPlans.begin(); it != _entityPlans.end();) {
-    if (!validEntityNames.contains(it.key())) {
+    bool entityExists = false;
+    for (const Entity& entity : _state->entities()) {
+      if (domain::entityMatchesReference(entity, it.key())) {
+        entityExists = true;
+        break;
+      }
+    }
+    if (!entityExists) {
       it = _entityPlans.erase(it);
       continue;
     }
@@ -170,7 +173,7 @@ void EntityPlanExecutor::advancePlans() {
 
     const Entity* entity = nullptr;
     for (const Entity& e : _state->entities()) {
-      if (e.name == entityName) { entity = &e; break; }
+      if (domain::entityMatchesReference(e, entityName)) { entity = &e; break; }
     }
     if (!entity || entity->destroyed) {
       failRunningPlan(entityName, plan);
@@ -358,7 +361,7 @@ bool EntityPlanExecutor::activePlanStepCompleted(
   const PlanStep& step = plan.steps.at(plan.currentStepIndex);
   auto mutableEntityTask = [&]() -> EntityTask* {
     for (Entity& mutableEntity : _state->entitiesMutable()) {
-      if (mutableEntity.name == entity.name) {
+      if (domain::entityKey(mutableEntity) == domain::entityKey(entity)) {
         return &mutableEntity.currentTask;
       }
     }
@@ -382,7 +385,7 @@ bool EntityPlanExecutor::activePlanStepCompleted(
       return nullptr;
     }
     for (const Entity& candidate : _state->entities()) {
-      if (candidate.name.compare(trimmed, Qt::CaseInsensitive) == 0) {
+      if (domain::entityMatchesReference(candidate, trimmed)) {
         return &candidate;
       }
     }
@@ -401,15 +404,19 @@ bool EntityPlanExecutor::activePlanStepCompleted(
 
   switch (step.kind) {
     case PlanStepKind::WaitUntilTargetDetected: {
+      const QString configuredTarget = domain::targetEntityReference(step.task);
       for (const SensorContact& contact : entity.sensorContacts) {
         if (!contact.detected) {
           continue;
         }
-        if (!step.task.targetEntityName.trimmed().isEmpty() &&
-            contact.targetEntityName.compare(step.task.targetEntityName.trimmed(), Qt::CaseInsensitive) != 0) {
+        const QString contactTarget = contact.targetEntityId.trimmed().isEmpty()
+            ? contact.targetEntityName.trimmed()
+            : contact.targetEntityId.trimmed();
+        if (!configuredTarget.isEmpty() &&
+            contactTarget.compare(configuredTarget, Qt::CaseInsensitive) != 0) {
           continue;
         }
-        const Entity* target = targetByName(contact.targetEntityName);
+        const Entity* target = targetByName(contactTarget);
         if (!target || target->destroyed) {
           continue;
         }
@@ -431,7 +438,7 @@ bool EntityPlanExecutor::activePlanStepCompleted(
     }
 
     case PlanStepKind::WaitUntilTargetDestroyed: {
-      const Entity* target = targetByName(step.task.targetEntityName);
+      const Entity* target = targetByName(domain::targetEntityReference(step.task));
       if (!target) {
         markConditionStatus(QStringLiteral("Failed"));
         return false;
@@ -449,7 +456,7 @@ bool EntityPlanExecutor::activePlanStepCompleted(
     }
 
     case PlanStepKind::WaitUntilDamaged: {
-      const Entity* target = targetByName(step.task.targetEntityName);
+      const Entity* target = targetByName(domain::targetEntityReference(step.task));
       if (!target) {
         markConditionStatus(QStringLiteral("Failed"));
         return false;
@@ -476,7 +483,7 @@ bool EntityPlanExecutor::activePlanStepCompleted(
     }
 
     case PlanStepKind::WaitUntilInRange: {
-      const Entity* target = targetByName(step.task.targetEntityName);
+      const Entity* target = targetByName(domain::targetEntityReference(step.task));
       if (!target || target->destroyed) {
         markConditionStatus(QStringLiteral("Failed"));
         return false;
@@ -586,6 +593,15 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
   if (step.task.taskType.trimmed().isEmpty()) {
     return setReason(QStringLiteral("step task type is empty"));
   }
+  const QString targetReference = domain::targetEntityReference(step.task);
+  const auto targetExists = [&]() {
+    for (const Entity& candidate : _state->entities()) {
+      if (domain::entityMatchesReference(candidate, targetReference)) {
+        return true;
+      }
+    }
+    return false;
+  };
 
   switch (step.kind) {
     case PlanStepKind::MoveToWaypoint: {
@@ -650,7 +666,7 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
       return true;
 
     case PlanStepKind::FollowEntity: {
-      if (step.task.targetEntityName.trimmed().isEmpty()) {
+      if (targetReference.isEmpty()) {
         return setReason(QStringLiteral("follow target is not set"));
       }
       return true;
@@ -659,23 +675,17 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
     case PlanStepKind::InterceptEntity:
     case PlanStepKind::InterceptEntity2D:
     case PlanStepKind::InterceptEntity3D: {
-      if (step.task.targetEntityName.trimmed().isEmpty()) {
+      if (targetReference.isEmpty()) {
         return setReason(QStringLiteral("intercept target is not set"));
       }
       return true;
     }
 
     case PlanStepKind::AttackAir: {
-      if (step.task.targetEntityName.trimmed().isEmpty()) {
+      if (targetReference.isEmpty()) {
         return setReason(QStringLiteral("air target is not set"));
       }
-      bool found = false;
-      for (const auto& e : _state->entities()) {
-        if (e.name.compare(step.task.targetEntityName.trimmed(), Qt::CaseInsensitive) == 0) {
-          found = true; break;
-        }
-      }
-      if (!found) {
+      if (!targetExists()) {
         return setReason(
             QStringLiteral("air target '%1' no longer exists")
                 .arg(step.task.targetEntityName.trimmed()));
@@ -684,16 +694,10 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
     }
 
     case PlanStepKind::AttackOnce: {
-      if (step.task.targetEntityName.trimmed().isEmpty()) {
+      if (targetReference.isEmpty()) {
         return setReason(QStringLiteral("attack target is not set"));
       }
-      bool found = false;
-      for (const auto& e : _state->entities()) {
-        if (e.name.compare(step.task.targetEntityName.trimmed(), Qt::CaseInsensitive) == 0) {
-          found = true; break;
-        }
-      }
-      if (!found) {
+      if (!targetExists()) {
         return setReason(
             QStringLiteral("attack target '%1' no longer exists")
                 .arg(step.task.targetEntityName.trimmed()));
@@ -702,16 +706,10 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
     }
 
     case PlanStepKind::AttackUntilDestroyed: {
-      if (step.task.targetEntityName.trimmed().isEmpty()) {
+      if (targetReference.isEmpty()) {
         return setReason(QStringLiteral("attack target is not set"));
       }
-      bool found = false;
-      for (const auto& e : _state->entities()) {
-        if (e.name.compare(step.task.targetEntityName.trimmed(), Qt::CaseInsensitive) == 0) {
-          found = true; break;
-        }
-      }
-      if (!found) {
+      if (!targetExists()) {
         return setReason(
             QStringLiteral("attack target '%1' no longer exists")
                 .arg(step.task.targetEntityName.trimmed()));
@@ -743,14 +741,8 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
       return true;
 
     case PlanStepKind::AttackSurface: {
-      if (!step.task.targetEntityName.trimmed().isEmpty()) {
-        bool found = false;
-        for (const auto& e : _state->entities()) {
-          if (e.name.compare(step.task.targetEntityName.trimmed(), Qt::CaseInsensitive) == 0) {
-            found = true; break;
-          }
-        }
-        if (!found) {
+      if (!targetReference.isEmpty()) {
+        if (!targetExists()) {
           return setReason(
               QStringLiteral("surface target '%1' no longer exists")
                   .arg(step.task.targetEntityName.trimmed()));
@@ -773,7 +765,7 @@ bool EntityPlanExecutor::validatePlanStep(const PlanStep& step, QString* reason)
     case PlanStepKind::WaitUntilTargetDestroyed:
     case PlanStepKind::WaitUntilDamaged:
     case PlanStepKind::WaitUntilInRange: {
-      if (step.task.targetEntityName.trimmed().isEmpty()) {
+      if (targetReference.isEmpty()) {
         return setReason(QStringLiteral("target entity is not set"));
       }
       if (step.kind == PlanStepKind::WaitUntilDamaged &&
@@ -822,6 +814,10 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
   auto nearlyEqual = [](double left, double right, double epsilon) {
     return qAbs(left - right) <= epsilon;
   };
+  const bool sameTarget =
+      domain::targetEntityReference(currentTask).compare(
+          domain::targetEntityReference(step.task),
+          Qt::CaseInsensitive) == 0;
 
   switch (step.kind) {
     case PlanStepKind::MoveToLocation:
@@ -872,28 +868,28 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
              nearlyEqual(currentTask.durationSeconds, step.task.durationSeconds, 0.1);
 
     case PlanStepKind::FollowEntity:
-      return currentTask.targetEntityName == step.task.targetEntityName &&
+      return sameTarget &&
              nearlyEqual(currentTask.followDistanceMeters, step.task.followDistanceMeters, 1.0) &&
              nearlyEqual(currentTask.arrivalToleranceMeters, step.task.arrivalToleranceMeters, 1.0);
 
     case PlanStepKind::InterceptEntity:
     case PlanStepKind::InterceptEntity2D:
     case PlanStepKind::InterceptEntity3D:
-      return currentTask.targetEntityName == step.task.targetEntityName &&
+      return sameTarget &&
              nearlyEqual(currentTask.interceptDistanceMeters, step.task.interceptDistanceMeters, 1.0) &&
              nearlyEqual(currentTask.altitudeToleranceMeters, step.task.altitudeToleranceMeters, 1.0) &&
              nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
 
     case PlanStepKind::AttackAir:
-      return currentTask.targetEntityName == step.task.targetEntityName;
+      return sameTarget;
 
     case PlanStepKind::AttackOnce:
-      return currentTask.targetEntityName == step.task.targetEntityName &&
+      return sameTarget &&
              currentTask.weaponType == step.task.weaponType &&
              nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
 
     case PlanStepKind::AttackUntilDestroyed:
-      return currentTask.targetEntityName == step.task.targetEntityName &&
+      return sameTarget &&
              currentTask.weaponType == step.task.weaponType &&
              nearlyEqual(currentTask.maxEngagementTimeSeconds,
                          step.task.maxEngagementTimeSeconds, 0.1) &&
@@ -914,25 +910,25 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
       return true;
 
     case PlanStepKind::AttackSurface:
-      if (!step.task.targetEntityName.trimmed().isEmpty()) {
-        return currentTask.targetEntityName == step.task.targetEntityName;
+      if (!domain::targetEntityReference(step.task).isEmpty()) {
+        return sameTarget;
       }
       return nearlyEqual(currentTask.targetLatitude, step.task.targetLatitude, 1e-6) &&
              nearlyEqual(currentTask.targetLongitude, step.task.targetLongitude, 1e-6) &&
              currentTask.targetAltitudeMeters == step.task.targetAltitudeMeters;
 
     case PlanStepKind::WaitUntilTargetDetected:
-      return currentTask.targetEntityName == step.task.targetEntityName &&
+      return sameTarget &&
              currentTask.targetDomain == step.task.targetDomain &&
              currentTask.enemyOnly == step.task.enemyOnly &&
              nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
 
     case PlanStepKind::WaitUntilTargetDestroyed:
-      return currentTask.targetEntityName == step.task.targetEntityName &&
+      return sameTarget &&
              nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
 
     case PlanStepKind::WaitUntilDamaged:
-      return currentTask.targetEntityName == step.task.targetEntityName &&
+      return sameTarget &&
              nearlyEqual(currentTask.damageThresholdPercent, step.task.damageThresholdPercent, 0.1) &&
              nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
 
@@ -940,7 +936,7 @@ bool EntityPlanExecutor::activeTaskMatchesPlanStep(
       return nearlyEqual(currentTask.durationSeconds, step.task.durationSeconds, 0.1);
 
     case PlanStepKind::WaitUntilInRange:
-      return currentTask.targetEntityName == step.task.targetEntityName &&
+      return sameTarget &&
              nearlyEqual(currentTask.rangeMeters, step.task.rangeMeters, 1.0) &&
              nearlyEqual(currentTask.timeoutSeconds, step.task.timeoutSeconds, 0.1);
   }

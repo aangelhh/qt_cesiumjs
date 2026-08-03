@@ -1,0 +1,47 @@
+@startuml
+title Dynamics, Cockpit Control and Telemetry
+
+skinparam shadowing false
+
+actor Operator
+participant "Cockpit QML" as Cockpit
+participant "CockpitControlService" as Controls
+participant "MovementIntent" as Intent
+participant "FlightDynamicsEngine" as FDE
+participant "Dynamics backend" as Backend
+participant "Entity" as Entity
+participant "Telemetry builders" as Telemetry
+participant "Cesium / PFD / ECAM" as Views
+
+Operator -> Cockpit: change heading / altitude / speed
+Cockpit -> Controls: neutral setpoint command
+Controls -> Intent: update desired values
+
+loop simulation tick owned by runtime
+  FDE -> Intent: resolve active task, plan or cockpit intent
+  Intent --> FDE: desired heading / altitude / speed
+
+  alt JSBSim configured and healthy
+    FDE -> Backend: step(simulationTime, deltaTime, setpoints)
+    Backend --> FDE: position / attitude / speed / systems
+  else kinematic backend or fallback
+    FDE -> Backend: integrate bounded kinematics
+    Backend --> FDE: position / attitude / speed
+  end
+
+  FDE -> Entity: commit canonical state
+  Entity -> Telemetry: build immutable snapshots
+  Telemetry -> Views: kinematics and systems telemetry
+end
+
+note over Cockpit,Controls
+The UI emits commands.
+It never owns the physics state.
+end note
+
+note over Backend,Entity
+Fuel exhaustion and backend failure
+are explicit runtime states/events.
+end note
+
+@enduml

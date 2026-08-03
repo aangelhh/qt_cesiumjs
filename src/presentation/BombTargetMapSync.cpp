@@ -31,7 +31,7 @@ void syncPendingBombTargetToMap(
   double distanceErrorMeters = 0.0;
   double timeToImpactSeconds = -1.0;
 
-  if (const Entity* launcher = findEntity(pendingRelease.launcherEntityName)) {
+  if (const Entity* launcher = findEntity(pendingRelease.launcherReference())) {
     teamLabel         = domain::forceIdentifierLabel(launcher->forceIdentifier);
     distanceMeters    = domain::distanceMeters(
         launcher->latitude,

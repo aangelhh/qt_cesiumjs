@@ -1,6 +1,7 @@
 #include "presentation/DetectedContactsPresenter.h"
 #include "domain/CombatRules.h"
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 #include "domain/Sensor.h"
 #include <QSet>
 #include <QString>
@@ -13,7 +14,7 @@ QVector<DetectedContactRow> buildDetectedContactRows(const QVector<Entity>& enti
 
   const auto findEntityByName = [&entities](const QString& name) -> const Entity* {
     for (const Entity& entity : entities) {
-      if (entity.name == name) {
+      if (domain::entityMatchesReference(entity, name)) {
         return &entity;
       }
     }
@@ -26,13 +27,16 @@ QVector<DetectedContactRow> buildDetectedContactRows(const QVector<Entity>& enti
         continue;
       }
 
+      const QString targetReference = contact.targetEntityId.trimmed().isEmpty()
+          ? contact.targetEntityName
+          : contact.targetEntityId;
       const QString pairKey =
-          observer.name + QStringLiteral("::") + contact.targetEntityName;
+          domain::entityKey(observer) + QStringLiteral("::") + targetReference;
       if (insertedPairs.contains(pairKey)) {
         continue;
       }
 
-      const Entity* target = findEntityByName(contact.targetEntityName);
+      const Entity* target = findEntityByName(targetReference);
       if (!target) {
         continue;
       }
@@ -40,7 +44,9 @@ QVector<DetectedContactRow> buildDetectedContactRows(const QVector<Entity>& enti
       insertedPairs.insert(pairKey);
 
       DetectedContactRow row;
+      row.observerEntityId = domain::entityKey(observer);
       row.observerName  = observer.name;
+      row.targetEntityId = domain::entityKey(*target);
       row.targetName    = target->name;
       row.forceLabel    = domain::forceIdentifierLabel(target->forceIdentifier);
       row.typeLabel     = target->type.trimmed().isEmpty() ? target->category : target->type;

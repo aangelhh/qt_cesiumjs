@@ -1,0 +1,73 @@
+@startuml
+title Target Architecture - Extensible Entity Models
+
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+package "Simulation Runtime" {
+  [SimulationRunner] as Runner
+  [Canonical EntityState] as State
+  interface IEntityModel
+  interface ISensorModel
+  interface IBehaviorModel
+  interface IController
+  interface ICommunicationAdapter
+  [Model Manifest and Registry] as Registry
+}
+
+package "In-process models" {
+  [Kinematic model] as Kinematic
+  [JSBSim model] as JSBSim
+  [Native C ABI plugin] as Native
+  [FMI 2.0 / FMI 3.0 adapter] as FMI
+}
+
+package "External models and federations" {
+  [HLA / DIS / DDS] as SimProtocols
+  [ROS 2 / gRPC / ZeroMQ] as ProcessProtocols
+  [C2SIM / MSDL adapters] as C2
+  [Optional MIXR providers] as MIXR
+}
+
+package "World Services" {
+  interface IGeospatialService
+  interface ITerrainElevationService
+  interface IWeatherService
+  interface ICollisionService
+}
+
+Runner --> IEntityModel : configure / initialize / step / reset / shutdown
+Runner --> ISensorModel
+Runner --> IBehaviorModel
+Runner --> IController
+Runner --> ICommunicationAdapter
+Runner --> State
+Registry --> Runner
+
+IEntityModel <|.. Kinematic
+IEntityModel <|.. JSBSim
+IEntityModel <|.. Native
+IEntityModel <|.. FMI
+ICommunicationAdapter <|.. SimProtocols
+ICommunicationAdapter <|.. ProcessProtocols
+ICommunicationAdapter <|.. C2
+ISensorModel <|.. MIXR
+
+Runner --> IGeospatialService
+Runner --> ITerrainElevationService
+Runner --> IWeatherService
+Runner --> ICollisionService
+
+note right of Registry
+Declares units, frames, vertical datum,
+timestep, determinism, version, license,
+capabilities and save/restore support.
+end note
+
+note bottom of State
+Technology-neutral state shared by
+runtime, UI, persistence and adapters.
+end note
+
+@enduml

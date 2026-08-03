@@ -22,7 +22,7 @@ bool isInterceptEntityTaskType(const QString& taskType) {
 
 AssignTaskDialog::AssignTaskDialog(
     const QString& entityName,
-    const QStringList& availableTargets,
+    const QVector<EntityTargetOption>& availableTargets,
     const QStringList& availableWaypoints,
     const QStringList& availableRoutes,
     const QStringList& availableAreas,
@@ -130,8 +130,12 @@ AssignTaskDialog::AssignTaskDialog(
   _shotCooldownSpin->setSingleStep(1.0);
   _shotCooldownSpin->setSuffix(QStringLiteral(" s"));
 
-  for (const QString& targetName : availableTargets) {
-    _followTargetCombo->addItem(targetName, targetName);
+  for (const EntityTargetOption& target : availableTargets) {
+    _followTargetCombo->addItem(target.displayLabel, target.entityId);
+    _followTargetCombo->setItemData(
+        _followTargetCombo->count() - 1,
+        target.name,
+        Qt::UserRole + 1);
   }
   _followTargetCombo->addItem(QStringLiteral("Coordinates / None"), QString());
   _waypointCombo->addItems(availableWaypoints);
@@ -215,8 +219,21 @@ AssignTaskDialog::AssignTaskDialog(
       : currentTask.durationSeconds);
   _shotCooldownSpin->setValue(
       currentTask.shotCooldownSeconds > 0.0 ? currentTask.shotCooldownSeconds : 8.0);
-  if (!currentTask.targetEntityName.trimmed().isEmpty()) {
-    const int followIndex = _followTargetCombo->findData(currentTask.targetEntityName);
+  if (!currentTask.targetEntityId.trimmed().isEmpty() ||
+      !currentTask.targetEntityName.trimmed().isEmpty()) {
+    int followIndex = _followTargetCombo->findData(
+        currentTask.targetEntityId.trimmed().isEmpty()
+            ? currentTask.targetEntityName
+            : currentTask.targetEntityId);
+    if (followIndex < 0) {
+      for (int index = 0; index < _followTargetCombo->count(); ++index) {
+        if (_followTargetCombo->itemData(index, Qt::UserRole + 1).toString()
+                .compare(currentTask.targetEntityName, Qt::CaseInsensitive) == 0) {
+          followIndex = index;
+          break;
+        }
+      }
+    }
     if (followIndex >= 0) {
       _followTargetCombo->setCurrentIndex(followIndex);
     }
@@ -281,7 +298,9 @@ EntityTask AssignTaskDialog::task() const {
   task.targetSpeedKnots = _speedSpin->value();
   task.targetLatitude = _latitudeSpin->value();
   task.targetLongitude = _longitudeSpin->value();
-  task.targetEntityName = _followTargetCombo->currentData().toString().trimmed();
+  task.targetEntityId = _followTargetCombo->currentData().toString().trimmed();
+  task.targetEntityName = _followTargetCombo
+      ->currentData(Qt::UserRole + 1).toString().trimmed();
   task.targetWaypointName = _waypointCombo->currentText().trimmed();
   task.targetRouteName = _routeCombo->currentText().trimmed();
   task.targetAreaName = _areaCombo->currentText().trimmed();

@@ -1,0 +1,75 @@
+@startuml
+title Target Architecture - Real-Time, Fast-Time, Replay and Analysis
+
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+package "Inputs" {
+  [Scenario] as Scenario
+  [Mission plan] as Mission
+  [Operator commands] as Commands
+  [Model and dataset manifests] as Manifests
+}
+
+package "Deterministic simulation core" {
+  [SimulationRunner] as Runner
+  [Ordered command queue] as Queue
+  [Tasks / plans / behaviors] as Decisions
+  [Dynamics / sensors / weapons] as Models
+  [OperationalEvent stream] as Events
+  [Telemetry snapshots] as Snapshots
+}
+
+package "Schedulers" {
+  [RealTimeScheduler] as RT
+  [FastTimeScheduler\nheadless/background] as FT
+  [ReplayScheduler] as Replay
+}
+
+package "Products" {
+  database "RunManifest" as RunManifest
+  database "RunRecord" as RunRecord
+  [Timeline and AAR] as AAR
+  [KPI Engine] as KPI
+  [Run comparison] as Compare
+  [Campaign / Monte Carlo] as Campaign
+  [Reports] as Reports
+}
+
+Scenario --> Runner
+Mission --> Runner
+Commands --> Queue
+Manifests --> Runner
+Queue --> Runner
+Runner --> Decisions
+Decisions --> Models
+Models --> Events
+Models --> Snapshots
+
+RT --> Runner : wall-clock pacing
+FT --> Runner : no wall-clock wait
+Replay --> RunRecord : deterministic playback
+
+Runner --> RunManifest
+Events --> RunRecord
+Snapshots --> RunRecord
+RunRecord --> AAR
+RunRecord --> KPI
+KPI --> Compare
+FT --> Campaign
+Campaign --> Compare
+Compare --> Reports
+
+note right of Runner
+One step contract for every mode.
+The scheduler changes pacing,
+not simulation rules.
+end note
+
+note bottom of RunManifest
+Seed, versions, model hashes,
+terrain/weather datasets and settings.
+end note
+
+@enduml

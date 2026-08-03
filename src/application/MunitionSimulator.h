@@ -24,7 +24,7 @@ bool munitionIsBomb(const ActiveMunition& munition);
 
 /// A single blast-damage hit produced by a bomb detonation.
 struct BombBlastHit {
-  QString targetName;
+  QString targetEntityId;
   double  damageAmount = 0.0;
 };
 
@@ -50,7 +50,7 @@ QVector<BombBlastHit> computeBombBlastHits(
 /// @param activeMunitions  In/out list of active munitions.
 /// @param effects          In/out list of transient effects.
 /// @param entities         Read-only snapshot of scenario entities (for tracking + hit detection).
-/// @param applyDamageFn    Called once per hit: (targetEntityName, damagePercent).
+/// @param applyDamageFn    Called once per hit: (target entity ID, damagePercent).
 /// @param applyBombBlastFn Called once per bomb ground/proximity detonation: (munition).
 /// @param deltaSeconds     Simulation step in seconds (must be > 0).
 void advanceActiveMunitions(

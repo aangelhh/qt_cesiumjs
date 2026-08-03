@@ -1,5 +1,6 @@
 #include "presentation/PlanStepConfigurator.h"
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 #include "domain/GeoMath.h"
 #include "presentation/EntityHomePositionTracker.h"
 
@@ -34,6 +35,7 @@ bool PlanStepConfigurator::configure(
   step.task.enabled  = true;
   step.task.status   = QStringLiteral("Queued");
   step.status        = QStringLiteral("NotStarted");
+  const QString entityReference = domain::entityKey(entity);
 
   bool ok = false;
 
@@ -47,7 +49,7 @@ bool PlanStepConfigurator::configure(
       initial.targetLongitude    = entity.longitude;
       initial.targetAltitudeMeters = defaultAltitudeMeters;
       initial.targetSpeedKnots   = defaultSpeedKnots;
-      if (!_capture(entity.name, initial, QStringLiteral("MoveToLocation"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("MoveToLocation"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -68,7 +70,7 @@ bool PlanStepConfigurator::configure(
       initial.targetSpeedKnots     = defaultSpeedKnots;
       initial.arrivalToleranceMeters = 200.0;
       initial.durationSeconds      = 0.0;
-      if (!_capture(entity.name, initial, QStringLiteral("WaitOnLocation"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("WaitOnLocation"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -86,7 +88,7 @@ bool PlanStepConfigurator::configure(
       initial.status               = QStringLiteral("Queued");
       initial.targetAltitudeMeters = defaultAltitudeMeters;
       initial.targetSpeedKnots     = defaultSpeedKnots;
-      if (!_capture(entity.name, initial, QStringLiteral("MoveToWaypoint"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("MoveToWaypoint"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -107,7 +109,7 @@ bool PlanStepConfigurator::configure(
           ? 500.0
           : 1000.0;
       initial.timeoutSeconds = 120.0;
-      if (!_capture(entity.name, initial, QStringLiteral("FollowRoute"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("FollowRoute"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -123,7 +125,7 @@ bool PlanStepConfigurator::configure(
       initial.status               = QStringLiteral("Queued");
       initial.targetAltitudeMeters = defaultAltitudeMeters;
       initial.targetSpeedKnots     = defaultSpeedKnots;
-      if (!_capture(entity.name, initial, QStringLiteral("PatrolArea"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("PatrolArea"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -154,7 +156,7 @@ bool PlanStepConfigurator::configure(
       initial.targetHeadingDegrees = defaultHeading;
       initial.targetAltitudeMeters = defaultAltitudeMeters;
       initial.targetSpeedKnots     = defaultSpeedKnots;
-      if (!_capture(entity.name, initial, QStringLiteral("FlyHeadingAltitudeSpeed"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("FlyHeadingAltitudeSpeed"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -222,7 +224,7 @@ bool PlanStepConfigurator::configure(
       initial.targetSpeedKnots = defaultSpeedKnots;
       initial.racetrackLegLengthMeters = 10000.0;
       initial.durationSeconds = 0.0;
-      if (!_capture(entity.name, initial, QStringLiteral("HoldRacetrack"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("HoldRacetrack"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -243,7 +245,7 @@ bool PlanStepConfigurator::configure(
       initial.targetSpeedKnots = defaultSpeedKnots;
       initial.followDistanceMeters = 1000.0;
       initial.arrivalToleranceMeters = 100.0;
-      if (!_capture(entity.name, initial, QStringLiteral("FollowEntity"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("FollowEntity"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -266,7 +268,7 @@ bool PlanStepConfigurator::configure(
       initial.interceptDistanceMeters = 500.0;
       initial.altitudeToleranceMeters = 100.0;
       initial.timeoutSeconds = 120.0;
-      if (!_capture(entity.name, initial, QStringLiteral("InterceptEntity"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("InterceptEntity"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -298,7 +300,7 @@ bool PlanStepConfigurator::configure(
       initial.status = QStringLiteral("Queued");
       initial.weaponType = QStringLiteral("Auto");
       initial.timeoutSeconds = 120.0;
-      if (!_capture(entity.name, initial, QStringLiteral("AttackOnce"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("AttackOnce"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -320,7 +322,7 @@ bool PlanStepConfigurator::configure(
       initial.maxEngagementTimeSeconds = 120.0;
       initial.timeoutSeconds = 120.0;
       initial.shotCooldownSeconds = 8.0;
-      if (!_capture(entity.name, initial, QStringLiteral("AttackUntilDestroyed"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("AttackUntilDestroyed"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -342,7 +344,7 @@ bool PlanStepConfigurator::configure(
       initial.targetLatitude = entity.latitude;
       initial.targetLongitude = entity.longitude;
       initial.targetAltitudeMeters = 0;
-      if (!_capture(entity.name, initial, QStringLiteral("FireOnPosition"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("FireOnPosition"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -361,7 +363,7 @@ bool PlanStepConfigurator::configure(
       initial.weaponType = QStringLiteral("Auto");
       initial.targetHeadingDegrees = defaultHeading;
       initial.durationSeconds = 0.0;
-      if (!_capture(entity.name, initial, QStringLiteral("FireInDirection"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("FireInDirection"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -385,7 +387,7 @@ bool PlanStepConfigurator::configure(
       initial.taskType = QStringLiteral("AttackAir");
       initial.enabled  = true;
       initial.status   = QStringLiteral("Queued");
-      if (!_capture(entity.name, initial, QStringLiteral("AttackAir"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("AttackAir"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -405,7 +407,7 @@ bool PlanStepConfigurator::configure(
       initial.targetLatitude       = entity.latitude;
       initial.targetLongitude      = entity.longitude;
       initial.targetAltitudeMeters = 0;
-      if (!_capture(entity.name, initial, QStringLiteral("AttackSurface"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("AttackSurface"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -426,7 +428,7 @@ bool PlanStepConfigurator::configure(
       initial.targetDomain = QStringLiteral("Any");
       initial.enemyOnly = true;
       initial.timeoutSeconds = 120.0;
-      if (!_capture(entity.name, initial, QStringLiteral("WaitUntilTargetDetected"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("WaitUntilTargetDetected"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -441,7 +443,7 @@ bool PlanStepConfigurator::configure(
       initial.enabled = true;
       initial.status = QStringLiteral("Queued");
       initial.timeoutSeconds = 120.0;
-      if (!_capture(entity.name, initial, QStringLiteral("WaitUntilTargetDestroyed"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("WaitUntilTargetDestroyed"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -460,7 +462,7 @@ bool PlanStepConfigurator::configure(
       initial.status = QStringLiteral("Queued");
       initial.damageThresholdPercent = 50.0;
       initial.timeoutSeconds = 120.0;
-      if (!_capture(entity.name, initial, QStringLiteral("WaitUntilDamaged"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("WaitUntilDamaged"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -479,7 +481,7 @@ bool PlanStepConfigurator::configure(
       initial.enabled = true;
       initial.status = QStringLiteral("Queued");
       initial.durationSeconds = 30.0;
-      if (!_capture(entity.name, initial, QStringLiteral("WaitUntilTime"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("WaitUntilTime"), step.task)) {
         return false;
       }
       step.task.enabled = true;
@@ -496,7 +498,7 @@ bool PlanStepConfigurator::configure(
       initial.status = QStringLiteral("Queued");
       initial.rangeMeters = 1000.0;
       initial.timeoutSeconds = 120.0;
-      if (!_capture(entity.name, initial, QStringLiteral("WaitUntilInRange"), step.task)) {
+      if (!_capture(entityReference, initial, QStringLiteral("WaitUntilInRange"), step.task)) {
         return false;
       }
       step.task.enabled = true;

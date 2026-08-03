@@ -275,6 +275,7 @@ struct EntityTask {
   double targetSpeedKnots = 0.0;
   double targetLatitude = 0.0;
   double targetLongitude = 0.0;
+  QString targetEntityId;
   QString targetEntityName;
   QString targetWaypointName;
   QString targetRouteName;

@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/kinematics">
+    <file alias="ModernPfd.qml">ModernPfd.qml</file>
+    <file alias="DynamicEcam.qml">DynamicEcam.qml</file>
+  </qresource>
+</RCC>

@@ -1,0 +1,51 @@
+@startuml
+title Task Assignment and Plan Progression
+
+skinparam shadowing false
+
+actor Operator
+participant "Task / Plan UI" as UI
+participant "TaskValidationService" as Validation
+participant "TaskApplicator" as Applicator
+participant "EntityTask / TaskStack" as Task
+participant "FlightDynamicsEngine" as FDE
+participant "EntityPlanExecutor" as Plan
+
+Operator -> UI: assign task or start plan
+UI -> Validation: validate configuration / PlanStep
+
+alt invalid configuration
+  Validation --> UI: diagnostics
+else valid configuration
+  Validation -> Applicator: apply explicit task
+  Applicator -> Task: create / normalize runtime state
+
+  loop simulation ticks while Running
+    FDE -> Task: evaluate canonical entity state
+    Task --> FDE: MovementIntent + task state
+    FDE -> FDE: apply dynamics and terminal-state guards
+  end
+
+  alt Completed
+    FDE -> Plan: task status Completed
+    Plan -> Plan: complete step and advance
+  else Failed / Target unavailable
+    FDE -> Plan: terminal failure
+    Plan -> Plan: apply plan failure policy
+  else Cancelled / manual override
+    Applicator -> Task: cancel and clear temporary intent
+    Plan -> Plan: apply override policy
+  end
+end
+
+note right of FDE
+Completed or Failed tasks cannot
+continue modifying kinematics.
+end note
+
+note right of Plan
+The plan consumes task status.
+It never owns physical movement.
+end note
+
+@enduml

@@ -1,0 +1,104 @@
+@startuml
+title Tactical Environment - Current System Architecture
+
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+actor Operator
+
+package "Presentation" {
+  [Qt Widgets\nMainWindow and dialogs] as QtUi
+  [Plan and task UI] as PlanUi
+  [Operational Status] as StatusUi
+  [QML Cockpit\nPFD / EADI / ECAM] as CockpitUi
+}
+
+package "Application" {
+  [ScenarioState] as Scenario
+  [EntityPlanExecutor] as Plans
+  [TaskApplicator] as Applicator
+  [FlightDynamicsEngine] as Dynamics
+  [AttackTaskProcessor] as Attack
+  [SensorEngine] as Sensors
+  [MunitionSimulator] as Munitions
+  [BehaviorEngine] as Behaviors
+  [KinematicsTelemetry] as KTelemetry
+  [SystemsTelemetry] as STelemetry
+  [CockpitControlService] as CockpitControl
+  [ScenarioSerializer] as Serializer
+  [EventBus] as Events
+}
+
+package "Domain" {
+  [Entity + stable UUID] as Entity
+  [EntityTask / TaskStack] as Tasks
+  [Plans and PlanSteps] as PlanDomain
+  [Sensors and contacts] as SensorDomain
+  [Weapons / damage / fuel] as CombatDomain
+  [GeoMath] as Geo
+}
+
+package "Infrastructure" {
+  [CesiumScenePage / MapBridge] as CesiumBridge
+  [CesiumJS\n3D globe and picking] as Cesium
+  [Kinematic backend] as Kinematic
+  [JSBSim backend\noptional per entity] as Jsbsim
+  [Model and DIS catalogs] as Catalogs
+  [HLA adapter] as Hla
+  database "Scenario and model config" as Storage
+}
+
+Operator --> QtUi
+Operator --> CockpitUi
+QtUi --> PlanUi
+PlanUi --> Plans
+PlanUi --> Applicator
+CockpitUi --> CockpitControl
+
+Plans --> Applicator
+Applicator --> Scenario
+Scenario --> Entity
+Scenario --> Tasks
+Scenario --> PlanDomain
+Scenario --> Dynamics
+Scenario --> Attack
+Scenario --> Sensors
+Scenario --> Munitions
+Scenario --> Behaviors
+
+Dynamics --> Kinematic
+Dynamics --> Jsbsim
+Dynamics --> Geo
+Attack --> CombatDomain
+Sensors --> SensorDomain
+
+Entity --> KTelemetry
+Entity --> STelemetry
+KTelemetry --> CockpitUi
+STelemetry --> CockpitUi
+Entity --> StatusUi
+CockpitControl --> Dynamics : movement setpoints
+
+Entity --> CesiumBridge : neutral state snapshot
+CesiumBridge --> Cesium
+Catalogs --> CesiumBridge
+Hla --> Scenario
+Serializer --> Storage
+Serializer --> Scenario
+Scenario --> Events
+
+note right of Cesium
+Visualization and terrain display.
+Not the simulation physics engine.
+end note
+
+note right of Jsbsim
+Candidate integration.
+Runtime owns simulation time.
+Observable kinematic fallback.
+end note
+
+@enduml

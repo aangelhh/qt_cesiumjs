@@ -710,6 +710,10 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         return String(track.name || 'Unknown');
       }
 
+      function trackIdentity(track) {
+        return String((track && (track.entityId || track.name)) || '');
+      }
+
       function qtLabelType(track) {
         const entityTypeCode = String(track.entityTypeCode || '').trim();
         if (entityTypeCode.length > 0) {
@@ -1064,8 +1068,8 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         if (highlightedEntity && highlightedEntity.billboard) {
           highlightedEntity.billboard.scale = 1.05;
         }
-        selectedQtTrackName = highlightedEntity && highlightedEntity.name
-          ? highlightedEntity.name
+        selectedQtTrackName = highlightedEntity && highlightedEntity._qtTrackData
+          ? trackIdentity(highlightedEntity._qtTrackData)
           : null;
         refreshSimulationLabelVisibility();
       }
@@ -1228,7 +1232,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           previousAttitude: Object.assign({}, attitude),
           targetAttitude: Object.assign({}, attitude),
           startTimeMs: performance.now(),
-          durationMs: 140.0,
+          durationMs: 50.0,
         };
       }
 
@@ -1264,15 +1268,67 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           previousAttitude: currentAttitude,
           targetAttitude: normalizeTrackAttitude(track),
           startTimeMs: performance.now(),
-          durationMs: 140.0,
+          durationMs: 50.0,
         };
       }
 
       function visualPitchDegrees(attitude) {
         const pitchDegrees = Number(attitude && attitude.pitchDegrees || 0.0);
-        const rollMagnitude = Math.abs(Number(attitude && attitude.rollDegrees || 0.0));
-        const turnPitchGain = 1.0 + Cesium.Math.clamp(rollMagnitude / 30.0, 0.0, 1.0) * 0.25;
-        return Cesium.Math.clamp(pitchDegrees * turnPitchGain, -12.0, 12.0);
+        return Cesium.Math.clamp(pitchDegrees, -12.0, 12.0);
+      }
+
+      const xForwardModelCorrection = Cesium.Quaternion.fromAxisAngle(
+        Cesium.Cartesian3.UNIT_Z,
+        -Cesium.Math.PI_OVER_TWO
+      );
+
+      function buildAircraftOrientationQuaternion(position, attitude, track) {
+        const axes = String(track && track.cesiumModelAxes || '').toLowerCase();
+        const pitchRadians = Cesium.Math.toRadians(visualPitchDegrees(attitude));
+        if (axes === 'x-forward-y-up') {
+          // Cesium's glTF pipeline assumes +Z forward and converts it to its
+          // local +X body axis. This profile compensates assets whose authored
+          // longitudinal axis is already +X before applying flight attitude.
+          const bodyAttitude = new Cesium.HeadingPitchRoll(
+            Cesium.Math.toRadians(Number(attitude.headingDegrees || 0.0) - 90.0),
+            pitchRadians,
+            Cesium.Math.toRadians(Number(attitude.rollDegrees || 0.0))
+          );
+          const bodyOrientation = Cesium.Transforms.headingPitchRollQuaternion(
+            position,
+            bodyAttitude
+          );
+          return Cesium.Quaternion.multiply(
+            bodyOrientation,
+            xForwardModelCorrection,
+            new Cesium.Quaternion()
+          );
+        }
+
+        if (axes === 'z-forward-y-up') {
+          // Cesium already converts standard glTF +Z-forward/+Y-up assets to
+          // its local +X body axis. Only the aviation heading convention has
+          // to be converted from north-based to the local ENU frame.
+          const bodyAttitude = new Cesium.HeadingPitchRoll(
+            Cesium.Math.toRadians(Number(attitude.headingDegrees || 0.0) - 90.0),
+            pitchRadians,
+            Cesium.Math.toRadians(Number(attitude.rollDegrees || 0.0))
+          );
+          return Cesium.Transforms.headingPitchRollQuaternion(
+            position,
+            bodyAttitude
+          );
+        }
+
+        const legacyAttitude = new Cesium.HeadingPitchRoll(
+          Cesium.Math.toRadians(Number(attitude.headingDegrees || 0.0)),
+          pitchRadians,
+          Cesium.Math.toRadians(-Number(attitude.rollDegrees || 0.0))
+        );
+        return Cesium.Transforms.headingPitchRollQuaternion(
+          position,
+          legacyAttitude
+        );
       }
 
       function motionStatePosition(motionState) {
@@ -1419,20 +1475,21 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       }
 
       function addOrUpdatePendingBombTargetLine(track, color) {
-        if (!viewer || !track || !track.name) {
+        const trackId = trackIdentity(track);
+        if (!viewer || !track || !trackId) {
           return false;
         }
 
         const positions = buildPendingBombTargetLinePositions(track);
         if (positions.length < 2) {
-          removeQtNonPickablePrimitive(track.name);
+          removeQtNonPickablePrimitive(trackId);
           return true;
         }
 
         const material = Cesium.Material.fromType('Color', {
           color: color.withAlpha(0.58),
         });
-        let bundle = qtNonPickablePrimitivesByName.get(track.name);
+        let bundle = qtNonPickablePrimitivesByName.get(trackId);
         if (!bundle || !bundle.collection || !bundle.polyline) {
           const collection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
           const polyline = collection.add({
@@ -1442,7 +1499,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           });
           collection.show = overlaysVisible;
           bundle = { collection: collection, polyline: polyline };
-          qtNonPickablePrimitivesByName.set(track.name, bundle);
+          qtNonPickablePrimitivesByName.set(trackId, bundle);
         } else {
           bundle.collection.show = overlaysVisible;
           bundle.polyline.positions = positions;
@@ -1792,20 +1849,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           }
 
           const attitude = attitudeStateDegrees(entity, track);
-          const headingRadians = Cesium.Math.toRadians(Number(attitude.headingDegrees || 0.0));
-          // Positive simulation pitch means nose up and matches Cesium HPR.
-          // Roll remains inverted to match the aircraft model's local axes.
-          const pitchRadians = Cesium.Math.toRadians(visualPitchDegrees(attitude));
-          const rollRadians = Cesium.Math.toRadians(-Number(attitude.rollDegrees || 0.0));
-          const headingPitchRoll = new Cesium.HeadingPitchRoll(
-            headingRadians,
-            pitchRadians,
-            rollRadians
-          );
-          return Cesium.Transforms.headingPitchRollQuaternion(
-            position,
-            headingPitchRoll
-          );
+          return buildAircraftOrientationQuaternion(position, attitude, track);
         }, false);
       }
 
@@ -2246,11 +2290,12 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       };
 
       window.addOrUpdateQtTrack = function(track, focus) {
-        if (!viewer || !track || !track.name) {
+        const trackId = trackIdentity(track);
+        if (!viewer || !track || !trackId) {
           return false;
         }
         if (trackIsHidden(track)) {
-          window.removeQtTrack(track.name);
+          window.removeQtTrack(trackId);
           return true;
         }
 
@@ -2263,13 +2308,13 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         const isPendingBombTarget = trackIsPendingBombTarget(track);
         const color = trackDisplayColor(track);
         if (isPendingBombTargetLine) {
-          const existingEntity = qtEntitiesByName.get(track.name);
+          const existingEntity = qtEntitiesByName.get(trackId);
           if (existingEntity) {
             clearTrackingIfNonTrackable(existingEntity, track);
             viewer.entities.remove(existingEntity);
-            qtEntitiesByName.delete(track.name);
+            qtEntitiesByName.delete(trackId);
           }
-          const overlayBundle = qtOverlayEntitiesByName.get(track.name);
+          const overlayBundle = qtOverlayEntitiesByName.get(trackId);
           if (overlayBundle) {
             if (overlayBundle.route) {
               viewer.entities.remove(overlayBundle.route);
@@ -2289,11 +2334,11 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               }
             }
             clearTrackHistoryBundle(overlayBundle);
-            qtOverlayEntitiesByName.delete(track.name);
+            qtOverlayEntitiesByName.delete(trackId);
           }
           return addOrUpdatePendingBombTargetLine(track, color);
         }
-        removeQtNonPickablePrimitive(track.name);
+        removeQtNonPickablePrimitive(trackId);
         const damageState = trackDamageState(track);
         const modelUri = String(track.modelUri || '');
         const hasModel = !isEffect && !isPendingBombTargetLine && modelUri.length > 0;
@@ -2316,8 +2361,8 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             ? new Cesium.Color(0.22, 0.12, 0.02, 0.82)
             : color.withAlpha(0.18);
         const modelColor = Cesium.Color.WHITE;
-        const entityId = 'qt-track:' + track.name;
-        let entity = qtEntitiesByName.get(track.name);
+        const entityId = 'qt-track:' + trackId;
+        let entity = qtEntitiesByName.get(trackId);
         const canTrack = trackCanBeTracked(track);
         const bombTargetDistanceText = pendingBombTargetDistanceText(track);
         const bombTargetCcrpText = pendingBombCcrpText(track);
@@ -2327,7 +2372,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               (bombTargetCcrpText.length > 0 ? ('\n' + bombTargetCcrpText) : ''))
           : track.name;
         const wasTrackedEntity = canTrack && viewer.trackedEntity && viewer.trackedEntity === entity;
-        let overlayBundle = qtOverlayEntitiesByName.get(track.name) || {
+        let overlayBundle = qtOverlayEntitiesByName.get(trackId) || {
           route: null,
           area: null,
           label: null,
@@ -2335,9 +2380,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           radarFans: [],
           trackHistory: null,
           trackHistoryPositions: [],
-          trackName: track.name,
+          trackName: trackId,
         };
-        overlayBundle.trackName = track.name;
+        overlayBundle.trackName = trackId;
 
         const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude);
         if (!entity) {
@@ -2374,7 +2419,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
             },
             properties: {
-              qtTrackName: track.name,
+              qtTrackName: trackId,
               qtTrackType: track.type || '',
               qtTrackTeam: track.team || '',
             qtTrackModelName: track.modelName || '',
@@ -2416,7 +2461,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           if (hasModel) {
             entity.orientation = buildEntityOrientationProperty(entity);
           }
-          qtEntitiesByName.set(track.name, entity);
+          qtEntitiesByName.set(trackId, entity);
         } else {
           updateInterpolatedPosition(entity, position, track);
           updateInterpolatedAttitude(entity, track);
@@ -2431,7 +2476,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           entity.label.show = labelVisible;
           entity.label.fillColor = labelFillColor;
           entity.properties = new Cesium.PropertyBag({
-            qtTrackName: track.name,
+            qtTrackName: trackId,
             qtTrackType: track.type || '',
             qtTrackTeam: track.team || '',
             qtTrackModelName: track.modelName || '',
@@ -2549,9 +2594,9 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
                 disableDepthTestDistance: Number.POSITIVE_INFINITY,
               },
               properties: {
-                qtTrackName: track.name,
+                qtTrackName: trackId,
               },
-              show: overlaysVisible && track.name === selectedQtTrackName,
+              show: overlaysVisible && trackId === selectedQtTrackName,
             });
           } else {
             overlayBundle.label.position = entity.position;
@@ -2589,7 +2634,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               position: entity.position,
               label: damageIndicatorOptions,
               properties: {
-                qtTrackName: track.name,
+                qtTrackName: trackId,
               },
             });
           } else {
@@ -2604,7 +2649,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
             overlayBundle.damageIndicator.label.backgroundColor = damageIndicatorOptions.backgroundColor;
             overlayBundle.damageIndicator.label.pixelOffset = damageIndicatorOptions.pixelOffset;
             overlayBundle.damageIndicator.properties = new Cesium.PropertyBag({
-              qtTrackName: track.name,
+              qtTrackName: trackId,
             });
           }
         } else if (overlayBundle.damageIndicator) {
@@ -2671,7 +2716,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         }
 
         setOverlayVisibility(overlayBundle, overlaysVisible);
-        qtOverlayEntitiesByName.set(track.name, overlayBundle);
+        qtOverlayEntitiesByName.set(trackId, overlayBundle);
 
         clearTrackingIfNonTrackable(entity, track);
 

@@ -12,9 +12,11 @@
 #include <QVariantMap>
 #include <QVector>
 
+#include <cstdint>
 #include <memory>
 
 #include "application/AttackTaskProcessor.h"
+#include "application/CockpitControlService.h"
 #include "application/SimulationEngine.h"
 #include "presentation/BombReleaseController.h"
 #include "presentation/EntityPlanExecutor.h"
@@ -41,6 +43,7 @@ class QStandardItemModel;
 class QTimer;
 class QPoint;
 class QEvent;
+class QDockWidget;
 class QToolButton;
 class QWidget;
 #if defined(QT_CESIUMJS_WEBENGINE_AVAILABLE)
@@ -57,6 +60,7 @@ class EntityPlanDialog;
 class EntityPlanExecutor;
 class EntityVisualStateManager;
 class GraphicPickCoordinator;
+class KinematicsCockpitWidget;
 class PlanStepConfigurator;
 }
 
@@ -117,6 +121,7 @@ private slots:
   void setSelectedEntityHeading();
   void setSelectedEntityAltitude();
   void setSelectedEntitySpeed();
+  void setSelectedEntityFuel();
   void setSelectedEntityBehaviorMode(const QString& behaviorMode);
   void destroySelectedEntity();
   void restoreSelectedEntity();
@@ -203,6 +208,19 @@ private:
   void beginBombCoordinatePick();
   void beginGraphicCoordinatePick();
   void updateSimulationControls();
+  void initializeKinematicsCockpit();
+  void refreshKinematicsCockpitForEntity(const struct Entity* entity);
+  void takeCockpitControl(
+      const QString& entityName,
+      double headingDegrees,
+      int altitudeMeters,
+      double speedKnots);
+  void updateCockpitSetpoints(
+      const QString& entityName,
+      double headingDegrees,
+      int altitudeMeters,
+      double speedKnots);
+  void releaseCockpitControl(const QString& entityName);
   void createTaskQuickBar();
   void populateTaskQuickBarButtons(QFrame* panel, QHBoxLayout* layout);
   void positionTaskQuickBar();
@@ -249,6 +267,13 @@ private:
   Ui::MainWindow* _ui;
   QWidget* _contentWidget;
   QWidget* _taskQuickBar;
+  QDockWidget* _kinematicsCockpitDock;
+  presentation::KinematicsCockpitWidget* _kinematicsCockpitWidget;
+  QDockWidget* _qflightCockpitDock;
+  presentation::KinematicsCockpitWidget* _qflightCockpitWidget;
+  QDockWidget* _ecamCockpitDock;
+  presentation::KinematicsCockpitWidget* _ecamCockpitWidget;
+  std::uint64_t _kinematicsTelemetrySubscriptionId;
   MapBridge* _mapBridge;
   ScenarioState* _scenarioState;
   QStandardItemModel* _objectsModel;
@@ -276,6 +301,7 @@ private:
   std::unique_ptr<presentation::BombReleaseController> _bombReleaseController;
   std::unique_ptr<application::AttackTaskProcessor> _attackTaskProcessor;
   std::unique_ptr<presentation::EntityPlanExecutor> _planExecutor;
+  std::unique_ptr<application::CockpitControlService> _cockpitControlService;
   std::unique_ptr<presentation::EntityVisualStateManager> _entityVisualStateManager;
   std::unique_ptr<presentation::EntityHomePositionTracker> _entityHomePositionTracker;
   std::unique_ptr<presentation::GraphicPickCoordinator> _graphicPickCoordinator;

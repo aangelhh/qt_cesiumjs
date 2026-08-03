@@ -4,11 +4,18 @@
 
 #include <QDialog>
 #include <QStringList>
+#include <QVector>
 
 class QComboBox;
 class QCheckBox;
 class QDoubleSpinBox;
 class QSpinBox;
+
+struct EntityTargetOption {
+  QString entityId;
+  QString name;
+  QString displayLabel;
+};
 
 class AssignTaskDialog : public QDialog {
   Q_OBJECT
@@ -16,7 +23,7 @@ class AssignTaskDialog : public QDialog {
 public:
   explicit AssignTaskDialog(
       const QString& entityName,
-      const QStringList& availableTargets,
+      const QVector<EntityTargetOption>& availableTargets,
       const QStringList& availableWaypoints,
       const QStringList& availableRoutes,
       const QStringList& availableAreas,

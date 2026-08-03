@@ -69,6 +69,17 @@ TEST(BuildEntityContextMenuState, PopulatesWeaponCounts) {
   EXPECT_EQ(s.bombCount, 2);
 }
 
+TEST(BuildEntityContextMenuState, FuelConfigurationIsAvailableOnlyForAir) {
+  Entity air = makeAirFighter();
+  EXPECT_TRUE(buildEntityContextMenuState(
+      &air, nullptr, {}, false, false, {}).canConfigureFuel);
+
+  Entity ground = air;
+  ground.domain = QStringLiteral("Ground");
+  EXPECT_FALSE(buildEntityContextMenuState(
+      &ground, nullptr, {}, false, false, {}).canConfigureFuel);
+}
+
 TEST(BuildEntityContextMenuState, NonFighterCannotUseWeapons) {
   Entity e = makeAirFighter();
   e.category = "Transport";

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "application/KinematicsTelemetry.h"
 #include "domain/Entity.h"
 #include "domain/Munition.h"
 #include "domain/TacticalGraphic.h"
@@ -46,6 +47,11 @@ public:
   bool clearTask(const QString& entityName);
   bool setEntityDestroyed(const QString& entityName, bool destroyed);
   bool setEntityBehaviorMode(const QString& entityName, const QString& behaviorMode);
+  bool entityFuelState(
+      const QString& entityName,
+      double& remainingKilograms,
+      double& capacityKilograms) const;
+  bool setEntityFuelRemaining(const QString& entityName, double kilograms);
   void applyMissileDamage(const QString& targetName, double damageAmount);
   bool addMissileToEntity(const QString& entityName, int quantity = 1);
   bool addBombToEntity(const QString& entityName, int quantity = 1);
@@ -57,6 +63,7 @@ public:
   domain::TaskStack* getTaskStack(const QString& entityName);
   void refreshSensors();
   void advanceSimulation(double deltaSeconds);
+  double simulationTimeSeconds() const;
   void stopMission();
   bool save() const;
   bool load();
@@ -76,6 +83,8 @@ private:
   QVector<RouteGraphic> _routes;
   QVector<AreaDefinition> _areas;
   int _nextMunitionSerial = 1;
+  double _simulationTimeSeconds = 0.0;
+  application::KinematicsTelemetryPublisher _kinematicsTelemetryPublisher;
 
   void applyDamageWithSource(
       const QString& targetName,

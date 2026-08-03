@@ -2,6 +2,7 @@
 #include "application/ScenarioState.h"
 #include "domain/BombReleaseGate.h"
 #include "domain/Entity.h"
+#include "domain/EntityIdentity.h"
 
 #include <QTimer>
 
@@ -32,8 +33,28 @@ BombTargetQueueItem BombReleaseController::makeQueueItem(
     const QString& sourceDesc,
     const QString& targetEntityName) const {
   BombTargetQueueItem item;
-  item.launcherEntityName = launcherEntityName.trimmed();
-  item.targetEntityName = targetEntityName.trimmed();
+  const QString launcherReference = launcherEntityName.trimmed();
+  for (const Entity& entity : _state->entities()) {
+    if (domain::entityMatchesReference(entity, launcherReference)) {
+      item.launcherEntityId = domain::entityKey(entity);
+      item.launcherEntityName = entity.name;
+      break;
+    }
+  }
+  if (item.launcherEntityId.isEmpty()) {
+    item.launcherEntityName = launcherReference;
+  }
+  const QString targetReference = targetEntityName.trimmed();
+  for (const Entity& entity : _state->entities()) {
+    if (domain::entityMatchesReference(entity, targetReference)) {
+      item.targetEntityId = domain::entityKey(entity);
+      item.targetEntityName = entity.name;
+      break;
+    }
+  }
+  if (item.targetEntityId.isEmpty()) {
+    item.targetEntityName = targetReference;
+  }
   item.targetLatitude = targetLat;
   item.targetLongitude = targetLon;
   item.targetAltitudeMeters = targetAltMeters;
@@ -46,7 +67,9 @@ void BombReleaseController::armTarget(
     const BombTargetQueueItem& item,
     bool logQueued,
     bool focusLauncher) {
+  _pendingBombRelease.launcherEntityId    = item.launcherEntityId;
   _pendingBombRelease.launcherEntityName  = item.launcherEntityName;
+  _pendingBombRelease.targetEntityId      = item.targetEntityId;
   _pendingBombRelease.targetEntityName    = item.targetEntityName;
   _pendingBombRelease.targetLatitude      = item.targetLatitude;
   _pendingBombRelease.targetLongitude     = item.targetLongitude;
@@ -66,17 +89,17 @@ void BombReleaseController::armTarget(
                  .arg(_pendingBombRelease.launcherEntityName,
                       _pendingBombRelease.targetLabel));
   if (focusLauncher) {
-    _selectObject(_pendingBombRelease.launcherEntityName, true);
+    _selectObject(_pendingBombRelease.launcherReference(), true);
   }
 }
 
 bool BombReleaseController::queuedTargetIsUsable(const BombTargetQueueItem& item) const {
-  if (item.launcherEntityName.trimmed().isEmpty()) {
+  if (item.launcherReference().isEmpty()) {
     return false;
   }
   const Entity* launcher = nullptr;
   for (const Entity& entity : _state->entities()) {
-    if (entity.name.compare(item.launcherEntityName, Qt::CaseInsensitive) == 0) {
+    if (domain::entityMatchesReference(entity, item.launcherReference())) {
       launcher = &entity;
       break;
     }
@@ -85,11 +108,11 @@ bool BombReleaseController::queuedTargetIsUsable(const BombTargetQueueItem& item
       domain::weaponQuantity(*launcher, QStringLiteral("Bomb")) <= 0) {
     return false;
   }
-  if (item.targetEntityName.trimmed().isEmpty()) {
+  if (item.targetReference().isEmpty()) {
     return true;
   }
   for (const Entity& entity : _state->entities()) {
-    if (entity.name.compare(item.targetEntityName, Qt::CaseInsensitive) != 0) {
+    if (!domain::entityMatchesReference(entity, item.targetReference())) {
       continue;
     }
     return !entity.destroyed;
@@ -192,7 +215,10 @@ void BombReleaseController::validate() {
 
   const Entity* launcher = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == _pendingBombRelease.launcherEntityName) { launcher = &e; break; }
+    if (domain::entityMatchesReference(e, _pendingBombRelease.launcherReference())) {
+      launcher = &e;
+      break;
+    }
   }
   if (!launcher || launcher->destroyed) {
     const QString launcherName = _pendingBombRelease.launcherEntityName;
@@ -212,7 +238,10 @@ void BombReleaseController::process() {
 
   const Entity* launcher = nullptr;
   for (const Entity& e : _state->entities()) {
-    if (e.name == _pendingBombRelease.launcherEntityName) { launcher = &e; break; }
+    if (domain::entityMatchesReference(e, _pendingBombRelease.launcherReference())) {
+      launcher = &e;
+      break;
+    }
   }
   if (!launcher || launcher->destroyed) {
     validate();
@@ -241,18 +270,19 @@ void BombReleaseController::process() {
   }
   _pendingBombRelease.releaseCommandIssued = true;
 
+  const QString launcherReference = _pendingBombRelease.launcherReference();
   const QString launcherName  = _pendingBombRelease.launcherEntityName;
   const QString targetLabel   = _pendingBombRelease.targetLabel;
   const QString sourceDesc    = _pendingBombRelease.sourceDescription;
   _setStatus(QStringLiteral("Bomb release window reached for %1 on %2.")
                  .arg(launcherName, targetLabel));
 
-  QTimer::singleShot(0, this, [this, launcherName, targetLabel, sourceDesc]() {
+  QTimer::singleShot(0, this, [this, launcherReference, launcherName, targetLabel, sourceDesc]() {
     if (!_pendingBombRelease.pending ||
-        _pendingBombRelease.launcherEntityName != launcherName) {
+        _pendingBombRelease.launcherReference() != launcherReference) {
       return;
     }
-    if (!_state->releaseBomb(launcherName)) {
+    if (!_state->releaseBomb(launcherReference)) {
       clearAll();
       _setStatus(
           QStringLiteral("No se pudo soltar una bomba desde %1. Cola detenida.").arg(launcherName));
@@ -309,10 +339,10 @@ QString BombReleaseController::handleRemovedEntity(const QString& entityName) {
 
   for (auto it = _targetQueue.begin(); it != _targetQueue.end();) {
     const bool queuedLauncherRemoved =
-        it->launcherEntityName.compare(removedEntityName, Qt::CaseInsensitive) == 0;
+        it->launcherReference().compare(removedEntityName, Qt::CaseInsensitive) == 0;
     const bool queuedTargetRemoved =
-        !it->targetEntityName.trimmed().isEmpty() &&
-        it->targetEntityName.compare(removedEntityName, Qt::CaseInsensitive) == 0;
+        !it->targetReference().isEmpty() &&
+        it->targetReference().compare(removedEntityName, Qt::CaseInsensitive) == 0;
     if (queuedLauncherRemoved || queuedTargetRemoved) {
       it = _targetQueue.erase(it);
       continue;
@@ -325,11 +355,11 @@ QString BombReleaseController::handleRemovedEntity(const QString& entityName) {
   }
 
   const bool launcherRemoved =
-      _pendingBombRelease.launcherEntityName.compare(
+      _pendingBombRelease.launcherReference().compare(
           removedEntityName, Qt::CaseInsensitive) == 0;
   const bool targetRemoved =
-      !_pendingBombRelease.targetEntityName.trimmed().isEmpty() &&
-      _pendingBombRelease.targetEntityName.compare(
+      !_pendingBombRelease.targetReference().isEmpty() &&
+      _pendingBombRelease.targetReference().compare(
           removedEntityName, Qt::CaseInsensitive) == 0;
 
   if (!launcherRemoved && !targetRemoved) {

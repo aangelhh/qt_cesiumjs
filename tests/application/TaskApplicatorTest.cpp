@@ -91,6 +91,78 @@ TEST_F(TaskApplicatorTest, AssignsMoveToLocationTask) {
   EXPECT_FALSE(stack->isEmpty());
 }
 
+TEST_F(TaskApplicatorTest, DuplicateDisplayNamesAreControlledIndependentlyById) {
+  Entity first = makeAirEntity(QStringLiteral("mirage2000"));
+  Entity second = makeAirEntity(QStringLiteral("mirage2000"));
+  first.latitude = 40.0;
+  second.latitude = 42.0;
+  const QString firstId = first.entityId;
+  const QString secondId = second.entityId;
+  state->addEntity(first);
+  state->addEntity(second);
+
+  EntityTask task;
+  task.taskType = QStringLiteral("MoveToLocation");
+  task.targetLatitude = 43.0;
+  task.targetLongitude = -2.0;
+  task.targetAltitudeMeters = 6000;
+  task.targetSpeedKnots = 350.0;
+
+  ASSERT_TRUE(application::applyEntityTask(
+      secondId, task, false, state, nullptr,
+      [this](const QString& message) { logMessages << message; },
+      []() {}));
+
+  ASSERT_EQ(state->entities().size(), 2);
+  EXPECT_EQ(state->entities().at(0).entityId, firstId);
+  EXPECT_TRUE(state->entities().at(0).currentTask.taskType.isEmpty());
+  EXPECT_EQ(state->entities().at(1).entityId, secondId);
+  EXPECT_EQ(
+      state->entities().at(1).currentTask.taskType,
+      QStringLiteral("MoveToLocation"));
+  EXPECT_NE(state->getTaskStack(firstId), state->getTaskStack(secondId));
+}
+
+TEST_F(TaskApplicatorTest, DuplicateTargetNamesUseTargetEntityId) {
+  Entity actor = makeAirEntity(QStringLiteral("Interceptor"));
+  Entity firstTarget = makeAirEntity(QStringLiteral("Bandit"));
+  Entity secondTarget = makeAirEntity(QStringLiteral("Bandit"));
+  actor.forceIdentifier = 1;
+  firstTarget.forceIdentifier = 2;
+  secondTarget.forceIdentifier = 2;
+  const QString actorId = actor.entityId;
+  const QString secondTargetId = secondTarget.entityId;
+  state->addEntity(actor);
+  state->addEntity(firstTarget);
+  state->addEntity(secondTarget);
+
+  EntityTask task;
+  task.taskType = QStringLiteral("FollowEntity");
+  task.targetEntityId = secondTargetId;
+  task.targetEntityName = secondTarget.name;
+
+  ASSERT_TRUE(application::applyEntityTask(
+      actorId, task, false, state, nullptr,
+      [this](const QString& message) { logMessages << message; },
+      []() {}));
+  EXPECT_EQ(state->entities().front().currentTask.targetEntityId, secondTargetId);
+}
+
+TEST_F(TaskApplicatorTest, RemovingDuplicateDisplayNameByIdKeepsOtherEntity) {
+  Entity first = makeAirEntity(QStringLiteral("mirage2000"));
+  Entity second = makeAirEntity(QStringLiteral("mirage2000"));
+  const QString firstId = first.entityId;
+  const QString secondId = second.entityId;
+  state->addEntity(first);
+  state->addEntity(second);
+
+  ASSERT_TRUE(state->removeEntity(firstId));
+
+  ASSERT_EQ(state->entities().size(), 1);
+  EXPECT_EQ(state->entities().front().entityId, secondId);
+  EXPECT_EQ(state->entities().front().name, QStringLiteral("mirage2000"));
+}
+
 TEST_F(TaskApplicatorTest, GroundMoveToLocationUsesCurrentGroundAltitude) {
   Entity ground = makeGroundEntity("GroundMover");
   ground.altitude = 250;
