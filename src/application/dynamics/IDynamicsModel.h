@@ -14,18 +14,39 @@ struct DynamicsState {
   double rollDegrees = 0.0;
   double speedKnots = 0.0;
   double verticalSpeedMetersPerSecond = 0.0;
+  // Negative means "this backend does not track fuel" (e.g. kinematic).
+  double fuelRemainingKilograms = -1.0;
+  double fuelCapacityKilograms = -1.0;
 };
 
 struct DynamicsModelConfiguration {
   QString modelId;
   QString platformId;
   bool groundConstrained = false;
+  // Requested platform fuel capacity in kilograms. Ignored by backends that
+  // don't track fuel.
+  double fuelCapacityKilograms = 0.0;
+};
+
+// Per-tick control target. Backends whose control law needs an explicit
+// setpoint every step (e.g. JSBSim) read this; backends that dead-reckon off
+// state already resolved upstream (kinematic) may ignore it entirely.
+// controlProfileId is re-read every step rather than cached at configure()
+// time, so a live profile change takes effect without rebuilding a session.
+struct DynamicsControlSetpoint {
+  bool valid = false;
+  bool preferDirectControl = false;
+  double targetHeadingDegrees = 0.0;
+  double targetAltitudeMeters = 0.0;
+  double targetSpeedKnots = 0.0;
+  QString controlProfileId;
 };
 
 struct DynamicsStepContext {
   // The runtime owns both values. A model must not advance the global clock.
   double simulationTimeSeconds = 0.0;
   double deltaTimeSeconds = 0.0;
+  DynamicsControlSetpoint controlSetpoint;
 };
 
 struct DynamicsStepResult {
@@ -49,6 +70,13 @@ public:
   virtual bool reset(const DynamicsState& initialState) = 0;
   virtual void shutdown() = 0;
   virtual bool isInitialized() const = 0;
+
+  // Out-of-band fuel push (e.g. a scripted refuel) outside the normal step
+  // cycle. Default: unsupported. Backends that don't track fuel need not
+  // override this.
+  virtual bool applyExternalFuelOverride(double /*fuelRemainingKilograms*/) {
+    return false;
+  }
 };
 
 } // namespace application::dynamics

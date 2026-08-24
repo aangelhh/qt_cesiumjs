@@ -234,6 +234,10 @@ if(QTTEST_HAS_QFLIGHTINSTRUMENTS)
 endif()
 
 if(TARGET libJSBSim)
+    target_sources(qttest PRIVATE
+        src/application/dynamics/JSBSimDynamicsModel.cpp
+        src/application/dynamics/JSBSimDynamicsModel.h
+    )
     target_link_libraries(qttest PRIVATE libJSBSim)
     target_compile_definitions(qttest PRIVATE QTTEST_HAS_JSBSIM=1)
 endif()

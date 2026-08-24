@@ -22,6 +22,8 @@ public:
       const Entity& entity,
       double maximumSpeedKnots);
   static bool setFuelRemaining(Entity& entity, double kilograms);
+  static void releaseDynamicsModel(const QString& entityId);
+  static void clearDynamicsModels();
 
 private:
   static void advanceEntity(

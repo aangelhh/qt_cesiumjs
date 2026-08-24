@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "application/FlightDynamicsEngine.h"
+#include "domain/EntityIdentity.h"
 #include "domain/GeoMath.h"
 
 #include <cmath>
@@ -250,4 +251,45 @@ TEST(JsbsimFlightControl, RefuelSynchronizesAnActiveJsbsimSession) {
 
   EXPECT_GT(entities.first().fuelRemainingKilograms, 0.0);
   EXPECT_LT(entities.first().fuelRemainingKilograms, 500.0);
+}
+
+TEST(JsbsimFlightControl, ReleasedModelReinitializesFromCurrentEntityState) {
+  Entity fighter;
+  fighter.name = QStringLiteral("JSBSim lifecycle fighter");
+  fighter.domain = QStringLiteral("Air");
+  fighter.category = QStringLiteral("Fighter");
+  fighter.latitude = 40.0;
+  fighter.longitude = -3.0;
+  fighter.altitude = 3000;
+  fighter.headingDegrees = 90.0;
+  fighter.speedKnots = 320.0;
+  fighter.flightDynamicsEnabled = true;
+  fighter.flightDynamicsMode = QStringLiteral("jsbsim");
+  fighter.jsbsimAircraftModel = QStringLiteral("f16");
+  fighter.currentTask.enabled = true;
+  fighter.currentTask.status = QStringLiteral("Running");
+  fighter.currentTask.taskType = QStringLiteral("FlyHeadingAltitudeSpeed");
+  fighter.currentTask.targetHeadingDegrees = 90.0;
+  fighter.currentTask.targetAltitudeMeters = 3000;
+  fighter.currentTask.targetSpeedKnots = 320.0;
+
+  QVector<Entity> entities = {fighter};
+  std::unordered_map<QString, domain::TaskStack> taskStacks;
+  FlightDynamicsEngine::advanceEntities(entities, taskStacks, 1.0 / 60.0);
+  ASSERT_EQ(entities.first().activeDynamicsBackend, QStringLiteral("jsbsim"));
+
+  FlightDynamicsEngine::releaseDynamicsModel(
+      domain::entityKey(entities.first()));
+  entities.first().latitude = 41.0;
+  entities.first().longitude = -4.0;
+  entities.first().altitude = 4000;
+  entities.first().currentTask.targetAltitudeMeters = 4000;
+
+  FlightDynamicsEngine::advanceEntities(entities, taskStacks, 1.0 / 60.0);
+  EXPECT_EQ(entities.first().activeDynamicsBackend, QStringLiteral("jsbsim"));
+  EXPECT_NEAR(entities.first().latitude, 41.0, 0.01);
+  EXPECT_NEAR(entities.first().longitude, -4.0, 0.01);
+  EXPECT_NEAR(entities.first().altitude, 4000, 10);
+
+  FlightDynamicsEngine::clearDynamicsModels();
 }
