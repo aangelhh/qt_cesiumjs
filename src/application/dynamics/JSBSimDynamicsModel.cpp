@@ -153,17 +153,11 @@ bool JSBSimDynamicsModel::reset(const DynamicsState& initialState) {
   if (!_configured) {
     return false;
   }
-  if (!_exec) {
-    return initialize(initialState);
-  }
-  _state = initialState;
-  if (!applyInitialConditions(initialState)) {
-    _exec.reset();
-    _initialized = false;
-    return false;
-  }
-  _initialized = true;
-  return true;
+  // RunIC resets initial conditions, but it does not guarantee that every
+  // model-integrator, propulsion, and systems state is returned to its loaded
+  // value. Rebuilding at the explicit reset boundary gives replay the same
+  // starting state as a fresh model instance without adding per-tick cost.
+  return initialize(initialState);
 }
 
 void JSBSimDynamicsModel::shutdown() {
