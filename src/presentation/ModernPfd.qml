@@ -188,7 +188,9 @@ Item {
             label(ctx, "SPD " + Math.round(root.selectedAirspeedKnots), 7,
                   top - 18, 11, root.magenta, "left")
 
-            var altitudeSpacing = 0.032
+            // Keep 200 ft labels at least 18 px apart so the tape remains
+            // readable when the cockpit panel is vertically compressed.
+            var altitudeSpacing = Math.max(0.09, attitudeHeight / 3600)
             var roundedAltitude = Math.round(root.altitudeFeet / 100) * 100
             for (var da = -1000; da <= 1000; da += 200) {
                 var altitudeValue = roundedAltitude + da

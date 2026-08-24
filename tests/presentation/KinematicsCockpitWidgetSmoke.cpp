@@ -20,12 +20,17 @@
 
 namespace {
 
-bool rendersContent(QWidget& widget) {
+QImage renderWidget(QWidget& widget) {
   QImage image(widget.size(), QImage::Format_ARGB32_Premultiplied);
   image.fill(Qt::magenta);
   QPainter painter(&image);
   widget.render(&painter);
   painter.end();
+  return image;
+}
+
+bool rendersContent(QWidget& widget) {
+  const QImage image = renderWidget(widget);
 
   QSet<QRgb> colors;
   int unchangedPixels = 0;
@@ -42,6 +47,21 @@ bool rendersContent(QWidget& widget) {
   const int sampledPixels =
       ((image.width() + 3) / 4) * ((image.height() + 3) / 4);
   return colors.size() >= 20 && unchangedPixels <= sampledPixels / 20;
+}
+
+bool imagesDiffer(const QImage& before, const QImage& after) {
+  if (before.size() != after.size()) {
+    return true;
+  }
+  int changedPixels = 0;
+  for (int y = 0; y < before.height(); y += 2) {
+    for (int x = 0; x < before.width(); x += 2) {
+      if (before.pixel(x, y) != after.pixel(x, y)) {
+        ++changedPixels;
+      }
+    }
+  }
+  return changedPixels >= 100;
 }
 
 } // namespace
@@ -184,6 +204,7 @@ int main(int argc, char** argv) {
     return 8;
   }
 
+  const QImage beforeAttitudeChange = renderWidget(widget);
   snapshot.rollDegrees = 18.0;
   snapshot.pitchDegrees = -6.0;
   widget.applySnapshot(snapshot);
@@ -192,13 +213,16 @@ int main(int argc, char** argv) {
       modernPfd->rootObject()->property("pitchDegrees").toDouble() != -6.0) {
     return 8;
   }
+  if (!imagesDiffer(beforeAttitudeChange, renderWidget(widget))) {
+    return 9;
+  }
 #endif
 
   for (int index = 0; index < tabs->count(); ++index) {
     tabs->setCurrentIndex(index);
     application.processEvents();
     if (!rendersContent(widget)) {
-      return index + 9;
+      return index + 10;
     }
   }
 
@@ -213,7 +237,7 @@ int main(int argc, char** argv) {
       QStringLiteral("kinematicsCockpitTabs"));
   if (!ecamTabs || ecamTabs->count() != 1 || ecamTabs->tabBar()->isVisible() ||
       !rendersContent(ecamPanel)) {
-    return 13;
+    return 14;
   }
 
   return 0;
