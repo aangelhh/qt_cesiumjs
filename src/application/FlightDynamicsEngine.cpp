@@ -4,7 +4,10 @@
 #include "domain/EntityIdentity.h"
 
 #if defined(QTTEST_HAS_JSBSIM)
+#include "application/dynamics/DynamicsBackendHealth.h"
 #include "application/dynamics/JSBSimDynamicsModel.h"
+
+#include <QElapsedTimer>
 #endif
 
 #include <QtMath>
@@ -136,11 +139,24 @@ bool taskStatusIsTerminal(const QString& status) {
          status == QStringLiteral("Target unavailable");
 }
 
+void setDynamicsRuntimeStatus(
+    Entity& entity,
+    const QString& backend,
+    const QString& fallbackReason = {},
+    double stepDurationMilliseconds = 0.0) {
+  entity.activeDynamicsBackend = backend;
+  entity.dynamicsFallbackReason = fallbackReason;
+  entity.dynamicsStepDurationMilliseconds = stepDurationMilliseconds;
+}
+
 void stopForFuelExhaustion(Entity& entity, double deltaSeconds) {
   entity.fuelRemainingKilograms = 0.0;
   entity.speedKnots = 0.0;
   entity.verticalSpeedMetersPerSecond = 0.0;
-  entity.activeDynamicsBackend = QStringLiteral("fuel-exhausted");
+  setDynamicsRuntimeStatus(
+      entity,
+      QStringLiteral("fuel-exhausted"),
+      QStringLiteral("Fuel exhausted"));
   if (entity.currentTask.enabled &&
       !taskStatusIsTerminal(entity.currentTask.status)) {
     entity.currentTask.status = QStringLiteral("Failed");
@@ -564,14 +580,31 @@ void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::Task
 }
 
 #if defined(QTTEST_HAS_JSBSIM)
-using JsbsimModelRegistry = std::unordered_map<
-    QString,
-    std::unique_ptr<application::dynamics::JSBSimDynamicsModel>>;
+constexpr application::dynamics::DynamicsBackendBudgetPolicy
+    kJsbsimStepBudget{/*maxStepMilliseconds=*/8.0,
+                      /*consecutiveOverrunLimit=*/3};
 
-std::unordered_map<
-    QString,
-    std::unique_ptr<application::dynamics::JSBSimDynamicsModel>>&
-jsbsimModels() {
+struct JsbsimModelSession {
+  QString requestedModelName;
+  std::unique_ptr<application::dynamics::JSBSimDynamicsModel> model;
+  application::dynamics::DynamicsBackendHealth health;
+};
+
+struct JsbsimModelLookup {
+  application::dynamics::JSBSimDynamicsModel* model = nullptr;
+  QString fallbackReason;
+};
+
+struct JsbsimStepOutcome {
+  bool advanced = false;
+  QString fallbackReason;
+  double elapsedMilliseconds = 0.0;
+};
+
+using JsbsimModelRegistry =
+    std::unordered_map<QString, JsbsimModelSession>;
+
+JsbsimModelRegistry& jsbsimModels() {
   // JSBSim owns process-level state whose static teardown order is not under
   // our control. Runtime entries are explicitly released by ScenarioState;
   // the registry shell intentionally remains alive until process exit.
@@ -585,24 +618,24 @@ void releaseJsbsimModel(const QString& entityId) {
   if (it == models.end()) {
     return;
   }
-  if (it->second) {
-    it->second->shutdown();
+  if (it->second.model) {
+    it->second.model->shutdown();
   }
   models.erase(it);
 }
 
 void clearJsbsimModels() {
   auto& models = jsbsimModels();
-  for (auto& [entityId, model] : models) {
+  for (auto& [entityId, session] : models) {
     Q_UNUSED(entityId);
-    if (model) {
-      model->shutdown();
+    if (session.model) {
+      session.model->shutdown();
     }
   }
   models.clear();
 }
 
-application::dynamics::JSBSimDynamicsModel* ensureJsbsimModel(Entity& entity) {
+JsbsimModelLookup ensureJsbsimModel(Entity& entity) {
   const QString modelName = defaultJsbsimAircraftModel(entity);
   entity.jsbsimAircraftModel = modelName;
   if (entity.controlProfileId.trimmed().isEmpty()) {
@@ -610,23 +643,37 @@ application::dynamics::JSBSimDynamicsModel* ensureJsbsimModel(Entity& entity) {
   }
   application::ensureFuelConfiguration(entity);
 
-  auto& modelPtr = jsbsimModels()[domain::entityKey(entity)];
-  const bool needsRebuild =
-      !modelPtr || !modelPtr->isInitialized() || modelPtr->loadedModelName() != modelName;
-  if (!needsRebuild) {
-    return modelPtr.get();
+  auto& session = jsbsimModels()[domain::entityKey(entity)];
+  if (session.requestedModelName != modelName) {
+    if (session.model) {
+      session.model->shutdown();
+    }
+    session = JsbsimModelSession{};
+    session.requestedModelName = modelName;
   }
 
-  modelPtr = std::make_unique<application::dynamics::JSBSimDynamicsModel>();
+  if (session.health.fallbackLatched) {
+    return {nullptr, session.health.fallbackReason};
+  }
+  if (session.model && session.model->isInitialized()) {
+    return {session.model.get(), {}};
+  }
+
+  session.model =
+      std::make_unique<application::dynamics::JSBSimDynamicsModel>();
   const application::dynamics::DynamicsModelConfiguration configuration{
       modelName,
       entity.type,
       /*groundConstrained=*/false,
       entity.fuelCapacityKilograms,
   };
-  if (!modelPtr->configure(configuration)) {
-    modelPtr.reset();
-    return nullptr;
+  if (!session.model->configure(configuration)) {
+    session.model.reset();
+    application::dynamics::latchDynamicsBackendFallback(
+        session.health,
+        QStringLiteral("JSBSim configuration failed for model '%1'")
+            .arg(modelName));
+    return {nullptr, session.health.fallbackReason};
   }
 
   const application::dynamics::DynamicsState initialState{
@@ -641,26 +688,45 @@ application::dynamics::JSBSimDynamicsModel* ensureJsbsimModel(Entity& entity) {
       entity.fuelRemainingKilograms,
       -1.0,
   };
-  if (!modelPtr->initialize(initialState)) {
-    modelPtr.reset();
-    return nullptr;
+  if (!session.model->initialize(initialState)) {
+    session.model.reset();
+    application::dynamics::latchDynamicsBackendFallback(
+        session.health,
+        QStringLiteral("JSBSim initialization failed for model '%1'")
+            .arg(modelName));
+    return {nullptr, session.health.fallbackReason};
   }
 
-  const auto initialized = modelPtr->state();
+  const auto initialized = session.model->state();
+  QString invalidReason;
+  if (!application::dynamics::dynamicsStateIsValid(
+          initialized,
+          &invalidReason)) {
+    session.model->shutdown();
+    session.model.reset();
+    application::dynamics::latchDynamicsBackendFallback(
+        session.health,
+        QStringLiteral("Invalid JSBSim initial state: %1").arg(invalidReason));
+    return {nullptr, session.health.fallbackReason};
+  }
   if (initialized.fuelCapacityKilograms >= 0.0) {
     entity.fuelCapacityKilograms = initialized.fuelCapacityKilograms;
   }
   if (initialized.fuelRemainingKilograms >= 0.0) {
     entity.fuelRemainingKilograms = initialized.fuelRemainingKilograms;
   }
-  return modelPtr.get();
+  return {session.model.get(), {}};
 }
 
-bool applyJsbsimStep(Entity& entity, double simulationTimeSeconds, double deltaSeconds) {
-  auto* model = ensureJsbsimModel(entity);
-  if (!model) {
-    return false;
+JsbsimStepOutcome applyJsbsimStep(
+    Entity& entity,
+    double simulationTimeSeconds,
+    double deltaSeconds) {
+  const JsbsimModelLookup lookup = ensureJsbsimModel(entity);
+  if (!lookup.model) {
+    return {false, lookup.fallbackReason, 0.0};
   }
+  auto& session = jsbsimModels().at(domain::entityKey(entity));
 
   const bool preferDirectFcs =
       entity.currentTask.taskType == QStringLiteral("MoveToLocation") ||
@@ -679,12 +745,45 @@ bool applyJsbsimStep(Entity& entity, double simulationTimeSeconds, double deltaS
   context.controlSetpoint.targetSpeedKnots = entity.currentTask.targetSpeedKnots;
   context.controlSetpoint.controlProfileId = entity.controlProfileId;
 
-  const auto result = model->step(context);
+  QElapsedTimer stepTimer;
+  stepTimer.start();
+  const auto result = lookup.model->step(context);
+  const double elapsedMilliseconds =
+      static_cast<double>(stepTimer.nsecsElapsed()) / 1.0e6;
   if (!result) {
-    return false;
+    application::dynamics::latchDynamicsBackendFallback(
+        session.health,
+        QStringLiteral("JSBSim step failed: %1").arg(result.errorMessage));
+    return {
+        false,
+        session.health.fallbackReason,
+        elapsedMilliseconds,
+    };
   }
 
-  const auto next = model->state();
+  const auto next = lookup.model->state();
+  QString invalidReason;
+  if (!application::dynamics::dynamicsStateIsValid(next, &invalidReason)) {
+    application::dynamics::latchDynamicsBackendFallback(
+        session.health,
+        QStringLiteral("Invalid JSBSim step output: %1").arg(invalidReason));
+    return {
+        false,
+        session.health.fallbackReason,
+        elapsedMilliseconds,
+    };
+  }
+  if (!application::dynamics::recordDynamicsStepDuration(
+          session.health,
+          elapsedMilliseconds,
+          kJsbsimStepBudget)) {
+    return {
+        false,
+        session.health.fallbackReason,
+        elapsedMilliseconds,
+    };
+  }
+
   entity.latitude = next.latitudeDegrees;
   entity.longitude = next.longitudeDegrees;
   entity.altitude = qMax(0, static_cast<int>(qRound(next.altitudeMeters)));
@@ -697,7 +796,7 @@ bool applyJsbsimStep(Entity& entity, double simulationTimeSeconds, double deltaS
     entity.fuelRemainingKilograms =
         qBound(0.0, next.fuelRemainingKilograms, entity.fuelCapacityKilograms);
   }
-  return true;
+  return {true, {}, elapsedMilliseconds};
 }
 #endif
 
@@ -756,15 +855,21 @@ FlightDynamicsEngine::systemsTelemetryForEntity(
   if (configuredForJsbsim &&
       entity.activeDynamicsBackend.compare(
           QStringLiteral("jsbsim"), Qt::CaseInsensitive) != 0) {
-    snapshot.dataSource = entity.activeDynamicsBackend.compare(
-                              QStringLiteral("kinematic-fallback"),
-                              Qt::CaseInsensitive) == 0
-        ? QStringLiteral("Kinematic estimate | JSBSim fallback")
-        : (entity.activeDynamicsBackend.compare(
-               QStringLiteral("fuel-exhausted"),
-               Qt::CaseInsensitive) == 0
-               ? QStringLiteral("Fuel exhausted")
-               : QStringLiteral("Kinematic estimate | JSBSim inactive"));
+    if (entity.activeDynamicsBackend.compare(
+            QStringLiteral("kinematic-fallback"),
+            Qt::CaseInsensitive) == 0) {
+      snapshot.dataSource = QStringLiteral("Kinematic estimate | JSBSim fallback");
+      if (!entity.dynamicsFallbackReason.trimmed().isEmpty()) {
+        snapshot.dataSource += QStringLiteral(" | %1")
+                                   .arg(entity.dynamicsFallbackReason);
+      }
+    } else {
+      snapshot.dataSource = entity.activeDynamicsBackend.compare(
+                                QStringLiteral("fuel-exhausted"),
+                                Qt::CaseInsensitive) == 0
+          ? QStringLiteral("Fuel exhausted")
+          : QStringLiteral("Kinematic estimate | JSBSim inactive");
+    }
   }
 #if defined(QTTEST_HAS_JSBSIM)
   if (entity.activeDynamicsBackend.compare(
@@ -772,12 +877,12 @@ FlightDynamicsEngine::systemsTelemetryForEntity(
     return snapshot;
   }
   const auto modelIt = jsbsimModels().find(domain::entityKey(entity));
-  if (modelIt == jsbsimModels().end() || !modelIt->second ||
-      !modelIt->second->isInitialized()) {
+  if (modelIt == jsbsimModels().end() || !modelIt->second.model ||
+      !modelIt->second.model->isInitialized()) {
     return snapshot;
   }
 
-  const auto* model = modelIt->second.get();
+  const auto* model = modelIt->second.model.get();
   const QVector<application::EngineTelemetry> engines =
       model->engineTelemetry(entity.destroyed);
   if (engines.isEmpty()) {
@@ -812,11 +917,12 @@ bool FlightDynamicsEngine::setFuelRemaining(
       entity.fuelCapacityKilograms);
 #if defined(QTTEST_HAS_JSBSIM)
   const auto modelIt = jsbsimModels().find(domain::entityKey(entity));
-  if (modelIt != jsbsimModels().end() && modelIt->second &&
-      modelIt->second->isInitialized() &&
-      modelIt->second->applyExternalFuelOverride(entity.fuelRemainingKilograms)) {
+  if (modelIt != jsbsimModels().end() && modelIt->second.model &&
+      modelIt->second.model->isInitialized() &&
+      modelIt->second.model->applyExternalFuelOverride(
+          entity.fuelRemainingKilograms)) {
     const application::dynamics::DynamicsState modelState =
-        modelIt->second->state();
+        modelIt->second.model->state();
     entity.fuelCapacityKilograms = modelState.fuelCapacityKilograms;
     entity.fuelRemainingKilograms = modelState.fuelRemainingKilograms;
   }
@@ -835,7 +941,7 @@ void FlightDynamicsEngine::advanceEntity(
   // flightDynamicsEnabled / flightDynamicsMode only control how movement is simulated,
   // not whether the entity should move at all.
   if (entityIsGround(entity)) {
-    entity.activeDynamicsBackend = QStringLiteral("kinematic-ground");
+    setDynamicsRuntimeStatus(entity, QStringLiteral("kinematic-ground"));
     normalizeGroundKinematics(entity);
     if (!entity.currentTask.enabled) {
       entity.speedKnots = 0.0;
@@ -863,14 +969,14 @@ void FlightDynamicsEngine::advanceEntity(
   }
 
   if (!entity.currentTask.enabled) {
-    entity.activeDynamicsBackend = QStringLiteral("inactive");
+    setDynamicsRuntimeStatus(entity, QStringLiteral("inactive"));
     entity.speedKnots = 0.0;
     entity.verticalSpeedMetersPerSecond = 0.0;
     relaxDerivedAttitude(entity, deltaSeconds);
     return;
   }
   if (taskStatusIsTerminal(entity.currentTask.status)) {
-    entity.activeDynamicsBackend = QStringLiteral("inactive");
+    setDynamicsRuntimeStatus(entity, QStringLiteral("inactive"));
     entity.speedKnots = 0.0;
     entity.verticalSpeedMetersPerSecond = 0.0;
     relaxDerivedAttitude(entity, deltaSeconds);
@@ -885,7 +991,7 @@ void FlightDynamicsEngine::advanceEntity(
 
   const double previousHeadingDegrees = entity.headingDegrees;
   if (!isMovementTaskType(entity.currentTask.taskType)) {
-    entity.activeDynamicsBackend = QStringLiteral("kinematic");
+    setDynamicsRuntimeStatus(entity, QStringLiteral("kinematic"));
     entity.verticalSpeedMetersPerSecond = 0.0;
     applyKinematicStep(entity, simulationTimeSeconds, deltaSeconds);
     application::consumeEstimatedFuel(entity, deltaSeconds);
@@ -903,20 +1009,30 @@ void FlightDynamicsEngine::advanceEntity(
   if (entity.flightDynamicsEnabled &&
       entity.flightDynamicsMode.compare(
           QStringLiteral("jsbsim"), Qt::CaseInsensitive) == 0) {
-    if (applyJsbsimStep(entity, simulationTimeSeconds, deltaSeconds)) {
+    const JsbsimStepOutcome outcome =
+        applyJsbsimStep(entity, simulationTimeSeconds, deltaSeconds);
+    if (outcome.advanced) {
       if (entity.fuelRemainingKilograms <= 0.0) {
         stopForFuelExhaustion(entity, deltaSeconds);
         return;
       }
-      entity.activeDynamicsBackend = QStringLiteral("jsbsim");
+      setDynamicsRuntimeStatus(
+          entity,
+          QStringLiteral("jsbsim"),
+          {},
+          outcome.elapsedMilliseconds);
       return;
     }
-    entity.activeDynamicsBackend = QStringLiteral("kinematic-fallback");
+    setDynamicsRuntimeStatus(
+        entity,
+        QStringLiteral("kinematic-fallback"),
+        outcome.fallbackReason,
+        outcome.elapsedMilliseconds);
   } else {
-    entity.activeDynamicsBackend = QStringLiteral("kinematic");
+    setDynamicsRuntimeStatus(entity, QStringLiteral("kinematic"));
   }
 #else
-  entity.activeDynamicsBackend = QStringLiteral("kinematic");
+  setDynamicsRuntimeStatus(entity, QStringLiteral("kinematic"));
 #endif
 
   applyKinematicStep(entity, simulationTimeSeconds, deltaSeconds);

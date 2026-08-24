@@ -48,6 +48,8 @@ struct KinematicsTelemetrySnapshot {
   QString taskType;
   QString taskStatus;
   QString dynamicsModel;
+  QString dynamicsFallbackReason;
+  double dynamicsStepDurationMilliseconds = 0.0;
   SystemsTelemetrySnapshot systems;
   bool taskEnabled = false;
   bool destroyed = false;

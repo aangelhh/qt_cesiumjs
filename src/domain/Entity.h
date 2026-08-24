@@ -83,6 +83,8 @@ struct Entity {
   QString flightDynamicsMode = QStringLiteral("kinematic");
   // Runtime-only backend used by the most recent simulation tick.
   QString activeDynamicsBackend;
+  QString dynamicsFallbackReason;
+  double dynamicsStepDurationMilliseconds = 0.0;
   QString jsbsimAircraftModel;
   QString controlProfileId;
   QString systemsDisplayProfileId;
