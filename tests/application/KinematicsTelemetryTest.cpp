@@ -84,6 +84,22 @@ TEST(KinematicsTelemetry, FallsBackToKinematicDynamicsModel) {
   EXPECT_EQ(snapshot.dynamicsModel, QStringLiteral("kinematic"));
 }
 
+TEST(KinematicsTelemetry, CapturesDynamicsFallbackDiagnostics) {
+  Entity entity = makeTelemetryEntity();
+  entity.activeDynamicsBackend = QStringLiteral("kinematic-fallback");
+  entity.dynamicsFallbackReason = QStringLiteral("Step budget exceeded");
+  entity.dynamicsStepDurationMilliseconds = 12.5;
+
+  const application::KinematicsTelemetrySnapshot snapshot =
+      application::makeKinematicsTelemetrySnapshot(entity, 0.0, 0.1);
+
+  EXPECT_EQ(snapshot.dynamicsModel, QStringLiteral("kinematic-fallback"));
+  EXPECT_EQ(
+      snapshot.dynamicsFallbackReason,
+      QStringLiteral("Step budget exceeded"));
+  EXPECT_DOUBLE_EQ(snapshot.dynamicsStepDurationMilliseconds, 12.5);
+}
+
 TEST(KinematicsTelemetry, SnapshotDoesNotAliasMutableEntityState) {
   Entity entity = makeTelemetryEntity();
   const application::KinematicsTelemetrySnapshot snapshot =

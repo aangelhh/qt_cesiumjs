@@ -68,6 +68,9 @@ KinematicsTelemetrySnapshot makeKinematicsTelemetrySnapshot(
   snapshot.taskType = entity.currentTask.taskType;
   snapshot.taskStatus = entity.currentTask.status;
   snapshot.dynamicsModel = normalizedDynamicsModel(entity);
+  snapshot.dynamicsFallbackReason = entity.dynamicsFallbackReason;
+  snapshot.dynamicsStepDurationMilliseconds =
+      entity.dynamicsStepDurationMilliseconds;
   snapshot.systems = FlightDynamicsEngine::systemsTelemetryForEntity(
       entity,
       limits.maxSpeedKnots);

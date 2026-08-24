@@ -293,3 +293,50 @@ TEST(JsbsimFlightControl, ReleasedModelReinitializesFromCurrentEntityState) {
 
   FlightDynamicsEngine::clearDynamicsModels();
 }
+
+TEST(JsbsimFlightControl, InvalidModelLatchesKinematicFallbackWithReason) {
+  Entity fighter;
+  fighter.name = QStringLiteral("JSBSim invalid-model fighter");
+  fighter.domain = QStringLiteral("Air");
+  fighter.category = QStringLiteral("Fighter");
+  fighter.latitude = 40.0;
+  fighter.longitude = -3.0;
+  fighter.altitude = 3000;
+  fighter.headingDegrees = 90.0;
+  fighter.speedKnots = 320.0;
+  fighter.flightDynamicsEnabled = true;
+  fighter.flightDynamicsMode = QStringLiteral("jsbsim");
+  fighter.jsbsimAircraftModel = QStringLiteral("model-that-does-not-exist");
+  fighter.currentTask.enabled = true;
+  fighter.currentTask.status = QStringLiteral("Running");
+  fighter.currentTask.taskType = QStringLiteral("FlyHeadingAltitudeSpeed");
+  fighter.currentTask.targetHeadingDegrees = 100.0;
+  fighter.currentTask.targetAltitudeMeters = 3200;
+  fighter.currentTask.targetSpeedKnots = 330.0;
+
+  QVector<Entity> entities = {fighter};
+  std::unordered_map<QString, domain::TaskStack> taskStacks;
+  FlightDynamicsEngine::advanceEntities(entities, taskStacks, 1.0 / 60.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  const QString firstReason = entities.first().dynamicsFallbackReason;
+  EXPECT_EQ(
+      entities.first().activeDynamicsBackend,
+      QStringLiteral("kinematic-fallback"));
+  EXPECT_TRUE(firstReason.contains(QStringLiteral("initialization failed")));
+  EXPECT_NE(entities.first().longitude, fighter.longitude);
+
+  FlightDynamicsEngine::advanceEntities(entities, taskStacks, 1.0 / 60.0);
+  EXPECT_EQ(
+      entities.first().activeDynamicsBackend,
+      QStringLiteral("kinematic-fallback"));
+  EXPECT_EQ(entities.first().dynamicsFallbackReason, firstReason);
+
+  const auto systems = FlightDynamicsEngine::systemsTelemetryForEntity(
+      entities.first(),
+      900.0);
+  EXPECT_TRUE(systems.dataSource.contains(QStringLiteral("JSBSim fallback")));
+  EXPECT_TRUE(systems.dataSource.contains(QStringLiteral("initialization failed")));
+
+  FlightDynamicsEngine::clearDynamicsModels();
+}

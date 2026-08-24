@@ -130,6 +130,7 @@ qt_add_executable(qttest
     src/application/MovementIntent.cpp
     src/application/MovementIntent.h
     src/application/dynamics/IDynamicsModel.h
+    src/application/dynamics/DynamicsBackendHealth.h
     src/application/dynamics/KinematicDynamicsModel.cpp
     src/application/dynamics/KinematicDynamicsModel.h
     src/application/KinematicsTelemetry.cpp

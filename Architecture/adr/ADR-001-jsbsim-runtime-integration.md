@@ -35,6 +35,13 @@ The runtime passes the simulation delta to the backend. JSBSim may use bounded
 internal substeps when required, but it cannot advance the global clock or run
 an independent real-time loop.
 
+Steady-state JSBSim steps have an 8 ms wall-clock budget. A single slow frame
+does not trigger degradation: the runtime latches the kinematic fallback after
+three consecutive overruns. Model load is intentionally excluded because it is
+a one-time lifecycle cost. Load/step failures and invalid output latch fallback
+immediately. The latch is cleared by model replacement, entity release, scenario
+load/reset, or mission stop; it is not retried every tick.
+
 ## Consequences
 
 - Existing Qt/Cesium integration remains unchanged.
@@ -49,6 +56,8 @@ an independent real-time loop.
   task setpoints into `DynamicsStepContext`, and retains the kinematic fallback.
 - Dynamics instances are keyed by stable entity identity and explicitly
   released when an entity or scenario is removed, stopped, loaded, or reset.
+- Backend step duration and fallback reason are runtime diagnostics exposed in
+  kinematics/systems telemetry and are not persisted in scenario files.
 - Platform configuration can evolve without adding model-name conditionals to
   dialogs or the flight dynamics engine.
 - Model-specific control gains and direct-control profiles can be introduced

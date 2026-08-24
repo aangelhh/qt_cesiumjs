@@ -29,6 +29,7 @@ add_executable(qttest_unit_tests
     application/AttackTaskProcessorTest.cpp
     application/TaskApplicatorTest.cpp
     application/FlightDynamicsEngineConsistencyTest.cpp
+    application/DynamicsBackendHealthTest.cpp
     application/KinematicDynamicsModelTest.cpp
     application/MovementIntentTest.cpp
     application/KinematicsTelemetryTest.cpp
