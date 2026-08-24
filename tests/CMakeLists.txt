@@ -29,6 +29,7 @@ add_executable(qttest_unit_tests
     application/AttackTaskProcessorTest.cpp
     application/TaskApplicatorTest.cpp
     application/FlightDynamicsEngineConsistencyTest.cpp
+    application/KinematicDynamicsModelTest.cpp
     application/MovementIntentTest.cpp
     application/KinematicsTelemetryTest.cpp
     application/JsbsimSetpointControllerTest.cpp
@@ -83,6 +84,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/application/AttackTaskProcessor.cpp
     ${CMAKE_SOURCE_DIR}/src/application/TaskApplicator.cpp
     ${CMAKE_SOURCE_DIR}/src/application/MovementIntent.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/dynamics/KinematicDynamicsModel.cpp
     ${CMAKE_SOURCE_DIR}/src/application/CockpitControlService.cpp
     ${CMAKE_SOURCE_DIR}/src/application/KinematicsTelemetry.cpp
     ${CMAKE_SOURCE_DIR}/src/application/JsbsimSetpointController.cpp
@@ -187,6 +189,8 @@ if(TARGET libJSBSim)
     add_executable(qttest_jsbsim_control_smoke
         application/JsbsimFlightControlSmoke.cpp
         ${CMAKE_SOURCE_DIR}/src/application/FlightDynamicsEngine.cpp
+        ${CMAKE_SOURCE_DIR}/src/application/dynamics/KinematicDynamicsModel.cpp
+        ${CMAKE_SOURCE_DIR}/src/application/dynamics/JSBSimDynamicsModel.cpp
         ${CMAKE_SOURCE_DIR}/src/application/JsbsimSetpointController.cpp
         ${CMAKE_SOURCE_DIR}/src/application/MovementIntent.cpp
         ${CMAKE_SOURCE_DIR}/src/application/SystemsTelemetry.cpp
@@ -209,5 +213,31 @@ if(TARGET libJSBSim)
     add_test(
         NAME JsbsimFlightControl.FighterSetpointsRemainStable
         COMMAND qttest_jsbsim_control_smoke
+    )
+
+    add_executable(qttest_jsbsim_dynamics_model_test
+        application/JSBSimDynamicsModelTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/application/dynamics/JSBSimDynamicsModel.cpp
+        ${CMAKE_SOURCE_DIR}/src/application/JsbsimSetpointController.cpp
+        ${CMAKE_SOURCE_DIR}/src/application/SystemsTelemetry.cpp
+        ${CMAKE_SOURCE_DIR}/src/domain/GeoMath.cpp
+        ${CMAKE_SOURCE_DIR}/src/domain/Task.cpp
+    )
+    target_include_directories(qttest_jsbsim_dynamics_model_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_compile_definitions(qttest_jsbsim_dynamics_model_test PRIVATE
+        QTTEST_HAS_JSBSIM=1
+        QTTEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    )
+    target_link_libraries(qttest_jsbsim_dynamics_model_test PRIVATE
+        Qt6::Core
+        GTest::gtest
+        GTest::gtest_main
+        libJSBSim
+    )
+    add_test(
+        NAME JSBSimDynamicsModel.LifecycleAndStep
+        COMMAND qttest_jsbsim_dynamics_model_test
     )
 endif()

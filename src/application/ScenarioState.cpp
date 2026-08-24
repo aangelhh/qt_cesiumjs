@@ -205,6 +205,7 @@ bool ScenarioState::removeEntity(const QString& entityName) {
     if (domain::entityMatchesReference(_entities.at(index), entityName)) {
       const QString removedEntityId = domain::entityKey(_entities.at(index));
       const QString removedEntityName = _entities.at(index).name;
+      FlightDynamicsEngine::releaseDynamicsModel(removedEntityId);
       _entities.removeAt(index);
       _taskStacks.erase(removedEntityId); // Clean up stack for removed entity
       _behaviorMissileCooldownSeconds.erase(removedEntityId);
@@ -742,7 +743,11 @@ void ScenarioState::advanceSimulation(double deltaSeconds) {
   {
     ScopedLock lock(_mutex);
     _simulationTimeSeconds += deltaSeconds;
-    FlightDynamicsEngine::advanceEntities(_entities, _taskStacks, deltaSeconds);
+    FlightDynamicsEngine::advanceEntities(
+        _entities,
+        _taskStacks,
+        _simulationTimeSeconds,
+        deltaSeconds);
     this->advanceBehaviors(deltaSeconds);
     this->advanceActiveMunitions(deltaSeconds);
     this->advanceTransientEffects(deltaSeconds);
@@ -766,6 +771,7 @@ double ScenarioState::simulationTimeSeconds() const {
 
 void ScenarioState::stopMission() {
   ScopedLock lock(_mutex);
+  FlightDynamicsEngine::clearDynamicsModels();
   for (Entity& entity : _entities) {
     entity.currentTask = EntityTask{};
     entity.currentTask.status = QStringLiteral("Stopped");
@@ -794,6 +800,7 @@ bool ScenarioState::save() const {
 
 bool ScenarioState::load() {
   ScopedLock lock(_mutex);
+  FlightDynamicsEngine::clearDynamicsModels();
   _entities.clear();
   _activeMunitions.clear();
   _transientEffects.clear();
@@ -832,6 +839,7 @@ bool ScenarioState::load() {
 
 void ScenarioState::reset() {
   ScopedLock lock(_mutex);
+  FlightDynamicsEngine::clearDynamicsModels();
   _entities.clear();
   _activeMunitions.clear();
   _transientEffects.clear();

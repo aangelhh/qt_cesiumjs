@@ -129,6 +129,9 @@ qt_add_executable(qttest
     src/application/TaskApplicator.h
     src/application/MovementIntent.cpp
     src/application/MovementIntent.h
+    src/application/dynamics/IDynamicsModel.h
+    src/application/dynamics/KinematicDynamicsModel.cpp
+    src/application/dynamics/KinematicDynamicsModel.h
     src/application/KinematicsTelemetry.cpp
     src/application/KinematicsTelemetry.h
     src/application/JsbsimSetpointController.cpp
@@ -231,6 +234,10 @@ if(QTTEST_HAS_QFLIGHTINSTRUMENTS)
 endif()
 
 if(TARGET libJSBSim)
+    target_sources(qttest PRIVATE
+        src/application/dynamics/JSBSimDynamicsModel.cpp
+        src/application/dynamics/JSBSimDynamicsModel.h
+    )
     target_link_libraries(qttest PRIVATE libJSBSim)
     target_compile_definitions(qttest PRIVATE QTTEST_HAS_JSBSIM=1)
 endif()

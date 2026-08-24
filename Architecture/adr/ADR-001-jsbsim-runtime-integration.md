@@ -38,9 +38,18 @@ an independent real-time loop.
 ## Consequences
 
 - Existing Qt/Cesium integration remains unchanged.
+- `IDynamicsModel` now defines the neutral lifecycle, canonical dynamics state,
+  and runtime-owned step context used by dynamics backends.
+- `KinematicDynamicsModel` is the first implementation and owns the existing
+  WGS84 position and altitude propagation.
+- `JSBSimDynamicsModel` implements the same lifecycle and owns `FGFDMExec`,
+  model loading, bounded substeps, control application, fuel synchronization,
+  and engine telemetry.
+- `FlightDynamicsEngine` selects and orchestrates the backend, maps neutral
+  task setpoints into `DynamicsStepContext`, and retains the kinematic fallback.
+- Dynamics instances are keyed by stable entity identity and explicitly
+  released when an entity or scenario is removed, stopped, loaded, or reset.
 - Platform configuration can evolve without adding model-name conditionals to
   dialogs or the flight dynamics engine.
-- A future `IDynamicsModel` can wrap both kinematic and JSBSim implementations
-  without changing cockpit or task APIs.
 - Model-specific control gains and direct-control profiles can be introduced
   incrementally after platform metadata is available.
