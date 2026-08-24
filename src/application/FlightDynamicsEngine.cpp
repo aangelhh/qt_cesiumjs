@@ -1,6 +1,7 @@
 #include "application/FlightDynamicsEngine.h"
 #include "application/JsbsimSetpointController.h"
 #include "application/MovementIntent.h"
+#include "application/dynamics/KinematicDynamicsModel.h"
 #include "domain/EntityIdentity.h"
 
 #if defined(QTTEST_HAS_JSBSIM)
@@ -159,7 +160,10 @@ void stopForFuelExhaustion(Entity& entity, double deltaSeconds) {
   relaxDerivedAttitude(entity, deltaSeconds);
 }
 
-void applyKinematicStep(Entity& entity, double deltaSeconds);
+bool applyKinematicStep(
+    Entity& entity,
+    double simulationTimeSeconds,
+    double deltaSeconds);
 
 void normalizeGroundKinematics(Entity& entity) {
   entity.verticalSpeedMetersPerSecond = 0.0;
@@ -354,31 +358,48 @@ QString findJsbsimRoot() {
     return QString();
 }
 
-void applyKinematicStep(Entity& entity, double deltaSeconds) {
-  const double speedMetersPerSecond = entity.speedKnots * kKnotsToMetersPerSecond;
-  const double distance = speedMetersPerSecond * deltaSeconds;
-  const double angularDistance = distance / kEarthRadiusMeters;
-  const double headingRadians = qDegreesToRadians(entity.headingDegrees);
-  const double lat1 = qDegreesToRadians(entity.latitude);
-  const double lon1 = qDegreesToRadians(entity.longitude);
+bool applyKinematicStep(
+    Entity& entity,
+    double simulationTimeSeconds,
+    double deltaSeconds) {
+  application::dynamics::KinematicDynamicsModel model;
+  const application::dynamics::DynamicsModelConfiguration configuration{
+      QStringLiteral("kinematic"),
+      entity.type,
+      entityIsGround(entity),
+  };
+  const application::dynamics::DynamicsState initialState{
+      entity.latitude,
+      entity.longitude,
+      static_cast<double>(entity.altitude),
+      entity.headingDegrees,
+      entity.pitchDegrees,
+      entity.rollDegrees,
+      entity.speedKnots,
+      entity.verticalSpeedMetersPerSecond,
+  };
+  if (!model.configure(configuration) || !model.initialize(initialState)) {
+    return false;
+  }
+  const application::dynamics::DynamicsStepResult result = model.step({
+      simulationTimeSeconds,
+      deltaSeconds,
+  });
+  if (!result) {
+    return false;
+  }
 
-  const double sinLat1 = qSin(lat1);
-  const double cosLat1 = qCos(lat1);
-  const double sinAngular = qSin(angularDistance);
-  const double cosAngular = qCos(angularDistance);
-
-  const double lat2 = qAsin(
-      sinLat1 * cosAngular +
-      cosLat1 * sinAngular * qCos(headingRadians));
-  const double lon2 = lon1 + qAtan2(
-      qSin(headingRadians) * sinAngular * cosLat1,
-      cosAngular - sinLat1 * qSin(lat2));
-
-  entity.latitude = qRadiansToDegrees(lat2);
-  entity.longitude = qRadiansToDegrees(lon2);
-  entity.altitude = qMax(
-      0,
-      static_cast<int>(qRound(entity.altitude + entity.verticalSpeedMetersPerSecond * deltaSeconds)));
+  const application::dynamics::DynamicsState nextState = model.state();
+  entity.latitude = nextState.latitudeDegrees;
+  entity.longitude = nextState.longitudeDegrees;
+  entity.altitude = qMax(0, static_cast<int>(qRound(nextState.altitudeMeters)));
+  entity.headingDegrees = nextState.headingDegrees;
+  entity.pitchDegrees = nextState.pitchDegrees;
+  entity.rollDegrees = nextState.rollDegrees;
+  entity.speedKnots = nextState.speedKnots;
+  entity.verticalSpeedMetersPerSecond =
+      nextState.verticalSpeedMetersPerSecond;
+  return true;
 }
 
 void resolveTaskTargets(Entity& entity, std::unordered_map<QString, domain::TaskStack>& taskStacks, const QVector<Entity>& snapshot, double deltaSeconds) {
@@ -908,13 +929,26 @@ bool applyJsbsimStep(Entity& entity, double deltaSeconds) {
 } // namespace
 
 void FlightDynamicsEngine::advanceEntities(QVector<Entity>& entities, std::unordered_map<QString, domain::TaskStack>& taskStacks, double deltaSeconds) {
+  advanceEntities(entities, taskStacks, 0.0, deltaSeconds);
+}
+
+void FlightDynamicsEngine::advanceEntities(
+    QVector<Entity>& entities,
+    std::unordered_map<QString, domain::TaskStack>& taskStacks,
+    double simulationTimeSeconds,
+    double deltaSeconds) {
   if (deltaSeconds <= 0.0) {
     return;
   }
 
   const QVector<Entity> snapshot = entities;
   for (Entity& entity : entities) {
-    advanceEntity(entity, taskStacks, snapshot, deltaSeconds);
+    advanceEntity(
+        entity,
+        taskStacks,
+        snapshot,
+        simulationTimeSeconds,
+        deltaSeconds);
   }
 }
 
@@ -1058,6 +1092,7 @@ void FlightDynamicsEngine::advanceEntity(
     Entity& entity,
     std::unordered_map<QString, domain::TaskStack>& taskStacks,
     const QVector<Entity>& snapshot,
+    double simulationTimeSeconds,
     double deltaSeconds) {
   application::ensureFuelConfiguration(entity);
   // An entity must only move when it has an active task.
@@ -1086,7 +1121,7 @@ void FlightDynamicsEngine::advanceEntity(
       return;
     }
 
-    applyKinematicStep(entity, deltaSeconds);
+    applyKinematicStep(entity, simulationTimeSeconds, deltaSeconds);
     normalizeGroundKinematics(entity);
     return;
   }
@@ -1116,7 +1151,7 @@ void FlightDynamicsEngine::advanceEntity(
   if (!isMovementTaskType(entity.currentTask.taskType)) {
     entity.activeDynamicsBackend = QStringLiteral("kinematic");
     entity.verticalSpeedMetersPerSecond = 0.0;
-    applyKinematicStep(entity, deltaSeconds);
+    applyKinematicStep(entity, simulationTimeSeconds, deltaSeconds);
     application::consumeEstimatedFuel(entity, deltaSeconds);
     if (entity.fuelRemainingKilograms <= 0.0) {
       stopForFuelExhaustion(entity, deltaSeconds);
@@ -1148,7 +1183,7 @@ void FlightDynamicsEngine::advanceEntity(
   entity.activeDynamicsBackend = QStringLiteral("kinematic");
 #endif
 
-  applyKinematicStep(entity, deltaSeconds);
+  applyKinematicStep(entity, simulationTimeSeconds, deltaSeconds);
   application::consumeEstimatedFuel(entity, deltaSeconds);
   if (entity.fuelRemainingKilograms <= 0.0) {
     stopForFuelExhaustion(entity, deltaSeconds);

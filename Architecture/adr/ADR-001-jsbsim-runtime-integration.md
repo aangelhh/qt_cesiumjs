@@ -38,9 +38,14 @@ an independent real-time loop.
 ## Consequences
 
 - Existing Qt/Cesium integration remains unchanged.
+- `IDynamicsModel` now defines the neutral lifecycle, canonical dynamics state,
+  and runtime-owned step context used by dynamics backends.
+- `KinematicDynamicsModel` is the first implementation and owns the existing
+  WGS84 position and altitude propagation.
+- JSBSim session ownership remains temporarily inside `FlightDynamicsEngine`;
+  moving it behind `IDynamicsModel` is the next incremental phase.
 - Platform configuration can evolve without adding model-name conditionals to
   dialogs or the flight dynamics engine.
-- A future `IDynamicsModel` can wrap both kinematic and JSBSim implementations
-  without changing cockpit or task APIs.
+- JSBSim can adopt the same interface without changing cockpit or task APIs.
 - Model-specific control gains and direct-control profiles can be introduced
   incrementally after platform metadata is available.

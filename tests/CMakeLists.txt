@@ -29,6 +29,7 @@ add_executable(qttest_unit_tests
     application/AttackTaskProcessorTest.cpp
     application/TaskApplicatorTest.cpp
     application/FlightDynamicsEngineConsistencyTest.cpp
+    application/KinematicDynamicsModelTest.cpp
     application/MovementIntentTest.cpp
     application/KinematicsTelemetryTest.cpp
     application/JsbsimSetpointControllerTest.cpp
@@ -83,6 +84,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/application/AttackTaskProcessor.cpp
     ${CMAKE_SOURCE_DIR}/src/application/TaskApplicator.cpp
     ${CMAKE_SOURCE_DIR}/src/application/MovementIntent.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/dynamics/KinematicDynamicsModel.cpp
     ${CMAKE_SOURCE_DIR}/src/application/CockpitControlService.cpp
     ${CMAKE_SOURCE_DIR}/src/application/KinematicsTelemetry.cpp
     ${CMAKE_SOURCE_DIR}/src/application/JsbsimSetpointController.cpp
@@ -187,6 +189,7 @@ if(TARGET libJSBSim)
     add_executable(qttest_jsbsim_control_smoke
         application/JsbsimFlightControlSmoke.cpp
         ${CMAKE_SOURCE_DIR}/src/application/FlightDynamicsEngine.cpp
+        ${CMAKE_SOURCE_DIR}/src/application/dynamics/KinematicDynamicsModel.cpp
         ${CMAKE_SOURCE_DIR}/src/application/JsbsimSetpointController.cpp
         ${CMAKE_SOURCE_DIR}/src/application/MovementIntent.cpp
         ${CMAKE_SOURCE_DIR}/src/application/SystemsTelemetry.cpp

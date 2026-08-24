@@ -742,7 +742,11 @@ void ScenarioState::advanceSimulation(double deltaSeconds) {
   {
     ScopedLock lock(_mutex);
     _simulationTimeSeconds += deltaSeconds;
-    FlightDynamicsEngine::advanceEntities(_entities, _taskStacks, deltaSeconds);
+    FlightDynamicsEngine::advanceEntities(
+        _entities,
+        _taskStacks,
+        _simulationTimeSeconds,
+        deltaSeconds);
     this->advanceBehaviors(deltaSeconds);
     this->advanceActiveMunitions(deltaSeconds);
     this->advanceTransientEffects(deltaSeconds);
