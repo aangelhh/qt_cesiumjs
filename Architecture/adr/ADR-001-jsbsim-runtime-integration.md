@@ -42,6 +42,20 @@ a one-time lifecycle cost. Load/step failures and invalid output latch fallback
 immediately. The latch is cleared by model replacement, entity release, scenario
 load/reset, or mission stop; it is not retried every tick.
 
+Deterministic replay uses the same simulation-owned time contract but disables
+wall-clock budget enforcement through `FlightDynamicsExecutionPolicy`. Step
+duration remains observable, while host load cannot change backend selection or
+entity state. Real-time execution keeps budget enforcement enabled by default.
+
+For the same model, configuration, initial state, simulation times, deltas, and
+control setpoints, replay states must remain equivalent at every tick. Current
+same-build/platform tests use tolerances of `1e-10` degrees for WGS84 position
+and `1e-8` for other floating-point state. This is numerical equivalence, not a
+claim of bitwise identity across different JSBSim/compiler/platform versions.
+An explicit model reset reloads the JSBSim aircraft before applying initial
+conditions because `RunIC` alone does not reset every integrator, propulsion,
+and aircraft-system internal state.
+
 ## Consequences
 
 - Existing Qt/Cesium integration remains unchanged.

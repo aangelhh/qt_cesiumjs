@@ -69,6 +69,20 @@ TEST(DynamicsBackendHealth, HealthyStepBreaksOverrunSequence) {
   EXPECT_FALSE(health.fallbackLatched);
 }
 
+TEST(DynamicsBackendHealth, ObserveOnlyBudgetCannotAlterDeterministicExecution) {
+  DynamicsBackendHealth health;
+  const DynamicsBackendBudgetPolicy policy{/*maxStepMilliseconds=*/1.0,
+                                           /*consecutiveOverrunLimit=*/1,
+                                           /*enforceFallback=*/false};
+
+  EXPECT_TRUE(application::dynamics::recordDynamicsStepDuration(
+      health, 50.0, policy));
+  EXPECT_DOUBLE_EQ(health.lastStepMilliseconds, 50.0);
+  EXPECT_EQ(health.consecutiveBudgetOverruns, 0);
+  EXPECT_FALSE(health.fallbackLatched);
+  EXPECT_TRUE(health.fallbackReason.isEmpty());
+}
+
 TEST(DynamicsBackendHealth, ExplicitFailureRemainsLatched) {
   DynamicsBackendHealth health;
   application::dynamics::latchDynamicsBackendFallback(

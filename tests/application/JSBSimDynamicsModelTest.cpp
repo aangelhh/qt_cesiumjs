@@ -3,6 +3,7 @@
 #include "application/dynamics/JSBSimDynamicsModel.h"
 
 #include <cmath>
+#include <vector>
 
 namespace {
 
@@ -31,6 +32,63 @@ DynamicsState makeFighterState() {
   return DynamicsState{
       40.0, -3.0, 3000.0, 90.0, 0.0, 0.0, 320.0, 0.0, 2000.0, -1.0,
   };
+}
+
+constexpr double kDeterministicDeltaSeconds = 1.0 / 60.0;
+
+DynamicsStepContext deterministicContextForTick(int tick) {
+  DynamicsControlSetpoint setpoint{
+      true, true, 90.0, 3000.0, 320.0, QStringLiteral("fighter-generic")};
+  if (tick >= 80 && tick < 160) {
+    setpoint.targetHeadingDegrees = 125.0;
+    setpoint.targetAltitudeMeters = 3600.0;
+    setpoint.targetSpeedKnots = 380.0;
+  } else if (tick >= 160) {
+    setpoint.targetHeadingDegrees = 70.0;
+    setpoint.targetAltitudeMeters = 2800.0;
+    setpoint.targetSpeedKnots = 300.0;
+  }
+
+  DynamicsStepContext context;
+  context.simulationTimeSeconds =
+      static_cast<double>(tick + 1) * kDeterministicDeltaSeconds;
+  context.deltaTimeSeconds = kDeterministicDeltaSeconds;
+  context.controlSetpoint = setpoint;
+  return context;
+}
+
+void expectEquivalentDynamicsState(
+    const DynamicsState& actual,
+    const DynamicsState& expected) {
+  // These tolerances allow harmless floating-point noise but catch any
+  // simulation-visible divergence in a replay on the same build/platform.
+  constexpr double kPositionToleranceDegrees = 1.0e-10;
+  constexpr double kScalarTolerance = 1.0e-8;
+  EXPECT_NEAR(
+      actual.latitudeDegrees,
+      expected.latitudeDegrees,
+      kPositionToleranceDegrees);
+  EXPECT_NEAR(
+      actual.longitudeDegrees,
+      expected.longitudeDegrees,
+      kPositionToleranceDegrees);
+  EXPECT_NEAR(actual.altitudeMeters, expected.altitudeMeters, kScalarTolerance);
+  EXPECT_NEAR(actual.headingDegrees, expected.headingDegrees, kScalarTolerance);
+  EXPECT_NEAR(actual.pitchDegrees, expected.pitchDegrees, kScalarTolerance);
+  EXPECT_NEAR(actual.rollDegrees, expected.rollDegrees, kScalarTolerance);
+  EXPECT_NEAR(actual.speedKnots, expected.speedKnots, kScalarTolerance);
+  EXPECT_NEAR(
+      actual.verticalSpeedMetersPerSecond,
+      expected.verticalSpeedMetersPerSecond,
+      kScalarTolerance);
+  EXPECT_NEAR(
+      actual.fuelRemainingKilograms,
+      expected.fuelRemainingKilograms,
+      kScalarTolerance);
+  EXPECT_NEAR(
+      actual.fuelCapacityKilograms,
+      expected.fuelCapacityKilograms,
+      kScalarTolerance);
 }
 
 } // namespace
@@ -176,4 +234,49 @@ TEST(JSBSimDynamicsModel, EngineTelemetryReportsRunningEngineForFighterProfile) 
   const auto destroyedEngines = model.engineTelemetry(/*entityDestroyed=*/true);
   ASSERT_EQ(destroyedEngines.size(), 1);
   EXPECT_EQ(destroyedEngines.front().state, QStringLiteral("FAILED"));
+}
+
+TEST(JSBSimDynamicsModel, IdenticalInstancesRemainEquivalentAtEveryTick) {
+  const DynamicsModelConfiguration configuration{
+      QStringLiteral("f16"), QStringLiteral("DeterministicFighter"), false, 3000.0};
+  JSBSimDynamicsModel first;
+  JSBSimDynamicsModel second;
+  ASSERT_TRUE(first.configure(configuration));
+  ASSERT_TRUE(second.configure(configuration));
+  ASSERT_TRUE(first.initialize(makeFighterState()));
+  ASSERT_TRUE(second.initialize(makeFighterState()));
+
+  for (int tick = 0; tick < 240; ++tick) {
+    SCOPED_TRACE(::testing::Message() << "tick=" << tick);
+    const DynamicsStepContext context = deterministicContextForTick(tick);
+    const auto firstResult = first.step(context);
+    const auto secondResult = second.step(context);
+    ASSERT_TRUE(firstResult) << firstResult.errorMessage.toStdString();
+    ASSERT_TRUE(secondResult) << secondResult.errorMessage.toStdString();
+    expectEquivalentDynamicsState(first.state(), second.state());
+  }
+}
+
+TEST(JSBSimDynamicsModel, ResetAndReplayReproduceTheRecordedTrajectory) {
+  const DynamicsModelConfiguration configuration{
+      QStringLiteral("f16"), QStringLiteral("ReplayFighter"), false, 3000.0};
+  JSBSimDynamicsModel model;
+  ASSERT_TRUE(model.configure(configuration));
+  ASSERT_TRUE(model.initialize(makeFighterState()));
+
+  std::vector<DynamicsState> recordedStates;
+  recordedStates.reserve(240);
+  for (int tick = 0; tick < 240; ++tick) {
+    const auto result = model.step(deterministicContextForTick(tick));
+    ASSERT_TRUE(result) << result.errorMessage.toStdString();
+    recordedStates.push_back(model.state());
+  }
+
+  ASSERT_TRUE(model.reset(makeFighterState()));
+  for (int tick = 0; tick < 240; ++tick) {
+    SCOPED_TRACE(::testing::Message() << "replay tick=" << tick);
+    const auto result = model.step(deterministicContextForTick(tick));
+    ASSERT_TRUE(result) << result.errorMessage.toStdString();
+    expectEquivalentDynamicsState(model.state(), recordedStates.at(tick));
+  }
 }

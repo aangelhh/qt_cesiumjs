@@ -340,3 +340,69 @@ TEST(JsbsimFlightControl, InvalidModelLatchesKinematicFallbackWithReason) {
 
   FlightDynamicsEngine::clearDynamicsModels();
 }
+
+TEST(JsbsimFlightControl, DeterministicPolicyReplaysTheSameEntityTrajectory) {
+  Entity initial;
+  initial.entityId = QStringLiteral("jsbsim-deterministic-replay");
+  initial.name = QStringLiteral("JSBSim deterministic fighter");
+  initial.domain = QStringLiteral("Air");
+  initial.category = QStringLiteral("Fighter");
+  initial.latitude = 40.0;
+  initial.longitude = -3.0;
+  initial.altitude = 3000;
+  initial.headingDegrees = 90.0;
+  initial.speedKnots = 320.0;
+  initial.flightDynamicsEnabled = true;
+  initial.flightDynamicsMode = QStringLiteral("jsbsim");
+  initial.jsbsimAircraftModel = QStringLiteral("f16");
+  initial.controlProfileId = QStringLiteral("fighter-generic");
+  initial.currentTask.enabled = true;
+  initial.currentTask.status = QStringLiteral("Running");
+  initial.currentTask.taskType = QStringLiteral("FlyHeadingAltitudeSpeed");
+
+  const auto runTrajectory = [&initial]() {
+    FlightDynamicsEngine::clearDynamicsModels();
+    QVector<Entity> entities = {initial};
+    std::unordered_map<QString, domain::TaskStack> taskStacks;
+    const FlightDynamicsExecutionPolicy deterministicPolicy{
+        /*enforceWallClockStepBudget=*/false};
+    constexpr double deltaSeconds = 1.0 / 60.0;
+
+    for (int tick = 0; tick < 240; ++tick) {
+      EntityTask& task = entities.first().currentTask;
+      task.targetHeadingDegrees = tick < 80 ? 90.0 : (tick < 160 ? 125.0 : 70.0);
+      task.targetAltitudeMeters = tick < 80 ? 3000 : (tick < 160 ? 3600 : 2800);
+      task.targetSpeedKnots = tick < 80 ? 320.0 : (tick < 160 ? 380.0 : 300.0);
+      FlightDynamicsEngine::advanceEntities(
+          entities,
+          taskStacks,
+          static_cast<double>(tick + 1) * deltaSeconds,
+          deltaSeconds,
+          deterministicPolicy);
+      EXPECT_EQ(entities.first().activeDynamicsBackend, QStringLiteral("jsbsim"));
+    }
+
+    FlightDynamicsEngine::clearDynamicsModels();
+    return entities.first();
+  };
+
+  const Entity first = runTrajectory();
+  const Entity replay = runTrajectory();
+  constexpr double positionToleranceDegrees = 1.0e-10;
+  constexpr double scalarTolerance = 1.0e-8;
+  EXPECT_NEAR(first.latitude, replay.latitude, positionToleranceDegrees);
+  EXPECT_NEAR(first.longitude, replay.longitude, positionToleranceDegrees);
+  EXPECT_EQ(first.altitude, replay.altitude);
+  EXPECT_NEAR(first.headingDegrees, replay.headingDegrees, scalarTolerance);
+  EXPECT_NEAR(first.pitchDegrees, replay.pitchDegrees, scalarTolerance);
+  EXPECT_NEAR(first.rollDegrees, replay.rollDegrees, scalarTolerance);
+  EXPECT_NEAR(first.speedKnots, replay.speedKnots, scalarTolerance);
+  EXPECT_NEAR(
+      first.verticalSpeedMetersPerSecond,
+      replay.verticalSpeedMetersPerSecond,
+      scalarTolerance);
+  EXPECT_NEAR(
+      first.fuelRemainingKilograms,
+      replay.fuelRemainingKilograms,
+      scalarTolerance);
+}

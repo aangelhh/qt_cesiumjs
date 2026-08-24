@@ -721,7 +721,8 @@ JsbsimModelLookup ensureJsbsimModel(Entity& entity) {
 JsbsimStepOutcome applyJsbsimStep(
     Entity& entity,
     double simulationTimeSeconds,
-    double deltaSeconds) {
+    double deltaSeconds,
+    const FlightDynamicsExecutionPolicy& executionPolicy) {
   const JsbsimModelLookup lookup = ensureJsbsimModel(entity);
   if (!lookup.model) {
     return {false, lookup.fallbackReason, 0.0};
@@ -773,10 +774,13 @@ JsbsimStepOutcome applyJsbsimStep(
         elapsedMilliseconds,
     };
   }
+  auto stepBudgetPolicy = kJsbsimStepBudget;
+  stepBudgetPolicy.enforceFallback =
+      executionPolicy.enforceWallClockStepBudget;
   if (!application::dynamics::recordDynamicsStepDuration(
           session.health,
           elapsedMilliseconds,
-          kJsbsimStepBudget)) {
+          stepBudgetPolicy)) {
     return {
         false,
         session.health.fallbackReason,
@@ -811,6 +815,20 @@ void FlightDynamicsEngine::advanceEntities(
     std::unordered_map<QString, domain::TaskStack>& taskStacks,
     double simulationTimeSeconds,
     double deltaSeconds) {
+  advanceEntities(
+      entities,
+      taskStacks,
+      simulationTimeSeconds,
+      deltaSeconds,
+      FlightDynamicsExecutionPolicy{});
+}
+
+void FlightDynamicsEngine::advanceEntities(
+    QVector<Entity>& entities,
+    std::unordered_map<QString, domain::TaskStack>& taskStacks,
+    double simulationTimeSeconds,
+    double deltaSeconds,
+    const FlightDynamicsExecutionPolicy& executionPolicy) {
   if (deltaSeconds <= 0.0) {
     return;
   }
@@ -822,7 +840,8 @@ void FlightDynamicsEngine::advanceEntities(
         taskStacks,
         snapshot,
         simulationTimeSeconds,
-        deltaSeconds);
+        deltaSeconds,
+        executionPolicy);
   }
 }
 
@@ -935,7 +954,8 @@ void FlightDynamicsEngine::advanceEntity(
     std::unordered_map<QString, domain::TaskStack>& taskStacks,
     const QVector<Entity>& snapshot,
     double simulationTimeSeconds,
-    double deltaSeconds) {
+    double deltaSeconds,
+    const FlightDynamicsExecutionPolicy& executionPolicy) {
   application::ensureFuelConfiguration(entity);
   // An entity must only move when it has an active task.
   // flightDynamicsEnabled / flightDynamicsMode only control how movement is simulated,
@@ -1010,7 +1030,11 @@ void FlightDynamicsEngine::advanceEntity(
       entity.flightDynamicsMode.compare(
           QStringLiteral("jsbsim"), Qt::CaseInsensitive) == 0) {
     const JsbsimStepOutcome outcome =
-        applyJsbsimStep(entity, simulationTimeSeconds, deltaSeconds);
+        applyJsbsimStep(
+            entity,
+            simulationTimeSeconds,
+            deltaSeconds,
+            executionPolicy);
     if (outcome.advanced) {
       if (entity.fuelRemainingKilograms <= 0.0) {
         stopForFuelExhaustion(entity, deltaSeconds);

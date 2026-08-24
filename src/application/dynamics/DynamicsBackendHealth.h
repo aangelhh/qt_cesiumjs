@@ -11,6 +11,7 @@ namespace application::dynamics {
 struct DynamicsBackendBudgetPolicy {
   double maxStepMilliseconds = 8.0;
   int consecutiveOverrunLimit = 3;
+  bool enforceFallback = true;
 };
 
 struct DynamicsBackendHealth {
@@ -95,6 +96,13 @@ inline bool recordDynamicsStepDuration(
       : DynamicsBackendBudgetPolicy{}.consecutiveOverrunLimit;
 
   if (health.lastStepMilliseconds <= budgetMilliseconds) {
+    health.consecutiveBudgetOverruns = 0;
+    return true;
+  }
+
+  if (!policy.enforceFallback) {
+    // Wall-clock load must not alter simulation state during deterministic
+    // replay or fast-time execution.
     health.consecutiveBudgetOverruns = 0;
     return true;
   }

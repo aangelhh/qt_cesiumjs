@@ -7,6 +7,10 @@
 #include <QVector>
 #include <unordered_map>
 
+struct FlightDynamicsExecutionPolicy {
+  bool enforceWallClockStepBudget = true;
+};
+
 class FlightDynamicsEngine {
 public:
   static void advanceEntities(
@@ -18,6 +22,12 @@ public:
       std::unordered_map<QString, domain::TaskStack>& taskStacks,
       double simulationTimeSeconds,
       double deltaSeconds);
+  static void advanceEntities(
+      QVector<Entity>& entities,
+      std::unordered_map<QString, domain::TaskStack>& taskStacks,
+      double simulationTimeSeconds,
+      double deltaSeconds,
+      const FlightDynamicsExecutionPolicy& executionPolicy);
   static application::SystemsTelemetrySnapshot systemsTelemetryForEntity(
       const Entity& entity,
       double maximumSpeedKnots);
@@ -31,5 +41,6 @@ private:
       std::unordered_map<QString, domain::TaskStack>& taskStacks,
       const QVector<Entity>& snapshot,
       double simulationTimeSeconds,
-      double deltaSeconds);
+      double deltaSeconds,
+      const FlightDynamicsExecutionPolicy& executionPolicy);
 };
