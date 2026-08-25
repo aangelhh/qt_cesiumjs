@@ -147,6 +147,17 @@ TEST(KinematicsTelemetryPublisher, InvalidPeriodUsesSafeDefault) {
   EXPECT_TRUE(publisher.advance({}, 0.0, 0.0).isEmpty());
 }
 
+TEST(KinematicsTelemetryPublisher, PublicationPeriodCanBeReconfigured) {
+  application::KinematicsTelemetryPublisher publisher(0.1);
+  QVector<Entity> entities{makeTelemetryEntity()};
+
+  EXPECT_TRUE(publisher.advance(entities, 0.05, 0.05).isEmpty());
+  publisher.setPublicationPeriodSeconds(0.02);
+
+  EXPECT_DOUBLE_EQ(publisher.publicationPeriodSeconds(), 0.02);
+  EXPECT_EQ(publisher.advance(entities, 0.07, 0.02).size(), 1);
+}
+
 TEST(ScenarioStateTelemetry, PublishesSnapshotsFromAuthoritativeSimulationClock) {
   ScenarioState state;
   {

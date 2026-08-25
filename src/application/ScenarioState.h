@@ -64,6 +64,7 @@ public:
   void refreshSensors();
   void advanceSimulation(double deltaSeconds);
   double simulationTimeSeconds() const;
+  void setKinematicsTelemetryPublicationPeriod(double periodSeconds);
   void stopMission();
   bool save() const;
   bool load();

@@ -1,0 +1,9 @@
+string engine_id
+string state
+float64 n1_percent
+float64 n2_percent
+float64 exhaust_temperature_celsius
+float64 fuel_flow_kilograms_per_hour
+float64 thrust_kilonewtons
+bool available
+bool estimated

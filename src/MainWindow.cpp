@@ -9,6 +9,7 @@
 #include "application/Event.h"
 #include "application/EventBus.h"
 #include "application/KinematicsTelemetry.h"
+#include "infrastructure/Ros2TelemetryPublisher.h"
 #include "application/ScenarioQueries.h"
 #include "application/TaskApplicator.h"
 #include "domain/BombReleaseGate.h"
@@ -19,6 +20,7 @@
 #include "presentation/BombTargetMapSync.h"
 #include "presentation/MapBridgeScripts.h"
 #include "presentation/KinematicsCockpitWidget.h"
+#include "presentation/Ros2TelemetryDialog.h"
 #include "presentation/EntityContextMenuBuilder.h"
 #include "presentation/EntityContextMenuStateBuilder.h"
 #include "presentation/TrackSetSyncer.h"
@@ -54,6 +56,7 @@
 #include <QEventLoop>
 #include <QFrame>
 #include <QHeaderView>
+#include <QSettings>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QListWidget>
@@ -98,6 +101,7 @@ constexpr int kDetectedContactTargetRole = Qt::UserRole + 3;
 constexpr int kTaskQuickBarMarginPixels = 14;
 constexpr int kTaskQuickBarButtonPixels = 30;
 constexpr int kTaskQuickBarIconPixels = 18;
+constexpr double kDefaultTelemetryPeriodSeconds = 0.1;
 // Bomb release constants now in domain/BombReleaseGate.h
 // Attack timing constants now in application/AttackTaskProcessor.h
 
@@ -115,6 +119,18 @@ constexpr int kTaskQuickBarIconPixels = 18;
 // moved to domain/CombatRules.h
 
 // behaviorModeOptions moved to presentation/EntityContextMenuStateBuilder.h
+
+double telemetrySourcePeriod(
+    const infrastructure::Ros2TelemetryConfiguration& configuration) {
+  if ((!configuration.ros2Enabled && !configuration.csvEnabled) ||
+      !std::isfinite(configuration.frequencyHertz) ||
+      configuration.frequencyHertz <= 0.0) {
+    return kDefaultTelemetryPeriodSeconds;
+  }
+  return std::min(
+      kDefaultTelemetryPeriodSeconds,
+      1.0 / configuration.frequencyHertz);
+}
 
 QString projectRootPath() {
 #ifdef QTTEST_SOURCE_DIR
@@ -188,6 +204,7 @@ MainWindow::MainWindow(QWidget* parent)
       _qflightCockpitWidget(nullptr),
       _ecamCockpitDock(nullptr),
       _ecamCockpitWidget(nullptr),
+      _ros2TelemetryPublisher(nullptr),
       _kinematicsTelemetrySubscriptionId(0),
       _mapBridge(new MapBridge(this)),
       _scenarioState(new ScenarioState()),
@@ -281,6 +298,7 @@ MainWindow::MainWindow(QWidget* parent)
   this->_ui->viewerHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
   this->initializeKinematicsCockpit();
+  this->initializeRos2Telemetry();
   this->initializeModels();
   this->populateTaskCommands();
   this->_entityVisualStateManager->load();
@@ -795,6 +813,8 @@ MainWindow::~MainWindow() {
         .unsubscribe<application::EventKinematicsTelemetryUpdated>(
             this->_kinematicsTelemetrySubscriptionId);
   }
+  delete this->_ros2TelemetryPublisher;
+  this->_ros2TelemetryPublisher = nullptr;
   delete this->_scenarioState;
   delete this->_ui;
 }
@@ -907,6 +927,97 @@ void MainWindow::initializeKinematicsCockpit() {
                     },
                     Qt::QueuedConnection);
               });
+}
+
+void MainWindow::initializeRos2Telemetry() {
+  this->_ros2TelemetryPublisher =
+      new infrastructure::Ros2TelemetryPublisher(this);
+
+  QSettings settings(QStringLiteral("qttest"), QStringLiteral("qttest"));
+  settings.beginGroup(QStringLiteral("Ros2Telemetry"));
+  infrastructure::Ros2TelemetryConfiguration configuration;
+  configuration.ros2Enabled = settings.value(
+      QStringLiteral("ros2Enabled"), false).toBool();
+  configuration.topicPrefix = settings.value(
+      QStringLiteral("topicPrefix"),
+      QStringLiteral("/qttest/entities")).toString();
+  configuration.entityReference = settings.value(
+      QStringLiteral("entityReference")).toString();
+  configuration.frequencyHertz = settings.value(
+      QStringLiteral("frequencyHertz"), 10.0).toDouble();
+  configuration.csvEnabled = settings.value(
+      QStringLiteral("csvEnabled"), false).toBool();
+  configuration.csvPath = settings.value(
+      QStringLiteral("csvPath")).toString();
+  settings.endGroup();
+
+  this->_ros2TelemetryPublisher->applyConfiguration(configuration);
+  this->_scenarioState->setKinematicsTelemetryPublicationPeriod(
+      telemetrySourcePeriod(configuration));
+  connect(
+      this->_ros2TelemetryPublisher,
+      &infrastructure::Ros2TelemetryPublisher::publicationStateChanged,
+      this,
+      [this](const QString& state) {
+        if (this->_ros2TelemetryPublisher->configuration().ros2Enabled) {
+          this->_ui->statusLabel->setText(
+              QStringLiteral("ROS 2 telemetry: %1").arg(state));
+        }
+      });
+
+  QAction* action = this->_ui->menuView->addAction(
+      QStringLiteral("ROS 2 Telemetry..."));
+  connect(
+      action,
+      &QAction::triggered,
+      this,
+      &MainWindow::configureRos2Telemetry);
+}
+
+void MainWindow::configureRos2Telemetry() {
+  QVector<Entity> entities;
+  {
+    auto lock = this->_scenarioState->lock();
+    entities = this->_scenarioState->entities();
+  }
+  presentation::Ros2TelemetryDialog dialog(
+      this->_ros2TelemetryPublisher->configuration(),
+      entities,
+      this->_ros2TelemetryPublisher->ros2Available(),
+      this->_ros2TelemetryPublisher->availabilityMessage(),
+      this);
+  if (dialog.exec() != QDialog::Accepted) {
+    return;
+  }
+
+  const infrastructure::Ros2TelemetryConfiguration configuration =
+      dialog.configuration();
+  this->_ros2TelemetryPublisher->applyConfiguration(configuration);
+  this->_scenarioState->setKinematicsTelemetryPublicationPeriod(
+      telemetrySourcePeriod(configuration));
+
+  QSettings settings(QStringLiteral("qttest"), QStringLiteral("qttest"));
+  settings.beginGroup(QStringLiteral("Ros2Telemetry"));
+  settings.setValue(
+      QStringLiteral("ros2Enabled"),
+      configuration.ros2Enabled);
+  settings.setValue(
+      QStringLiteral("topicPrefix"),
+      configuration.topicPrefix);
+  settings.setValue(
+      QStringLiteral("entityReference"),
+      configuration.entityReference);
+  settings.setValue(
+      QStringLiteral("frequencyHertz"),
+      configuration.frequencyHertz);
+  settings.setValue(QStringLiteral("csvEnabled"), configuration.csvEnabled);
+  settings.setValue(QStringLiteral("csvPath"), configuration.csvPath);
+  settings.endGroup();
+
+  this->_ui->statusLabel->setText(
+      configuration.ros2Enabled
+      ? QStringLiteral("ROS 2 telemetry enabled.")
+      : QStringLiteral("ROS 2 telemetry disabled."));
 }
 
 void MainWindow::refreshKinematicsCockpitForEntity(const Entity* entity) {

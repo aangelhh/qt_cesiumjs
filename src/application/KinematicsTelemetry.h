@@ -71,6 +71,7 @@ public:
 
   void reset();
   double publicationPeriodSeconds() const;
+  void setPublicationPeriodSeconds(double publicationPeriodSeconds);
 
 private:
   double _publicationPeriodSeconds;

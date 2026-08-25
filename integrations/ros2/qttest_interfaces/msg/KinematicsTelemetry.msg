@@ -1,0 +1,46 @@
+string schema_version
+string entity_id
+string entity_name
+string domain
+string category
+int32 force_identifier
+string task_type
+string task_status
+string dynamics_model
+string dynamics_fallback_reason
+
+float64 simulation_time_seconds
+float64 delta_time_seconds
+
+float64 latitude_degrees
+float64 longitude_degrees
+float64 altitude_meters
+float64 heading_degrees
+float64 pitch_degrees
+float64 roll_degrees
+float64 speed_knots
+float64 vertical_speed_meters_per_second
+
+float64 target_heading_degrees
+float64 target_altitude_meters
+float64 target_speed_knots
+float64 heading_error_degrees
+float64 altitude_error_meters
+float64 speed_error_knots
+
+float64 max_heading_rate_degrees_per_second
+float64 max_acceleration_knots_per_second
+float64 max_climb_rate_meters_per_second
+float64 max_speed_knots
+float64 max_altitude_meters
+
+float64 dynamics_step_duration_milliseconds
+bool task_enabled
+bool destroyed
+
+float64 fuel_capacity_kilograms
+float64 fuel_remaining_kilograms
+float64 fuel_percent
+float64 total_fuel_flow_kilograms_per_hour
+float64 estimated_endurance_seconds
+qttest_interfaces/EngineTelemetry[] engines
