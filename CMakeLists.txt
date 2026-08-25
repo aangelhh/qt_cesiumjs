@@ -297,3 +297,8 @@ if(QTTEST_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+option(QTTEST_BUILD_BENCHMARKS "Enable qttest benchmark targets" ON)
+if(QTTEST_BUILD_BENCHMARKS AND TARGET libJSBSim)
+    add_subdirectory(benchmarks)
+endif()
