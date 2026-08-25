@@ -120,4 +120,13 @@ double KinematicsTelemetryPublisher::publicationPeriodSeconds() const {
   return _publicationPeriodSeconds;
 }
 
+void KinematicsTelemetryPublisher::setPublicationPeriodSeconds(
+    double publicationPeriodSeconds) {
+  _publicationPeriodSeconds =
+      std::isfinite(publicationPeriodSeconds) && publicationPeriodSeconds > 0.0
+      ? publicationPeriodSeconds
+      : kDefaultPublicationPeriodSeconds;
+  this->reset();
+}
+
 } // namespace application

@@ -57,6 +57,76 @@
                 "$gcc"
             ],
             "detail": "Ejecuta tests desde la carpeta build de macOS"
+        },
+        {
+            "label": "CMake Configure ROS 2",
+            "type": "process",
+            "command": "/Users/angelconde/.pixi/bin/pixi",
+            "args": [
+                "run",
+                "--manifest-path",
+                "/Users/angelconde/ros2_tactical/pixi.toml",
+                "cmake",
+                "-S",
+                ".",
+                "-B",
+                "build-macos-ros2",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DQTTEST_ENABLE_ROS2_TELEMETRY=ON",
+                "-DCMAKE_PREFIX_PATH=${workspaceFolder}/build-ros2-workspace/install/qttest_interfaces;/Users/angelconde/ros2_tactical/.pixi/envs/default;/Users/angelconde/Qt/6.10.2/macos",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Configura qttest con el backend nativo ROS 2/DDS"
+        },
+        {
+            "label": "CMake Build ROS 2",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "CMake Configure ROS 2"
+            ],
+            "type": "process",
+            "command": "/Users/angelconde/.pixi/bin/pixi",
+            "args": [
+                "run",
+                "--manifest-path",
+                "/Users/angelconde/ros2_tactical/pixi.toml",
+                "cmake",
+                "--build",
+                "build-macos-ros2",
+                "--target",
+                "qttest",
+                "--parallel",
+                "2"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Construye qttest con soporte nativo ROS 2/DDS"
+        },
+        {
+            "label": "Launch PlotJuggler ROS 2",
+            "type": "process",
+            "command": "/Users/angelconde/.pixi/bin/pixi",
+            "args": [
+                "run",
+                "--manifest-path",
+                "/Users/angelconde/ros2_tactical/pixi.toml",
+                "zsh",
+                "${workspaceFolder}/integrations/ros2/run_plotjuggler.zsh"
+            ],
+            "problemMatcher": [],
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": false
+            },
+            "detail": "Abre PlotJuggler con ROS 2 y qttest_interfaces cargados"
         }
     ]
 }

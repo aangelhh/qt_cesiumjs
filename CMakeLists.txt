@@ -12,6 +12,28 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebEngineCore WebChannel Positioning)
 
+option(
+    QTTEST_ENABLE_ROS2_TELEMETRY
+    "Publish kinematics telemetry directly through ROS 2/DDS"
+    OFF
+)
+set(QTTEST_ROS2_BACKEND_SOURCE
+    src/infrastructure/Ros2TelemetryBackendStub.cpp
+)
+if(QTTEST_ENABLE_ROS2_TELEMETRY)
+    find_package(rclcpp REQUIRED)
+    find_package(qttest_interfaces REQUIRED)
+    if(APPLE)
+        # RoboStack exports rclcpp with rosidl_generator_py libraries in its
+        # transitive link interface. Load libpython so those dylibs can resolve
+        # their Python runtime symbols when a native C++ process starts.
+        find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+    endif()
+    set(QTTEST_ROS2_BACKEND_SOURCE
+        src/infrastructure/Ros2TelemetryBackendNative.cpp
+    )
+endif()
+
 option(QTTEST_ENABLE_MODERN_PFD "Enable the embedded modern kinematics PFD" ON)
 if(QTTEST_ENABLE_MODERN_PFD)
     find_package(Qt6 QUIET COMPONENTS Quick QuickWidgets Qml)
@@ -111,6 +133,12 @@ qt_add_executable(qttest
     src/infrastructure/ModelCatalog.h
     src/infrastructure/ModelOrientation.cpp
     src/infrastructure/ModelOrientation.h
+    src/infrastructure/Ros2TelemetryBackend.h
+    ${QTTEST_ROS2_BACKEND_SOURCE}
+    src/infrastructure/Ros2TelemetryContract.cpp
+    src/infrastructure/Ros2TelemetryContract.h
+    src/infrastructure/Ros2TelemetryPublisher.cpp
+    src/infrastructure/Ros2TelemetryPublisher.h
     src/application/ScenarioState.cpp
     src/application/ScenarioState.h
     src/application/TacticalGraphicRepository.cpp
@@ -185,6 +213,8 @@ qt_add_executable(qttest
     src/presentation/GraphicPickCoordinator.h
     src/presentation/PlanStepConfigurator.cpp
     src/presentation/PlanStepConfigurator.h
+    src/presentation/Ros2TelemetryDialog.cpp
+    src/presentation/Ros2TelemetryDialog.h
     src/presentation/DetectedContactsPresenter.cpp
     src/presentation/DetectedContactsPresenter.h
     src/presentation/KinematicsCockpitModel.cpp
@@ -228,6 +258,17 @@ target_link_libraries(qttest
         Qt6::Widgets
         Qt6::Gui
 )
+
+if(QTTEST_ENABLE_ROS2_TELEMETRY)
+    target_link_libraries(qttest PRIVATE
+        rclcpp::rclcpp
+        qttest_interfaces::qttest_interfaces__rosidl_typesupport_cpp
+    )
+    if(APPLE)
+        target_link_libraries(qttest PRIVATE Python3::Python)
+    endif()
+    target_compile_definitions(qttest PRIVATE QTTEST_HAS_ROS2_TELEMETRY=1)
+endif()
 
 if(QTTEST_HAS_QFLIGHTINSTRUMENTS)
     target_link_libraries(qttest PRIVATE qflightinstruments)

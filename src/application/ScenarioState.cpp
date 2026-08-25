@@ -769,6 +769,12 @@ double ScenarioState::simulationTimeSeconds() const {
   return _simulationTimeSeconds;
 }
 
+void ScenarioState::setKinematicsTelemetryPublicationPeriod(
+    double periodSeconds) {
+  ScopedLock lock(_mutex);
+  _kinematicsTelemetryPublisher.setPublicationPeriodSeconds(periodSeconds);
+}
+
 void ScenarioState::stopMission() {
   ScopedLock lock(_mutex);
   FlightDynamicsEngine::clearDynamicsModels();

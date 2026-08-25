@@ -64,6 +64,10 @@ class KinematicsCockpitWidget;
 class PlanStepConfigurator;
 }
 
+namespace infrastructure {
+class Ros2TelemetryPublisher;
+}
+
 namespace Ui {
 class MainWindow;
 }
@@ -209,6 +213,8 @@ private:
   void beginGraphicCoordinatePick();
   void updateSimulationControls();
   void initializeKinematicsCockpit();
+  void initializeRos2Telemetry();
+  void configureRos2Telemetry();
   void refreshKinematicsCockpitForEntity(const struct Entity* entity);
   void takeCockpitControl(
       const QString& entityName,
@@ -273,6 +279,7 @@ private:
   presentation::KinematicsCockpitWidget* _qflightCockpitWidget;
   QDockWidget* _ecamCockpitDock;
   presentation::KinematicsCockpitWidget* _ecamCockpitWidget;
+  infrastructure::Ros2TelemetryPublisher* _ros2TelemetryPublisher;
   std::uint64_t _kinematicsTelemetrySubscriptionId;
   MapBridge* _mapBridge;
   ScenarioState* _scenarioState;

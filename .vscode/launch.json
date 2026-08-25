@@ -8,6 +8,48 @@
             "name": "Launch qttest",
             "type": "cppdbg",
             "request": "launch",
+            "program": "${workspaceFolder}/build-macos-ros2/qttest.app/Contents/MacOS/qttest",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "environment": [
+                {
+                    "name": "AMENT_PREFIX_PATH",
+                    "value": "${workspaceFolder}/build-ros2-workspace/install/qttest_interfaces:/Users/angelconde/ros2_tactical/.pixi/envs/default"
+                },
+                {
+                    "name": "COLCON_PREFIX_PATH",
+                    "value": "${workspaceFolder}/build-ros2-workspace/install"
+                },
+                {
+                    "name": "RMW_IMPLEMENTATION",
+                    "value": "rmw_fastrtps_cpp"
+                },
+                {
+                    "name": "ROS_DISTRO",
+                    "value": "jazzy"
+                },
+                {
+                    "name": "ROS_VERSION",
+                    "value": "2"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "CMake Build ROS 2",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for lldb",
+                    "text": "settings set target.max-children-count 256",
+                    "ignoreFailures": true
+                }
+            ],
+            "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/f47bb2143408e3406aebae287f31b343/tonka3000.qtvsctools/qt.natvis.xml"
+        },
+        {
+            "name": "Launch qttest (sin ROS 2)",
+            "type": "cppdbg",
+            "request": "launch",
             "program": "${workspaceFolder}/build-macos-debug/qttest.app/Contents/MacOS/qttest",
             "args": [],
             "cwd": "${workspaceFolder}",

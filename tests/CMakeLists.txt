@@ -39,6 +39,7 @@ add_executable(qttest_unit_tests
     application/SystemsTelemetryTest.cpp
     infrastructure/ModelCatalogTest.cpp
     infrastructure/ModelOrientationTest.cpp
+    infrastructure/Ros2TelemetryPublisherTest.cpp
     application/MunitionSimulatorTest.cpp
     application/BehaviorEngineTest.cpp
     application/SensorEngineTest.cpp
@@ -95,6 +96,9 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/infrastructure/CesiumScenePage.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/ModelCatalog.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/ModelOrientation.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/Ros2TelemetryBackendStub.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/Ros2TelemetryContract.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/Ros2TelemetryPublisher.cpp
     ${CMAKE_SOURCE_DIR}/src/application/SimulationEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/application/SensorEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/application/FlightDynamicsEngine.cpp
@@ -139,12 +143,53 @@ target_link_libraries(qttest_unit_tests
         GTest::gtest_main
 )
 
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(
+        NAME Ros2NativeTelemetryContract
+        COMMAND
+            ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/integrations/ros2/test/test_native_contract.py
+    )
+endif()
+
 if(NOT MSVC)
     target_compile_options(qttest_unit_tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
 
 include(GoogleTest)
 gtest_discover_tests(qttest_unit_tests)
+
+if(QTTEST_ENABLE_ROS2_TELEMETRY)
+    add_executable(qttest_ros2_native_integration_test
+        infrastructure/Ros2TelemetryNativeIntegrationTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/infrastructure/Ros2TelemetryBackendNative.cpp
+        ${CMAKE_SOURCE_DIR}/src/infrastructure/Ros2TelemetryContract.cpp
+    )
+    target_include_directories(qttest_ros2_native_integration_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(qttest_ros2_native_integration_test PRIVATE
+        Qt6::Core
+        rclcpp::rclcpp
+        qttest_interfaces::qttest_interfaces__rosidl_typesupport_cpp
+    )
+    if(APPLE)
+        target_link_libraries(
+            qttest_ros2_native_integration_test PRIVATE Python3::Python
+        )
+    endif()
+    add_test(
+        NAME Ros2TelemetryNative.PublishesTypedMessageThroughDds
+        COMMAND qttest_ros2_native_integration_test
+    )
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ros2_logs")
+    set_tests_properties(
+        Ros2TelemetryNative.PublishesTypedMessageThroughDds
+        PROPERTIES ENVIRONMENT
+            "ROS_LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/ros2_logs"
+    )
+endif()
 
 if(TARGET qflightinstruments OR QTTEST_HAS_MODERN_PFD)
     add_executable(qttest_kinematics_cockpit_smoke
