@@ -106,4 +106,5 @@ struct Entity {
   QVector<WeaponInventoryItem> weapons;
   SensorDefinitions sensors;
   SensorContacts sensorContacts;
+  SensorRuntimeStatuses sensorRuntimeStatuses;
 };

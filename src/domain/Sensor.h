@@ -3,6 +3,8 @@
 #include <QString>
 #include <QVector>
 
+#include <limits>
+
 enum class SensorType {
   Radar,
   Infrared,
@@ -43,6 +45,23 @@ struct SensorDefinition {
   double trackHoldSeconds = 10.0;
 };
 
+struct SensorEvaluationDiagnostics {
+  QString requestedModelProviderId = QStringLiteral("native");
+  QString effectiveModelProviderId = QStringLiteral("native");
+  QString providerVersion;
+  bool fallbackUsed = false;
+  QString fallbackReason;
+  double detectionProbability = 0.0;
+  double deterministicSample = 0.0;
+  double targetSignature = 1.0;
+  double signalToNoiseRatio = std::numeric_limits<double>::quiet_NaN();
+  double signalToNoiseRatioDecibels =
+      std::numeric_limits<double>::quiet_NaN();
+  double rangeLossDecibels = std::numeric_limits<double>::quiet_NaN();
+  double echoRatio = std::numeric_limits<double>::quiet_NaN();
+  double evaluationDurationMilliseconds = 0.0;
+};
+
 struct SensorContact {
   QString sensorId;
   QString sensorModelProviderId = QStringLiteral("native");
@@ -59,10 +78,23 @@ struct SensorContact {
   QString trackState = QStringLiteral("Detected");
   qint64 lastEvaluationIndex = -1;
   int missedDetectionCount = 0;
+  SensorEvaluationDiagnostics evaluation;
+};
+
+struct SensorRuntimeStatus {
+  QString sensorId;
+  QString lastTargetEntityId;
+  QString lastTargetEntityName;
+  double lastEvaluationSimulationSeconds = 0.0;
+  qint64 lastEvaluationIndex = -1;
+  quint64 evaluationCount = 0;
+  quint64 detectionCount = 0;
+  SensorEvaluationDiagnostics evaluation;
 };
 
 using SensorDefinitions = QVector<SensorDefinition>;
 using SensorContacts = QVector<SensorContact>;
+using SensorRuntimeStatuses = QVector<SensorRuntimeStatus>;
 
 namespace sensor {
 

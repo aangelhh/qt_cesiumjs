@@ -169,6 +169,9 @@ if(QTTEST_ENABLE_MIXR_SENSOR_PROVIDER AND APPLE)
         ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_base.a
         Threads::Threads
     )
+    target_compile_definitions(qttest_mixr_sensor PRIVATE
+        QTTEST_MIXR_PROVIDER_VERSION="${QTTEST_MIXR_GIT_TAG}"
+    )
     set_target_properties(qttest_mixr_sensor PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY ${QTTEST_MIXR_PLUGIN_DIR}
         OUTPUT_NAME qttest_mixr_sensor

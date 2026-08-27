@@ -3,6 +3,7 @@
 #include "application/sensors/SensorModelRegistry.h"
 #include "domain/EntityIdentity.h"
 
+#include <QElapsedTimer>
 #include <QtMath>
 
 #include <algorithm>
@@ -171,6 +172,80 @@ SensorContact makeContact(
   return contact;
 }
 
+QString normalizedProviderId(const QString& providerId) {
+  const QString normalized = providerId.trimmed().toLower();
+  return normalized.isEmpty() ? QStringLiteral("native") : normalized;
+}
+
+SensorEvaluationDiagnostics makeEvaluationDiagnostics(
+    const SensorDefinition& sensor,
+    const application::sensors::ISensorModel& resolvedModel,
+    const application::sensors::SensorEvaluationResult& evaluation) {
+  SensorEvaluationDiagnostics diagnostics;
+  diagnostics.requestedModelProviderId =
+      normalizedProviderId(sensor.modelProviderId);
+  diagnostics.effectiveModelProviderId = normalizedProviderId(
+      evaluation.effectiveModelId.trimmed().isEmpty()
+          ? resolvedModel.modelId()
+          : evaluation.effectiveModelId);
+  diagnostics.providerVersion = evaluation.providerVersion;
+  diagnostics.fallbackUsed = evaluation.fallbackUsed ||
+      diagnostics.requestedModelProviderId !=
+          diagnostics.effectiveModelProviderId;
+  diagnostics.fallbackReason = evaluation.fallbackReason;
+  if (diagnostics.fallbackUsed && diagnostics.fallbackReason.trimmed().isEmpty()) {
+    diagnostics.fallbackReason = QStringLiteral(
+        "Requested provider was unavailable; using %1")
+        .arg(diagnostics.effectiveModelProviderId);
+  }
+  diagnostics.detectionProbability = evaluation.probability;
+  diagnostics.deterministicSample = evaluation.sample;
+  diagnostics.targetSignature = evaluation.targetSignature;
+  diagnostics.signalToNoiseRatio = evaluation.signalToNoiseRatio;
+  diagnostics.signalToNoiseRatioDecibels =
+      evaluation.signalToNoiseRatioDecibels;
+  diagnostics.rangeLossDecibels = evaluation.rangeLossDecibels;
+  diagnostics.echoRatio = evaluation.echoRatio;
+  diagnostics.evaluationDurationMilliseconds =
+      evaluation.evaluationDurationMilliseconds;
+  return diagnostics;
+}
+
+SensorRuntimeStatus& runtimeStatusFor(
+    Entity& source,
+    const SensorDefinition& sensor) {
+  for (SensorRuntimeStatus& status : source.sensorRuntimeStatuses) {
+    if (status.sensorId == sensor.id) {
+      return status;
+    }
+  }
+  SensorRuntimeStatus status;
+  status.sensorId = sensor.id;
+  source.sensorRuntimeStatuses.push_back(status);
+  return source.sensorRuntimeStatuses.last();
+}
+
+void recordEvaluation(
+    Entity& source,
+    const SensorDefinition& sensor,
+    const Entity& target,
+    double simulationTimeSeconds,
+    qint64 scanIndex,
+    bool detected,
+    const SensorEvaluationDiagnostics& diagnostics) {
+  SensorRuntimeStatus& status = runtimeStatusFor(source, sensor);
+  status.lastTargetEntityId = domain::entityKey(target);
+  status.lastTargetEntityName = target.name;
+  status.lastEvaluationSimulationSeconds =
+      std::max(0.0, simulationTimeSeconds);
+  status.lastEvaluationIndex = scanIndex;
+  ++status.evaluationCount;
+  if (detected) {
+    ++status.detectionCount;
+  }
+  status.evaluation = diagnostics;
+}
+
 } // namespace
 
 void SensorEngine::updateEntityContacts(
@@ -188,6 +263,7 @@ void SensorEngine::updateEntityContacts(
     source.sensorContacts.clear();
 
     if (source.destroyed) {
+      source.sensorRuntimeStatuses.clear();
       continue;
     }
     if (!isCombatObserver(source)) {
@@ -252,7 +328,9 @@ void SensorEngine::updateEntityContacts(
 
         const application::sensors::ISensorModel& sensorModel =
             models.resolve(sensor.modelProviderId);
-        const application::sensors::SensorEvaluationResult evaluation =
+        QElapsedTimer evaluationTimer;
+        evaluationTimer.start();
+        application::sensors::SensorEvaluationResult evaluation =
             sensorModel.evaluate({
                 scenarioSeed,
                 simulationTimeSeconds,
@@ -261,6 +339,18 @@ void SensorEngine::updateEntityContacts(
                 source,
                 sensor,
                 target});
+        evaluation.evaluationDurationMilliseconds =
+            static_cast<double>(evaluationTimer.nsecsElapsed()) / 1000000.0;
+        const SensorEvaluationDiagnostics diagnostics =
+            makeEvaluationDiagnostics(sensor, sensorModel, evaluation);
+        recordEvaluation(
+            source,
+            sensor,
+            target,
+            simulationTimeSeconds,
+            scanIndex,
+            evaluation.detected,
+            diagnostics);
 
         if (evaluation.detected) {
           SensorContact contact = makeContact(
@@ -277,6 +367,7 @@ void SensorEngine::updateEntityContacts(
               std::max(0.0, simulationTimeSeconds);
           contact.trackState = QStringLiteral("Detected");
           contact.lastEvaluationIndex = scanIndex;
+          contact.evaluation = diagnostics;
           source.sensorContacts.push_back(contact);
         } else if (previous) {
           const double secondsSinceLastSeen = std::max(
@@ -297,6 +388,7 @@ void SensorEngine::updateEntityContacts(
           contact.trackState = QStringLiteral("Coasting");
           contact.lastEvaluationIndex = scanIndex;
           contact.missedDetectionCount = previous->missedDetectionCount + 1;
+          contact.evaluation = diagnostics;
           source.sensorContacts.push_back(contact);
         } else {
           continue;

@@ -12,6 +12,37 @@
 
 namespace presentation {
 
+namespace {
+
+QVariantMap sensorEvaluationSummary(
+    const SensorEvaluationDiagnostics& diagnostics) {
+  return {
+      {QStringLiteral("requestedModelProviderId"),
+       diagnostics.requestedModelProviderId},
+      {QStringLiteral("effectiveModelProviderId"),
+       diagnostics.effectiveModelProviderId},
+      {QStringLiteral("providerVersion"), diagnostics.providerVersion},
+      {QStringLiteral("fallbackUsed"), diagnostics.fallbackUsed},
+      {QStringLiteral("fallbackReason"), diagnostics.fallbackReason},
+      {QStringLiteral("detectionProbability"),
+       diagnostics.detectionProbability},
+      {QStringLiteral("deterministicSample"),
+       diagnostics.deterministicSample},
+      {QStringLiteral("targetSignature"), diagnostics.targetSignature},
+      {QStringLiteral("signalToNoiseRatio"),
+       diagnostics.signalToNoiseRatio},
+      {QStringLiteral("signalToNoiseRatioDecibels"),
+       diagnostics.signalToNoiseRatioDecibels},
+      {QStringLiteral("rangeLossDecibels"),
+       diagnostics.rangeLossDecibels},
+      {QStringLiteral("echoRatio"), diagnostics.echoRatio},
+      {QStringLiteral("evaluationDurationMilliseconds"),
+       diagnostics.evaluationDurationMilliseconds},
+  };
+}
+
+} // namespace
+
 QVariantMap makeTrackSummary(
     const QString& name,
     const QString& type,
@@ -92,6 +123,9 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("radarCoverageVisible"), false},
       {QStringLiteral("trackHistoryVisible"), false},
       {QStringLiteral("weapons"), QVariantList{}},
+      {QStringLiteral("sensors"), QVariantList{}},
+      {QStringLiteral("sensorContacts"), QVariantList{}},
+      {QStringLiteral("sensorRuntimeStatuses"), QVariantList{}},
   };
 }
 
@@ -377,6 +411,11 @@ QVariantMap makeEntityTrackSummary(
         {QStringLiteral("probabilityOfDetection"), sensor.probabilityOfDetection},
         {QStringLiteral("trackHoldSeconds"),       sensor.trackHoldSeconds},
         {QStringLiteral("maxTracks"),             sensor.maxTracks},
+        {QStringLiteral("iffCapable"),            sensor.iffCapable},
+        {QStringLiteral("canDetectAir"),           sensor.canDetectAir},
+        {QStringLiteral("canDetectGround"),        sensor.canDetectGround},
+        {QStringLiteral("canDetectSurface"),       sensor.canDetectSurface},
+        {QStringLiteral("terrainMaskingEnabled"),  sensor.terrainMaskingEnabled},
     });
   }
   summary.insert(QStringLiteral("sensors"), sensors);
@@ -398,9 +437,28 @@ QVariantMap makeEntityTrackSummary(
         {QStringLiteral("lastSeenSimulationSeconds"), contact.lastSeenSimulationSeconds},
         {QStringLiteral("trackState"),       contact.trackState},
         {QStringLiteral("missedDetectionCount"), contact.missedDetectionCount},
+        {QStringLiteral("evaluation"), sensorEvaluationSummary(contact.evaluation)},
     });
   }
   summary.insert(QStringLiteral("sensorContacts"), contacts);
+
+  QVariantList runtimeStatuses;
+  for (const SensorRuntimeStatus& status : entity.sensorRuntimeStatuses) {
+    runtimeStatuses.push_back(QVariantMap{
+        {QStringLiteral("sensorId"), status.sensorId},
+        {QStringLiteral("lastTargetEntityId"), status.lastTargetEntityId},
+        {QStringLiteral("lastTargetEntityName"), status.lastTargetEntityName},
+        {QStringLiteral("lastEvaluationSimulationSeconds"),
+         status.lastEvaluationSimulationSeconds},
+        {QStringLiteral("lastEvaluationIndex"), status.lastEvaluationIndex},
+        {QStringLiteral("evaluationCount"),
+         QVariant::fromValue<qulonglong>(status.evaluationCount)},
+        {QStringLiteral("detectionCount"),
+         QVariant::fromValue<qulonglong>(status.detectionCount)},
+        {QStringLiteral("evaluation"), sensorEvaluationSummary(status.evaluation)},
+    });
+  }
+  summary.insert(QStringLiteral("sensorRuntimeStatuses"), runtimeStatuses);
 
   return summary;
 }

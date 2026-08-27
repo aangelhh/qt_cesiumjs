@@ -24,6 +24,7 @@ private:
   QString _libraryPath;
   mutable QLibrary _library;
   QttestSensorPluginEvaluateFn _evaluate = nullptr;
+  QString _providerVersion;
   QString _errorString;
 };
 

@@ -214,6 +214,12 @@ TEST(EntityTrackSummaryTest, ContactCountMatchesContactsSize) {
   contact.confidence = 0.67;
   contact.trackState = QStringLiteral("Coasting");
   contact.rangeMeters = 25000.0;
+  contact.evaluation.requestedModelProviderId = QStringLiteral("stone-soup");
+  contact.evaluation.effectiveModelProviderId = QStringLiteral("stone-soup");
+  contact.evaluation.providerVersion = QStringLiteral("1.9");
+  contact.evaluation.detectionProbability = 0.67;
+  contact.evaluation.deterministicSample = 0.25;
+  contact.evaluation.signalToNoiseRatioDecibels = 12.5;
   e.sensorContacts.push_back(contact);
   const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
   EXPECT_EQ(summary.value(QStringLiteral("contactCount")).toInt(), 1);
@@ -232,6 +238,45 @@ TEST(EntityTrackSummaryTest, ContactCountMatchesContactsSize) {
   EXPECT_EQ(
       contacts.first().toMap().value(QStringLiteral("trackState")).toString(),
       QStringLiteral("Coasting"));
+  const QVariantMap evaluation = contacts.first().toMap()
+      .value(QStringLiteral("evaluation")).toMap();
+  EXPECT_EQ(
+      evaluation.value(QStringLiteral("providerVersion")).toString(),
+      QStringLiteral("1.9"));
+  EXPECT_DOUBLE_EQ(
+      evaluation.value(QStringLiteral("signalToNoiseRatioDecibels")).toDouble(),
+      12.5);
+}
+
+TEST(EntityTrackSummaryTest, ContainsSensorRuntimeDiagnosticsWithoutContact) {
+  Entity e = makeBasicEntity();
+  SensorRuntimeStatus runtime;
+  runtime.sensorId = QStringLiteral("radar-1");
+  runtime.lastTargetEntityName = QStringLiteral("Bandit");
+  runtime.evaluationCount = 8;
+  runtime.detectionCount = 3;
+  runtime.lastEvaluationIndex = 17;
+  runtime.evaluation.requestedModelProviderId = QStringLiteral("mixr");
+  runtime.evaluation.effectiveModelProviderId = QStringLiteral("native");
+  runtime.evaluation.fallbackUsed = true;
+  runtime.evaluation.fallbackReason = QStringLiteral("plugin unavailable");
+  runtime.evaluation.rangeLossDecibels = 42.0;
+  e.sensorRuntimeStatuses.push_back(runtime);
+
+  const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
+  const QVariantList statuses =
+      summary.value(QStringLiteral("sensorRuntimeStatuses")).toList();
+
+  ASSERT_EQ(statuses.size(), 1);
+  const QVariantMap status = statuses.front().toMap();
+  EXPECT_EQ(status.value(QStringLiteral("evaluationCount")).toULongLong(), 8U);
+  EXPECT_EQ(status.value(QStringLiteral("detectionCount")).toULongLong(), 3U);
+  const QVariantMap evaluation =
+      status.value(QStringLiteral("evaluation")).toMap();
+  EXPECT_TRUE(evaluation.value(QStringLiteral("fallbackUsed")).toBool());
+  EXPECT_DOUBLE_EQ(
+      evaluation.value(QStringLiteral("rangeLossDecibels")).toDouble(),
+      42.0);
 }
 
 TEST(EntityTrackSummaryTest, DestroyedFlagReflected) {

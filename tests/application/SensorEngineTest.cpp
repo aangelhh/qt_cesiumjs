@@ -58,6 +58,19 @@ TEST(SensorEngine, ContactCarriesProducingSensorTypeAndSubType) {
   EXPECT_EQ(contact.sensorType, QStringLiteral("radar"));
   EXPECT_EQ(contact.sensorSubType, QStringLiteral("airborneRadar"));
   EXPECT_EQ(contact.targetEntityName, QStringLiteral("Target"));
+  EXPECT_EQ(
+      contact.evaluation.requestedModelProviderId,
+      QStringLiteral("native"));
+  EXPECT_EQ(
+      contact.evaluation.effectiveModelProviderId,
+      QStringLiteral("native"));
+  EXPECT_EQ(contact.evaluation.providerVersion, QStringLiteral("native-v1"));
+  EXPECT_FALSE(contact.evaluation.fallbackUsed);
+  EXPECT_DOUBLE_EQ(contact.evaluation.detectionProbability, 1.0);
+  EXPECT_GE(contact.evaluation.evaluationDurationMilliseconds, 0.0);
+  ASSERT_EQ(entities.at(0).sensorRuntimeStatuses.size(), 1);
+  EXPECT_EQ(entities.at(0).sensorRuntimeStatuses.front().evaluationCount, 1U);
+  EXPECT_EQ(entities.at(0).sensorRuntimeStatuses.front().detectionCount, 1U);
 }
 
 TEST(SensorEngine, DuplicateTargetNamesProduceContactsWithDistinctIds) {

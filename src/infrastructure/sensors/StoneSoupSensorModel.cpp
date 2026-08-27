@@ -11,6 +11,21 @@
 #include <QMutexLocker>
 
 #include <algorithm>
+#include <cmath>
+
+namespace {
+
+application::sensors::SensorEvaluationResult nativeFallback(
+    const application::sensors::SensorEvaluationContext& context,
+    const QString& reason) {
+  application::sensors::NativeSensorModel fallback;
+  application::sensors::SensorEvaluationResult result = fallback.evaluate(context);
+  result.fallbackUsed = true;
+  result.fallbackReason = reason;
+  return result;
+}
+
+} // namespace
 
 namespace infrastructure::sensors {
 
@@ -53,8 +68,11 @@ application::sensors::SensorEvaluationResult StoneSoupSensorModel::evaluate(
     if (!this->exchangeLocked(
             QJsonDocument(request).toJson(QJsonDocument::Compact),
             responseBytes)) {
-      application::sensors::NativeSensorModel fallback;
-      return fallback.evaluate(context);
+      return nativeFallback(
+          context,
+          _errorString.trimmed().isEmpty()
+              ? QStringLiteral("Stone Soup provider is unavailable")
+              : _errorString);
     }
   }
 
@@ -64,8 +82,12 @@ application::sensors::SensorEvaluationResult StoneSoupSensorModel::evaluate(
   const QJsonObject response = responseDocument.object();
   if (parseError.error != QJsonParseError::NoError ||
       !response.value(QStringLiteral("ok")).toBool(false)) {
-    application::sensors::NativeSensorModel fallback;
-    return fallback.evaluate(context);
+    const QString reason = response.value(QStringLiteral("error")).toString();
+    return nativeFallback(
+        context,
+        reason.trimmed().isEmpty()
+            ? QStringLiteral("Stone Soup returned an invalid response")
+            : reason);
   }
 
   application::sensors::SensorEvaluationResult result;
@@ -83,6 +105,20 @@ application::sensors::SensorEvaluationResult StoneSoupSensorModel::evaluate(
       context.evaluationIndex);
   result.detected = result.sample < result.probability;
   result.effectiveModelId = this->modelId();
+  result.providerVersion =
+      response.value(QStringLiteral("providerVersion")).toString();
+  result.targetSignature = application::SensorDetectionModel::targetSignature(
+      context.sensor,
+      context.target);
+  const double signalToNoiseRatio =
+      response.value(QStringLiteral("snr")).toDouble();
+  if (std::isfinite(signalToNoiseRatio) && signalToNoiseRatio >= 0.0) {
+    result.signalToNoiseRatio = signalToNoiseRatio;
+    if (signalToNoiseRatio > 0.0) {
+      result.signalToNoiseRatioDecibels =
+          10.0 * std::log10(signalToNoiseRatio);
+    }
+  }
   return result;
 }
 

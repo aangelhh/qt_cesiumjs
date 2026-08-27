@@ -11,6 +11,7 @@
 #include <QFileInfo>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 namespace {
@@ -83,6 +84,10 @@ TEST(SensorProviderAdapter, MixrPluginUsesRfRangeLossWhenBuilt) {
   EXPECT_NEAR(thresholdResult.probability, 0.5, 1e-6);
   EXPECT_GT(nearResult.probability, thresholdResult.probability);
   EXPECT_LE(nearResult.probability, 1.0);
+  EXPECT_FALSE(nearResult.providerVersion.isEmpty());
+  EXPECT_TRUE(std::isfinite(nearResult.rangeLossDecibels));
+  EXPECT_TRUE(std::isfinite(nearResult.echoRatio));
+  EXPECT_GT(nearResult.echoRatio, thresholdResult.echoRatio);
 }
 
 TEST(SensorProviderAdapter, BootstrapRegistersBuiltMixrProvider) {
@@ -153,6 +158,9 @@ TEST(SensorProviderAdapter, StoneSoupUsesAesaProbabilityWhenInstalled) {
   EXPECT_LT(result.probability, 1.0);
   EXPECT_GE(result.sample, 0.0);
   EXPECT_LT(result.sample, 1.0);
+  EXPECT_FALSE(result.providerVersion.isEmpty());
+  EXPECT_TRUE(std::isfinite(result.signalToNoiseRatio));
+  EXPECT_TRUE(std::isfinite(result.signalToNoiseRatioDecibels));
 }
 
 TEST(SensorProviderAdapter, BootstrapRegistersInstalledStoneSoupProvider) {

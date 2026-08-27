@@ -52,8 +52,36 @@ same scenario can use it after the adapter is installed.
 - range already accepted by the common geometric gates.
 
 It returns `SensorEvaluationResult` with probability, deterministic sample,
-and detection outcome. Providers must not mutate entities or advance the
-global clock.
+and detection outcome. Providers can also return optional diagnostics such as
+provider version, target signature, SNR, RF range loss, and echo ratio.
+Providers must not mutate entities or advance the global clock.
+
+## Runtime Diagnostics
+
+`SensorEngine` records the last eligible evaluation for every sensor in a
+runtime-only `SensorRuntimeStatus`. This state is intentionally not persisted
+in scenario files. It contains:
+
+- requested and effective provider identifiers;
+- provider version and native fallback reason;
+- effective detection probability and deterministic sample;
+- target signature, SNR, RF range loss, and echo ratio when supplied;
+- evaluation latency, scan index, and simulation time;
+- cumulative evaluation and detection counters.
+
+Detected and coasting contacts carry the same diagnostics. Track confidence
+therefore remains separate from the probability used by the latest model
+evaluation.
+
+Double-clicking an entity and selecting **Sensor Information** displays the
+configuration, live runtime status, and contact diagnostics. The dialog
+refreshes every 500 ms while the entity remains available. Unsupported values
+are displayed as unavailable instead of zero.
+
+This structured runtime status is the source for a future dedicated ROS 2
+`sensor_diagnostics` topic and historical PlotJuggler export. It must remain
+separate from the existing kinematics topic because one entity can own several
+sensors and evaluate several targets per scan.
 
 ## Provider Roles
 
@@ -72,7 +100,9 @@ later provide richer radar, IR, RF, RWR, or electronic-warfare models without
 exposing its types to domain objects. Build it with
 `cmake --build build-macos-debug --target qttest_setup_mixr`; the VS Code launch
 profiles already set `QTTEST_MIXR_SENSOR_PLUGIN`. Missing or unhealthy plugins
-fall back explicitly to `native`.
+fall back explicitly to `native`. The current adapter exposes the pinned MIXR
+revision, one-way RF range loss, echo ratio, effective detection probability,
+and evaluation latency.
 
 ### Stone Soup
 
@@ -81,6 +111,8 @@ current adapter calls Stone Soup `AESARadar` for SNR and detection probability,
 then applies qttest's deterministic sample for reproducible outcomes. The
 sidecar receives simulation time and never owns or advances the global clock.
 Requests have a bounded timeout and explicitly fall back to `native` on error.
+Provider version, linear SNR, SNR in dB, and request latency are exposed in the
+live sensor diagnostics.
 
 Install the isolated environment with:
 
@@ -104,7 +136,8 @@ tick.
 3. Extend the MIXR adapter from RF range loss to configurable radar profiles,
    clutter, RWR, and tracking as separate capabilities.
 4. Move Stone Soup evaluation to batched asynchronous requests for large runs.
-5. Add provider health and fallback counters to operational telemetry.
+5. Publish `SensorRuntimeStatus` through a versioned ROS 2 sensor-diagnostics
+   contract for PlotJuggler and recording/replay analysis.
 
 ## Determinism Rules
 

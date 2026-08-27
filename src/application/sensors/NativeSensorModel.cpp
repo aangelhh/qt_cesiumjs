@@ -22,6 +22,10 @@ SensorEvaluationResult NativeSensorModel::evaluate(
       context.rangeMeters,
       context.evaluationIndex);
   result.effectiveModelId = staticModelId();
+  result.providerVersion = QStringLiteral("native-v1");
+  result.targetSignature = application::SensorDetectionModel::targetSignature(
+      context.sensor,
+      context.target);
   return result;
 }
 

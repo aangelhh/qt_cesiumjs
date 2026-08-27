@@ -5,6 +5,8 @@
 #include <QString>
 #include <QtGlobal>
 
+#include <limits>
+
 namespace application::sensors {
 
 struct SensorEvaluationContext {
@@ -22,6 +24,16 @@ struct SensorEvaluationResult {
   double sample = 0.0;
   bool detected = false;
   QString effectiveModelId;
+  QString providerVersion;
+  bool fallbackUsed = false;
+  QString fallbackReason;
+  double targetSignature = 1.0;
+  double signalToNoiseRatio = std::numeric_limits<double>::quiet_NaN();
+  double signalToNoiseRatioDecibels =
+      std::numeric_limits<double>::quiet_NaN();
+  double rangeLossDecibels = std::numeric_limits<double>::quiet_NaN();
+  double echoRatio = std::numeric_limits<double>::quiet_NaN();
+  double evaluationDurationMilliseconds = 0.0;
 };
 
 class ISensorModel {

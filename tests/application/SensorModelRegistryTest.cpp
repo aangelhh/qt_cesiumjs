@@ -23,11 +23,16 @@ public:
       const application::sensors::SensorEvaluationContext& context) const override {
     ++evaluationCount;
     lastSensorId = context.sensor.id;
-    return {
-        _detected ? 1.0 : 0.0,
-        _detected ? 0.0 : 1.0,
-        _detected,
-        _id};
+    application::sensors::SensorEvaluationResult result;
+    result.probability = _detected ? 1.0 : 0.0;
+    result.sample = _detected ? 0.0 : 1.0;
+    result.detected = _detected;
+    result.effectiveModelId = _id;
+    result.providerVersion = QStringLiteral("fixed-test-v1");
+    result.targetSignature = 1.25;
+    result.signalToNoiseRatio = 4.0;
+    result.signalToNoiseRatioDecibels = 6.0206;
+    return result;
   }
 
   mutable int evaluationCount = 0;
@@ -128,6 +133,37 @@ TEST(SensorModelRegistry, SensorEngineUsesProviderSelectedBySensor) {
   EXPECT_EQ(externalProvider->evaluationCount, 1);
   EXPECT_EQ(externalProvider->lastSensorId, QStringLiteral("radar-primary"));
   EXPECT_TRUE(entities.front().sensorContacts.isEmpty());
+  ASSERT_EQ(entities.front().sensorRuntimeStatuses.size(), 1);
+  const SensorRuntimeStatus& runtime =
+      entities.front().sensorRuntimeStatuses.front();
+  EXPECT_EQ(runtime.evaluation.effectiveModelProviderId, QStringLiteral("mixr"));
+  EXPECT_EQ(runtime.evaluation.providerVersion, QStringLiteral("fixed-test-v1"));
+  EXPECT_DOUBLE_EQ(runtime.evaluation.signalToNoiseRatio, 4.0);
+  EXPECT_EQ(runtime.evaluationCount, 1U);
+  EXPECT_EQ(runtime.detectionCount, 0U);
+}
+
+TEST(SensorModelRegistry, UnknownProviderRecordsExplicitNativeFallback) {
+  application::sensors::SensorModelRegistry registry;
+  Entity observer = makeEntity(QStringLiteral("observer"), 1, 0.0);
+  observer.sensors.push_back(makeRadar(QStringLiteral("not-installed")));
+  QVector<Entity> entities{
+      observer,
+      makeEntity(QStringLiteral("target"), 2, 0.1)};
+
+  SensorEngine::updateEntityContacts(entities, 0.0, 42U, &registry);
+
+  ASSERT_EQ(entities.front().sensorRuntimeStatuses.size(), 1);
+  const SensorEvaluationDiagnostics& diagnostics =
+      entities.front().sensorRuntimeStatuses.front().evaluation;
+  EXPECT_EQ(
+      diagnostics.requestedModelProviderId,
+      QStringLiteral("not-installed"));
+  EXPECT_EQ(
+      diagnostics.effectiveModelProviderId,
+      QStringLiteral("native"));
+  EXPECT_TRUE(diagnostics.fallbackUsed);
+  EXPECT_FALSE(diagnostics.fallbackReason.isEmpty());
 }
 
 TEST(SensorModelRegistry, ScenarioRuntimeAcceptsAdditionalProviders) {

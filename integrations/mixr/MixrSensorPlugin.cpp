@@ -12,6 +12,10 @@ namespace {
 constexpr double kDefaultReferenceRangeMeters = 100000.0;
 constexpr double kHalfProbabilityScale = 0.6931471805599453;
 
+#ifndef QTTEST_MIXR_PROVIDER_VERSION
+#define QTTEST_MIXR_PROVIDER_VERSION "unknown"
+#endif
+
 bool hasRangeExtension(const QttestSensorEvaluationInputV1& input) {
   return input.structSize >=
       offsetof(QttestSensorEvaluationInputV1, sensorMaxRangeMeters) +
@@ -22,7 +26,12 @@ double finiteNonNegative(double value) {
   return std::isfinite(value) ? std::max(0.0, value) : 0.0;
 }
 
-double mixrEchoRatio(
+struct MixrEvaluationMetrics {
+  double echoRatio = 0.0;
+  double rangeLossDecibels = 0.0;
+};
+
+MixrEvaluationMetrics mixrMetrics(
     double rangeMeters,
     double referenceRangeMeters,
     double radarCrossSectionSquareMeters) {
@@ -40,7 +49,13 @@ double mixrEchoRatio(
   const double returnedEcho =
       observedEmission.getRCS() * observedLoss * observedLoss;
   const double referenceEcho = referenceLoss * referenceLoss;
-  return referenceEcho > 0.0 ? returnedEcho / referenceEcho : 0.0;
+  MixrEvaluationMetrics metrics;
+  metrics.echoRatio =
+      referenceEcho > 0.0 ? returnedEcho / referenceEcho : 0.0;
+  metrics.rangeLossDecibels = observedLoss > 0.0
+      ? -10.0 * std::log10(observedLoss)
+      : 0.0;
+  return metrics;
 }
 
 } // namespace
@@ -53,13 +68,19 @@ extern "C" const char* qttest_sensor_model_id() {
   return "mixr";
 }
 
+extern "C" const char* qttest_sensor_model_version() {
+  return QTTEST_MIXR_PROVIDER_VERSION;
+}
+
 extern "C" int qttest_sensor_model_evaluate(
     const QttestSensorEvaluationInputV1* input,
     QttestSensorEvaluationOutputV1* output) {
   if (!input || !output ||
       input->structSize < offsetof(QttestSensorEvaluationInputV1, targetSpeedKnots) +
               sizeof(input->targetSpeedKnots) ||
-      output->structSize < sizeof(QttestSensorEvaluationOutputV1)) {
+      output->structSize <
+          offsetof(QttestSensorEvaluationOutputV1, probability) +
+              sizeof(output->probability)) {
     return 1;
   }
 
@@ -68,16 +89,24 @@ extern "C" int qttest_sensor_model_evaluate(
               input->sensorMaxRangeMeters > 1.0
           ? input->sensorMaxRangeMeters
           : kDefaultReferenceRangeMeters;
-  const double echoRatio = mixrEchoRatio(
+  const MixrEvaluationMetrics metrics = mixrMetrics(
       finiteNonNegative(input->rangeMeters),
       referenceRangeMeters,
       input->targetSignature);
-  const double radarResponse = 1.0 - std::exp(-kHalfProbabilityScale * echoRatio);
+  const double radarResponse =
+      1.0 - std::exp(-kHalfProbabilityScale * metrics.echoRatio);
 
   output->status = 0;
   output->probability = std::clamp(
       finiteNonNegative(input->configuredProbability) * radarResponse,
       0.0,
       1.0);
+  if (output->structSize >= sizeof(QttestSensorEvaluationOutputV1)) {
+    output->diagnosticsMask =
+        QTTEST_SENSOR_DIAGNOSTIC_RANGE_LOSS_DB |
+        QTTEST_SENSOR_DIAGNOSTIC_ECHO_RATIO;
+    output->rangeLossDecibels = metrics.rangeLossDecibels;
+    output->echoRatio = metrics.echoRatio;
+  }
   return 0;
 }

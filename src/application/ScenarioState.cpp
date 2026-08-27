@@ -349,6 +349,7 @@ bool ScenarioState::setEntityDestroyed(const QString& entityName, bool destroyed
     entity.speedKnots = 0.0;
     entity.verticalSpeedMetersPerSecond = 0.0;
     entity.sensorContacts.clear();
+    entity.sensorRuntimeStatuses.clear();
 
     if (domain::TaskStack* stack = this->getTaskStack(entityName)) {
       while (!stack->isEmpty()) {
@@ -783,6 +784,7 @@ void ScenarioState::setSensorRandomSeed(quint32 seed) {
   _sensorRandomSeed = seed;
   for (Entity& entity : _entities) {
     entity.sensorContacts.clear();
+    entity.sensorRuntimeStatuses.clear();
   }
   this->refreshSensors();
 }
@@ -813,6 +815,7 @@ void ScenarioState::stopMission() {
     entity.speedKnots = 0.0;
     entity.verticalSpeedMetersPerSecond = 0.0;
     entity.sensorContacts.clear();
+    entity.sensorRuntimeStatuses.clear();
     entity.behaviorTargetEntityName.clear();
   }
   _activeMunitions.clear();

@@ -12,12 +12,14 @@
 #include <QListWidgetItem>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTimer>
 #include <QVariantList>
 #include <QVBoxLayout>
 
+#include <cmath>
 #include <utility>
 
 namespace {
@@ -53,6 +55,22 @@ QString yesNo(bool value) {
 QString textOrDash(const QVariant& value) {
   const QString text = value.toString().trimmed();
   return text.isEmpty() ? QStringLiteral("-") : text;
+}
+
+QString optionalMetric(
+    const QVariantMap& values,
+    const char* key,
+    int decimals,
+    const QString& suffix = {}) {
+  bool ok = false;
+  const double value =
+      values.value(QString::fromLatin1(key)).toDouble(&ok);
+  if (!ok || !std::isfinite(value)) {
+    return QStringLiteral("-");
+  }
+  return QStringLiteral("%1%2").arg(
+      QString::number(value, 'f', decimals),
+      suffix);
 }
 
 int summaryIntValue(const QVariantMap& summary, const char* key) {
@@ -395,6 +413,8 @@ void EntityDetailsDialog::populateSensorInformation() {
   QList<QPair<QString, QString>> rows;
   const QVariantList sensors = _summary.value(QStringLiteral("sensors")).toList();
   const QVariantList contacts = _summary.value(QStringLiteral("sensorContacts")).toList();
+  const QVariantList runtimeStatuses =
+      _summary.value(QStringLiteral("sensorRuntimeStatuses")).toList();
 
   rows.append({QStringLiteral("Configured Sensors"), QString::number(sensors.size())});
   rows.append({QStringLiteral("Radar Signature"), this->value("radarSignature", QStringLiteral("1.00"))});
@@ -414,13 +434,86 @@ void EntityDetailsDialog::populateSensorInformation() {
       rows.append({prefix + QStringLiteral(" Emitting"), sensor.value(QStringLiteral("emitting")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
       rows.append({prefix + QStringLiteral(" Minimum Range"), QStringLiteral("%1 km").arg(sensor.value(QStringLiteral("minRangeMeters")).toDouble() / 1000.0, 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Range"), QStringLiteral("%1 km").arg(sensor.value(QStringLiteral("maxRangeMeters")).toDouble() / 1000.0, 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Azimuth Center"), QStringLiteral("%1 deg").arg(sensor.value(QStringLiteral("azimuthCenterDegrees")).toDouble(), 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Azimuth"), QStringLiteral("%1 deg").arg(sensor.value(QStringLiteral("azimuthWidthDegrees")).toDouble(), 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Elevation Center"), QStringLiteral("%1 deg").arg(sensor.value(QStringLiteral("elevationCenterDegrees")).toDouble(), 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Elevation"), QStringLiteral("%1 deg").arg(sensor.value(QStringLiteral("elevationWidthDegrees")).toDouble(), 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Update Period"), QStringLiteral("%1 s").arg(sensor.value(QStringLiteral("updatePeriodSeconds")).toDouble(), 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Detection Probability"), QStringLiteral("%1 %").arg(sensor.value(QStringLiteral("probabilityOfDetection")).toDouble() * 100.0, 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Track Hold"), QStringLiteral("%1 s").arg(sensor.value(QStringLiteral("trackHoldSeconds")).toDouble(), 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Max Tracks"), QString::number(sensor.value(QStringLiteral("maxTracks")).toInt())});
+      rows.append({prefix + QStringLiteral(" IFF Capable"), yesNo(sensor.value(QStringLiteral("iffCapable")).toBool())});
+      rows.append({prefix + QStringLiteral(" Detect Air"), yesNo(sensor.value(QStringLiteral("canDetectAir")).toBool())});
+      rows.append({prefix + QStringLiteral(" Detect Ground"), yesNo(sensor.value(QStringLiteral("canDetectGround")).toBool())});
+      rows.append({prefix + QStringLiteral(" Detect Surface"), yesNo(sensor.value(QStringLiteral("canDetectSurface")).toBool())});
+      rows.append({prefix + QStringLiteral(" Terrain Masking"), yesNo(sensor.value(QStringLiteral("terrainMaskingEnabled")).toBool())});
     }
+  }
+
+  rows.append({QStringLiteral("Runtime Sensor Statuses"),
+               QString::number(runtimeStatuses.size())});
+  for (int index = 0; index < runtimeStatuses.size(); ++index) {
+    const QVariantMap status = runtimeStatuses.at(index).toMap();
+    const QVariantMap evaluation =
+        status.value(QStringLiteral("evaluation")).toMap();
+    const QString prefix = QStringLiteral("Runtime %1").arg(index + 1);
+    const qulonglong evaluationCount =
+        status.value(QStringLiteral("evaluationCount")).toULongLong();
+    const qulonglong detectionCount =
+        status.value(QStringLiteral("detectionCount")).toULongLong();
+    const double detectionRate = evaluationCount > 0
+        ? static_cast<double>(detectionCount) /
+              static_cast<double>(evaluationCount) * 100.0
+        : 0.0;
+    rows.append({prefix + QStringLiteral(" Sensor"),
+                 textOrDash(status.value(QStringLiteral("sensorId")))});
+    rows.append({prefix + QStringLiteral(" Last Target"),
+                 textOrDash(status.value(QStringLiteral("lastTargetEntityName")))});
+    rows.append({prefix + QStringLiteral(" Last Target ID"),
+                 textOrDash(status.value(QStringLiteral("lastTargetEntityId")))});
+    rows.append({prefix + QStringLiteral(" Requested Provider"),
+                 textOrDash(evaluation.value(QStringLiteral("requestedModelProviderId")))});
+    rows.append({prefix + QStringLiteral(" Effective Provider"),
+                 textOrDash(evaluation.value(QStringLiteral("effectiveModelProviderId")))});
+    rows.append({prefix + QStringLiteral(" Provider Version"),
+                 textOrDash(evaluation.value(QStringLiteral("providerVersion")))});
+    rows.append({prefix + QStringLiteral(" Fallback"),
+                 yesNo(evaluation.value(QStringLiteral("fallbackUsed")).toBool())});
+    rows.append({prefix + QStringLiteral(" Fallback Reason"),
+                 textOrDash(evaluation.value(QStringLiteral("fallbackReason")))});
+    rows.append({prefix + QStringLiteral(" Evaluations"),
+                 QString::number(evaluationCount)});
+    rows.append({prefix + QStringLiteral(" Detections"),
+                 QString::number(detectionCount)});
+    rows.append({prefix + QStringLiteral(" Detection Rate"),
+                 QStringLiteral("%1 %").arg(detectionRate, 0, 'f', 1)});
+    rows.append({prefix + QStringLiteral(" Last Simulation Time"),
+                 QStringLiteral("%1 s").arg(
+                     status.value(QStringLiteral("lastEvaluationSimulationSeconds")).toDouble(),
+                     0,
+                     'f',
+                     2)});
+    rows.append({prefix + QStringLiteral(" Scan Index"),
+                 QString::number(status.value(QStringLiteral("lastEvaluationIndex")).toLongLong())});
+    rows.append({prefix + QStringLiteral(" Effective Pd"),
+                 optionalMetric(evaluation, "detectionProbability", 4)});
+    rows.append({prefix + QStringLiteral(" Deterministic Sample"),
+                 optionalMetric(evaluation, "deterministicSample", 4)});
+    rows.append({prefix + QStringLiteral(" Target Signature"),
+                 optionalMetric(evaluation, "targetSignature", 3)});
+    rows.append({prefix + QStringLiteral(" SNR Linear"),
+                 optionalMetric(evaluation, "signalToNoiseRatio", 3)});
+    rows.append({prefix + QStringLiteral(" SNR dB"),
+                 optionalMetric(evaluation, "signalToNoiseRatioDecibels", 2,
+                                QStringLiteral(" dB"))});
+    rows.append({prefix + QStringLiteral(" RF Range Loss"),
+                 optionalMetric(evaluation, "rangeLossDecibels", 2,
+                                QStringLiteral(" dB"))});
+    rows.append({prefix + QStringLiteral(" Echo Ratio"),
+                 optionalMetric(evaluation, "echoRatio", 6)});
+    rows.append({prefix + QStringLiteral(" Evaluation Latency"),
+                 optionalMetric(evaluation, "evaluationDurationMilliseconds", 3,
+                                QStringLiteral(" ms"))});
   }
 
   rows.append({QStringLiteral("Detected Contacts"), QString::number(contacts.size())});
@@ -429,6 +522,8 @@ void EntityDetailsDialog::populateSensorInformation() {
   } else {
     for (int index = 0; index < contacts.size(); ++index) {
       const QVariantMap contact = contacts.at(index).toMap();
+      const QVariantMap evaluation =
+          contact.value(QStringLiteral("evaluation")).toMap();
       const QString prefix = QStringLiteral("Contact %1").arg(index + 1);
       rows.append({prefix + QStringLiteral(" Target"), contact.value(QStringLiteral("targetEntityName")).toString()});
       rows.append({prefix + QStringLiteral(" Target ID"), contact.value(QStringLiteral("targetEntityId")).toString()});
@@ -442,6 +537,14 @@ void EntityDetailsDialog::populateSensorInformation() {
       rows.append({prefix + QStringLiteral(" Confidence"), QStringLiteral("%1 %").arg(contact.value(QStringLiteral("confidence")).toDouble() * 100.0, 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Last Seen"), QStringLiteral("%1 s").arg(contact.value(QStringLiteral("lastSeenSimulationSeconds")).toDouble(), 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Missed Detections"), QString::number(contact.value(QStringLiteral("missedDetectionCount")).toInt())});
+      rows.append({prefix + QStringLiteral(" Requested Model"), textOrDash(evaluation.value(QStringLiteral("requestedModelProviderId")))});
+      rows.append({prefix + QStringLiteral(" Provider Version"), textOrDash(evaluation.value(QStringLiteral("providerVersion")))});
+      rows.append({prefix + QStringLiteral(" Fallback"), yesNo(evaluation.value(QStringLiteral("fallbackUsed")).toBool())});
+      rows.append({prefix + QStringLiteral(" Effective Pd"), optionalMetric(evaluation, "detectionProbability", 4)});
+      rows.append({prefix + QStringLiteral(" Deterministic Sample"), optionalMetric(evaluation, "deterministicSample", 4)});
+      rows.append({prefix + QStringLiteral(" SNR dB"), optionalMetric(evaluation, "signalToNoiseRatioDecibels", 2, QStringLiteral(" dB"))});
+      rows.append({prefix + QStringLiteral(" RF Range Loss"), optionalMetric(evaluation, "rangeLossDecibels", 2, QStringLiteral(" dB"))});
+      rows.append({prefix + QStringLiteral(" Echo Ratio"), optionalMetric(evaluation, "echoRatio", 6)});
     }
   }
 
@@ -490,6 +593,7 @@ void EntityDetailsDialog::populateSubsystemInformation() {
 }
 
 void EntityDetailsDialog::setTableRows(const QList<QPair<QString, QString>>& rows) {
+  const int scrollPosition = _detailsTable->verticalScrollBar()->value();
   _detailsTable->setRowCount(rows.size());
   for (int row = 0; row < rows.size(); ++row) {
     auto* nameItem = new QTableWidgetItem(rows.at(row).first);
@@ -500,6 +604,8 @@ void EntityDetailsDialog::setTableRows(const QList<QPair<QString, QString>>& row
     _detailsTable->setItem(row, 1, valueItem);
   }
   _detailsTable->resizeRowsToContents();
+  _detailsTable->verticalScrollBar()->setValue(
+      qMin(scrollPosition, _detailsTable->verticalScrollBar()->maximum()));
 }
 
 void EntityDetailsDialog::updateSection(QListWidgetItem* current, QListWidgetItem*) {

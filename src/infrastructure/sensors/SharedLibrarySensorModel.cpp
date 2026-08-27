@@ -5,6 +5,22 @@
 #include "domain/EntityIdentity.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
+
+namespace {
+
+application::sensors::SensorEvaluationResult nativeFallback(
+    const application::sensors::SensorEvaluationContext& context,
+    const QString& reason) {
+  application::sensors::NativeSensorModel fallback;
+  application::sensors::SensorEvaluationResult result = fallback.evaluate(context);
+  result.fallbackUsed = true;
+  result.fallbackReason = reason;
+  return result;
+}
+
+} // namespace
 
 namespace infrastructure::sensors {
 
@@ -27,6 +43,8 @@ SharedLibrarySensorModel::SharedLibrarySensorModel(
       _library.resolve("qttest_sensor_model_abi_version"));
   const auto pluginModelId = reinterpret_cast<QttestSensorPluginModelIdFn>(
       _library.resolve("qttest_sensor_model_id"));
+  const auto pluginVersion = reinterpret_cast<QttestSensorPluginVersionFn>(
+      _library.resolve("qttest_sensor_model_version"));
   _evaluate = reinterpret_cast<QttestSensorPluginEvaluateFn>(
       _library.resolve("qttest_sensor_model_evaluate"));
   if (!abiVersion || !pluginModelId || !_evaluate) {
@@ -46,7 +64,11 @@ SharedLibrarySensorModel::SharedLibrarySensorModel(
     _errorString = QStringLiteral("Sensor plugin returned an empty model id");
     _library.unload();
     _evaluate = nullptr;
+    return;
   }
+  _providerVersion = pluginVersion && pluginVersion()
+      ? QString::fromUtf8(pluginVersion()).trimmed()
+      : QStringLiteral("ABI v1");
 }
 
 QString SharedLibrarySensorModel::modelId() const {
@@ -56,8 +78,11 @@ QString SharedLibrarySensorModel::modelId() const {
 application::sensors::SensorEvaluationResult SharedLibrarySensorModel::evaluate(
     const application::sensors::SensorEvaluationContext& context) const {
   if (!_evaluate) {
-    application::sensors::NativeSensorModel fallback;
-    return fallback.evaluate(context);
+    return nativeFallback(
+        context,
+        _errorString.trimmed().isEmpty()
+            ? QStringLiteral("Shared-library provider is unavailable")
+            : _errorString);
   }
 
   QttestSensorEvaluationInputV1 input{};
@@ -85,9 +110,15 @@ application::sensors::SensorEvaluationResult SharedLibrarySensorModel::evaluate(
 
   QttestSensorEvaluationOutputV1 output{};
   output.structSize = sizeof(output);
+  output.signalToNoiseRatio = std::numeric_limits<double>::quiet_NaN();
+  output.signalToNoiseRatioDecibels =
+      std::numeric_limits<double>::quiet_NaN();
+  output.rangeLossDecibels = std::numeric_limits<double>::quiet_NaN();
+  output.echoRatio = std::numeric_limits<double>::quiet_NaN();
   if (_evaluate(&input, &output) != 0 || output.status != 0) {
-    application::sensors::NativeSensorModel fallback;
-    return fallback.evaluate(context);
+    return nativeFallback(
+        context,
+        QStringLiteral("Shared-library provider evaluation failed"));
   }
 
   application::sensors::SensorEvaluationResult result;
@@ -102,6 +133,20 @@ application::sensors::SensorEvaluationResult SharedLibrarySensorModel::evaluate(
       context.evaluationIndex);
   result.detected = result.sample < result.probability;
   result.effectiveModelId = this->modelId();
+  result.providerVersion = _providerVersion;
+  result.targetSignature = input.targetSignature;
+  if (output.diagnosticsMask & QTTEST_SENSOR_DIAGNOSTIC_SNR) {
+    result.signalToNoiseRatio = output.signalToNoiseRatio;
+  }
+  if (output.diagnosticsMask & QTTEST_SENSOR_DIAGNOSTIC_SNR_DB) {
+    result.signalToNoiseRatioDecibels = output.signalToNoiseRatioDecibels;
+  }
+  if (output.diagnosticsMask & QTTEST_SENSOR_DIAGNOSTIC_RANGE_LOSS_DB) {
+    result.rangeLossDecibels = output.rangeLossDecibels;
+  }
+  if (output.diagnosticsMask & QTTEST_SENSOR_DIAGNOSTIC_ECHO_RATIO) {
+    result.echoRatio = output.echoRatio;
+  }
   return result;
 }
 

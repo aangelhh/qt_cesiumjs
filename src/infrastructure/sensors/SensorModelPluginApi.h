@@ -6,6 +6,11 @@
 // boundary free of Qt and C++ standard-library types.
 #define QTTEST_SENSOR_MODEL_PLUGIN_ABI_VERSION 1U
 
+#define QTTEST_SENSOR_DIAGNOSTIC_SNR              (1U << 0U)
+#define QTTEST_SENSOR_DIAGNOSTIC_SNR_DB           (1U << 1U)
+#define QTTEST_SENSOR_DIAGNOSTIC_RANGE_LOSS_DB    (1U << 2U)
+#define QTTEST_SENSOR_DIAGNOSTIC_ECHO_RATIO       (1U << 3U)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -38,10 +43,18 @@ typedef struct QttestSensorEvaluationOutputV1 {
   uint32_t structSize;
   int32_t status;
   double probability;
+  // Append-only diagnostics. A zero mask means the provider only supports
+  // the original V1 probability output.
+  uint32_t diagnosticsMask;
+  double signalToNoiseRatio;
+  double signalToNoiseRatioDecibels;
+  double rangeLossDecibels;
+  double echoRatio;
 } QttestSensorEvaluationOutputV1;
 
 typedef uint32_t (*QttestSensorPluginAbiVersionFn)(void);
 typedef const char* (*QttestSensorPluginModelIdFn)(void);
+typedef const char* (*QttestSensorPluginVersionFn)(void);
 typedef int (*QttestSensorPluginEvaluateFn)(
     const QttestSensorEvaluationInputV1*,
     QttestSensorEvaluationOutputV1*);
