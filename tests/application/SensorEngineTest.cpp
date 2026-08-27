@@ -4,6 +4,8 @@
 
 #include <QSet>
 
+#include <cmath>
+
 namespace {
 
 Entity makeEntity(
@@ -67,6 +69,9 @@ TEST(SensorEngine, ContactCarriesProducingSensorTypeAndSubType) {
   EXPECT_EQ(contact.evaluation.providerVersion, QStringLiteral("native-v1"));
   EXPECT_FALSE(contact.evaluation.fallbackUsed);
   EXPECT_DOUBLE_EQ(contact.evaluation.detectionProbability, 1.0);
+  EXPECT_GT(contact.evaluation.receivedPowerWatts, 0.0);
+  EXPECT_GT(contact.evaluation.noisePowerWatts, 0.0);
+  EXPECT_TRUE(std::isfinite(contact.evaluation.signalToNoiseRatio));
   EXPECT_GE(contact.evaluation.evaluationDurationMilliseconds, 0.0);
   ASSERT_EQ(entities.at(0).sensorRuntimeStatuses.size(), 1);
   EXPECT_EQ(entities.at(0).sensorRuntimeStatuses.front().evaluationCount, 1U);

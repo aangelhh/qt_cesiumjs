@@ -216,6 +216,11 @@ TEST(ScenarioSerializer, RoundTripSensorTypeMetadata) {
   sensor.sensorSubType = QStringLiteral("airborneRadar");
   sensor.probabilityOfDetection = 0.72;
   sensor.trackHoldSeconds = 8.0;
+  sensor.radarProfile.profileId = QStringLiteral("custom");
+  sensor.radarProfile.peakPowerWatts = 42000.0;
+  sensor.radarProfile.dutyCycle = 0.15;
+  sensor.radarProfile.frequencyHertz = 9.2e9;
+  sensor.radarProfile.probabilityFalseAlarm = 2.0e-7;
   entity.sensors.push_back(sensor);
 
   SensorContact contact;
@@ -256,6 +261,13 @@ TEST(ScenarioSerializer, RoundTripSensorTypeMetadata) {
   EXPECT_DOUBLE_EQ(
       loaded.entities.front().sensors.front().trackHoldSeconds,
       8.0);
+  const RadarProfile& loadedProfile =
+      loaded.entities.front().sensors.front().radarProfile;
+  EXPECT_EQ(loadedProfile.profileId, QStringLiteral("custom"));
+  EXPECT_DOUBLE_EQ(loadedProfile.peakPowerWatts, 42000.0);
+  EXPECT_DOUBLE_EQ(loadedProfile.dutyCycle, 0.15);
+  EXPECT_DOUBLE_EQ(loadedProfile.frequencyHertz, 9.2e9);
+  EXPECT_DOUBLE_EQ(loadedProfile.probabilityFalseAlarm, 2.0e-7);
   ASSERT_EQ(loaded.entities.front().sensorContacts.size(), 1);
   EXPECT_EQ(
       loaded.entities.front().sensorContacts.front().sensorModelProviderId,
@@ -304,6 +316,12 @@ TEST(ScenarioSerializer, LegacySensorWithoutSubTypeLoadsAsGeneric) {
   EXPECT_EQ(
       loaded.entities.front().sensors.front().sensorSubType,
       QStringLiteral("generic"));
+  EXPECT_EQ(
+      loaded.entities.front().sensors.front().radarProfile.profileId,
+      QStringLiteral("generic"));
+  EXPECT_DOUBLE_EQ(
+      loaded.entities.front().sensors.front().radarProfile.peakPowerWatts,
+      25000.0);
 }
 
 TEST(ScenarioSerializer, LegacyF16InfersCesiumModelAxes) {

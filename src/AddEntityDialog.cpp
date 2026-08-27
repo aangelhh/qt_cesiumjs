@@ -131,6 +131,7 @@ AddEntityDialog::AddEntityDialog(
       _addRadarCheck(new QCheckBox(QStringLiteral("Attach primary radar"), this)),
       _radarNameEdit(new QLineEdit(this)),
       _radarModelProviderCombo(new QComboBox(this)),
+      _radarProfileCombo(new QComboBox(this)),
       _headingSpin(new QDoubleSpinBox(this)),
       _enableDynamicsCheck(new QCheckBox(QStringLiteral("Enable flight dynamics"), this)),
       _dynamicsModeCombo(new QComboBox(this)),
@@ -151,6 +152,17 @@ AddEntityDialog::AddEntityDialog(
       _radarElevationWidthSpin(new QDoubleSpinBox(this)),
       _radarDetectionProbabilitySpin(new QDoubleSpinBox(this)),
       _radarMaxTracksSpin(new QSpinBox(this)),
+      _radarPeakPowerSpin(new QDoubleSpinBox(this)),
+      _radarDutyCycleSpin(new QDoubleSpinBox(this)),
+      _radarBandwidthSpin(new QDoubleSpinBox(this)),
+      _radarReceiverNoiseSpin(new QDoubleSpinBox(this)),
+      _radarFrequencySpin(new QDoubleSpinBox(this)),
+      _radarAntennaGainSpin(new QDoubleSpinBox(this)),
+      _radarBeamWidthSpin(new QDoubleSpinBox(this)),
+      _radarNumberPulsesSpin(new QSpinBox(this)),
+      _radarSystemLossSpin(new QDoubleSpinBox(this)),
+      _radarFalseAlarmProbabilitySpin(new QDoubleSpinBox(this)),
+      _radarRcsScaleSpin(new QDoubleSpinBox(this)),
       _radarSignatureSpin(new QDoubleSpinBox(this)),
       _thermalSignatureSpin(new QDoubleSpinBox(this)),
       _visualSignatureSpin(new QDoubleSpinBox(this)),
@@ -261,6 +273,51 @@ AddEntityDialog::AddEntityDialog(
   }
   _radarModelProviderCombo->setObjectName(
       QStringLiteral("radarModelProviderCombo"));
+
+  _radarProfileCombo->addItem(
+      QStringLiteral("Generic Radar"), QStringLiteral("generic"));
+  _radarProfileCombo->addItem(
+      QStringLiteral("Fighter AESA"), QStringLiteral("fighter-aesa"));
+  _radarProfileCombo->addItem(
+      QStringLiteral("Ground Surveillance"),
+      QStringLiteral("ground-surveillance"));
+  _radarProfileCombo->addItem(
+      QStringLiteral("Custom"), QStringLiteral("custom"));
+  _radarProfileCombo->setCurrentIndex(
+      _radarProfileCombo->findData(QStringLiteral("fighter-aesa")));
+
+  _radarPeakPowerSpin->setRange(0.1, 5000.0);
+  _radarPeakPowerSpin->setDecimals(1);
+  _radarPeakPowerSpin->setSuffix(QStringLiteral(" kW"));
+  _radarDutyCycleSpin->setRange(0.1, 100.0);
+  _radarDutyCycleSpin->setDecimals(1);
+  _radarDutyCycleSpin->setSuffix(QStringLiteral(" %"));
+  _radarBandwidthSpin->setRange(0.001, 1000.0);
+  _radarBandwidthSpin->setDecimals(3);
+  _radarBandwidthSpin->setSuffix(QStringLiteral(" MHz"));
+  _radarReceiverNoiseSpin->setRange(0.0, 30.0);
+  _radarReceiverNoiseSpin->setDecimals(2);
+  _radarReceiverNoiseSpin->setSuffix(QStringLiteral(" dB"));
+  _radarFrequencySpin->setRange(0.01, 100.0);
+  _radarFrequencySpin->setDecimals(3);
+  _radarFrequencySpin->setSuffix(QStringLiteral(" GHz"));
+  _radarAntennaGainSpin->setRange(-20.0, 100.0);
+  _radarAntennaGainSpin->setDecimals(2);
+  _radarAntennaGainSpin->setSuffix(QStringLiteral(" dB"));
+  _radarBeamWidthSpin->setRange(0.1, 360.0);
+  _radarBeamWidthSpin->setDecimals(1);
+  _radarBeamWidthSpin->setSuffix(QStringLiteral(" deg"));
+  _radarNumberPulsesSpin->setRange(1, 100000);
+  _radarSystemLossSpin->setRange(0.0, 100.0);
+  _radarSystemLossSpin->setDecimals(2);
+  _radarSystemLossSpin->setSuffix(QStringLiteral(" dB"));
+  _radarFalseAlarmProbabilitySpin->setRange(1.0e-12, 0.1);
+  _radarFalseAlarmProbabilitySpin->setDecimals(12);
+  _radarFalseAlarmProbabilitySpin->setSingleStep(1.0e-6);
+  _radarRcsScaleSpin->setRange(0.01, 1000.0);
+  _radarRcsScaleSpin->setDecimals(3);
+  _radarRcsScaleSpin->setSuffix(QStringLiteral(" m2"));
+  this->applyRadarProfilePreset(QStringLiteral("fighter-aesa"));
 
   _radarDetectionProbabilitySpin->setRange(0.0, 100.0);
   _radarDetectionProbabilitySpin->setDecimals(1);
@@ -412,15 +469,51 @@ AddEntityDialog::AddEntityDialog(
     this->syncModelFromDisSelection();
   });
   QObject::connect(_addRadarCheck, &QCheckBox::toggled, this, [this](bool enabled) {
-    _radarNameEdit->setEnabled(enabled);
-    _radarModelProviderCombo->setEnabled(enabled);
-    _radarRangeSpin->setEnabled(enabled);
-    _radarAzimuthSpin->setEnabled(enabled);
-    _radarElevationCenterSpin->setEnabled(enabled);
-    _radarElevationWidthSpin->setEnabled(enabled);
-    _radarDetectionProbabilitySpin->setEnabled(enabled);
-    _radarMaxTracksSpin->setEnabled(enabled);
+    Q_UNUSED(enabled)
+    this->syncRadarControls();
   });
+  QObject::connect(
+      _radarProfileCombo,
+      &QComboBox::currentIndexChanged,
+      this,
+      [this](int) {
+        this->applyRadarProfilePreset(
+            _radarProfileCombo->currentData().toString());
+      });
+  const auto markRadarProfileCustom = [this]() {
+    if (_applyingRadarProfilePreset) {
+      return;
+    }
+    const int customIndex =
+        _radarProfileCombo->findData(QStringLiteral("custom"));
+    if (customIndex >= 0 && _radarProfileCombo->currentIndex() != customIndex) {
+      _radarProfileCombo->setCurrentIndex(customIndex);
+    }
+  };
+  const QList<QDoubleSpinBox*> radarProfileDoubleSpins{
+      _radarPeakPowerSpin,
+      _radarDutyCycleSpin,
+      _radarBandwidthSpin,
+      _radarReceiverNoiseSpin,
+      _radarFrequencySpin,
+      _radarAntennaGainSpin,
+      _radarBeamWidthSpin,
+      _radarSystemLossSpin,
+      _radarFalseAlarmProbabilitySpin,
+      _radarRcsScaleSpin,
+  };
+  for (QDoubleSpinBox* spin : radarProfileDoubleSpins) {
+    QObject::connect(
+        spin,
+        &QDoubleSpinBox::valueChanged,
+        this,
+        [markRadarProfileCustom](double) { markRadarProfileCustom(); });
+  }
+  QObject::connect(
+      _radarNumberPulsesSpin,
+      &QSpinBox::valueChanged,
+      this,
+      [markRadarProfileCustom](int) { markRadarProfileCustom(); });
   QObject::connect(_enableDynamicsCheck, &QCheckBox::toggled, this, [this](bool enabled) {
     Q_UNUSED(enabled)
     this->syncDynamicsControls();
@@ -478,12 +571,24 @@ AddEntityDialog::AddEntityDialog(
   formLayout->addRow(QStringLiteral("Sensor"), _addRadarCheck);
   formLayout->addRow(QStringLiteral("Radar Name"), _radarNameEdit);
   formLayout->addRow(QStringLiteral("Radar Model Provider"), _radarModelProviderCombo);
+  formLayout->addRow(QStringLiteral("Radar Profile"), _radarProfileCombo);
   formLayout->addRow(QStringLiteral("Radar Range"), _radarRangeSpin);
   formLayout->addRow(QStringLiteral("Radar Azimuth"), _radarAzimuthSpin);
   formLayout->addRow(QStringLiteral("Elevation Center"), _radarElevationCenterSpin);
   formLayout->addRow(QStringLiteral("Elevation Width"), _radarElevationWidthSpin);
   formLayout->addRow(QStringLiteral("Radar Detection Probability"), _radarDetectionProbabilitySpin);
   formLayout->addRow(QStringLiteral("Radar Max Tracks"), _radarMaxTracksSpin);
+  formLayout->addRow(QStringLiteral("Radar Peak Power"), _radarPeakPowerSpin);
+  formLayout->addRow(QStringLiteral("Radar Duty Cycle"), _radarDutyCycleSpin);
+  formLayout->addRow(QStringLiteral("Radar Bandwidth"), _radarBandwidthSpin);
+  formLayout->addRow(QStringLiteral("Receiver Noise"), _radarReceiverNoiseSpin);
+  formLayout->addRow(QStringLiteral("Radar Frequency"), _radarFrequencySpin);
+  formLayout->addRow(QStringLiteral("Antenna Gain"), _radarAntennaGainSpin);
+  formLayout->addRow(QStringLiteral("Beam Width"), _radarBeamWidthSpin);
+  formLayout->addRow(QStringLiteral("Pulses per Evaluation"), _radarNumberPulsesSpin);
+  formLayout->addRow(QStringLiteral("System Loss"), _radarSystemLossSpin);
+  formLayout->addRow(QStringLiteral("Probability False Alarm"), _radarFalseAlarmProbabilitySpin);
+  formLayout->addRow(QStringLiteral("RCS Scale"), _radarRcsScaleSpin);
   formLayout->addRow(QStringLiteral("Radar Signature"), _radarSignatureSpin);
   formLayout->addRow(QStringLiteral("Thermal Signature"), _thermalSignatureSpin);
   formLayout->addRow(QStringLiteral("Visual Signature"), _visualSignatureSpin);
@@ -498,14 +603,7 @@ AddEntityDialog::AddEntityDialog(
     warningLabel->setWordWrap(true);
     formLayout->addRow(warningLabel);
   }
-  _radarNameEdit->setEnabled(_addRadarCheck->isChecked());
-  _radarModelProviderCombo->setEnabled(_addRadarCheck->isChecked());
-  _radarRangeSpin->setEnabled(_addRadarCheck->isChecked());
-  _radarAzimuthSpin->setEnabled(_addRadarCheck->isChecked());
-  _radarElevationCenterSpin->setEnabled(_addRadarCheck->isChecked());
-  _radarElevationWidthSpin->setEnabled(_addRadarCheck->isChecked());
-  _radarDetectionProbabilitySpin->setEnabled(_addRadarCheck->isChecked());
-  _radarMaxTracksSpin->setEnabled(_addRadarCheck->isChecked());
+  this->syncRadarControls();
   this->syncDynamicsControls();
   this->syncFuelControls();
   this->syncWeaponControls();
@@ -1009,6 +1107,80 @@ void AddEntityDialog::syncFuelControls() {
   _initialFuelSpin->setValue(qMin(initialKilograms, capacityKilograms));
 }
 
+void AddEntityDialog::syncRadarControls() {
+  const bool enabled = _addRadarCheck->isChecked();
+  const QList<QWidget*> controls{
+      _radarNameEdit,
+      _radarModelProviderCombo,
+      _radarProfileCombo,
+      _radarRangeSpin,
+      _radarAzimuthSpin,
+      _radarElevationCenterSpin,
+      _radarElevationWidthSpin,
+      _radarDetectionProbabilitySpin,
+      _radarMaxTracksSpin,
+      _radarPeakPowerSpin,
+      _radarDutyCycleSpin,
+      _radarBandwidthSpin,
+      _radarReceiverNoiseSpin,
+      _radarFrequencySpin,
+      _radarAntennaGainSpin,
+      _radarBeamWidthSpin,
+      _radarNumberPulsesSpin,
+      _radarSystemLossSpin,
+      _radarFalseAlarmProbabilitySpin,
+      _radarRcsScaleSpin,
+  };
+  for (QWidget* control : controls) {
+    control->setEnabled(enabled);
+  }
+}
+
+void AddEntityDialog::applyRadarProfilePreset(const QString& profileId) {
+  if (profileId == QStringLiteral("custom")) {
+    return;
+  }
+
+  RadarProfile profile;
+  if (profileId == QStringLiteral("fighter-aesa")) {
+    profile.profileId = profileId;
+  } else if (profileId == QStringLiteral("ground-surveillance")) {
+    profile.profileId = profileId;
+    profile.peakPowerWatts = 100000.0;
+    profile.dutyCycle = 0.2;
+    profile.bandwidthHertz = 2.0e6;
+    profile.receiverNoiseDecibels = 4.0;
+    profile.frequencyHertz = 3.0e9;
+    profile.antennaGainDecibels = 38.0;
+    profile.beamWidthDegrees = 360.0;
+    profile.numberPulses = 32;
+    profile.systemLossDecibels = 8.0;
+  } else {
+    profile.profileId = QStringLiteral("generic");
+    profile.peakPowerWatts = 20000.0;
+    profile.dutyCycle = 0.08;
+    profile.receiverNoiseDecibels = 4.0;
+    profile.antennaGainDecibels = 32.0;
+    profile.numberPulses = 8;
+    profile.systemLossDecibels = 8.0;
+  }
+
+  _applyingRadarProfilePreset = true;
+  _radarPeakPowerSpin->setValue(profile.peakPowerWatts / 1000.0);
+  _radarDutyCycleSpin->setValue(profile.dutyCycle * 100.0);
+  _radarBandwidthSpin->setValue(profile.bandwidthHertz / 1.0e6);
+  _radarReceiverNoiseSpin->setValue(profile.receiverNoiseDecibels);
+  _radarFrequencySpin->setValue(profile.frequencyHertz / 1.0e9);
+  _radarAntennaGainSpin->setValue(profile.antennaGainDecibels);
+  _radarBeamWidthSpin->setValue(profile.beamWidthDegrees);
+  _radarNumberPulsesSpin->setValue(profile.numberPulses);
+  _radarSystemLossSpin->setValue(profile.systemLossDecibels);
+  _radarFalseAlarmProbabilitySpin->setValue(
+      profile.probabilityFalseAlarm);
+  _radarRcsScaleSpin->setValue(profile.rcsScaleSquareMeters);
+  _applyingRadarProfilePreset = false;
+}
+
 Entity AddEntityDialog::entity() const {
   Entity entity;
   entity.name = _nameEdit->text().trimmed();
@@ -1120,6 +1292,27 @@ Entity AddEntityDialog::entity() const {
     radar.probabilityOfDetection =
         _radarDetectionProbabilitySpin->value() / 100.0;
     radar.maxTracks = _radarMaxTracksSpin->value();
+    radar.radarProfile.profileId =
+        _radarProfileCombo->currentData().toString();
+    radar.radarProfile.peakPowerWatts =
+        _radarPeakPowerSpin->value() * 1000.0;
+    radar.radarProfile.dutyCycle =
+        _radarDutyCycleSpin->value() / 100.0;
+    radar.radarProfile.bandwidthHertz =
+        _radarBandwidthSpin->value() * 1.0e6;
+    radar.radarProfile.receiverNoiseDecibels =
+        _radarReceiverNoiseSpin->value();
+    radar.radarProfile.frequencyHertz =
+        _radarFrequencySpin->value() * 1.0e9;
+    radar.radarProfile.antennaGainDecibels =
+        _radarAntennaGainSpin->value();
+    radar.radarProfile.beamWidthDegrees = _radarBeamWidthSpin->value();
+    radar.radarProfile.numberPulses = _radarNumberPulsesSpin->value();
+    radar.radarProfile.systemLossDecibels =
+        _radarSystemLossSpin->value();
+    radar.radarProfile.probabilityFalseAlarm =
+        _radarFalseAlarmProbabilitySpin->value();
+    radar.radarProfile.rcsScaleSquareMeters = _radarRcsScaleSpin->value();
     radar.canDetectAir = true;
     radar.canDetectGround = false;
     radar.canDetectSurface = false;

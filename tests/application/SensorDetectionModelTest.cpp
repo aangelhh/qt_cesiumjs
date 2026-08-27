@@ -88,6 +88,27 @@ TEST(SensorDetectionModel, ProbabilityFallsWithRangeAndTargetSignature) {
   EXPECT_LE(nearProbability, 1.0);
 }
 
+TEST(SensorDetectionModel, RadarProfileProducesFiniteSignalDiagnostics) {
+  SensorDefinition sensor = makeProbabilisticRadar();
+  sensor.radarProfile.peakPowerWatts = 40000.0;
+  sensor.radarProfile.frequencyHertz = 9.5e9;
+  sensor.radarProfile.bandwidthHertz = 2.0e6;
+  sensor.radarProfile.antennaGainDecibels = 38.0;
+  Entity target = makeTarget();
+
+  const application::RadarSignalMetrics nearMetrics =
+      application::SensorDetectionModel::radarSignalMetrics(
+          sensor, target, 25000.0);
+  const application::RadarSignalMetrics farMetrics =
+      application::SensorDetectionModel::radarSignalMetrics(
+          sensor, target, 50000.0);
+
+  EXPECT_GT(nearMetrics.receivedPowerWatts, 0.0);
+  EXPECT_GT(nearMetrics.noisePowerWatts, 0.0);
+  EXPECT_GT(nearMetrics.signalToNoiseRatio, farMetrics.signalToNoiseRatio);
+  EXPECT_TRUE(std::isfinite(nearMetrics.signalToNoiseRatioDecibels));
+}
+
 TEST(SensorDetectionModel, SamplingIsStableForSameScenarioInputs) {
   const double first = application::SensorDetectionModel::deterministicSample(
       1234U,

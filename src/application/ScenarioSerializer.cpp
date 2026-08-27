@@ -74,6 +74,75 @@ WeaponInventoryItem weaponInventoryItemFromJson(const QJsonObject& object) {
 
 // ── Sensor ────────────────────────────────────────────────────────────────────
 
+QJsonObject toJson(const RadarProfile& profile) {
+  return {
+      {QStringLiteral("profileId"), profile.profileId},
+      {QStringLiteral("peakPowerWatts"), profile.peakPowerWatts},
+      {QStringLiteral("dutyCycle"), profile.dutyCycle},
+      {QStringLiteral("bandwidthHertz"), profile.bandwidthHertz},
+      {QStringLiteral("receiverNoiseDecibels"), profile.receiverNoiseDecibels},
+      {QStringLiteral("frequencyHertz"), profile.frequencyHertz},
+      {QStringLiteral("antennaGainDecibels"), profile.antennaGainDecibels},
+      {QStringLiteral("beamWidthDegrees"), profile.beamWidthDegrees},
+      {QStringLiteral("numberPulses"), profile.numberPulses},
+      {QStringLiteral("systemLossDecibels"), profile.systemLossDecibels},
+      {QStringLiteral("probabilityFalseAlarm"), profile.probabilityFalseAlarm},
+      {QStringLiteral("rcsScaleSquareMeters"), profile.rcsScaleSquareMeters},
+  };
+}
+
+RadarProfile radarProfileFromJson(const QJsonObject& object) {
+  RadarProfile profile;
+  profile.profileId = object.value(QStringLiteral("profileId"))
+      .toString(profile.profileId);
+  profile.peakPowerWatts = qMax(
+      0.0,
+      object.value(QStringLiteral("peakPowerWatts"))
+          .toDouble(profile.peakPowerWatts));
+  profile.dutyCycle = qBound(
+      0.0,
+      object.value(QStringLiteral("dutyCycle")).toDouble(profile.dutyCycle),
+      1.0);
+  profile.bandwidthHertz = qMax(
+      1.0,
+      object.value(QStringLiteral("bandwidthHertz"))
+          .toDouble(profile.bandwidthHertz));
+  profile.receiverNoiseDecibels = qMax(
+      0.0,
+      object.value(QStringLiteral("receiverNoiseDecibels"))
+          .toDouble(profile.receiverNoiseDecibels));
+  profile.frequencyHertz = qMax(
+      1.0,
+      object.value(QStringLiteral("frequencyHertz"))
+          .toDouble(profile.frequencyHertz));
+  profile.antennaGainDecibels = object.value(
+      QStringLiteral("antennaGainDecibels"))
+      .toDouble(profile.antennaGainDecibels);
+  profile.beamWidthDegrees = qBound(
+      0.1,
+      object.value(QStringLiteral("beamWidthDegrees"))
+          .toDouble(profile.beamWidthDegrees),
+      360.0);
+  profile.numberPulses = qMax(
+      1,
+      object.value(QStringLiteral("numberPulses"))
+          .toInt(profile.numberPulses));
+  profile.systemLossDecibels = qMax(
+      0.0,
+      object.value(QStringLiteral("systemLossDecibels"))
+          .toDouble(profile.systemLossDecibels));
+  profile.probabilityFalseAlarm = qBound(
+      1.0e-12,
+      object.value(QStringLiteral("probabilityFalseAlarm"))
+          .toDouble(profile.probabilityFalseAlarm),
+      1.0);
+  profile.rcsScaleSquareMeters = qMax(
+      0.01,
+      object.value(QStringLiteral("rcsScaleSquareMeters"))
+          .toDouble(profile.rcsScaleSquareMeters));
+  return profile;
+}
+
 QJsonObject toJson(const SensorDefinition& sensor) {
   return {
       {QStringLiteral("id"), sensor.id},
@@ -98,6 +167,7 @@ QJsonObject toJson(const SensorDefinition& sensor) {
       {QStringLiteral("terrainMaskingEnabled"), sensor.terrainMaskingEnabled},
       {QStringLiteral("probabilityOfDetection"), sensor.probabilityOfDetection},
       {QStringLiteral("trackHoldSeconds"), sensor.trackHoldSeconds},
+      {QStringLiteral("radarProfile"), toJson(sensor.radarProfile)},
   };
 }
 
@@ -129,6 +199,10 @@ SensorDefinition sensorFromJson(const QJsonObject& object) {
   sensor.trackHoldSeconds = qMax(
       0.0,
       object.value(QStringLiteral("trackHoldSeconds")).toDouble(10.0));
+  if (object.value(QStringLiteral("radarProfile")).isObject()) {
+    sensor.radarProfile = radarProfileFromJson(
+        object.value(QStringLiteral("radarProfile")).toObject());
+  }
   return sensor;
 }
 

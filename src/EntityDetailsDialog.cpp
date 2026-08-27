@@ -73,6 +73,21 @@ QString optionalMetric(
       suffix);
 }
 
+QString optionalScientificMetric(
+    const QVariantMap& values,
+    const char* key,
+    int precision,
+    const QString& suffix = {}) {
+  bool ok = false;
+  const double value = values.value(QString::fromLatin1(key)).toDouble(&ok);
+  if (!ok || !std::isfinite(value)) {
+    return QStringLiteral("-");
+  }
+  return QStringLiteral("%1%2").arg(
+      QString::number(value, 'e', precision),
+      suffix);
+}
+
 int summaryIntValue(const QVariantMap& summary, const char* key) {
   bool ok = false;
   const int value = summary.value(QString::fromLatin1(key)).toString().toInt(&ok);
@@ -425,6 +440,8 @@ void EntityDetailsDialog::populateSensorInformation() {
   } else {
     for (int index = 0; index < sensors.size(); ++index) {
       const QVariantMap sensor = sensors.at(index).toMap();
+      const QVariantMap profile =
+          sensor.value(QStringLiteral("radarProfile")).toMap();
       const QString prefix = QStringLiteral("Sensor %1").arg(index + 1);
       rows.append({prefix + QStringLiteral(" Name"), sensor.value(QStringLiteral("name")).toString()});
       rows.append({prefix + QStringLiteral(" Model Provider"), sensor.value(QStringLiteral("modelProviderId"), QStringLiteral("native")).toString()});
@@ -447,6 +464,53 @@ void EntityDetailsDialog::populateSensorInformation() {
       rows.append({prefix + QStringLiteral(" Detect Ground"), yesNo(sensor.value(QStringLiteral("canDetectGround")).toBool())});
       rows.append({prefix + QStringLiteral(" Detect Surface"), yesNo(sensor.value(QStringLiteral("canDetectSurface")).toBool())});
       rows.append({prefix + QStringLiteral(" Terrain Masking"), yesNo(sensor.value(QStringLiteral("terrainMaskingEnabled")).toBool())});
+      rows.append({prefix + QStringLiteral(" Radar Profile"),
+                   textOrDash(profile.value(QStringLiteral("profileId")))});
+      rows.append({prefix + QStringLiteral(" Peak Power"),
+                   optionalMetric(profile, "peakPowerWatts", 0,
+                                  QStringLiteral(" W"))});
+      rows.append({prefix + QStringLiteral(" Duty Cycle"),
+                   QStringLiteral("%1 %").arg(
+                       profile.value(QStringLiteral("dutyCycle")).toDouble() *
+                           100.0,
+                       0,
+                       'f',
+                       1)});
+      rows.append({prefix + QStringLiteral(" Bandwidth"),
+                   QStringLiteral("%1 MHz").arg(
+                       profile.value(QStringLiteral("bandwidthHertz")).toDouble() /
+                           1.0e6,
+                       0,
+                       'f',
+                       3)});
+      rows.append({prefix + QStringLiteral(" Frequency"),
+                   QStringLiteral("%1 GHz").arg(
+                       profile.value(QStringLiteral("frequencyHertz")).toDouble() /
+                           1.0e9,
+                       0,
+                       'f',
+                       3)});
+      rows.append({prefix + QStringLiteral(" Receiver Noise"),
+                   optionalMetric(profile, "receiverNoiseDecibels", 2,
+                                  QStringLiteral(" dB"))});
+      rows.append({prefix + QStringLiteral(" Antenna Gain"),
+                   optionalMetric(profile, "antennaGainDecibels", 2,
+                                  QStringLiteral(" dB"))});
+      rows.append({prefix + QStringLiteral(" Beam Width"),
+                   optionalMetric(profile, "beamWidthDegrees", 1,
+                                  QStringLiteral(" deg"))});
+      rows.append({prefix + QStringLiteral(" Pulses"),
+                   QString::number(
+                       profile.value(QStringLiteral("numberPulses")).toInt())});
+      rows.append({prefix + QStringLiteral(" System Loss"),
+                   optionalMetric(profile, "systemLossDecibels", 2,
+                                  QStringLiteral(" dB"))});
+      rows.append({prefix + QStringLiteral(" Probability False Alarm"),
+                   optionalScientificMetric(
+                       profile, "probabilityFalseAlarm", 3)});
+      rows.append({prefix + QStringLiteral(" RCS Scale"),
+                   optionalMetric(profile, "rcsScaleSquareMeters", 3,
+                                  QStringLiteral(" m2"))});
     }
   }
 
@@ -511,6 +575,14 @@ void EntityDetailsDialog::populateSensorInformation() {
                                 QStringLiteral(" dB"))});
     rows.append({prefix + QStringLiteral(" Echo Ratio"),
                  optionalMetric(evaluation, "echoRatio", 6)});
+    rows.append({prefix + QStringLiteral(" Received Power"),
+                 optionalScientificMetric(
+                     evaluation, "receivedPowerWatts", 3,
+                     QStringLiteral(" W"))});
+    rows.append({prefix + QStringLiteral(" Noise Power"),
+                 optionalScientificMetric(
+                     evaluation, "noisePowerWatts", 3,
+                     QStringLiteral(" W"))});
     rows.append({prefix + QStringLiteral(" Evaluation Latency"),
                  optionalMetric(evaluation, "evaluationDurationMilliseconds", 3,
                                 QStringLiteral(" ms"))});
@@ -545,6 +617,8 @@ void EntityDetailsDialog::populateSensorInformation() {
       rows.append({prefix + QStringLiteral(" SNR dB"), optionalMetric(evaluation, "signalToNoiseRatioDecibels", 2, QStringLiteral(" dB"))});
       rows.append({prefix + QStringLiteral(" RF Range Loss"), optionalMetric(evaluation, "rangeLossDecibels", 2, QStringLiteral(" dB"))});
       rows.append({prefix + QStringLiteral(" Echo Ratio"), optionalMetric(evaluation, "echoRatio", 6)});
+      rows.append({prefix + QStringLiteral(" Received Power"), optionalScientificMetric(evaluation, "receivedPowerWatts", 3, QStringLiteral(" W"))});
+      rows.append({prefix + QStringLiteral(" Noise Power"), optionalScientificMetric(evaluation, "noisePowerWatts", 3, QStringLiteral(" W"))});
     }
   }
 

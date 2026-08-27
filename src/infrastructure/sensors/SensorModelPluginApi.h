@@ -10,6 +10,8 @@
 #define QTTEST_SENSOR_DIAGNOSTIC_SNR_DB           (1U << 1U)
 #define QTTEST_SENSOR_DIAGNOSTIC_RANGE_LOSS_DB    (1U << 2U)
 #define QTTEST_SENSOR_DIAGNOSTIC_ECHO_RATIO       (1U << 3U)
+#define QTTEST_SENSOR_DIAGNOSTIC_RECEIVED_POWER_W (1U << 4U)
+#define QTTEST_SENSOR_DIAGNOSTIC_NOISE_POWER_W    (1U << 5U)
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,6 +39,17 @@ typedef struct QttestSensorEvaluationInputV1 {
   // layout can ignore these fields by checking structSize.
   double sensorMinRangeMeters;
   double sensorMaxRangeMeters;
+  double radarPeakPowerWatts;
+  double radarDutyCycle;
+  double radarBandwidthHertz;
+  double radarReceiverNoiseDecibels;
+  double radarFrequencyHertz;
+  double radarAntennaGainDecibels;
+  double radarBeamWidthDegrees;
+  uint32_t radarNumberPulses;
+  double radarSystemLossDecibels;
+  double radarProbabilityFalseAlarm;
+  double radarRcsScaleSquareMeters;
 } QttestSensorEvaluationInputV1;
 
 typedef struct QttestSensorEvaluationOutputV1 {
@@ -50,6 +63,8 @@ typedef struct QttestSensorEvaluationOutputV1 {
   double signalToNoiseRatioDecibels;
   double rangeLossDecibels;
   double echoRatio;
+  double receivedPowerWatts;
+  double noisePowerWatts;
 } QttestSensorEvaluationOutputV1;
 
 typedef uint32_t (*QttestSensorPluginAbiVersionFn)(void);

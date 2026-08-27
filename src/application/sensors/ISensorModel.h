@@ -33,6 +33,8 @@ struct SensorEvaluationResult {
       std::numeric_limits<double>::quiet_NaN();
   double rangeLossDecibels = std::numeric_limits<double>::quiet_NaN();
   double echoRatio = std::numeric_limits<double>::quiet_NaN();
+  double receivedPowerWatts = std::numeric_limits<double>::quiet_NaN();
+  double noisePowerWatts = std::numeric_limits<double>::quiet_NaN();
   double evaluationDurationMilliseconds = 0.0;
 };
 

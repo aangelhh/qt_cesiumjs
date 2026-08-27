@@ -206,6 +206,8 @@ SensorEvaluationDiagnostics makeEvaluationDiagnostics(
       evaluation.signalToNoiseRatioDecibels;
   diagnostics.rangeLossDecibels = evaluation.rangeLossDecibels;
   diagnostics.echoRatio = evaluation.echoRatio;
+  diagnostics.receivedPowerWatts = evaluation.receivedPowerWatts;
+  diagnostics.noisePowerWatts = evaluation.noisePowerWatts;
   diagnostics.evaluationDurationMilliseconds =
       evaluation.evaluationDurationMilliseconds;
   return diagnostics;

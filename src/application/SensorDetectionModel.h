@@ -7,6 +7,13 @@
 
 namespace application {
 
+struct RadarSignalMetrics {
+  double receivedPowerWatts = 0.0;
+  double noisePowerWatts = 0.0;
+  double signalToNoiseRatio = 0.0;
+  double signalToNoiseRatioDecibels = 0.0;
+};
+
 class SensorDetectionModel {
 public:
   static double targetSignature(
@@ -14,6 +21,11 @@ public:
       const Entity& target);
 
   static double detectionProbability(
+      const SensorDefinition& sensor,
+      const Entity& target,
+      double rangeMeters);
+
+  static RadarSignalMetrics radarSignalMetrics(
       const SensorDefinition& sensor,
       const Entity& target,
       double rangeMeters);

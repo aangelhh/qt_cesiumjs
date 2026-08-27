@@ -20,6 +20,21 @@ enum class SensorSubType {
   Unknown,
 };
 
+struct RadarProfile {
+  QString profileId = QStringLiteral("generic");
+  double peakPowerWatts = 25000.0;
+  double dutyCycle = 0.1;
+  double bandwidthHertz = 1.0e6;
+  double receiverNoiseDecibels = 3.0;
+  double frequencyHertz = 10.0e9;
+  double antennaGainDecibels = 35.0;
+  double beamWidthDegrees = 120.0;
+  int numberPulses = 16;
+  double systemLossDecibels = 6.0;
+  double probabilityFalseAlarm = 1.0e-6;
+  double rcsScaleSquareMeters = 1.0;
+};
+
 struct SensorDefinition {
   QString id;
   QString name;
@@ -43,6 +58,7 @@ struct SensorDefinition {
   bool terrainMaskingEnabled = false;
   double probabilityOfDetection = 1.0;
   double trackHoldSeconds = 10.0;
+  RadarProfile radarProfile;
 };
 
 struct SensorEvaluationDiagnostics {
@@ -59,6 +75,8 @@ struct SensorEvaluationDiagnostics {
       std::numeric_limits<double>::quiet_NaN();
   double rangeLossDecibels = std::numeric_limits<double>::quiet_NaN();
   double echoRatio = std::numeric_limits<double>::quiet_NaN();
+  double receivedPowerWatts = std::numeric_limits<double>::quiet_NaN();
+  double noisePowerWatts = std::numeric_limits<double>::quiet_NaN();
   double evaluationDurationMilliseconds = 0.0;
 };
 

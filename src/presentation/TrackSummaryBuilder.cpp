@@ -36,6 +36,9 @@ QVariantMap sensorEvaluationSummary(
       {QStringLiteral("rangeLossDecibels"),
        diagnostics.rangeLossDecibels},
       {QStringLiteral("echoRatio"), diagnostics.echoRatio},
+      {QStringLiteral("receivedPowerWatts"),
+       diagnostics.receivedPowerWatts},
+      {QStringLiteral("noisePowerWatts"), diagnostics.noisePowerWatts},
       {QStringLiteral("evaluationDurationMilliseconds"),
        diagnostics.evaluationDurationMilliseconds},
   };
@@ -393,6 +396,7 @@ QVariantMap makeEntityTrackSummary(
 
   QVariantList sensors;
   for (const SensorDefinition& sensor : entity.sensors) {
+    const RadarProfile& profile = sensor.radarProfile;
     sensors.push_back(QVariantMap{
         {QStringLiteral("id"),                    sensor.id},
         {QStringLiteral("name"),                  sensor.name},
@@ -416,6 +420,20 @@ QVariantMap makeEntityTrackSummary(
         {QStringLiteral("canDetectGround"),        sensor.canDetectGround},
         {QStringLiteral("canDetectSurface"),       sensor.canDetectSurface},
         {QStringLiteral("terrainMaskingEnabled"),  sensor.terrainMaskingEnabled},
+        {QStringLiteral("radarProfile"), QVariantMap{
+             {QStringLiteral("profileId"), profile.profileId},
+             {QStringLiteral("peakPowerWatts"), profile.peakPowerWatts},
+             {QStringLiteral("dutyCycle"), profile.dutyCycle},
+             {QStringLiteral("bandwidthHertz"), profile.bandwidthHertz},
+             {QStringLiteral("receiverNoiseDecibels"), profile.receiverNoiseDecibels},
+             {QStringLiteral("frequencyHertz"), profile.frequencyHertz},
+             {QStringLiteral("antennaGainDecibels"), profile.antennaGainDecibels},
+             {QStringLiteral("beamWidthDegrees"), profile.beamWidthDegrees},
+             {QStringLiteral("numberPulses"), profile.numberPulses},
+             {QStringLiteral("systemLossDecibels"), profile.systemLossDecibels},
+             {QStringLiteral("probabilityFalseAlarm"), profile.probabilityFalseAlarm},
+             {QStringLiteral("rcsScaleSquareMeters"), profile.rcsScaleSquareMeters},
+         }},
     });
   }
   summary.insert(QStringLiteral("sensors"), sensors);

@@ -44,6 +44,26 @@ QString StoneSoupSensorModel::modelId() const {
 
 application::sensors::SensorEvaluationResult StoneSoupSensorModel::evaluate(
     const application::sensors::SensorEvaluationContext& context) const {
+  QJsonObject options = QJsonObject::fromVariantMap(_configuration.options);
+  const RadarProfile& profile = context.sensor.radarProfile;
+  options.insert(QStringLiteral("profileId"), profile.profileId);
+  options.insert(QStringLiteral("peakPowerWatts"), profile.peakPowerWatts);
+  options.insert(QStringLiteral("dutyCycle"), profile.dutyCycle);
+  options.insert(QStringLiteral("bandwidthHz"), profile.bandwidthHertz);
+  options.insert(
+      QStringLiteral("receiverNoiseDb"), profile.receiverNoiseDecibels);
+  options.insert(QStringLiteral("frequencyHz"), profile.frequencyHertz);
+  options.insert(QStringLiteral("antennaGainDb"), profile.antennaGainDecibels);
+  options.insert(QStringLiteral("beamWidthDegrees"), profile.beamWidthDegrees);
+  options.insert(QStringLiteral("numberPulses"), profile.numberPulses);
+  options.insert(QStringLiteral("lossDb"), profile.systemLossDecibels);
+  options.insert(
+      QStringLiteral("probabilityFalseAlarm"),
+      profile.probabilityFalseAlarm);
+  options.insert(
+      QStringLiteral("rcsScaleSquareMeters"),
+      profile.rcsScaleSquareMeters);
+
   QJsonObject request;
   request.insert(QStringLiteral("operation"), QStringLiteral("evaluate"));
   request.insert(
@@ -60,7 +80,7 @@ application::sensors::SensorEvaluationResult StoneSoupSensorModel::evaluate(
           context.target));
   request.insert(
       QStringLiteral("options"),
-      QJsonObject::fromVariantMap(_configuration.options));
+      options);
 
   QByteArray responseBytes;
   {
@@ -114,6 +134,16 @@ application::sensors::SensorEvaluationResult StoneSoupSensorModel::evaluate(
       response.value(QStringLiteral("snr")).toDouble();
   if (std::isfinite(signalToNoiseRatio) && signalToNoiseRatio >= 0.0) {
     result.signalToNoiseRatio = signalToNoiseRatio;
+    constexpr double kBoltzmannConstant = 1.380649e-23;
+    constexpr double kReferenceTemperatureKelvin = 290.0;
+    const double noiseFactor = std::pow(
+        10.0,
+        std::max(0.0, profile.receiverNoiseDecibels) / 10.0);
+    result.noisePowerWatts =
+        kBoltzmannConstant * kReferenceTemperatureKelvin *
+        std::max(1.0, profile.bandwidthHertz) * noiseFactor;
+    result.receivedPowerWatts =
+        signalToNoiseRatio * result.noisePowerWatts;
     if (signalToNoiseRatio > 0.0) {
       result.signalToNoiseRatioDecibels =
           10.0 * std::log10(signalToNoiseRatio);

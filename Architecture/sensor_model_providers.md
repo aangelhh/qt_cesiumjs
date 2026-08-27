@@ -56,6 +56,26 @@ and detection outcome. Providers can also return optional diagnostics such as
 provider version, target signature, SNR, RF range loss, and echo ratio.
 Providers must not mutate entities or advance the global clock.
 
+## Configurable Radar Profiles
+
+Every radar `SensorDefinition` owns a neutral `RadarProfile`. The profile is
+serialized with the scenario and is passed unchanged through the provider
+boundary. It contains explicit SI-unit values for peak power, duty cycle,
+bandwidth, receiver noise, frequency, antenna gain, beam width, pulse count,
+system loss, false-alarm probability, and RCS scaling.
+
+The Add Entity dialog offers Generic Radar, Fighter AESA, and Ground
+Surveillance presets. Presets only initialize values: editing any field marks
+the profile as Custom. Legacy scenarios without `radarProfile` receive the
+documented generic defaults and therefore continue to load safely.
+
+Native uses the profile to expose a reference monostatic radar-equation SNR
+without changing its established detection probability. MIXR uses its
+`RfEmission` range loss together with the selected power, gain, bandwidth,
+noise, pulse, loss, and RCS values. Stone Soup constructs its `AESARadar` from
+the same per-sensor values. This keeps the three implementations comparable
+without pretending that their fidelity or internal equations are identical.
+
 ## Runtime Diagnostics
 
 `SensorEngine` records the last eligible evaluation for every sensor in a
@@ -66,6 +86,7 @@ in scenario files. It contains:
 - provider version and native fallback reason;
 - effective detection probability and deterministic sample;
 - target signature, SNR, RF range loss, and echo ratio when supplied;
+- received signal power and receiver noise power when supplied;
 - evaluation latency, scan index, and simulation time;
 - cumulative evaluation and detection counters.
 

@@ -107,6 +107,18 @@ application::sensors::SensorEvaluationResult SharedLibrarySensorModel::evaluate(
   input.targetSpeedKnots = context.target.speedKnots;
   input.sensorMinRangeMeters = context.sensor.minRangeMeters;
   input.sensorMaxRangeMeters = context.sensor.maxRangeMeters;
+  const RadarProfile& profile = context.sensor.radarProfile;
+  input.radarPeakPowerWatts = profile.peakPowerWatts;
+  input.radarDutyCycle = profile.dutyCycle;
+  input.radarBandwidthHertz = profile.bandwidthHertz;
+  input.radarReceiverNoiseDecibels = profile.receiverNoiseDecibels;
+  input.radarFrequencyHertz = profile.frequencyHertz;
+  input.radarAntennaGainDecibels = profile.antennaGainDecibels;
+  input.radarBeamWidthDegrees = profile.beamWidthDegrees;
+  input.radarNumberPulses = static_cast<uint32_t>(profile.numberPulses);
+  input.radarSystemLossDecibels = profile.systemLossDecibels;
+  input.radarProbabilityFalseAlarm = profile.probabilityFalseAlarm;
+  input.radarRcsScaleSquareMeters = profile.rcsScaleSquareMeters;
 
   QttestSensorEvaluationOutputV1 output{};
   output.structSize = sizeof(output);
@@ -115,6 +127,8 @@ application::sensors::SensorEvaluationResult SharedLibrarySensorModel::evaluate(
       std::numeric_limits<double>::quiet_NaN();
   output.rangeLossDecibels = std::numeric_limits<double>::quiet_NaN();
   output.echoRatio = std::numeric_limits<double>::quiet_NaN();
+  output.receivedPowerWatts = std::numeric_limits<double>::quiet_NaN();
+  output.noisePowerWatts = std::numeric_limits<double>::quiet_NaN();
   if (_evaluate(&input, &output) != 0 || output.status != 0) {
     return nativeFallback(
         context,
@@ -146,6 +160,12 @@ application::sensors::SensorEvaluationResult SharedLibrarySensorModel::evaluate(
   }
   if (output.diagnosticsMask & QTTEST_SENSOR_DIAGNOSTIC_ECHO_RATIO) {
     result.echoRatio = output.echoRatio;
+  }
+  if (output.diagnosticsMask & QTTEST_SENSOR_DIAGNOSTIC_RECEIVED_POWER_W) {
+    result.receivedPowerWatts = output.receivedPowerWatts;
+  }
+  if (output.diagnosticsMask & QTTEST_SENSOR_DIAGNOSTIC_NOISE_POWER_W) {
+    result.noisePowerWatts = output.noisePowerWatts;
   }
   return result;
 }

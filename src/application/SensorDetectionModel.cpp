@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace {
 
@@ -72,6 +73,52 @@ double SensorDetectionModel::detectionProbability(
       baseProbability * distanceFactor * signatureFactor,
       0.0,
       1.0);
+}
+
+RadarSignalMetrics SensorDetectionModel::radarSignalMetrics(
+    const SensorDefinition& sensor,
+    const Entity& target,
+    double rangeMeters) {
+  constexpr double kLightSpeedMetersPerSecond = 299792458.0;
+  constexpr double kBoltzmannConstant = 1.380649e-23;
+  constexpr double kReferenceTemperatureKelvin = 290.0;
+  constexpr double kPi = 3.14159265358979323846;
+
+  const RadarProfile& profile = sensor.radarProfile;
+  const double frequencyHertz = std::max(1.0, profile.frequencyHertz);
+  const double bandwidthHertz = std::max(1.0, profile.bandwidthHertz);
+  const double range = std::max(1.0, rangeMeters);
+  const double wavelength = kLightSpeedMetersPerSecond / frequencyHertz;
+  const double gain = std::pow(10.0, profile.antennaGainDecibels / 10.0);
+  const double noiseFactor =
+      std::pow(10.0, std::max(0.0, profile.receiverNoiseDecibels) / 10.0);
+  const double loss =
+      std::pow(10.0, std::max(0.0, profile.systemLossDecibels) / 10.0);
+  const double rcs = targetSignature(sensor, target) *
+      std::max(0.01, profile.rcsScaleSquareMeters);
+  const double numerator =
+      std::max(0.0, profile.peakPowerWatts) *
+      std::clamp(profile.dutyCycle, 0.0, 1.0) * gain * gain *
+      wavelength * wavelength * std::max(0.0, rcs) *
+      static_cast<double>(std::max(1, profile.numberPulses));
+  const double denominator =
+      std::pow(4.0 * kPi, 3.0) * std::pow(range, 4.0) * loss;
+
+  RadarSignalMetrics metrics;
+  metrics.receivedPowerWatts = denominator > 0.0
+      ? numerator / denominator
+      : 0.0;
+  metrics.noisePowerWatts =
+      kBoltzmannConstant * kReferenceTemperatureKelvin * bandwidthHertz *
+      noiseFactor;
+  if (metrics.noisePowerWatts > 0.0) {
+    metrics.signalToNoiseRatio =
+        metrics.receivedPowerWatts / metrics.noisePowerWatts;
+  }
+  metrics.signalToNoiseRatioDecibels = metrics.signalToNoiseRatio > 0.0
+      ? 10.0 * std::log10(metrics.signalToNoiseRatio)
+      : -std::numeric_limits<double>::infinity();
+  return metrics;
 }
 
 double SensorDetectionModel::deterministicSample(

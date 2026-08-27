@@ -47,6 +47,8 @@ private:
   void syncDynamicsControls();
   void syncFuelControls();
   void syncWeaponControls();
+  void syncRadarControls();
+  void applyRadarProfilePreset(const QString& profileId);
 
   QVector<ModelCatalogEntry> _modelCatalog;
   QVector<infrastructure::SensorModelProviderEntry> _sensorModelProviders;
@@ -67,6 +69,7 @@ private:
   QCheckBox* _addRadarCheck;
   QLineEdit* _radarNameEdit;
   QComboBox* _radarModelProviderCombo;
+  QComboBox* _radarProfileCombo;
   QDoubleSpinBox* _headingSpin;
   QCheckBox* _enableDynamicsCheck;
   QComboBox* _dynamicsModeCombo;
@@ -87,6 +90,17 @@ private:
   QDoubleSpinBox* _radarElevationWidthSpin;
   QDoubleSpinBox* _radarDetectionProbabilitySpin;
   QSpinBox* _radarMaxTracksSpin;
+  QDoubleSpinBox* _radarPeakPowerSpin;
+  QDoubleSpinBox* _radarDutyCycleSpin;
+  QDoubleSpinBox* _radarBandwidthSpin;
+  QDoubleSpinBox* _radarReceiverNoiseSpin;
+  QDoubleSpinBox* _radarFrequencySpin;
+  QDoubleSpinBox* _radarAntennaGainSpin;
+  QDoubleSpinBox* _radarBeamWidthSpin;
+  QSpinBox* _radarNumberPulsesSpin;
+  QDoubleSpinBox* _radarSystemLossSpin;
+  QDoubleSpinBox* _radarFalseAlarmProbabilitySpin;
+  QDoubleSpinBox* _radarRcsScaleSpin;
   QDoubleSpinBox* _radarSignatureSpin;
   QDoubleSpinBox* _thermalSignatureSpin;
   QDoubleSpinBox* _visualSignatureSpin;
@@ -95,4 +109,5 @@ private:
   QDoubleSpinBox* _groundHeightSpin;
   QSpinBox* _altitudeSpin;
   QPushButton* _pickOnMapButton;
+  bool _applyingRadarProfilePreset = false;
 };

@@ -183,6 +183,8 @@ TEST(EntityTrackSummaryTest, SensorCountMatchesSensorsSize) {
   sensor.maxRangeMeters = 100000.0;
   sensor.probabilityOfDetection = 0.75;
   sensor.trackHoldSeconds = 6.0;
+  sensor.radarProfile.profileId = QStringLiteral("fighter-aesa");
+  sensor.radarProfile.peakPowerWatts = 55000.0;
   e.sensors.push_back(sensor);
   const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
   EXPECT_EQ(summary.value(QStringLiteral("sensorCount")).toInt(), 1);
@@ -201,6 +203,14 @@ TEST(EntityTrackSummaryTest, SensorCountMatchesSensorsSize) {
   EXPECT_DOUBLE_EQ(
       sensors.first().toMap().value(QStringLiteral("trackHoldSeconds")).toDouble(),
       6.0);
+  const QVariantMap profile = sensors.first().toMap()
+      .value(QStringLiteral("radarProfile")).toMap();
+  EXPECT_EQ(
+      profile.value(QStringLiteral("profileId")).toString(),
+      QStringLiteral("fighter-aesa"));
+  EXPECT_DOUBLE_EQ(
+      profile.value(QStringLiteral("peakPowerWatts")).toDouble(),
+      55000.0);
 }
 
 TEST(EntityTrackSummaryTest, ContactCountMatchesContactsSize) {

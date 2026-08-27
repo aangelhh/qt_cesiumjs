@@ -79,6 +79,10 @@ TEST(SensorProviderAdapter, MixrPluginUsesRfRangeLossWhenBuilt) {
       {42U, 5.0, 1, 100000.0, observer, sensor, target});
   const auto nearResult = model.evaluate(
       {42U, 5.0, 2, 50000.0, observer, sensor, target});
+  SensorDefinition strongerSensor = sensor;
+  strongerSensor.radarProfile.peakPowerWatts *= 4.0;
+  const auto strongerResult = model.evaluate(
+      {42U, 5.0, 3, 100000.0, observer, strongerSensor, target});
 
   EXPECT_EQ(thresholdResult.effectiveModelId, QStringLiteral("mixr"));
   EXPECT_NEAR(thresholdResult.probability, 0.5, 1e-6);
@@ -87,7 +91,12 @@ TEST(SensorProviderAdapter, MixrPluginUsesRfRangeLossWhenBuilt) {
   EXPECT_FALSE(nearResult.providerVersion.isEmpty());
   EXPECT_TRUE(std::isfinite(nearResult.rangeLossDecibels));
   EXPECT_TRUE(std::isfinite(nearResult.echoRatio));
+  EXPECT_TRUE(std::isfinite(nearResult.signalToNoiseRatio));
+  EXPECT_TRUE(std::isfinite(nearResult.signalToNoiseRatioDecibels));
+  EXPECT_GT(nearResult.receivedPowerWatts, 0.0);
+  EXPECT_GT(nearResult.noisePowerWatts, 0.0);
   EXPECT_GT(nearResult.echoRatio, thresholdResult.echoRatio);
+  EXPECT_GT(strongerResult.probability, thresholdResult.probability);
 }
 
 TEST(SensorProviderAdapter, BootstrapRegistersBuiltMixrProvider) {
@@ -152,6 +161,10 @@ TEST(SensorProviderAdapter, StoneSoupUsesAesaProbabilityWhenInstalled) {
   sensor.probabilityOfDetection = 1.0;
   const auto result = model.evaluate(
       {42U, 5.0, 1, 25000.0, observer, sensor, target});
+  SensorDefinition strongerSensor = sensor;
+  strongerSensor.radarProfile.peakPowerWatts *= 4.0;
+  const auto strongerResult = model.evaluate(
+      {42U, 5.0, 2, 25000.0, observer, strongerSensor, target});
 
   EXPECT_EQ(result.effectiveModelId, QStringLiteral("stone-soup"));
   EXPECT_GT(result.probability, 0.0);
@@ -161,6 +174,9 @@ TEST(SensorProviderAdapter, StoneSoupUsesAesaProbabilityWhenInstalled) {
   EXPECT_FALSE(result.providerVersion.isEmpty());
   EXPECT_TRUE(std::isfinite(result.signalToNoiseRatio));
   EXPECT_TRUE(std::isfinite(result.signalToNoiseRatioDecibels));
+  EXPECT_GT(result.receivedPowerWatts, 0.0);
+  EXPECT_GT(result.noisePowerWatts, 0.0);
+  EXPECT_GT(strongerResult.signalToNoiseRatio, result.signalToNoiseRatio);
 }
 
 TEST(SensorProviderAdapter, BootstrapRegistersInstalledStoneSoupProvider) {

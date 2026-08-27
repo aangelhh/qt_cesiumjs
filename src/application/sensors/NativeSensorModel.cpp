@@ -26,6 +26,18 @@ SensorEvaluationResult NativeSensorModel::evaluate(
   result.targetSignature = application::SensorDetectionModel::targetSignature(
       context.sensor,
       context.target);
+  if (sensor::typeFromString(context.sensor.sensorType) == SensorType::Radar) {
+    const application::RadarSignalMetrics metrics =
+        application::SensorDetectionModel::radarSignalMetrics(
+            context.sensor,
+            context.target,
+            context.rangeMeters);
+    result.signalToNoiseRatio = metrics.signalToNoiseRatio;
+    result.signalToNoiseRatioDecibels =
+        metrics.signalToNoiseRatioDecibels;
+    result.receivedPowerWatts = metrics.receivedPowerWatts;
+    result.noisePowerWatts = metrics.noisePowerWatts;
+  }
   return result;
 }
 
