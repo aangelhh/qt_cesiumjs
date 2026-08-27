@@ -226,7 +226,10 @@ Item {
                 var tickHeight = hd % 10 === 0 ? 10 : 6
                 line(ctx, hx, bottom + 7, hx, bottom + 7 + tickHeight,
                      root.ink, 1)
-                if (hd % 10 === 0) {
+                // The boxed three-digit readout already labels the current
+                // heading; drawing the abbreviated center label underneath
+                // makes values such as 250 appear duplicated.
+                if (hd % 10 === 0 && hd !== 0) {
                     label(ctx, Math.round(headingValue / 10).toString().padStart(2, "0"),
                           hx, bottom + 27, 12, root.ink)
                 }
