@@ -21,6 +21,7 @@ enum class SensorSubType {
 struct SensorDefinition {
   QString id;
   QString name;
+  QString modelProviderId = QStringLiteral("native");
   QString sensorType = QStringLiteral("radar");
   QString sensorSubType = QStringLiteral("generic");
   bool enabled = true;
@@ -39,10 +40,12 @@ struct SensorDefinition {
   bool canDetectSurface = false;
   bool terrainMaskingEnabled = false;
   double probabilityOfDetection = 1.0;
+  double trackHoldSeconds = 10.0;
 };
 
 struct SensorContact {
   QString sensorId;
+  QString sensorModelProviderId = QStringLiteral("native");
   QString sensorType;
   QString sensorSubType;
   QString targetEntityId;
@@ -51,6 +54,11 @@ struct SensorContact {
   double bearingDegrees = 0.0;
   bool lineOfSight = true;
   bool detected = false;
+  double confidence = 0.0;
+  double lastSeenSimulationSeconds = 0.0;
+  QString trackState = QStringLiteral("Detected");
+  qint64 lastEvaluationIndex = -1;
+  int missedDetectionCount = 0;
 };
 
 using SensorDefinitions = QVector<SensorDefinition>;

@@ -184,11 +184,15 @@ QString buildEntityOperationalStatus(
 
     contactLines.push_back(ContactDebugLine{
         contact.rangeMeters,
-        QStringLiteral("%1 | %2 | %3 km | brg %4 deg | %5 | %6 | %7")
+        QStringLiteral("%1 | %2 | %3 km | brg %4 deg | %5 | conf %6% | %7 | %8 | %9")
             .arg(targetName.isEmpty() ? QStringLiteral("<unknown>") : targetName)
             .arg(contact.detected ? QStringLiteral("detected") : QStringLiteral("not detected"))
             .arg(contact.rangeMeters / 1000.0, 0, 'f', 1)
             .arg(contact.bearingDegrees, 0, 'f', 1)
+            .arg(contact.trackState.trimmed().isEmpty()
+                     ? QStringLiteral("Unknown")
+                     : contact.trackState)
+            .arg(contact.confidence * 100.0, 0, 'f', 0)
             .arg(target
                      ? (friendly ? QStringLiteral("friendly") : QStringLiteral("enemy"))
                      : QStringLiteral("unknown side"))

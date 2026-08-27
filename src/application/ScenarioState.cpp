@@ -699,7 +699,11 @@ domain::TaskStack* ScenarioState::getTaskStack(const QString& entityName) {
 }
 
 void ScenarioState::refreshSensors() {
-  SensorEngine::updateEntityContacts(_entities);
+  SensorEngine::updateEntityContacts(
+      _entities,
+      _simulationTimeSeconds,
+      _sensorRandomSeed,
+      &_sensorModelRegistry);
 }
 
 void ScenarioState::advanceActiveMunitions(double deltaSeconds) {
@@ -769,6 +773,31 @@ double ScenarioState::simulationTimeSeconds() const {
   return _simulationTimeSeconds;
 }
 
+quint32 ScenarioState::sensorRandomSeed() const {
+  ScopedLock lock(_mutex);
+  return _sensorRandomSeed;
+}
+
+void ScenarioState::setSensorRandomSeed(quint32 seed) {
+  ScopedLock lock(_mutex);
+  _sensorRandomSeed = seed;
+  for (Entity& entity : _entities) {
+    entity.sensorContacts.clear();
+  }
+  this->refreshSensors();
+}
+
+bool ScenarioState::registerSensorModel(
+    std::shared_ptr<const application::sensors::ISensorModel> model) {
+  ScopedLock lock(_mutex);
+  return _sensorModelRegistry.registerModel(std::move(model));
+}
+
+QStringList ScenarioState::sensorModelIds() const {
+  ScopedLock lock(_mutex);
+  return _sensorModelRegistry.modelIds();
+}
+
 void ScenarioState::setKinematicsTelemetryPublicationPeriod(
     double periodSeconds) {
   ScopedLock lock(_mutex);
@@ -801,7 +830,7 @@ void ScenarioState::stopMission() {
 bool ScenarioState::save() const {
   ScopedLock lock(_mutex);
   return application::saveScenario(this->storagePath(), {
-      _entities, _waypoints, _routes, _areas});
+      _entities, _waypoints, _routes, _areas, _sensorRandomSeed});
 }
 
 bool ScenarioState::load() {
@@ -819,10 +848,12 @@ bool ScenarioState::load() {
   _behaviorDamageReactionLevel.clear();
   _nextMunitionSerial = 1;
   _simulationTimeSeconds = 0.0;
+  _sensorRandomSeed = application::ScenarioSnapshot::kDefaultSensorRandomSeed;
   _kinematicsTelemetryPublisher.reset();
 
   const application::ScenarioSnapshot snapshot =
       application::loadScenario(this->storagePath());
+  _sensorRandomSeed = snapshot.sensorRandomSeed;
 
   QSet<QString> loadedEntityIds;
   for (const Entity& entity : snapshot.entities) {
@@ -858,6 +889,7 @@ void ScenarioState::reset() {
   _behaviorDamageReactionLevel.clear();
   _nextMunitionSerial = 1;
   _simulationTimeSeconds = 0.0;
+  _sensorRandomSeed = application::ScenarioSnapshot::kDefaultSensorRandomSeed;
   _kinematicsTelemetryPublisher.reset();
   this->save();
 }

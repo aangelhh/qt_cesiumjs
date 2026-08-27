@@ -14,8 +14,11 @@
 #include <QPushButton>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QTimer>
 #include <QVariantList>
 #include <QVBoxLayout>
+
+#include <utility>
 
 namespace {
 
@@ -24,21 +27,32 @@ const DisEntityCatalog& disEntityCatalog() {
   return catalog;
 }
 
-QString formatFeetFromMetersString(const QString& altitudeText) {
+double summaryDoubleValue(
+    const QVariantMap& summary,
+    const char* key,
+    double fallback = 0.0) {
   bool ok = false;
-  const double meters = altitudeText.split(' ').value(0).toDouble(&ok);
-  if (!ok) {
-    return altitudeText;
-  }
-  const int feet = static_cast<int>(meters * 3.28084);
-  return QStringLiteral("%1 ft").arg(feet);
+  const double result =
+      summary.value(QString::fromLatin1(key)).toDouble(&ok);
+  return ok ? result : fallback;
 }
 
-QString synthesizeSpeedFromAltitude(const QString& altitudeText, int baseValue) {
-  bool ok = false;
-  const double meters = altitudeText.split(' ').value(0).toDouble(&ok);
-  const int altitudeFactor = ok ? static_cast<int>(meters / 75.0) : 0;
-  return QString::number(baseValue + altitudeFactor);
+QString formatNumber(double value, int decimals = 1) {
+  return QString::number(value, 'f', decimals);
+}
+
+QString formatFeet(double altitudeMeters) {
+  return QStringLiteral("%1 ft")
+      .arg(qRound(altitudeMeters * 3.28084));
+}
+
+QString yesNo(bool value) {
+  return value ? QStringLiteral("Yes") : QStringLiteral("No");
+}
+
+QString textOrDash(const QVariant& value) {
+  const QString text = value.toString().trimmed();
+  return text.isEmpty() ? QStringLiteral("-") : text;
 }
 
 int summaryIntValue(const QVariantMap& summary, const char* key) {
@@ -52,9 +66,13 @@ int summaryIntValue(const QVariantMap& summary, const char* key) {
 
 } // namespace
 
-EntityDetailsDialog::EntityDetailsDialog(const QVariantMap& summary, QWidget* parent)
+EntityDetailsDialog::EntityDetailsDialog(
+    const QVariantMap& summary,
+    SummaryProvider summaryProvider,
+    QWidget* parent)
     : QDialog(parent),
       _summary(summary),
+      _summaryProvider(std::move(summaryProvider)),
       _iconLabel(nullptr),
       _nameLabel(nullptr),
       _typeLabel(nullptr),
@@ -71,6 +89,17 @@ EntityDetailsDialog::EntityDetailsDialog(const QVariantMap& summary, QWidget* pa
   this->buildUi();
   this->populateHeader();
   this->populateStateData();
+
+  if (_summaryProvider) {
+    auto* refreshTimer = new QTimer(this);
+    refreshTimer->setInterval(500);
+    QObject::connect(
+        refreshTimer,
+        &QTimer::timeout,
+        this,
+        &EntityDetailsDialog::refreshSummary);
+    refreshTimer->start();
+  }
 }
 
 void EntityDetailsDialog::buildUi() {
@@ -126,15 +155,14 @@ void EntityDetailsDialog::buildUi() {
   _sectionsList = new QListWidget(this);
   _sectionsList->setFixedWidth(250);
   _sectionsList->addItems({
-      QStringLiteral("Tasks"),
       QStringLiteral("State Data"),
-      QStringLiteral("Appearance"),
+      QStringLiteral("Tasks"),
       QStringLiteral("Resources"),
       QStringLiteral("Sensor Information"),
       QStringLiteral("Emitters"),
-      QStringLiteral("Embarkation"),
+      QStringLiteral("Appearance"),
       QStringLiteral("Subsystems")});
-  _sectionsList->setCurrentRow(1);
+  _sectionsList->setCurrentRow(0);
   _sectionsList->setStyleSheet(QStringLiteral(
       "QListWidget { background: #3a3635; color: #e7edf4; border: 1px solid #4c4745; }"
       "QListWidget::item { padding: 10px 12px; }"
@@ -187,16 +215,18 @@ void EntityDetailsDialog::populateHeader() {
   _nameLabel->setText(QStringLiteral("Name: %1").arg(this->value("name")));
   _typeLabel->setText(QStringLiteral("Type: %1").arg(this->value("type")));
 
-  const QString altitude = this->value("altitude");
+  const double altitudeMeters = summaryDoubleValue(_summary, "altitudeMeters");
+  const double speedKnots = summaryDoubleValue(_summary, "speedKnots");
   _groundSpeedLabel->setText(
-      QStringLiteral("Ground Speed (kts): %1")
-          .arg(synthesizeSpeedFromAltitude(altitude, 420)));
+      QStringLiteral("Speed: %1 kts").arg(formatNumber(speedKnots)));
   _altitudeLabel->setText(
-      QStringLiteral("Altitude MSL (ft): %1")
-          .arg(formatFeetFromMetersString(altitude)));
+      QStringLiteral("Altitude: %1 m / %2")
+          .arg(formatNumber(altitudeMeters, 0), formatFeet(altitudeMeters)));
   _tasLabel->setText(
-      QStringLiteral("TAS (kts): %1")
-          .arg(synthesizeSpeedFromAltitude(altitude, 460)));
+      QStringLiteral("Heading / Pitch / Roll: %1 / %2 / %3 deg")
+          .arg(formatNumber(summaryDoubleValue(_summary, "headingDegrees")))
+          .arg(formatNumber(summaryDoubleValue(_summary, "pitchDegrees")))
+          .arg(formatNumber(summaryDoubleValue(_summary, "rollDegrees"))));
   _statusLabel->setText(QStringLiteral("Status: %1").arg(this->value("status")));
 
   _console->setPlainText(
@@ -216,47 +246,27 @@ void EntityDetailsDialog::populateStateData() {
           summaryIntValue(_summary, "entitySpecific"),
           summaryIntValue(_summary, "entityExtra")));
   const DisEntityInfo disInfo = disEntityCatalog().lookup(entityTypeCode);
+  const double altitudeMeters = summaryDoubleValue(_summary, "altitudeMeters");
 
   QList<QPair<QString, QString>> rows;
-  rows.append({QStringLiteral("Location (Lat, Lon, Alt)"), this->locationText()});
-  rows.append({QStringLiteral("Ground Speed (kts)"), synthesizeSpeedFromAltitude(this->value("altitude"), 420)});
-  rows.append({QStringLiteral("True Airspeed (kts)"), synthesizeSpeedFromAltitude(this->value("altitude"), 460)});
-  rows.append({QStringLiteral("Mach"), QStringLiteral("0.82")});
-  rows.append({QStringLiteral("Altitude MSL (ft)"), formatFeetFromMetersString(this->value("altitude"))});
-  rows.append({QStringLiteral("Velocity (kts)"), QStringLiteral("-10 -158 561")});
-  rows.append({QStringLiteral("Heading, Pitch, Roll (deg)"), QStringLiteral("16, 27, 68")});
-  rows.append({QStringLiteral("Bounding Volume L/W/H (m)"), QStringLiteral("17, 12, 5")});
-  rows.append({QStringLiteral("Entity Id"), this->value("name")});
+  rows.append({QStringLiteral("Entity ID"), this->value("entityId")});
+  rows.append({QStringLiteral("Name"), this->value("name")});
+  rows.append({QStringLiteral("Callsign"), this->value("callsign")});
   rows.append({QStringLiteral("Force"), this->value("team")});
-  rows.append({QStringLiteral("Activity"), this->value("status")});
-  rows.append({QStringLiteral("Callsign"), this->value("name")});
   rows.append({QStringLiteral("Domain"), this->value("domain")});
   rows.append({QStringLiteral("Category"), this->value("category")});
-  rows.append({QStringLiteral("Model"), this->value("modelName")});
-  rows.append({QStringLiteral("Heading"), QStringLiteral("%1 deg").arg(this->value("headingDegrees"))});
-  rows.append({QStringLiteral("Flight Dynamics"), this->value("flightDynamicsEnabled", QStringLiteral("false")) == QStringLiteral("true") ? QStringLiteral("Enabled") : QStringLiteral("Disabled")});
-  rows.append({QStringLiteral("Dynamics Mode"), this->value("flightDynamicsMode", QStringLiteral("-"))});
-  rows.append({QStringLiteral("JSBSim Aircraft"), this->value("jsbsimAircraftModel", QStringLiteral("-"))});
-  rows.append({QStringLiteral("Control Profile"), this->value("controlProfileId", QStringLiteral("-"))});
-  rows.append({QStringLiteral("Fuel Remaining"), QStringLiteral("%1 / %2 kg")
-                                                   .arg(this->value("fuelRemainingKilograms", QStringLiteral("0")))
-                                                   .arg(this->value("fuelCapacityKilograms", QStringLiteral("0")))});
-  rows.append({QStringLiteral("Speed"), QStringLiteral("%1 kts").arg(this->value("speedKnots", QStringLiteral("0")))});
-  rows.append({QStringLiteral("Vertical Speed"), QStringLiteral("%1 m/s").arg(this->value("verticalSpeedMetersPerSecond", QStringLiteral("0")))});
-  rows.append({QStringLiteral("Current Task"), this->value("taskType", QStringLiteral("-"))});
-  rows.append({QStringLiteral("Task Status"), this->value("taskStatus", QStringLiteral("-"))});
-  rows.append({QStringLiteral("Task Target Heading"), QStringLiteral("%1 deg").arg(this->value("taskTargetHeadingDegrees", QStringLiteral("0")))});
-  rows.append({QStringLiteral("Task Target Altitude"), QStringLiteral("%1 m").arg(this->value("taskTargetAltitudeMeters", QStringLiteral("0")))});
-  rows.append({QStringLiteral("Task Target Speed"), QStringLiteral("%1 kts").arg(this->value("taskTargetSpeedKnots", QStringLiteral("0")))});
-  rows.append({QStringLiteral("Task Target Location"), QStringLiteral("%1, %2")
-                                                    .arg(this->value("taskTargetLatitude", QStringLiteral("0")))
-                                                    .arg(this->value("taskTargetLongitude", QStringLiteral("0")))});
-  rows.append({QStringLiteral("Task Target Entity"), this->value("taskTargetEntityName", QStringLiteral("-"))});
-  rows.append({QStringLiteral("Task Target Waypoint"), this->value("taskTargetWaypointName", QStringLiteral("-"))});
-  rows.append({QStringLiteral("Task Target Route"), this->value("taskTargetRouteName", QStringLiteral("-"))});
-  rows.append({QStringLiteral("Task Target Area"), this->value("taskTargetAreaName", QStringLiteral("-"))});
-  rows.append({QStringLiteral("Sensors"), this->value("sensorCount", QStringLiteral("0"))});
-  rows.append({QStringLiteral("Sensor Contacts"), this->value("contactCount", QStringLiteral("0"))});
+  rows.append({QStringLiteral("Damage State"), this->value("damageState")});
+  rows.append({QStringLiteral("Damage"), QStringLiteral("%1 %").arg(formatNumber(summaryDoubleValue(_summary, "damagePercent")))});
+  rows.append({QStringLiteral("Destroyed"), yesNo(_summary.value(QStringLiteral("destroyed")).toBool())});
+  rows.append({QStringLiteral("Latitude"), formatNumber(summaryDoubleValue(_summary, "latitude"), 6)});
+  rows.append({QStringLiteral("Longitude"), formatNumber(summaryDoubleValue(_summary, "longitude"), 6)});
+  rows.append({QStringLiteral("Altitude MSL"), QStringLiteral("%1 m / %2").arg(formatNumber(altitudeMeters, 0), formatFeet(altitudeMeters))});
+  rows.append({QStringLiteral("Ground Height"), QStringLiteral("%1 m").arg(formatNumber(summaryDoubleValue(_summary, "groundHeightMeters"), 1))});
+  rows.append({QStringLiteral("Speed"), QStringLiteral("%1 kts").arg(formatNumber(summaryDoubleValue(_summary, "speedKnots")))});
+  rows.append({QStringLiteral("Vertical Speed"), QStringLiteral("%1 m/s").arg(formatNumber(summaryDoubleValue(_summary, "verticalSpeedMetersPerSecond")))});
+  rows.append({QStringLiteral("Heading"), QStringLiteral("%1 deg").arg(formatNumber(summaryDoubleValue(_summary, "headingDegrees")))});
+  rows.append({QStringLiteral("Pitch"), QStringLiteral("%1 deg").arg(formatNumber(summaryDoubleValue(_summary, "pitchDegrees")))});
+  rows.append({QStringLiteral("Roll"), QStringLiteral("%1 deg").arg(formatNumber(summaryDoubleValue(_summary, "rollDegrees")))});
   rows.append({QStringLiteral("Entity Type Code"), entityTypeCode});
   rows.append({QStringLiteral("DIS Entity"), disInfo.displayName().isEmpty() ? QStringLiteral("-") : disInfo.displayName()});
   rows.append({QStringLiteral("DIS Kind Description"), disInfo.kindDescription.isEmpty() ? QStringLiteral("-") : disInfo.kindDescription});
@@ -278,8 +288,106 @@ void EntityDetailsDialog::populateStateData() {
                                                     ? QStringLiteral("Unavailable")
                                                     : disEntityCatalog().errorString()});
   }
-  rows.append({QStringLiteral("Invisible"), QStringLiteral("No")});
-  rows.append({QStringLiteral("Invulnerable"), QStringLiteral("No")});
+  this->setTableRows(rows);
+}
+
+void EntityDetailsDialog::populateTaskInformation() {
+  QList<QPair<QString, QString>> rows;
+  const bool enabled = _summary.value(QStringLiteral("taskEnabled")).toBool();
+  rows.append({QStringLiteral("Task Type"), this->value("taskType", QStringLiteral("None"))});
+  rows.append({QStringLiteral("Enabled"), yesNo(enabled)});
+  rows.append({QStringLiteral("Status"), this->value("taskStatus", QStringLiteral("Idle"))});
+
+  if (enabled) {
+    rows.append({QStringLiteral("Elapsed"), QStringLiteral("%1 s").arg(formatNumber(summaryDoubleValue(_summary, "taskElapsedSeconds")))});
+    const double durationSeconds = summaryDoubleValue(_summary, "taskDurationSeconds");
+    rows.append({QStringLiteral("Duration"), durationSeconds > 0.0
+                                              ? QStringLiteral("%1 s").arg(formatNumber(durationSeconds))
+                                              : QStringLiteral("Until cancelled")});
+
+    const QString targetEntity = this->value("taskTargetEntityName");
+    const QString targetEntityId = this->value("taskTargetEntityId");
+    if (targetEntity != QStringLiteral("-") || targetEntityId != QStringLiteral("-")) {
+      rows.append({QStringLiteral("Target Entity"), targetEntity});
+      rows.append({QStringLiteral("Target Entity ID"), targetEntityId});
+    }
+    if (this->value("taskTargetWaypointName") != QStringLiteral("-")) {
+      rows.append({QStringLiteral("Target Waypoint"), this->value("taskTargetWaypointName")});
+    }
+    if (this->value("taskTargetRouteName") != QStringLiteral("-")) {
+      rows.append({QStringLiteral("Target Route"), this->value("taskTargetRouteName")});
+    }
+    if (this->value("taskTargetAreaName") != QStringLiteral("-")) {
+      rows.append({QStringLiteral("Target Area"), this->value("taskTargetAreaName")});
+    }
+
+    rows.append({QStringLiteral("Target Location"), QStringLiteral("%1, %2")
+        .arg(formatNumber(summaryDoubleValue(_summary, "taskTargetLatitude"), 6))
+        .arg(formatNumber(summaryDoubleValue(_summary, "taskTargetLongitude"), 6))});
+    rows.append({QStringLiteral("Target Heading"), QStringLiteral("%1 deg").arg(formatNumber(summaryDoubleValue(_summary, "taskTargetHeadingDegrees")))});
+    rows.append({QStringLiteral("Target Altitude"), QStringLiteral("%1 m").arg(formatNumber(summaryDoubleValue(_summary, "taskTargetAltitudeMeters"), 0))});
+    rows.append({QStringLiteral("Target Speed"), QStringLiteral("%1 kts").arg(formatNumber(summaryDoubleValue(_summary, "taskTargetSpeedKnots")))});
+
+    const int routeTotal = _summary.value(QStringLiteral("taskRouteTotalWaypoints")).toInt();
+    if (routeTotal > 0) {
+      const int currentIndex = _summary.value(QStringLiteral("taskRouteCurrentWaypointIndex")).toInt();
+      rows.append({QStringLiteral("Route Progress"), QStringLiteral("%1 / %2").arg(currentIndex + 1).arg(routeTotal)});
+    }
+    const double timeoutSeconds = summaryDoubleValue(_summary, "taskTimeoutSeconds");
+    if (timeoutSeconds > 0.0) {
+      rows.append({QStringLiteral("Timeout"), QStringLiteral("%1 s").arg(formatNumber(timeoutSeconds))});
+    }
+    if (this->value("taskWeaponType") != QStringLiteral("-")) {
+      rows.append({QStringLiteral("Weapon Type"), this->value("taskWeaponType")});
+    }
+    rows.append({QStringLiteral("Arrival Tolerance"), QStringLiteral("%1 m").arg(formatNumber(summaryDoubleValue(_summary, "taskArrivalToleranceMeters"), 0))});
+    rows.append({QStringLiteral("Follow Distance"), QStringLiteral("%1 m").arg(formatNumber(summaryDoubleValue(_summary, "taskFollowDistanceMeters"), 0))});
+    rows.append({QStringLiteral("Intercept Distance"), QStringLiteral("%1 m").arg(formatNumber(summaryDoubleValue(_summary, "taskInterceptDistanceMeters"), 0))});
+    rows.append({QStringLiteral("Altitude Tolerance"), QStringLiteral("%1 m").arg(formatNumber(summaryDoubleValue(_summary, "taskAltitudeToleranceMeters"), 0))});
+  }
+
+  this->setTableRows(rows);
+}
+
+void EntityDetailsDialog::populateAppearanceInformation() {
+  QList<QPair<QString, QString>> rows;
+  rows.append({QStringLiteral("Model"), this->value("modelName")});
+  rows.append({QStringLiteral("Model URI"), this->value("modelUri")});
+  rows.append({QStringLiteral("Cesium Model Axes"), this->value("cesiumModelAxes")});
+  rows.append({QStringLiteral("Heading"), QStringLiteral("%1 deg").arg(formatNumber(summaryDoubleValue(_summary, "headingDegrees")))});
+  rows.append({QStringLiteral("Pitch"), QStringLiteral("%1 deg").arg(formatNumber(summaryDoubleValue(_summary, "pitchDegrees")))});
+  rows.append({QStringLiteral("Roll"), QStringLiteral("%1 deg").arg(formatNumber(summaryDoubleValue(_summary, "rollDegrees")))});
+  rows.append({QStringLiteral("Hidden"), yesNo(_summary.value(QStringLiteral("hidden")).toBool())});
+  rows.append({QStringLiteral("Radar Coverage Visible"), yesNo(_summary.value(QStringLiteral("radarCoverageVisible")).toBool())});
+  rows.append({QStringLiteral("Track History Visible"), yesNo(_summary.value(QStringLiteral("trackHistoryVisible")).toBool())});
+  this->setTableRows(rows);
+}
+
+void EntityDetailsDialog::populateResourcesInformation() {
+  QList<QPair<QString, QString>> rows;
+  const double fuelCapacity = summaryDoubleValue(_summary, "fuelCapacityKilograms");
+  const double fuelRemaining = summaryDoubleValue(_summary, "fuelRemainingKilograms");
+  rows.append({QStringLiteral("Fuel Capacity"), QStringLiteral("%1 kg").arg(formatNumber(fuelCapacity, 1))});
+  rows.append({QStringLiteral("Fuel Remaining"), QStringLiteral("%1 kg").arg(formatNumber(fuelRemaining, 1))});
+  rows.append({QStringLiteral("Fuel Remaining Percent"), fuelCapacity > 0.0
+      ? QStringLiteral("%1 %").arg(formatNumber(100.0 * fuelRemaining / fuelCapacity, 1))
+      : QStringLiteral("-")});
+
+  const QVariantList weapons = _summary.value(QStringLiteral("weapons")).toList();
+  int totalWeapons = 0;
+  for (const QVariant& value : weapons) {
+    totalWeapons += qMax(0, value.toMap().value(QStringLiteral("quantity")).toInt());
+  }
+  rows.append({QStringLiteral("Weapon Types"), QString::number(weapons.size())});
+  rows.append({QStringLiteral("Total Weapons"), QString::number(totalWeapons)});
+  for (int index = 0; index < weapons.size(); ++index) {
+    const QVariantMap weapon = weapons.at(index).toMap();
+    rows.append({
+        QStringLiteral("Weapon %1").arg(index + 1),
+        QStringLiteral("%1 x %2")
+            .arg(weapon.value(QStringLiteral("quantity")).toInt())
+            .arg(textOrDash(weapon.value(QStringLiteral("weaponType"))))});
+  }
   this->setTableRows(rows);
 }
 
@@ -289,6 +397,9 @@ void EntityDetailsDialog::populateSensorInformation() {
   const QVariantList contacts = _summary.value(QStringLiteral("sensorContacts")).toList();
 
   rows.append({QStringLiteral("Configured Sensors"), QString::number(sensors.size())});
+  rows.append({QStringLiteral("Radar Signature"), this->value("radarSignature", QStringLiteral("1.00"))});
+  rows.append({QStringLiteral("Thermal Signature"), this->value("thermalSignature", QStringLiteral("1.00"))});
+  rows.append({QStringLiteral("Visual Signature"), this->value("visualSignature", QStringLiteral("1.00"))});
   if (sensors.isEmpty()) {
     rows.append({QStringLiteral("Sensor"), QStringLiteral("No sensors configured")});
   } else {
@@ -296,12 +407,18 @@ void EntityDetailsDialog::populateSensorInformation() {
       const QVariantMap sensor = sensors.at(index).toMap();
       const QString prefix = QStringLiteral("Sensor %1").arg(index + 1);
       rows.append({prefix + QStringLiteral(" Name"), sensor.value(QStringLiteral("name")).toString()});
+      rows.append({prefix + QStringLiteral(" Model Provider"), sensor.value(QStringLiteral("modelProviderId"), QStringLiteral("native")).toString()});
       rows.append({prefix + QStringLiteral(" Type"), sensor.value(QStringLiteral("sensorType")).toString()});
       rows.append({prefix + QStringLiteral(" Subtype"), sensor.value(QStringLiteral("sensorSubType")).toString()});
       rows.append({prefix + QStringLiteral(" Enabled"), sensor.value(QStringLiteral("enabled")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
       rows.append({prefix + QStringLiteral(" Emitting"), sensor.value(QStringLiteral("emitting")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
+      rows.append({prefix + QStringLiteral(" Minimum Range"), QStringLiteral("%1 km").arg(sensor.value(QStringLiteral("minRangeMeters")).toDouble() / 1000.0, 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Range"), QStringLiteral("%1 km").arg(sensor.value(QStringLiteral("maxRangeMeters")).toDouble() / 1000.0, 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Azimuth"), QStringLiteral("%1 deg").arg(sensor.value(QStringLiteral("azimuthWidthDegrees")).toDouble(), 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Elevation"), QStringLiteral("%1 deg").arg(sensor.value(QStringLiteral("elevationWidthDegrees")).toDouble(), 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Update Period"), QStringLiteral("%1 s").arg(sensor.value(QStringLiteral("updatePeriodSeconds")).toDouble(), 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Detection Probability"), QStringLiteral("%1 %").arg(sensor.value(QStringLiteral("probabilityOfDetection")).toDouble() * 100.0, 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Track Hold"), QStringLiteral("%1 s").arg(sensor.value(QStringLiteral("trackHoldSeconds")).toDouble(), 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Max Tracks"), QString::number(sensor.value(QStringLiteral("maxTracks")).toInt())});
     }
   }
@@ -314,23 +431,61 @@ void EntityDetailsDialog::populateSensorInformation() {
       const QVariantMap contact = contacts.at(index).toMap();
       const QString prefix = QStringLiteral("Contact %1").arg(index + 1);
       rows.append({prefix + QStringLiteral(" Target"), contact.value(QStringLiteral("targetEntityName")).toString()});
+      rows.append({prefix + QStringLiteral(" Target ID"), contact.value(QStringLiteral("targetEntityId")).toString()});
+      rows.append({prefix + QStringLiteral(" Effective Model"), contact.value(QStringLiteral("sensorModelProviderId"), QStringLiteral("native")).toString()});
       rows.append({prefix + QStringLiteral(" Sensor"), contact.value(QStringLiteral("sensorId")).toString()});
       rows.append({prefix + QStringLiteral(" Range"), QStringLiteral("%1 km").arg(contact.value(QStringLiteral("rangeMeters")).toDouble() / 1000.0, 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" Bearing"), QStringLiteral("%1 deg").arg(contact.value(QStringLiteral("bearingDegrees")).toDouble(), 0, 'f', 1)});
       rows.append({prefix + QStringLiteral(" LOS"), contact.value(QStringLiteral("lineOfSight")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
       rows.append({prefix + QStringLiteral(" Detected"), contact.value(QStringLiteral("detected")).toBool() ? QStringLiteral("Yes") : QStringLiteral("No")});
+      rows.append({prefix + QStringLiteral(" State"), contact.value(QStringLiteral("trackState")).toString()});
+      rows.append({prefix + QStringLiteral(" Confidence"), QStringLiteral("%1 %").arg(contact.value(QStringLiteral("confidence")).toDouble() * 100.0, 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Last Seen"), QStringLiteral("%1 s").arg(contact.value(QStringLiteral("lastSeenSimulationSeconds")).toDouble(), 0, 'f', 1)});
+      rows.append({prefix + QStringLiteral(" Missed Detections"), QString::number(contact.value(QStringLiteral("missedDetectionCount")).toInt())});
     }
   }
 
   this->setTableRows(rows);
 }
 
-void EntityDetailsDialog::populatePlaceholderSection(const QString& sectionName) {
+void EntityDetailsDialog::populateEmitterInformation() {
   QList<QPair<QString, QString>> rows;
-  rows.append({QStringLiteral("Section"), sectionName});
-  rows.append({QStringLiteral("Entity"), this->value("name")});
-  rows.append({QStringLiteral("Status"), QStringLiteral("Not implemented yet")});
-  rows.append({QStringLiteral("Notes"), QStringLiteral("This panel is reserved for the next iteration.")});
+  const QVariantList sensors = _summary.value(QStringLiteral("sensors")).toList();
+  int activeEmitters = 0;
+  for (const QVariant& value : sensors) {
+    const QVariantMap sensor = value.toMap();
+    if (sensor.value(QStringLiteral("enabled")).toBool() &&
+        sensor.value(QStringLiteral("emitting")).toBool()) {
+      ++activeEmitters;
+    }
+  }
+  rows.append({QStringLiteral("Active Emitters"), QString::number(activeEmitters)});
+  for (int index = 0; index < sensors.size(); ++index) {
+    const QVariantMap sensor = sensors.at(index).toMap();
+    const QString prefix = QStringLiteral("Emitter %1").arg(index + 1);
+    rows.append({prefix + QStringLiteral(" Name"), textOrDash(sensor.value(QStringLiteral("name")))});
+    rows.append({prefix + QStringLiteral(" Type"), textOrDash(sensor.value(QStringLiteral("sensorType")))});
+    rows.append({prefix + QStringLiteral(" Provider"), textOrDash(sensor.value(QStringLiteral("modelProviderId")))});
+    rows.append({prefix + QStringLiteral(" Enabled"), yesNo(sensor.value(QStringLiteral("enabled")).toBool())});
+    rows.append({prefix + QStringLiteral(" Emitting"), yesNo(sensor.value(QStringLiteral("emitting")).toBool())});
+  }
+  this->setTableRows(rows);
+}
+
+void EntityDetailsDialog::populateSubsystemInformation() {
+  QList<QPair<QString, QString>> rows;
+  rows.append({QStringLiteral("Flight Dynamics"), _summary.value(QStringLiteral("flightDynamicsEnabled")).toBool()
+      ? QStringLiteral("Enabled") : QStringLiteral("Disabled")});
+  rows.append({QStringLiteral("Configured Dynamics Mode"), this->value("flightDynamicsMode")});
+  rows.append({QStringLiteral("Active Dynamics Backend"), this->value("activeDynamicsBackend")});
+  rows.append({QStringLiteral("Dynamics Step Duration"), QStringLiteral("%1 ms").arg(formatNumber(summaryDoubleValue(_summary, "dynamicsStepDurationMilliseconds"), 3))});
+  rows.append({QStringLiteral("Fallback Reason"), this->value("dynamicsFallbackReason")});
+  rows.append({QStringLiteral("JSBSim Aircraft"), this->value("jsbsimAircraftModel")});
+  rows.append({QStringLiteral("Control Profile"), this->value("controlProfileId")});
+  rows.append({QStringLiteral("Systems Display Profile"), this->value("systemsDisplayProfileId")});
+  rows.append({QStringLiteral("Engine Count"), QString::number(_summary.value(QStringLiteral("engineCount")).toInt())});
+  rows.append({QStringLiteral("Behavior Mode"), this->value("behaviorMode", QStringLiteral("Manual"))});
+  rows.append({QStringLiteral("Behavior Target"), this->value("behaviorTargetEntityName")});
   this->setTableRows(rows);
 }
 
@@ -352,15 +507,52 @@ void EntityDetailsDialog::updateSection(QListWidgetItem* current, QListWidgetIte
     return;
   }
 
+  this->refreshCurrentSection(true);
+}
+
+void EntityDetailsDialog::refreshSummary() {
+  if (!_summaryProvider) {
+    return;
+  }
+
+  const QVariantMap updatedSummary = _summaryProvider();
+  if (updatedSummary.isEmpty()) {
+    _statusLabel->setText(QStringLiteral("Status: Unavailable"));
+    _summaryProvider = {};
+    _console->appendPlainText(QStringLiteral("Entity is no longer available"));
+    return;
+  }
+
+  _summary = updatedSummary;
+  this->setWindowTitle(this->value("name", QStringLiteral("Entity Details")));
+  this->populateHeader();
+  this->refreshCurrentSection(false);
+}
+
+void EntityDetailsDialog::refreshCurrentSection(bool logTransition) {
+  const QListWidgetItem* current = _sectionsList->currentItem();
+  if (!current) {
+    return;
+  }
   const QString sectionName = current->text();
   if (sectionName == QStringLiteral("State Data")) {
     this->populateStateData();
+  } else if (sectionName == QStringLiteral("Tasks")) {
+    this->populateTaskInformation();
+  } else if (sectionName == QStringLiteral("Appearance")) {
+    this->populateAppearanceInformation();
+  } else if (sectionName == QStringLiteral("Resources")) {
+    this->populateResourcesInformation();
   } else if (sectionName == QStringLiteral("Sensor Information")) {
     this->populateSensorInformation();
-  } else {
-    this->populatePlaceholderSection(sectionName);
+  } else if (sectionName == QStringLiteral("Emitters")) {
+    this->populateEmitterInformation();
+  } else if (sectionName == QStringLiteral("Subsystems")) {
+    this->populateSubsystemInformation();
   }
-  _console->appendPlainText(QStringLiteral("Switched to section: %1").arg(sectionName));
+  if (logTransition) {
+    _console->appendPlainText(QStringLiteral("Switched to section: %1").arg(sectionName));
+  }
 }
 
 QString EntityDetailsDialog::value(const char* key, const QString& fallback) const {
@@ -380,8 +572,10 @@ QString EntityDetailsDialog::forceGlyph() const {
 }
 
 QString EntityDetailsDialog::locationText() const {
-  return QStringLiteral("%1, %2, %3")
-      .arg(this->value("latitude"))
-      .arg(this->value("longitude"))
-      .arg(formatFeetFromMetersString(this->value("altitude")));
+  const double altitudeMeters = summaryDoubleValue(_summary, "altitudeMeters");
+  return QStringLiteral("%1, %2, %3 m / %4")
+      .arg(formatNumber(summaryDoubleValue(_summary, "latitude"), 6))
+      .arg(formatNumber(summaryDoubleValue(_summary, "longitude"), 6))
+      .arg(formatNumber(altitudeMeters, 0))
+      .arg(formatFeet(altitudeMeters));
 }

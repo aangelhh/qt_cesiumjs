@@ -32,6 +32,8 @@
 #include "infrastructure/CesiumScenePage.h"
 #include "infrastructure/MapBridge.h"
 #include "infrastructure/ModelCatalog.h"
+#include "infrastructure/SensorModelProviderCatalog.h"
+#include "infrastructure/SensorModelProviderBootstrap.h"
 #include "presentation/EntityTextFormatter.h"
 #include "presentation/EntityHomePositionTracker.h"
 #include "presentation/EntityStatusFormatter.h"
@@ -294,6 +296,13 @@ MainWindow::MainWindow(QWidget* parent)
 #endif
 {
   this->_ui->setupUi(this);
+  const QStringList sensorProviderDiagnostics =
+      infrastructure::SensorModelProviderBootstrap::registerEnabledProviders(
+          *_scenarioState,
+          infrastructure::SensorModelProviderCatalog::loadProviders());
+  for (const QString& diagnostic : sensorProviderDiagnostics) {
+    this->appendLogMessage(diagnostic);
+  }
   this->_ui->viewerHost->setMinimumSize(960, 640);
   this->_ui->viewerHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
@@ -1572,7 +1581,18 @@ void MainWindow::openAddEntityDialog() {
   }
 
   const QVector<ModelCatalogEntry> modelCatalog = ModelCatalog::loadModels();
-  auto* dialog = new AddEntityDialog(modelCatalog, this);
+  QVector<infrastructure::SensorModelProviderEntry> sensorModelProviders =
+      infrastructure::SensorModelProviderCatalog::loadProviders();
+  const QStringList registeredProviderIds = _scenarioState->sensorModelIds();
+  for (infrastructure::SensorModelProviderEntry& provider : sensorModelProviders) {
+    provider.available = registeredProviderIds.contains(
+        provider.id,
+        Qt::CaseInsensitive);
+  }
+  auto* dialog = new AddEntityDialog(
+      modelCatalog,
+      sensorModelProviders,
+      this);
   this->_entityDialog = dialog;
 
   QObject::connect(
@@ -1760,7 +1780,17 @@ void MainWindow::openSelectedEntityDetails() {
     return;
   }
 
-  auto* dialog = new EntityDetailsDialog(summary, this);
+  const QString entityReference =
+      summary.value(QStringLiteral("entityId")).toString().trimmed().isEmpty()
+          ? summary.value(QStringLiteral("name")).toString()
+          : summary.value(QStringLiteral("entityId")).toString();
+  auto* dialog = new EntityDetailsDialog(
+      summary,
+      [this, entityReference]() -> QVariantMap {
+        const Entity* entity = this->findEntityByName(entityReference);
+        return entity ? this->makeEntityTrackSummary(*entity) : QVariantMap{};
+      },
+      this);
   dialog->show();
   dialog->raise();
   dialog->activateWindow();

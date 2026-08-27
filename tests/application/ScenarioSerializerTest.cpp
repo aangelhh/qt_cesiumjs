@@ -204,19 +204,32 @@ TEST(ScenarioSerializer, RoundTripWeapons) {
 
 TEST(ScenarioSerializer, RoundTripSensorTypeMetadata) {
   ScenarioSnapshot snapshot;
+  snapshot.sensorRandomSeed = 424242U;
   Entity entity = makeSimpleEntity(QStringLiteral("SensorPlatform"));
+  entity.radarSignature = 0.35;
+  entity.thermalSignature = 1.4;
+  entity.visualSignature = 0.8;
   SensorDefinition sensor;
   sensor.id = QStringLiteral("radar-primary");
+  sensor.modelProviderId = QStringLiteral("mixr");
   sensor.sensorType = QStringLiteral("radar");
   sensor.sensorSubType = QStringLiteral("airborneRadar");
+  sensor.probabilityOfDetection = 0.72;
+  sensor.trackHoldSeconds = 8.0;
   entity.sensors.push_back(sensor);
 
   SensorContact contact;
   contact.sensorId = sensor.id;
+  contact.sensorModelProviderId = QStringLiteral("mixr");
   contact.sensorType = sensor.sensorType;
   contact.sensorSubType = sensor.sensorSubType;
   contact.targetEntityName = QStringLiteral("Target");
   contact.detected = true;
+  contact.confidence = 0.64;
+  contact.lastSeenSimulationSeconds = 12.5;
+  contact.trackState = QStringLiteral("Coasting");
+  contact.lastEvaluationIndex = 7;
+  contact.missedDetectionCount = 1;
   entity.sensorContacts.push_back(contact);
   snapshot.entities.push_back(entity);
 
@@ -226,17 +239,48 @@ TEST(ScenarioSerializer, RoundTripSensorTypeMetadata) {
   QFile::remove(path);
 
   ASSERT_EQ(loaded.entities.size(), 1);
+  EXPECT_EQ(loaded.sensorRandomSeed, 424242U);
+  EXPECT_DOUBLE_EQ(loaded.entities.front().radarSignature, 0.35);
+  EXPECT_DOUBLE_EQ(loaded.entities.front().thermalSignature, 1.4);
+  EXPECT_DOUBLE_EQ(loaded.entities.front().visualSignature, 0.8);
   ASSERT_EQ(loaded.entities.front().sensors.size(), 1);
+  EXPECT_EQ(
+      loaded.entities.front().sensors.front().modelProviderId,
+      QStringLiteral("mixr"));
   EXPECT_EQ(
       loaded.entities.front().sensors.front().sensorSubType,
       QStringLiteral("airborneRadar"));
+  EXPECT_DOUBLE_EQ(
+      loaded.entities.front().sensors.front().probabilityOfDetection,
+      0.72);
+  EXPECT_DOUBLE_EQ(
+      loaded.entities.front().sensors.front().trackHoldSeconds,
+      8.0);
   ASSERT_EQ(loaded.entities.front().sensorContacts.size(), 1);
+  EXPECT_EQ(
+      loaded.entities.front().sensorContacts.front().sensorModelProviderId,
+      QStringLiteral("mixr"));
   EXPECT_EQ(
       loaded.entities.front().sensorContacts.front().sensorType,
       QStringLiteral("radar"));
   EXPECT_EQ(
       loaded.entities.front().sensorContacts.front().sensorSubType,
       QStringLiteral("airborneRadar"));
+  EXPECT_DOUBLE_EQ(
+      loaded.entities.front().sensorContacts.front().confidence,
+      0.64);
+  EXPECT_DOUBLE_EQ(
+      loaded.entities.front().sensorContacts.front().lastSeenSimulationSeconds,
+      12.5);
+  EXPECT_EQ(
+      loaded.entities.front().sensorContacts.front().trackState,
+      QStringLiteral("Coasting"));
+  EXPECT_EQ(
+      loaded.entities.front().sensorContacts.front().lastEvaluationIndex,
+      7);
+  EXPECT_EQ(
+      loaded.entities.front().sensorContacts.front().missedDetectionCount,
+      1);
 }
 
 TEST(ScenarioSerializer, LegacySensorWithoutSubTypeLoadsAsGeneric) {

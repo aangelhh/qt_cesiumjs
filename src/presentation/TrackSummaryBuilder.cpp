@@ -26,6 +26,7 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("type"), type},
       {QStringLiteral("team"), team},
       {QStringLiteral("altitude"), altitudeText},
+      {QStringLiteral("altitudeMeters"), 0.0},
       {QStringLiteral("position"), positionText},
       {QStringLiteral("status"), status},
       {QStringLiteral("latitude"), latitude},
@@ -54,8 +55,13 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("labelVisible"), true},
       {QStringLiteral("flightDynamicsEnabled"), false},
       {QStringLiteral("flightDynamicsMode"), QStringLiteral("kinematic")},
+      {QStringLiteral("activeDynamicsBackend"), QString()},
+      {QStringLiteral("dynamicsFallbackReason"), QString()},
+      {QStringLiteral("dynamicsStepDurationMilliseconds"), 0.0},
       {QStringLiteral("jsbsimAircraftModel"), QString()},
       {QStringLiteral("controlProfileId"), QString()},
+      {QStringLiteral("systemsDisplayProfileId"), QString()},
+      {QStringLiteral("engineCount"), 0},
       {QStringLiteral("cesiumModelAxes"), QString()},
       {QStringLiteral("fuelCapacityKilograms"), 0.0},
       {QStringLiteral("fuelRemainingKilograms"), 0.0},
@@ -85,6 +91,7 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("hidden"), false},
       {QStringLiteral("radarCoverageVisible"), false},
       {QStringLiteral("trackHistoryVisible"), false},
+      {QStringLiteral("weapons"), QVariantList{}},
   };
 }
 
@@ -259,6 +266,7 @@ QVariantMap makeEntityTrackSummary(
       entity.longitude);
 
   summary.insert(QStringLiteral("entityId"),            domain::entityKey(entity));
+  summary.insert(QStringLiteral("altitudeMeters"),      static_cast<double>(entity.altitude));
   summary.insert(QStringLiteral("domain"),              entity.domain);
   summary.insert(QStringLiteral("category"),            entity.category);
   summary.insert(QStringLiteral("callsign"),            entity.callsign);
@@ -276,10 +284,16 @@ QVariantMap makeEntityTrackSummary(
   summary.insert(QStringLiteral("headingDegrees"),      entity.headingDegrees);
   summary.insert(QStringLiteral("pitchDegrees"),        entity.pitchDegrees);
   summary.insert(QStringLiteral("rollDegrees"),         entity.rollDegrees);
+  summary.insert(QStringLiteral("groundHeightMeters"),  entity.groundHeight);
   summary.insert(QStringLiteral("flightDynamicsEnabled"),  entity.flightDynamicsEnabled);
   summary.insert(QStringLiteral("flightDynamicsMode"),     entity.flightDynamicsMode);
+  summary.insert(QStringLiteral("activeDynamicsBackend"),  entity.activeDynamicsBackend);
+  summary.insert(QStringLiteral("dynamicsFallbackReason"), entity.dynamicsFallbackReason);
+  summary.insert(QStringLiteral("dynamicsStepDurationMilliseconds"), entity.dynamicsStepDurationMilliseconds);
   summary.insert(QStringLiteral("jsbsimAircraftModel"),    entity.jsbsimAircraftModel);
   summary.insert(QStringLiteral("controlProfileId"),       entity.controlProfileId);
+  summary.insert(QStringLiteral("systemsDisplayProfileId"), entity.systemsDisplayProfileId);
+  summary.insert(QStringLiteral("engineCount"),             entity.engineCount);
   summary.insert(QStringLiteral("cesiumModelAxes"),        entity.cesiumModelAxes);
   summary.insert(QStringLiteral("fuelCapacityKilograms"),  entity.fuelCapacityKilograms);
   summary.insert(QStringLiteral("fuelRemainingKilograms"), entity.fuelRemainingKilograms);
@@ -330,21 +344,38 @@ QVariantMap makeEntityTrackSummary(
   summary.insert(QStringLiteral("taskRangeMeters"),             entity.currentTask.rangeMeters);
   summary.insert(QStringLiteral("sensorCount"),    entity.sensors.size());
   summary.insert(QStringLiteral("contactCount"),   entity.sensorContacts.size());
+  summary.insert(QStringLiteral("radarSignature"), entity.radarSignature);
+  summary.insert(QStringLiteral("thermalSignature"), entity.thermalSignature);
+  summary.insert(QStringLiteral("visualSignature"), entity.visualSignature);
+
+  QVariantList weapons;
+  for (const WeaponInventoryItem& weapon : entity.weapons) {
+    weapons.push_back(QVariantMap{
+        {QStringLiteral("weaponType"), weapon.weaponType},
+        {QStringLiteral("quantity"), weapon.quantity},
+    });
+  }
+  summary.insert(QStringLiteral("weapons"), weapons);
 
   QVariantList sensors;
   for (const SensorDefinition& sensor : entity.sensors) {
     sensors.push_back(QVariantMap{
         {QStringLiteral("id"),                    sensor.id},
         {QStringLiteral("name"),                  sensor.name},
+        {QStringLiteral("modelProviderId"),       sensor.modelProviderId},
         {QStringLiteral("sensorType"),            sensor.sensorType},
         {QStringLiteral("sensorSubType"),         sensor.sensorSubType},
         {QStringLiteral("enabled"),               sensor.enabled},
         {QStringLiteral("emitting"),              sensor.emitting},
+        {QStringLiteral("minRangeMeters"),         sensor.minRangeMeters},
         {QStringLiteral("maxRangeMeters"),         sensor.maxRangeMeters},
         {QStringLiteral("azimuthCenterDegrees"),   sensor.azimuthCenterDegrees},
         {QStringLiteral("azimuthWidthDegrees"),    sensor.azimuthWidthDegrees},
         {QStringLiteral("elevationCenterDegrees"), sensor.elevationCenterDegrees},
         {QStringLiteral("elevationWidthDegrees"),  sensor.elevationWidthDegrees},
+        {QStringLiteral("updatePeriodSeconds"),    sensor.updatePeriodSeconds},
+        {QStringLiteral("probabilityOfDetection"), sensor.probabilityOfDetection},
+        {QStringLiteral("trackHoldSeconds"),       sensor.trackHoldSeconds},
         {QStringLiteral("maxTracks"),             sensor.maxTracks},
     });
   }
@@ -354,6 +385,7 @@ QVariantMap makeEntityTrackSummary(
   for (const SensorContact& contact : entity.sensorContacts) {
     contacts.push_back(QVariantMap{
         {QStringLiteral("sensorId"),         contact.sensorId},
+        {QStringLiteral("sensorModelProviderId"), contact.sensorModelProviderId},
         {QStringLiteral("sensorType"),       contact.sensorType},
         {QStringLiteral("sensorSubType"),    contact.sensorSubType},
         {QStringLiteral("targetEntityId"),   contact.targetEntityId},
@@ -362,6 +394,10 @@ QVariantMap makeEntityTrackSummary(
         {QStringLiteral("bearingDegrees"),   contact.bearingDegrees},
         {QStringLiteral("lineOfSight"),      contact.lineOfSight},
         {QStringLiteral("detected"),         contact.detected},
+        {QStringLiteral("confidence"),       contact.confidence},
+        {QStringLiteral("lastSeenSimulationSeconds"), contact.lastSeenSimulationSeconds},
+        {QStringLiteral("trackState"),       contact.trackState},
+        {QStringLiteral("missedDetectionCount"), contact.missedDetectionCount},
     });
   }
   summary.insert(QStringLiteral("sensorContacts"), contacts);

@@ -3,6 +3,7 @@
 #include "domain/Entity.h"
 #include "infrastructure/DisEntityCatalog.h"
 #include "infrastructure/ModelCatalog.h"
+#include "infrastructure/SensorModelProviderCatalog.h"
 
 #include <QDialog>
 #include <QVector>
@@ -18,7 +19,10 @@ class AddEntityDialog : public QDialog {
   Q_OBJECT
 
 public:
-  explicit AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog, QWidget* parent = nullptr);
+  explicit AddEntityDialog(
+      const QVector<ModelCatalogEntry>& modelCatalog,
+      const QVector<infrastructure::SensorModelProviderEntry>& sensorModelProviders,
+      QWidget* parent = nullptr);
 
   Entity entity() const;
   void setPickedCoordinate(double longitude, double latitude, double height);
@@ -45,6 +49,7 @@ private:
   void syncWeaponControls();
 
   QVector<ModelCatalogEntry> _modelCatalog;
+  QVector<infrastructure::SensorModelProviderEntry> _sensorModelProviders;
   DisEntityCatalog _disCatalog;
   QLineEdit* _nameEdit;
   QLineEdit* _callsignEdit;
@@ -61,6 +66,7 @@ private:
   QComboBox* _disExtraCombo;
   QCheckBox* _addRadarCheck;
   QLineEdit* _radarNameEdit;
+  QComboBox* _radarModelProviderCombo;
   QDoubleSpinBox* _headingSpin;
   QCheckBox* _enableDynamicsCheck;
   QComboBox* _dynamicsModeCombo;
@@ -79,7 +85,11 @@ private:
   QDoubleSpinBox* _radarAzimuthSpin;
   QDoubleSpinBox* _radarElevationCenterSpin;
   QDoubleSpinBox* _radarElevationWidthSpin;
+  QDoubleSpinBox* _radarDetectionProbabilitySpin;
   QSpinBox* _radarMaxTracksSpin;
+  QDoubleSpinBox* _radarSignatureSpin;
+  QDoubleSpinBox* _thermalSignatureSpin;
+  QDoubleSpinBox* _visualSignatureSpin;
   QDoubleSpinBox* _latitudeSpin;
   QDoubleSpinBox* _longitudeSpin;
   QDoubleSpinBox* _groundHeightSpin;

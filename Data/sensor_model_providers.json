@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "providers": [
+    {
+      "id": "native",
+      "displayName": "Native deterministic",
+      "adapterType": "native",
+      "enabled": true,
+      "defaultForNewSensors": true,
+      "options": {}
+    },
+    {
+      "id": "mixr",
+      "displayName": "MIXR / OpenEaagles",
+      "adapterType": "shared-library",
+      "enabled": true,
+      "defaultForNewSensors": false,
+      "libraryPath": "",
+      "options": {
+        "pluginAbiVersion": 1
+      }
+    },
+    {
+      "id": "stone-soup",
+      "displayName": "Stone Soup",
+      "adapterType": "external-service",
+      "enabled": true,
+      "defaultForNewSensors": false,
+      "endpoint": "Tools/stonesoup_sensor_service.py",
+      "options": {
+        "requestTimeoutMilliseconds": 100,
+        "peakPowerWatts": 25000.0,
+        "dutyCycle": 0.1,
+        "bandwidthHz": 1000000.0,
+        "receiverNoiseDb": 3.0,
+        "frequencyHz": 10000000000.0,
+        "antennaGainDb": 35.0,
+        "beamWidthDegrees": 120.0,
+        "numberPulses": 16,
+        "lossDb": 6.0,
+        "probabilityFalseAlarm": 0.000001,
+        "rcsScaleSquareMeters": 1.0
+      }
+    }
+  ]
+}

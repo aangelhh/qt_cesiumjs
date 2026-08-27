@@ -97,6 +97,85 @@ if(QTTEST_ENABLE_QFLIGHTINSTRUMENTS)
     endif()
 endif()
 
+option(
+    QTTEST_ENABLE_MIXR_SENSOR_PROVIDER
+    "Build the optional MIXR radar sensor provider on macOS"
+    ON
+)
+set(QTTEST_MIXR_GIT_TAG
+    "bffebcec9b4c566f1394e8a6b34b7892a8f551c6"
+    CACHE STRING "Pinned MIXR revision"
+)
+
+if(QTTEST_ENABLE_MIXR_SENSOR_PROVIDER AND APPLE)
+    include(ExternalProject)
+    find_package(Git REQUIRED)
+    find_package(Threads REQUIRED)
+    find_program(QTTEST_MAKE_EXECUTABLE NAMES gmake make REQUIRED)
+
+    set(QTTEST_MIXR_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/mixr-src)
+    set(QTTEST_MIXR_LIBRARY_DIR ${QTTEST_MIXR_SOURCE_DIR}/lib)
+    set(QTTEST_MIXR_PLUGIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/sensor-plugins)
+    set(QTTEST_MIXR_PLUGIN_PATH
+        ${QTTEST_MIXR_PLUGIN_DIR}/libqttest_mixr_sensor.dylib)
+
+    ExternalProject_Add(qttest_mixr_external
+        EXCLUDE_FROM_ALL TRUE
+        PREFIX ${CMAKE_CURRENT_BINARY_DIR}/mixr-build
+        SOURCE_DIR ${QTTEST_MIXR_SOURCE_DIR}
+        GIT_REPOSITORY https://github.com/doughodson/mixr.git
+        GIT_TAG ${QTTEST_MIXR_GIT_TAG}
+        GIT_SHALLOW FALSE
+        UPDATE_DISCONNECTED TRUE
+        PATCH_COMMAND
+            ${CMAKE_COMMAND}
+            -DMIXR_SOURCE_DIR=<SOURCE_DIR>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyMixrPatch.cmake
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND
+            ${CMAKE_COMMAND} -E env
+            MIXR_ROOT=<SOURCE_DIR>
+            MIXR_3RD_PARTY_ROOT=<SOURCE_DIR>/thirdparty
+            ${QTTEST_MAKE_EXECUTABLE} -C <SOURCE_DIR>/src/base -j2
+        COMMAND
+            ${CMAKE_COMMAND} -E env
+            MIXR_ROOT=<SOURCE_DIR>
+            MIXR_3RD_PARTY_ROOT=<SOURCE_DIR>/thirdparty
+            ${QTTEST_MAKE_EXECUTABLE} -C <SOURCE_DIR>/src/simulation -j2
+        COMMAND
+            ${CMAKE_COMMAND} -E env
+            MIXR_ROOT=<SOURCE_DIR>
+            MIXR_3RD_PARTY_ROOT=<SOURCE_DIR>/thirdparty
+            ${QTTEST_MAKE_EXECUTABLE} -C <SOURCE_DIR>/src/models -j2
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS
+            ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_base.a
+            ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_simulation.a
+            ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_models.a
+    )
+
+    add_library(qttest_mixr_sensor SHARED EXCLUDE_FROM_ALL
+        integrations/mixr/MixrSensorPlugin.cpp
+        src/infrastructure/sensors/SensorModelPluginApi.h
+    )
+    add_dependencies(qttest_mixr_sensor qttest_mixr_external)
+    target_include_directories(qttest_mixr_sensor PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${QTTEST_MIXR_SOURCE_DIR}/include
+    )
+    target_link_libraries(qttest_mixr_sensor PRIVATE
+        ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_models.a
+        ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_simulation.a
+        ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_base.a
+        Threads::Threads
+    )
+    set_target_properties(qttest_mixr_sensor PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY ${QTTEST_MIXR_PLUGIN_DIR}
+        OUTPUT_NAME qttest_mixr_sensor
+    )
+    add_custom_target(qttest_setup_mixr DEPENDS qttest_mixr_sensor)
+endif()
+
 qt_standard_project_setup()
 
 option(QTTEST_ENABLE_JSBSIM "Enable JSBSim flight dynamics backend when available" ON)
@@ -133,6 +212,15 @@ qt_add_executable(qttest
     src/infrastructure/ModelCatalog.h
     src/infrastructure/ModelOrientation.cpp
     src/infrastructure/ModelOrientation.h
+    src/infrastructure/SensorModelProviderCatalog.cpp
+    src/infrastructure/SensorModelProviderCatalog.h
+    src/infrastructure/SensorModelProviderBootstrap.cpp
+    src/infrastructure/SensorModelProviderBootstrap.h
+    src/infrastructure/sensors/SensorModelPluginApi.h
+    src/infrastructure/sensors/SharedLibrarySensorModel.cpp
+    src/infrastructure/sensors/SharedLibrarySensorModel.h
+    src/infrastructure/sensors/StoneSoupSensorModel.cpp
+    src/infrastructure/sensors/StoneSoupSensorModel.h
     src/infrastructure/Ros2TelemetryBackend.h
     ${QTTEST_ROS2_BACKEND_SOURCE}
     src/infrastructure/Ros2TelemetryContract.cpp
@@ -175,6 +263,13 @@ qt_add_executable(qttest
     src/application/FlightDynamicsEngine.h
     src/application/SensorEngine.cpp
     src/application/SensorEngine.h
+    src/application/SensorDetectionModel.cpp
+    src/application/SensorDetectionModel.h
+    src/application/sensors/ISensorModel.h
+    src/application/sensors/NativeSensorModel.cpp
+    src/application/sensors/NativeSensorModel.h
+    src/application/sensors/SensorModelRegistry.cpp
+    src/application/sensors/SensorModelRegistry.h
     src/domain/BombReleaseGate.cpp
     src/domain/BombReleaseGate.h
     src/domain/CombatRules.cpp
@@ -303,7 +398,35 @@ target_include_directories(qttest PRIVATE
 
 target_compile_definitions(qttest PRIVATE
     QTTEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    QTTEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}"
 )
+
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    if(WIN32)
+        set(QTTEST_STONESOUP_VENV_PYTHON
+            ${CMAKE_CURRENT_BINARY_DIR}/stonesoup-venv/Scripts/python.exe)
+    else()
+        set(QTTEST_STONESOUP_VENV_PYTHON
+            ${CMAKE_CURRENT_BINARY_DIR}/stonesoup-venv/bin/python)
+    endif()
+    set(QTTEST_STONESOUP_READY_STAMP
+        ${CMAKE_CURRENT_BINARY_DIR}/stonesoup-venv/.qttest-stonesoup-ready)
+    add_custom_command(
+        OUTPUT ${QTTEST_STONESOUP_READY_STAMP}
+        COMMAND ${Python3_EXECUTABLE} -m venv
+            ${CMAKE_CURRENT_BINARY_DIR}/stonesoup-venv
+        COMMAND ${QTTEST_STONESOUP_VENV_PYTHON} -m pip
+            install -r ${CMAKE_CURRENT_SOURCE_DIR}/Dependencies/stonesoup/requirements.txt
+        COMMAND ${CMAKE_COMMAND} -E touch ${QTTEST_STONESOUP_READY_STAMP}
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Dependencies/stonesoup/requirements.txt
+        COMMENT "Creating the isolated Stone Soup sensor provider environment"
+        VERBATIM
+    )
+    add_custom_target(qttest_setup_stonesoup
+        DEPENDS ${QTTEST_STONESOUP_READY_STAMP}
+    )
+endif()
 
 set_target_properties(qttest PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}

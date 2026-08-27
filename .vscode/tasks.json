@@ -21,10 +21,48 @@
             "detail": "Configura el proyecto con CMake en una carpeta de build separada para macOS"
         },
         {
-            "label": "CMake Build",
+            "label": "CMake Setup Stone Soup",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "CMake Configure"
+            ],
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "build-macos-debug",
+                "--target",
+                "qttest_setup_stonesoup"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Prepara una vez el entorno aislado Stone Soup para el build Debug"
+        },
+        {
+            "label": "CMake Setup MIXR",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "CMake Setup Stone Soup"
+            ],
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "build-macos-debug",
+                "--target",
+                "qttest_setup_mixr"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Compila MIXR y el plugin radar nativo para macOS"
+        },
+        {
+            "label": "CMake Build",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "CMake Setup MIXR"
             ],
             "type": "shell",
             "command": "cmake",
@@ -83,10 +121,56 @@
             "detail": "Configura qttest con el backend nativo ROS 2/DDS"
         },
         {
-            "label": "CMake Build ROS 2",
+            "label": "CMake Setup Stone Soup ROS 2",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "CMake Configure ROS 2"
+            ],
+            "type": "process",
+            "command": "/Users/angelconde/.pixi/bin/pixi",
+            "args": [
+                "run",
+                "--manifest-path",
+                "/Users/angelconde/ros2_tactical/pixi.toml",
+                "cmake",
+                "--build",
+                "build-macos-ros2",
+                "--target",
+                "qttest_setup_stonesoup"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Prepara una vez el entorno aislado Stone Soup para el build ROS 2"
+        },
+        {
+            "label": "CMake Setup MIXR ROS 2",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "CMake Setup Stone Soup ROS 2"
+            ],
+            "type": "process",
+            "command": "/Users/angelconde/.pixi/bin/pixi",
+            "args": [
+                "run",
+                "--manifest-path",
+                "/Users/angelconde/ros2_tactical/pixi.toml",
+                "cmake",
+                "--build",
+                "build-macos-ros2",
+                "--target",
+                "qttest_setup_mixr"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Compila MIXR y el plugin radar para el build ROS 2"
+        },
+        {
+            "label": "CMake Build ROS 2",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "CMake Setup MIXR ROS 2"
             ],
             "type": "process",
             "command": "/Users/angelconde/.pixi/bin/pixi",

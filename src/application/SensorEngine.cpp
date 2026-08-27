@@ -1,8 +1,12 @@
 #include "application/SensorEngine.h"
 
+#include "application/sensors/SensorModelRegistry.h"
 #include "domain/EntityIdentity.h"
 
 #include <QtMath>
+
+#include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -118,15 +122,71 @@ bool targetInsideVerticalBeam(
   return deltaDegrees <= sensor.elevationWidthDegrees / 2.0;
 }
 
+const SensorContact* findPreviousContact(
+    const SensorContacts& contacts,
+    const SensorDefinition& sensor,
+    const Entity& target) {
+  const QString targetId = domain::entityKey(target);
+  for (const SensorContact& contact : contacts) {
+    if (contact.sensorId != sensor.id) {
+      continue;
+    }
+    if (!contact.targetEntityId.trimmed().isEmpty()) {
+      if (contact.targetEntityId == targetId) {
+        return &contact;
+      }
+      continue;
+    }
+    if (contact.targetEntityName.compare(target.name, Qt::CaseInsensitive) == 0) {
+      return &contact;
+    }
+  }
+  return nullptr;
+}
+
+qint64 evaluationIndex(
+    const SensorDefinition& sensor,
+    double simulationTimeSeconds) {
+  const double periodSeconds = std::max(0.001, sensor.updatePeriodSeconds);
+  return static_cast<qint64>(
+      std::floor(std::max(0.0, simulationTimeSeconds) / periodSeconds));
+}
+
+SensorContact makeContact(
+    const SensorDefinition& sensor,
+    const QString& effectiveModelProviderId,
+    const Entity& target,
+    double range,
+    double bearing) {
+  SensorContact contact;
+  contact.sensorId = sensor.id;
+  contact.sensorModelProviderId = effectiveModelProviderId;
+  contact.sensorType = sensor.sensorType;
+  contact.sensorSubType = sensor.sensorSubType;
+  contact.targetEntityId = domain::entityKey(target);
+  contact.targetEntityName = target.name;
+  contact.rangeMeters = range;
+  contact.bearingDegrees = bearing;
+  contact.lineOfSight = true;
+  return contact;
+}
+
 } // namespace
 
-void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
-  for (Entity& entity : entities) {
-    entity.sensorContacts.clear();
-  }
+void SensorEngine::updateEntityContacts(
+    QVector<Entity>& entities,
+    double simulationTimeSeconds,
+    quint32 scenarioSeed,
+    const application::sensors::SensorModelRegistry* modelRegistry) {
+  const application::sensors::SensorModelRegistry& models = modelRegistry
+      ? *modelRegistry
+      : application::sensors::SensorModelRegistry::defaultRegistry();
 
   for (int sourceIndex = 0; sourceIndex < entities.size(); ++sourceIndex) {
     Entity& source = entities[sourceIndex];
+    const SensorContacts previousContacts = source.sensorContacts;
+    source.sensorContacts.clear();
+
     if (source.destroyed) {
       continue;
     }
@@ -135,7 +195,8 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
     }
 
     for (const SensorDefinition& sensor : source.sensors) {
-      if (!sensor.enabled || !sensor.emitting || sensor.maxRangeMeters <= 0.0) {
+      if (!sensor.enabled || !sensor.emitting || sensor.maxRangeMeters <= 0.0 ||
+          sensor.maxTracks <= 0) {
         continue;
       }
       if (!sensor::canOperateFromDomain(sensor, source.domain)) {
@@ -143,6 +204,7 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
       }
 
       int tracksAdded = 0;
+      const qint64 scanIndex = evaluationIndex(sensor, simulationTimeSeconds);
       for (int targetIndex = 0; targetIndex < entities.size(); ++targetIndex) {
         if (sourceIndex == targetIndex) {
           continue;
@@ -172,17 +234,73 @@ void SensorEngine::updateEntityContacts(QVector<Entity>& entities) {
           continue;
         }
 
-        SensorContact contact;
-        contact.sensorId = sensor.id;
-        contact.sensorType = sensor.sensorType;
-        contact.sensorSubType = sensor.sensorSubType;
-        contact.targetEntityId = domain::entityKey(target);
-        contact.targetEntityName = target.name;
-        contact.rangeMeters = range;
-        contact.bearingDegrees = bearingDegrees(source, target);
-        contact.lineOfSight = true;
-        contact.detected = true;
-        source.sensorContacts.push_back(contact);
+        const double bearing = bearingDegrees(source, target);
+        const SensorContact* previous =
+            findPreviousContact(previousContacts, sensor, target);
+
+        if (previous && previous->lastEvaluationIndex == scanIndex) {
+          SensorContact contact = *previous;
+          contact.rangeMeters = range;
+          contact.bearingDegrees = bearing;
+          source.sensorContacts.push_back(contact);
+          ++tracksAdded;
+          if (tracksAdded >= sensor.maxTracks) {
+            break;
+          }
+          continue;
+        }
+
+        const application::sensors::ISensorModel& sensorModel =
+            models.resolve(sensor.modelProviderId);
+        const application::sensors::SensorEvaluationResult evaluation =
+            sensorModel.evaluate({
+                scenarioSeed,
+                simulationTimeSeconds,
+                scanIndex,
+                range,
+                source,
+                sensor,
+                target});
+
+        if (evaluation.detected) {
+          SensorContact contact = makeContact(
+              sensor,
+              evaluation.effectiveModelId.trimmed().isEmpty()
+                  ? sensorModel.modelId()
+                  : evaluation.effectiveModelId,
+              target,
+              range,
+              bearing);
+          contact.detected = true;
+          contact.confidence = evaluation.probability;
+          contact.lastSeenSimulationSeconds =
+              std::max(0.0, simulationTimeSeconds);
+          contact.trackState = QStringLiteral("Detected");
+          contact.lastEvaluationIndex = scanIndex;
+          source.sensorContacts.push_back(contact);
+        } else if (previous) {
+          const double secondsSinceLastSeen = std::max(
+              0.0,
+              simulationTimeSeconds - previous->lastSeenSimulationSeconds);
+          if (secondsSinceLastSeen > std::max(0.0, sensor.trackHoldSeconds)) {
+            continue;
+          }
+
+          SensorContact contact = *previous;
+          contact.rangeMeters = range;
+          contact.bearingDegrees = bearing;
+          contact.detected = true;
+          contact.confidence = std::clamp(
+              previous->confidence * 0.5,
+              0.0,
+              1.0);
+          contact.trackState = QStringLiteral("Coasting");
+          contact.lastEvaluationIndex = scanIndex;
+          contact.missedDetectionCount = previous->missedDetectionCount + 1;
+          source.sensorContacts.push_back(contact);
+        } else {
+          continue;
+        }
 
         ++tracksAdded;
         if (tracksAdded >= sensor.maxTracks) {

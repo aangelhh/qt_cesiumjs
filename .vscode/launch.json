@@ -32,6 +32,14 @@
                 {
                     "name": "ROS_VERSION",
                     "value": "2"
+                },
+                {
+                    "name": "QTTEST_STONESOUP_PYTHON",
+                    "value": "${workspaceFolder}/build-macos-ros2/stonesoup-venv/bin/python"
+                },
+                {
+                    "name": "QTTEST_MIXR_SENSOR_PLUGIN",
+                    "value": "${workspaceFolder}/build-macos-ros2/sensor-plugins/libqttest_mixr_sensor.dylib"
                 }
             ],
             "externalConsole": false,
@@ -54,7 +62,16 @@
             "args": [],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,
-            "environment": [],
+            "environment": [
+                {
+                    "name": "QTTEST_STONESOUP_PYTHON",
+                    "value": "${workspaceFolder}/build-macos-debug/stonesoup-venv/bin/python"
+                },
+                {
+                    "name": "QTTEST_MIXR_SENSOR_PLUGIN",
+                    "value": "${workspaceFolder}/build-macos-debug/sensor-plugins/libqttest_mixr_sensor.dylib"
+                }
+            ],
             "externalConsole": false,
             "MIMode": "lldb",
             "preLaunchTask": "CMake Build",

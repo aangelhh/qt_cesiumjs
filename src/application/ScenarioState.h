@@ -1,6 +1,7 @@
 #pragma once
 
 #include "application/KinematicsTelemetry.h"
+#include "application/sensors/SensorModelRegistry.h"
 #include "domain/Entity.h"
 #include "domain/Munition.h"
 #include "domain/TacticalGraphic.h"
@@ -8,8 +9,10 @@
 
 #include <QString>
 #include <QStringList>
+#include <QtGlobal>
 #include <QVector>
 #include <mutex>
+#include <memory>
 #include <unordered_map>
 
 class ScenarioState {
@@ -64,6 +67,11 @@ public:
   void refreshSensors();
   void advanceSimulation(double deltaSeconds);
   double simulationTimeSeconds() const;
+  quint32 sensorRandomSeed() const;
+  void setSensorRandomSeed(quint32 seed);
+  bool registerSensorModel(
+      std::shared_ptr<const application::sensors::ISensorModel> model);
+  QStringList sensorModelIds() const;
   void setKinematicsTelemetryPublicationPeriod(double periodSeconds);
   void stopMission();
   bool save() const;
@@ -85,6 +93,8 @@ private:
   QVector<AreaDefinition> _areas;
   int _nextMunitionSerial = 1;
   double _simulationTimeSeconds = 0.0;
+  quint32 _sensorRandomSeed = 0x5eed1234U;
+  application::sensors::SensorModelRegistry _sensorModelRegistry;
   application::KinematicsTelemetryPublisher _kinematicsTelemetryPublisher;
 
   void applyDamageWithSource(

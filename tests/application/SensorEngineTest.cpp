@@ -54,6 +54,7 @@ TEST(SensorEngine, ContactCarriesProducingSensorTypeAndSubType) {
   ASSERT_EQ(entities.at(0).sensorContacts.size(), 1);
   const SensorContact& contact = entities.at(0).sensorContacts.front();
   EXPECT_EQ(contact.sensorId, QStringLiteral("radar-1"));
+  EXPECT_EQ(contact.sensorModelProviderId, QStringLiteral("native"));
   EXPECT_EQ(contact.sensorType, QStringLiteral("radar"));
   EXPECT_EQ(contact.sensorSubType, QStringLiteral("airborneRadar"));
   EXPECT_EQ(contact.targetEntityName, QStringLiteral("Target"));

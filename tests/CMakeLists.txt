@@ -39,9 +39,13 @@ add_executable(qttest_unit_tests
     application/SystemsTelemetryTest.cpp
     infrastructure/ModelCatalogTest.cpp
     infrastructure/ModelOrientationTest.cpp
+    infrastructure/SensorModelProviderCatalogTest.cpp
+    infrastructure/SensorProviderAdapterTest.cpp
     infrastructure/Ros2TelemetryPublisherTest.cpp
     application/MunitionSimulatorTest.cpp
     application/BehaviorEngineTest.cpp
+    application/SensorDetectionModelTest.cpp
+    application/SensorModelRegistryTest.cpp
     application/SensorEngineTest.cpp
     application/ScenarioQueriesTest.cpp
     application/ScenarioSerializerTest.cpp
@@ -96,11 +100,18 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/infrastructure/CesiumScenePage.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/ModelCatalog.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/ModelOrientation.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/SensorModelProviderCatalog.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/SensorModelProviderBootstrap.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/sensors/SharedLibrarySensorModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/sensors/StoneSoupSensorModel.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/Ros2TelemetryBackendStub.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/Ros2TelemetryContract.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/Ros2TelemetryPublisher.cpp
     ${CMAKE_SOURCE_DIR}/src/application/SimulationEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/application/SensorEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/SensorDetectionModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/sensors/NativeSensorModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/sensors/SensorModelRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/application/FlightDynamicsEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/BombReleaseController.cpp
     ${CMAKE_SOURCE_DIR}/src/presentation/WeaponActionsController.cpp
@@ -133,7 +144,13 @@ target_include_directories(qttest_unit_tests PRIVATE
 
 target_compile_definitions(qttest_unit_tests PRIVATE
     QTTEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    QTTEST_BINARY_DIR="${CMAKE_BINARY_DIR}"
 )
+if(DEFINED QTTEST_MIXR_PLUGIN_PATH)
+    target_compile_definitions(qttest_unit_tests PRIVATE
+        QTTEST_MIXR_PLUGIN_PATH="${QTTEST_MIXR_PLUGIN_PATH}"
+    )
+endif()
 
 target_link_libraries(qttest_unit_tests
     PRIVATE

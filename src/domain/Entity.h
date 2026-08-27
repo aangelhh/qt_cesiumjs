@@ -96,6 +96,9 @@ struct Entity {
   double verticalSpeedMetersPerSecond = 0.0;
   bool destroyed = false;
   double damagePercent = 0.0;
+  double radarSignature = 1.0;
+  double thermalSignature = 1.0;
+  double visualSignature = 1.0;
   QString behaviorMode = QStringLiteral("Manual");
   QString behaviorTargetEntityId;
   QString behaviorTargetEntityName;

@@ -103,6 +103,33 @@ TEST(EntityTrackSummaryTest, ContainsFuelState) {
       2500.0);
 }
 
+TEST(EntityTrackSummaryTest, ContainsRuntimeSubsystemAndResourceState) {
+  Entity e = makeBasicEntity();
+  e.activeDynamicsBackend = QStringLiteral("jsbsim");
+  e.dynamicsFallbackReason = QStringLiteral("none");
+  e.dynamicsStepDurationMilliseconds = 0.42;
+  e.systemsDisplayProfileId = QStringLiteral("air-turbine-1-engine");
+  e.engineCount = 1;
+  e.weapons.push_back({QStringLiteral("Missile"), 2});
+  e.weapons.push_back({QStringLiteral("Bomb"), 4});
+
+  const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
+
+  EXPECT_EQ(
+      summary.value(QStringLiteral("activeDynamicsBackend")).toString(),
+      QStringLiteral("jsbsim"));
+  EXPECT_DOUBLE_EQ(
+      summary.value(QStringLiteral("dynamicsStepDurationMilliseconds")).toDouble(),
+      0.42);
+  EXPECT_EQ(summary.value(QStringLiteral("engineCount")).toInt(), 1);
+  const QVariantList weapons = summary.value(QStringLiteral("weapons")).toList();
+  ASSERT_EQ(weapons.size(), 2);
+  EXPECT_EQ(
+      weapons.at(1).toMap().value(QStringLiteral("weaponType")).toString(),
+      QStringLiteral("Bomb"));
+  EXPECT_EQ(weapons.at(1).toMap().value(QStringLiteral("quantity")).toInt(), 4);
+}
+
 TEST(EntityTrackSummaryTest, BehaviorModeDefaultsToManualWhenEmpty) {
   Entity e = makeBasicEntity();
   e.behaviorMode = QStringLiteral("   ");
@@ -150,9 +177,12 @@ TEST(EntityTrackSummaryTest, SensorCountMatchesSensorsSize) {
   SensorDefinition sensor;
   sensor.id = QStringLiteral("radar-1");
   sensor.name = QStringLiteral("Radar1");
+  sensor.modelProviderId = QStringLiteral("stone-soup");
   sensor.sensorType = QStringLiteral("Radar");
   sensor.sensorSubType = QStringLiteral("AirborneRadar");
   sensor.maxRangeMeters = 100000.0;
+  sensor.probabilityOfDetection = 0.75;
+  sensor.trackHoldSeconds = 6.0;
   e.sensors.push_back(sensor);
   const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
   EXPECT_EQ(summary.value(QStringLiteral("sensorCount")).toInt(), 1);
@@ -160,17 +190,29 @@ TEST(EntityTrackSummaryTest, SensorCountMatchesSensorsSize) {
   ASSERT_EQ(sensors.size(), 1);
   EXPECT_EQ(sensors.first().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Radar1"));
   EXPECT_EQ(
+      sensors.first().toMap().value(QStringLiteral("modelProviderId")).toString(),
+      QStringLiteral("stone-soup"));
+  EXPECT_EQ(
       sensors.first().toMap().value(QStringLiteral("sensorSubType")).toString(),
       QStringLiteral("AirborneRadar"));
+  EXPECT_DOUBLE_EQ(
+      sensors.first().toMap().value(QStringLiteral("probabilityOfDetection")).toDouble(),
+      0.75);
+  EXPECT_DOUBLE_EQ(
+      sensors.first().toMap().value(QStringLiteral("trackHoldSeconds")).toDouble(),
+      6.0);
 }
 
 TEST(EntityTrackSummaryTest, ContactCountMatchesContactsSize) {
   Entity e = makeBasicEntity();
   SensorContact contact;
+  contact.sensorModelProviderId = QStringLiteral("stone-soup");
   contact.sensorType = QStringLiteral("radar");
   contact.sensorSubType = QStringLiteral("airborneRadar");
   contact.targetEntityName = QStringLiteral("Enemy1");
   contact.detected = true;
+  contact.confidence = 0.67;
+  contact.trackState = QStringLiteral("Coasting");
   contact.rangeMeters = 25000.0;
   e.sensorContacts.push_back(contact);
   const QVariantMap summary = makeEntityTrackSummary(e, defaultVisualState());
@@ -181,6 +223,15 @@ TEST(EntityTrackSummaryTest, ContactCountMatchesContactsSize) {
   EXPECT_EQ(
       contacts.first().toMap().value(QStringLiteral("sensorSubType")).toString(),
       QStringLiteral("airborneRadar"));
+  EXPECT_DOUBLE_EQ(
+      contacts.first().toMap().value(QStringLiteral("confidence")).toDouble(),
+      0.67);
+  EXPECT_EQ(
+      contacts.first().toMap().value(QStringLiteral("sensorModelProviderId")).toString(),
+      QStringLiteral("stone-soup"));
+  EXPECT_EQ(
+      contacts.first().toMap().value(QStringLiteral("trackState")).toString(),
+      QStringLiteral("Coasting"));
 }
 
 TEST(EntityTrackSummaryTest, DestroyedFlagReflected) {

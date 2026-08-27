@@ -107,9 +107,13 @@ QString suggestedJsbsimModel(const QString& domain, const QString& category, con
 
 } // namespace
 
-AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog, QWidget* parent)
+AddEntityDialog::AddEntityDialog(
+    const QVector<ModelCatalogEntry>& modelCatalog,
+    const QVector<infrastructure::SensorModelProviderEntry>& sensorModelProviders,
+    QWidget* parent)
     : QDialog(parent),
       _modelCatalog(modelCatalog),
+      _sensorModelProviders(sensorModelProviders),
       _disCatalog(DisEntityCatalog::loadDefault()),
       _nameEdit(new QLineEdit(this)),
       _callsignEdit(new QLineEdit(this)),
@@ -126,6 +130,7 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
       _disExtraCombo(new QComboBox(this)),
       _addRadarCheck(new QCheckBox(QStringLiteral("Attach primary radar"), this)),
       _radarNameEdit(new QLineEdit(this)),
+      _radarModelProviderCombo(new QComboBox(this)),
       _headingSpin(new QDoubleSpinBox(this)),
       _enableDynamicsCheck(new QCheckBox(QStringLiteral("Enable flight dynamics"), this)),
       _dynamicsModeCombo(new QComboBox(this)),
@@ -144,7 +149,11 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
       _radarAzimuthSpin(new QDoubleSpinBox(this)),
       _radarElevationCenterSpin(new QDoubleSpinBox(this)),
       _radarElevationWidthSpin(new QDoubleSpinBox(this)),
+      _radarDetectionProbabilitySpin(new QDoubleSpinBox(this)),
       _radarMaxTracksSpin(new QSpinBox(this)),
+      _radarSignatureSpin(new QDoubleSpinBox(this)),
+      _thermalSignatureSpin(new QDoubleSpinBox(this)),
+      _visualSignatureSpin(new QDoubleSpinBox(this)),
       _latitudeSpin(new QDoubleSpinBox(this)),
       _longitudeSpin(new QDoubleSpinBox(this)),
       _groundHeightSpin(new QDoubleSpinBox(this)),
@@ -223,6 +232,51 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
 
   _radarMaxTracksSpin->setRange(1, 256);
   _radarMaxTracksSpin->setValue(16);
+
+  for (const infrastructure::SensorModelProviderEntry& provider :
+       _sensorModelProviders) {
+    if (!provider.enabled || provider.id.trimmed().isEmpty()) {
+      continue;
+    }
+    QString label = provider.displayName.trimmed().isEmpty()
+        ? provider.id
+        : provider.displayName;
+    if (!provider.available) {
+      label += QStringLiteral(" (not loaded; native fallback)");
+    }
+    _radarModelProviderCombo->addItem(label, provider.id);
+    const int index = _radarModelProviderCombo->count() - 1;
+    _radarModelProviderCombo->setItemData(
+        index,
+        QStringLiteral("Adapter: %1").arg(provider.adapterType),
+        Qt::ToolTipRole);
+    if (provider.defaultForNewSensors) {
+      _radarModelProviderCombo->setCurrentIndex(index);
+    }
+  }
+  if (_radarModelProviderCombo->count() == 0) {
+    _radarModelProviderCombo->addItem(
+        QStringLiteral("Native deterministic"),
+        QStringLiteral("native"));
+  }
+  _radarModelProviderCombo->setObjectName(
+      QStringLiteral("radarModelProviderCombo"));
+
+  _radarDetectionProbabilitySpin->setRange(0.0, 100.0);
+  _radarDetectionProbabilitySpin->setDecimals(1);
+  _radarDetectionProbabilitySpin->setSingleStep(1.0);
+  _radarDetectionProbabilitySpin->setSuffix(QStringLiteral(" %"));
+  _radarDetectionProbabilitySpin->setValue(95.0);
+
+  const auto configureSignatureSpin = [](QDoubleSpinBox* spin) {
+    spin->setRange(0.0, 2.0);
+    spin->setDecimals(2);
+    spin->setSingleStep(0.1);
+    spin->setValue(1.0);
+  };
+  configureSignatureSpin(_radarSignatureSpin);
+  configureSignatureSpin(_thermalSignatureSpin);
+  configureSignatureSpin(_visualSignatureSpin);
 
   _speedSpin->setRange(0.0, 1200.0);
   _speedSpin->setDecimals(1);
@@ -359,10 +413,12 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   });
   QObject::connect(_addRadarCheck, &QCheckBox::toggled, this, [this](bool enabled) {
     _radarNameEdit->setEnabled(enabled);
+    _radarModelProviderCombo->setEnabled(enabled);
     _radarRangeSpin->setEnabled(enabled);
     _radarAzimuthSpin->setEnabled(enabled);
     _radarElevationCenterSpin->setEnabled(enabled);
     _radarElevationWidthSpin->setEnabled(enabled);
+    _radarDetectionProbabilitySpin->setEnabled(enabled);
     _radarMaxTracksSpin->setEnabled(enabled);
   });
   QObject::connect(_enableDynamicsCheck, &QCheckBox::toggled, this, [this](bool enabled) {
@@ -421,11 +477,16 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
   formLayout->addRow(QStringLiteral("Missile Count"), _missileCountSpin);
   formLayout->addRow(QStringLiteral("Sensor"), _addRadarCheck);
   formLayout->addRow(QStringLiteral("Radar Name"), _radarNameEdit);
+  formLayout->addRow(QStringLiteral("Radar Model Provider"), _radarModelProviderCombo);
   formLayout->addRow(QStringLiteral("Radar Range"), _radarRangeSpin);
   formLayout->addRow(QStringLiteral("Radar Azimuth"), _radarAzimuthSpin);
   formLayout->addRow(QStringLiteral("Elevation Center"), _radarElevationCenterSpin);
   formLayout->addRow(QStringLiteral("Elevation Width"), _radarElevationWidthSpin);
+  formLayout->addRow(QStringLiteral("Radar Detection Probability"), _radarDetectionProbabilitySpin);
   formLayout->addRow(QStringLiteral("Radar Max Tracks"), _radarMaxTracksSpin);
+  formLayout->addRow(QStringLiteral("Radar Signature"), _radarSignatureSpin);
+  formLayout->addRow(QStringLiteral("Thermal Signature"), _thermalSignatureSpin);
+  formLayout->addRow(QStringLiteral("Visual Signature"), _visualSignatureSpin);
   formLayout->addRow(QStringLiteral("Latitude"), _latitudeSpin);
   formLayout->addRow(QStringLiteral("Longitude"), _longitudeSpin);
   formLayout->addRow(QStringLiteral("Ground Height"), _groundHeightSpin);
@@ -438,10 +499,12 @@ AddEntityDialog::AddEntityDialog(const QVector<ModelCatalogEntry>& modelCatalog,
     formLayout->addRow(warningLabel);
   }
   _radarNameEdit->setEnabled(_addRadarCheck->isChecked());
+  _radarModelProviderCombo->setEnabled(_addRadarCheck->isChecked());
   _radarRangeSpin->setEnabled(_addRadarCheck->isChecked());
   _radarAzimuthSpin->setEnabled(_addRadarCheck->isChecked());
   _radarElevationCenterSpin->setEnabled(_addRadarCheck->isChecked());
   _radarElevationWidthSpin->setEnabled(_addRadarCheck->isChecked());
+  _radarDetectionProbabilitySpin->setEnabled(_addRadarCheck->isChecked());
   _radarMaxTracksSpin->setEnabled(_addRadarCheck->isChecked());
   this->syncDynamicsControls();
   this->syncFuelControls();
@@ -1029,6 +1092,10 @@ Entity AddEntityDialog::entity() const {
 
   entity.refreshEntityTypeCode();
 
+  entity.radarSignature = _radarSignatureSpin->value();
+  entity.thermalSignature = _thermalSignatureSpin->value();
+  entity.visualSignature = _visualSignatureSpin->value();
+
   if (_addRadarCheck->isChecked()) {
     SensorDefinition radar;
     radar.id = QStringLiteral("%1-radar-primary").arg(entity.name.trimmed().isEmpty()
@@ -1037,6 +1104,11 @@ Entity AddEntityDialog::entity() const {
     radar.name = _radarNameEdit->text().trimmed().isEmpty()
         ? QStringLiteral("Primary Radar")
         : _radarNameEdit->text().trimmed();
+    radar.modelProviderId = _radarModelProviderCombo->currentData()
+        .toString().trimmed().toLower();
+    if (radar.modelProviderId.isEmpty()) {
+      radar.modelProviderId = QStringLiteral("native");
+    }
     radar.sensorType = QStringLiteral("radar");
     radar.sensorSubType = isGround
         ? QStringLiteral("groundRadar")
@@ -1045,6 +1117,8 @@ Entity AddEntityDialog::entity() const {
     radar.azimuthWidthDegrees = _radarAzimuthSpin->value();
     radar.elevationCenterDegrees = _radarElevationCenterSpin->value();
     radar.elevationWidthDegrees = _radarElevationWidthSpin->value();
+    radar.probabilityOfDetection =
+        _radarDetectionProbabilitySpin->value() / 100.0;
     radar.maxTracks = _radarMaxTracksSpin->value();
     radar.canDetectAir = true;
     radar.canDetectGround = false;

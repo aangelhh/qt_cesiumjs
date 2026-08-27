@@ -10,6 +10,8 @@
 #include <QJsonObject>
 #include <QtMath>
 
+#include <limits>
+
 // ── Local normalization helpers ───────────────────────────────────────────────
 
 namespace {
@@ -76,6 +78,7 @@ QJsonObject toJson(const SensorDefinition& sensor) {
   return {
       {QStringLiteral("id"), sensor.id},
       {QStringLiteral("name"), sensor.name},
+      {QStringLiteral("modelProviderId"), sensor.modelProviderId},
       {QStringLiteral("sensorType"), sensor.sensorType},
       {QStringLiteral("sensorSubType"), sensor.sensorSubType},
       {QStringLiteral("enabled"), sensor.enabled},
@@ -94,6 +97,7 @@ QJsonObject toJson(const SensorDefinition& sensor) {
       {QStringLiteral("canDetectSurface"), sensor.canDetectSurface},
       {QStringLiteral("terrainMaskingEnabled"), sensor.terrainMaskingEnabled},
       {QStringLiteral("probabilityOfDetection"), sensor.probabilityOfDetection},
+      {QStringLiteral("trackHoldSeconds"), sensor.trackHoldSeconds},
   };
 }
 
@@ -101,6 +105,8 @@ SensorDefinition sensorFromJson(const QJsonObject& object) {
   SensorDefinition sensor;
   sensor.id = object.value(QStringLiteral("id")).toString();
   sensor.name = object.value(QStringLiteral("name")).toString();
+  sensor.modelProviderId = object.value(QStringLiteral("modelProviderId"))
+      .toString(QStringLiteral("native"));
   sensor.sensorType = object.value(QStringLiteral("sensorType")).toString(QStringLiteral("radar"));
   sensor.sensorSubType =
       object.value(QStringLiteral("sensorSubType")).toString(QStringLiteral("generic"));
@@ -120,6 +126,9 @@ SensorDefinition sensorFromJson(const QJsonObject& object) {
   sensor.canDetectSurface = object.value(QStringLiteral("canDetectSurface")).toBool(false);
   sensor.terrainMaskingEnabled = object.value(QStringLiteral("terrainMaskingEnabled")).toBool(false);
   sensor.probabilityOfDetection = object.value(QStringLiteral("probabilityOfDetection")).toDouble(1.0);
+  sensor.trackHoldSeconds = qMax(
+      0.0,
+      object.value(QStringLiteral("trackHoldSeconds")).toDouble(10.0));
   return sensor;
 }
 
@@ -128,6 +137,7 @@ SensorDefinition sensorFromJson(const QJsonObject& object) {
 QJsonObject toJson(const SensorContact& contact) {
   return {
       {QStringLiteral("sensorId"), contact.sensorId},
+      {QStringLiteral("sensorModelProviderId"), contact.sensorModelProviderId},
       {QStringLiteral("sensorType"), contact.sensorType},
       {QStringLiteral("sensorSubType"), contact.sensorSubType},
       {QStringLiteral("targetEntityId"), contact.targetEntityId},
@@ -136,12 +146,20 @@ QJsonObject toJson(const SensorContact& contact) {
       {QStringLiteral("bearingDegrees"), contact.bearingDegrees},
       {QStringLiteral("lineOfSight"), contact.lineOfSight},
       {QStringLiteral("detected"), contact.detected},
+      {QStringLiteral("confidence"), contact.confidence},
+      {QStringLiteral("lastSeenSimulationSeconds"), contact.lastSeenSimulationSeconds},
+      {QStringLiteral("trackState"), contact.trackState},
+      {QStringLiteral("lastEvaluationIndex"), static_cast<double>(contact.lastEvaluationIndex)},
+      {QStringLiteral("missedDetectionCount"), contact.missedDetectionCount},
   };
 }
 
 SensorContact sensorContactFromJson(const QJsonObject& object) {
   SensorContact contact;
   contact.sensorId = object.value(QStringLiteral("sensorId")).toString();
+  contact.sensorModelProviderId =
+      object.value(QStringLiteral("sensorModelProviderId"))
+          .toString(QStringLiteral("native"));
   contact.sensorType = object.value(QStringLiteral("sensorType")).toString();
   contact.sensorSubType = object.value(QStringLiteral("sensorSubType")).toString();
   contact.targetEntityId = object.value(QStringLiteral("targetEntityId")).toString();
@@ -150,6 +168,21 @@ SensorContact sensorContactFromJson(const QJsonObject& object) {
   contact.bearingDegrees = object.value(QStringLiteral("bearingDegrees")).toDouble(0.0);
   contact.lineOfSight = object.value(QStringLiteral("lineOfSight")).toBool(true);
   contact.detected = object.value(QStringLiteral("detected")).toBool(false);
+  contact.confidence = qBound(
+      0.0,
+      object.value(QStringLiteral("confidence"))
+          .toDouble(contact.detected ? 1.0 : 0.0),
+      1.0);
+  contact.lastSeenSimulationSeconds = qMax(
+      0.0,
+      object.value(QStringLiteral("lastSeenSimulationSeconds")).toDouble(0.0));
+  contact.trackState = object.value(QStringLiteral("trackState"))
+      .toString(contact.detected ? QStringLiteral("Detected") : QStringLiteral("Lost"));
+  contact.lastEvaluationIndex = static_cast<qint64>(
+      object.value(QStringLiteral("lastEvaluationIndex")).toDouble(-1.0));
+  contact.missedDetectionCount = qMax(
+      0,
+      object.value(QStringLiteral("missedDetectionCount")).toInt(0));
   return contact;
 }
 
@@ -286,6 +319,9 @@ QJsonObject toJson(const Entity& entity) {
       {QStringLiteral("verticalSpeedMetersPerSecond"), entity.verticalSpeedMetersPerSecond},
       {QStringLiteral("destroyed"), entity.destroyed},
       {QStringLiteral("damagePercent"), entity.damagePercent},
+      {QStringLiteral("radarSignature"), entity.radarSignature},
+      {QStringLiteral("thermalSignature"), entity.thermalSignature},
+      {QStringLiteral("visualSignature"), entity.visualSignature},
       {QStringLiteral("behaviorMode"), normalizedBehaviorMode(entity.behaviorMode)},
       {QStringLiteral("behaviorTargetEntityId"), entity.behaviorTargetEntityId},
       {QStringLiteral("behaviorTargetEntityName"), entity.behaviorTargetEntityName},
@@ -350,6 +386,15 @@ Entity entityFromJson(const QJsonObject& object) {
       0.0,
       object.value(QStringLiteral("damagePercent")).toDouble(0.0),
       100.0);
+  entity.radarSignature = qMax(
+      0.0,
+      object.value(QStringLiteral("radarSignature")).toDouble(1.0));
+  entity.thermalSignature = qMax(
+      0.0,
+      object.value(QStringLiteral("thermalSignature")).toDouble(1.0));
+  entity.visualSignature = qMax(
+      0.0,
+      object.value(QStringLiteral("visualSignature")).toDouble(1.0));
   entity.behaviorMode =
       normalizedBehaviorMode(
           object.value(QStringLiteral("behaviorMode")).toString(QStringLiteral("Manual")));
@@ -533,6 +578,7 @@ bool saveScenario(const QString& filePath, const ScenarioSnapshot& snapshot) {
   }
 
   const QJsonDocument document(QJsonObject{
+      {QStringLiteral("sensorRandomSeed"), static_cast<double>(snapshot.sensorRandomSeed)},
       {QStringLiteral("entities"), entities},
       {QStringLiteral("waypoints"), waypoints},
       {QStringLiteral("routes"), routes},
@@ -556,6 +602,11 @@ ScenarioSnapshot loadScenario(const QString& filePath) {
   }
 
   const QJsonObject root = document.object();
+  snapshot.sensorRandomSeed = static_cast<quint32>(qBound(
+      0.0,
+      root.value(QStringLiteral("sensorRandomSeed"))
+          .toDouble(ScenarioSnapshot::kDefaultSensorRandomSeed),
+      static_cast<double>(std::numeric_limits<quint32>::max())));
 
   for (const QJsonValue& value : root.value(QStringLiteral("entities")).toArray()) {
     Entity entity = entityFromJson(value.toObject());
