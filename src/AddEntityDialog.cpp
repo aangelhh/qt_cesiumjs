@@ -1,6 +1,7 @@
 #include "AddEntityDialog.h"
 
 #include "application/SystemsTelemetry.h"
+#include "infrastructure/JsbsimAircraftCatalog.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -47,21 +48,13 @@ bool isGroundDomain(const QString& domain) {
 namespace {
 
 QStringList availableJsbsimAircraftModels() {
-  QStringList models;
 #ifdef QTTEST_SOURCE_DIR
-  const QDir aircraftRoot(
-      QDir(QString::fromUtf8(QTTEST_SOURCE_DIR))
-          .absoluteFilePath(QStringLiteral("Dependencies/jsbsim/aircraft")));
-  const QFileInfoList entries = aircraftRoot.entryInfoList(
-      QDir::Dirs | QDir::NoDotAndDotDot,
-      QDir::Name);
-  for (const QFileInfo& entry : entries) {
-    if (entry.isDir()) {
-      models.append(entry.fileName());
-    }
-  }
+  const QString aircraftRoot = QDir(QString::fromUtf8(QTTEST_SOURCE_DIR))
+      .absoluteFilePath(QStringLiteral("Dependencies/jsbsim/aircraft"));
+  return JsbsimAircraftCatalog::discover(aircraftRoot).modelIds();
+#else
+  return {};
 #endif
-  return models;
 }
 
 QString suggestedJsbsimModel(const QString& domain, const QString& category, const QString& modelName) {

@@ -38,6 +38,7 @@ add_executable(qttest_unit_tests
     application/CockpitControlServiceTest.cpp
     application/SystemsTelemetryTest.cpp
     infrastructure/ModelCatalogTest.cpp
+    infrastructure/JsbsimAircraftCatalogTest.cpp
     infrastructure/ModelOrientationTest.cpp
     infrastructure/SensorModelProviderCatalogTest.cpp
     infrastructure/SensorProviderAdapterTest.cpp
@@ -99,6 +100,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/application/Command.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/CesiumScenePage.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/ModelCatalog.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/JsbsimAircraftCatalog.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/ModelOrientation.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/SensorModelProviderCatalog.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/SensorModelProviderBootstrap.cpp
