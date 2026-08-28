@@ -13,6 +13,7 @@ public:
   SharedLibrarySensorModel(QString configuredModelId, QString libraryPath);
 
   QString modelId() const override;
+  QStringList capabilities() const override;
   application::sensors::SensorEvaluationResult evaluate(
       const application::sensors::SensorEvaluationContext& context) const override;
 
@@ -25,6 +26,7 @@ private:
   mutable QLibrary _library;
   QttestSensorPluginEvaluateFn _evaluate = nullptr;
   QString _providerVersion;
+  QStringList _providerCapabilities;
   QString _errorString;
 };
 

@@ -66,6 +66,8 @@ TEST(SensorProviderAdapter, MixrPluginUsesRfRangeLossWhenBuilt) {
   infrastructure::sensors::SharedLibrarySensorModel model(
       QStringLiteral("mixr"), pluginPath);
   ASSERT_TRUE(model.isAvailable()) << model.errorString().toStdString();
+  EXPECT_TRUE(model.capabilities().contains(QStringLiteral("rf-range-loss")));
+  EXPECT_TRUE(model.capabilities().contains(QStringLiteral("radar-profile")));
 
   const Entity observer = makeEntity(QStringLiteral("observer"), 0.0);
   const Entity target = makeEntity(QStringLiteral("target"), 0.2);
@@ -152,6 +154,8 @@ TEST(SensorProviderAdapter, StoneSoupUsesAesaProbabilityWhenInstalled) {
   configuration.requestTimeoutMilliseconds = 250;
   infrastructure::sensors::StoneSoupSensorModel model(std::move(configuration));
   ASSERT_TRUE(model.isAvailable()) << model.errorString().toStdString();
+  EXPECT_TRUE(model.capabilities().contains(QStringLiteral("aesa-probability")));
+  EXPECT_TRUE(model.capabilities().contains(QStringLiteral("stationary-beam")));
 
   const Entity observer = makeEntity(QStringLiteral("observer"), 0.0);
   const Entity target = makeEntity(QStringLiteral("target"), 0.2);

@@ -57,6 +57,14 @@ QString textOrDash(const QVariant& value) {
   return text.isEmpty() ? QStringLiteral("-") : text;
 }
 
+QString textListOrDash(const QVariant& value) {
+  QStringList values = value.toStringList();
+  values.removeAll(QString());
+  return values.isEmpty()
+      ? QStringLiteral("-")
+      : values.join(QStringLiteral(", "));
+}
+
 QString optionalMetric(
     const QVariantMap& values,
     const char* key,
@@ -191,7 +199,9 @@ void EntityDetailsDialog::buildUi() {
       QStringLiteral("State Data"),
       QStringLiteral("Tasks"),
       QStringLiteral("Resources"),
-      QStringLiteral("Sensor Information"),
+      QStringLiteral("Sensor Configuration"),
+      QStringLiteral("Sensor Runtime"),
+      QStringLiteral("Sensor Contacts"),
       QStringLiteral("Emitters"),
       QStringLiteral("Appearance"),
       QStringLiteral("Subsystems")});
@@ -424,12 +434,9 @@ void EntityDetailsDialog::populateResourcesInformation() {
   this->setTableRows(rows);
 }
 
-void EntityDetailsDialog::populateSensorInformation() {
+void EntityDetailsDialog::populateSensorConfiguration() {
   QList<QPair<QString, QString>> rows;
   const QVariantList sensors = _summary.value(QStringLiteral("sensors")).toList();
-  const QVariantList contacts = _summary.value(QStringLiteral("sensorContacts")).toList();
-  const QVariantList runtimeStatuses =
-      _summary.value(QStringLiteral("sensorRuntimeStatuses")).toList();
 
   rows.append({QStringLiteral("Configured Sensors"), QString::number(sensors.size())});
   rows.append({QStringLiteral("Radar Signature"), this->value("radarSignature", QStringLiteral("1.00"))});
@@ -514,8 +521,20 @@ void EntityDetailsDialog::populateSensorInformation() {
     }
   }
 
+  this->setTableRows(rows);
+}
+
+void EntityDetailsDialog::populateSensorRuntime() {
+  QList<QPair<QString, QString>> rows;
+  const QVariantList runtimeStatuses =
+      _summary.value(QStringLiteral("sensorRuntimeStatuses")).toList();
+
   rows.append({QStringLiteral("Runtime Sensor Statuses"),
                QString::number(runtimeStatuses.size())});
+  if (runtimeStatuses.isEmpty()) {
+    rows.append({QStringLiteral("Runtime"),
+                 QStringLiteral("No sensor evaluations recorded")});
+  }
   for (int index = 0; index < runtimeStatuses.size(); ++index) {
     const QVariantMap status = runtimeStatuses.at(index).toMap();
     const QVariantMap evaluation =
@@ -541,6 +560,9 @@ void EntityDetailsDialog::populateSensorInformation() {
                  textOrDash(evaluation.value(QStringLiteral("effectiveModelProviderId")))});
     rows.append({prefix + QStringLiteral(" Provider Version"),
                  textOrDash(evaluation.value(QStringLiteral("providerVersion")))});
+    rows.append({prefix + QStringLiteral(" Provider Capabilities"),
+                 textListOrDash(
+                     evaluation.value(QStringLiteral("providerCapabilities")))});
     rows.append({prefix + QStringLiteral(" Fallback"),
                  yesNo(evaluation.value(QStringLiteral("fallbackUsed")).toBool())});
     rows.append({prefix + QStringLiteral(" Fallback Reason"),
@@ -588,6 +610,14 @@ void EntityDetailsDialog::populateSensorInformation() {
                                 QStringLiteral(" ms"))});
   }
 
+  this->setTableRows(rows);
+}
+
+void EntityDetailsDialog::populateSensorContacts() {
+  QList<QPair<QString, QString>> rows;
+  const QVariantList contacts =
+      _summary.value(QStringLiteral("sensorContacts")).toList();
+
   rows.append({QStringLiteral("Detected Contacts"), QString::number(contacts.size())});
   if (contacts.isEmpty()) {
     rows.append({QStringLiteral("Contact"), QStringLiteral("No current contacts")});
@@ -611,6 +641,7 @@ void EntityDetailsDialog::populateSensorInformation() {
       rows.append({prefix + QStringLiteral(" Missed Detections"), QString::number(contact.value(QStringLiteral("missedDetectionCount")).toInt())});
       rows.append({prefix + QStringLiteral(" Requested Model"), textOrDash(evaluation.value(QStringLiteral("requestedModelProviderId")))});
       rows.append({prefix + QStringLiteral(" Provider Version"), textOrDash(evaluation.value(QStringLiteral("providerVersion")))});
+      rows.append({prefix + QStringLiteral(" Provider Capabilities"), textListOrDash(evaluation.value(QStringLiteral("providerCapabilities")))});
       rows.append({prefix + QStringLiteral(" Fallback"), yesNo(evaluation.value(QStringLiteral("fallbackUsed")).toBool())});
       rows.append({prefix + QStringLiteral(" Effective Pd"), optionalMetric(evaluation, "detectionProbability", 4)});
       rows.append({prefix + QStringLiteral(" Deterministic Sample"), optionalMetric(evaluation, "deterministicSample", 4)});
@@ -723,8 +754,12 @@ void EntityDetailsDialog::refreshCurrentSection(bool logTransition) {
     this->populateAppearanceInformation();
   } else if (sectionName == QStringLiteral("Resources")) {
     this->populateResourcesInformation();
-  } else if (sectionName == QStringLiteral("Sensor Information")) {
-    this->populateSensorInformation();
+  } else if (sectionName == QStringLiteral("Sensor Configuration")) {
+    this->populateSensorConfiguration();
+  } else if (sectionName == QStringLiteral("Sensor Runtime")) {
+    this->populateSensorRuntime();
+  } else if (sectionName == QStringLiteral("Sensor Contacts")) {
+    this->populateSensorContacts();
   } else if (sectionName == QStringLiteral("Emitters")) {
     this->populateEmitterInformation();
   } else if (sectionName == QStringLiteral("Subsystems")) {

@@ -168,6 +168,10 @@ extern "C" const char* qttest_sensor_model_version() {
   return QTTEST_MIXR_PROVIDER_VERSION;
 }
 
+extern "C" const char* qttest_sensor_model_capabilities() {
+  return "rf-range-loss,radar-profile,radar-signal-metrics";
+}
+
 extern "C" int qttest_sensor_model_evaluate(
     const QttestSensorEvaluationInputV1* input,
     QttestSensorEvaluationOutputV1* output) {

@@ -3,6 +3,7 @@
 #include "domain/Entity.h"
 
 #include <QString>
+#include <QStringList>
 #include <QtGlobal>
 
 #include <limits>
@@ -25,6 +26,7 @@ struct SensorEvaluationResult {
   bool detected = false;
   QString effectiveModelId;
   QString providerVersion;
+  QStringList providerCapabilities;
   bool fallbackUsed = false;
   QString fallbackReason;
   double targetSignature = 1.0;
@@ -43,6 +45,7 @@ public:
   virtual ~ISensorModel() = default;
 
   virtual QString modelId() const = 0;
+  virtual QStringList capabilities() const { return {}; }
   virtual SensorEvaluationResult evaluate(
       const SensorEvaluationContext& context) const = 0;
 };

@@ -32,7 +32,9 @@ private:
   void populateTaskInformation();
   void populateAppearanceInformation();
   void populateResourcesInformation();
-  void populateSensorInformation();
+  void populateSensorConfiguration();
+  void populateSensorRuntime();
+  void populateSensorContacts();
   void populateEmitterInformation();
   void populateSubsystemInformation();
   void refreshSummary();

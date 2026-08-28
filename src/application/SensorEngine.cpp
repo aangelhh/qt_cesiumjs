@@ -189,6 +189,9 @@ SensorEvaluationDiagnostics makeEvaluationDiagnostics(
           ? resolvedModel.modelId()
           : evaluation.effectiveModelId);
   diagnostics.providerVersion = evaluation.providerVersion;
+  diagnostics.providerCapabilities = evaluation.providerCapabilities.isEmpty()
+      ? resolvedModel.capabilities()
+      : evaluation.providerCapabilities;
   diagnostics.fallbackUsed = evaluation.fallbackUsed ||
       diagnostics.requestedModelProviderId !=
           diagnostics.effectiveModelProviderId;

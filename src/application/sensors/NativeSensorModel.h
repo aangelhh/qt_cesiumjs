@@ -9,6 +9,7 @@ public:
   static QString staticModelId();
 
   QString modelId() const override;
+  QStringList capabilities() const override;
   SensorEvaluationResult evaluate(
       const SensorEvaluationContext& context) const override;
 };

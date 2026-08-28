@@ -22,6 +22,8 @@ QVariantMap sensorEvaluationSummary(
       {QStringLiteral("effectiveModelProviderId"),
        diagnostics.effectiveModelProviderId},
       {QStringLiteral("providerVersion"), diagnostics.providerVersion},
+      {QStringLiteral("providerCapabilities"),
+       diagnostics.providerCapabilities},
       {QStringLiteral("fallbackUsed"), diagnostics.fallbackUsed},
       {QStringLiteral("fallbackReason"), diagnostics.fallbackReason},
       {QStringLiteral("detectionProbability"),

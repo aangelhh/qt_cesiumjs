@@ -45,6 +45,9 @@ SharedLibrarySensorModel::SharedLibrarySensorModel(
       _library.resolve("qttest_sensor_model_id"));
   const auto pluginVersion = reinterpret_cast<QttestSensorPluginVersionFn>(
       _library.resolve("qttest_sensor_model_version"));
+  const auto pluginCapabilities =
+      reinterpret_cast<QttestSensorPluginCapabilitiesFn>(
+          _library.resolve("qttest_sensor_model_capabilities"));
   _evaluate = reinterpret_cast<QttestSensorPluginEvaluateFn>(
       _library.resolve("qttest_sensor_model_evaluate"));
   if (!abiVersion || !pluginModelId || !_evaluate) {
@@ -69,10 +72,23 @@ SharedLibrarySensorModel::SharedLibrarySensorModel(
   _providerVersion = pluginVersion && pluginVersion()
       ? QString::fromUtf8(pluginVersion()).trimmed()
       : QStringLiteral("ABI v1");
+  if (pluginCapabilities && pluginCapabilities()) {
+    _providerCapabilities = QString::fromUtf8(pluginCapabilities())
+        .split(',', Qt::SkipEmptyParts);
+    for (QString& capability : _providerCapabilities) {
+      capability = capability.trimmed();
+    }
+    _providerCapabilities.removeAll(QString());
+    _providerCapabilities.removeDuplicates();
+  }
 }
 
 QString SharedLibrarySensorModel::modelId() const {
   return _modelId.trimmed().toLower();
+}
+
+QStringList SharedLibrarySensorModel::capabilities() const {
+  return _providerCapabilities;
 }
 
 application::sensors::SensorEvaluationResult SharedLibrarySensorModel::evaluate(
@@ -148,6 +164,7 @@ application::sensors::SensorEvaluationResult SharedLibrarySensorModel::evaluate(
   result.detected = result.sample < result.probability;
   result.effectiveModelId = this->modelId();
   result.providerVersion = _providerVersion;
+  result.providerCapabilities = _providerCapabilities;
   result.targetSignature = input.targetSignature;
   if (output.diagnosticsMask & QTTEST_SENSOR_DIAGNOSTIC_SNR) {
     result.signalToNoiseRatio = output.signalToNoiseRatio;

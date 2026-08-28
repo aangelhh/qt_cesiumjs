@@ -42,6 +42,15 @@ QString StoneSoupSensorModel::modelId() const {
   return QStringLiteral("stone-soup");
 }
 
+QStringList StoneSoupSensorModel::capabilities() const {
+  return {
+      QStringLiteral("aesa-probability"),
+      QStringLiteral("radar-profile"),
+      QStringLiteral("stationary-beam"),
+      QStringLiteral("radar-signal-metrics"),
+  };
+}
+
 application::sensors::SensorEvaluationResult StoneSoupSensorModel::evaluate(
     const application::sensors::SensorEvaluationContext& context) const {
   QJsonObject options = QJsonObject::fromVariantMap(_configuration.options);
@@ -127,6 +136,7 @@ application::sensors::SensorEvaluationResult StoneSoupSensorModel::evaluate(
   result.effectiveModelId = this->modelId();
   result.providerVersion =
       response.value(QStringLiteral("providerVersion")).toString();
+  result.providerCapabilities = this->capabilities();
   result.targetSignature = application::SensorDetectionModel::targetSignature(
       context.sensor,
       context.target);

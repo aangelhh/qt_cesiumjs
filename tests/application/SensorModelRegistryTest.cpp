@@ -19,6 +19,10 @@ public:
     return _id;
   }
 
+  QStringList capabilities() const override {
+    return {QStringLiteral("fixed-evaluation")};
+  }
+
   application::sensors::SensorEvaluationResult evaluate(
       const application::sensors::SensorEvaluationContext& context) const override {
     ++evaluationCount;
@@ -80,6 +84,9 @@ TEST(SensorModelRegistry, ContainsNativeProviderByDefault) {
       registry.resolve(QStringLiteral("native")).modelId(),
       QStringLiteral("native"));
   EXPECT_TRUE(registry.modelIds().contains(QStringLiteral("native")));
+  EXPECT_TRUE(registry.resolve(QStringLiteral("native"))
+                  .capabilities()
+                  .contains(QStringLiteral("radar-signal-metrics")));
 }
 
 TEST(SensorModelRegistry, ResolvesRegisteredProviderCaseInsensitively) {
@@ -138,6 +145,8 @@ TEST(SensorModelRegistry, SensorEngineUsesProviderSelectedBySensor) {
       entities.front().sensorRuntimeStatuses.front();
   EXPECT_EQ(runtime.evaluation.effectiveModelProviderId, QStringLiteral("mixr"));
   EXPECT_EQ(runtime.evaluation.providerVersion, QStringLiteral("fixed-test-v1"));
+  EXPECT_TRUE(runtime.evaluation.providerCapabilities.contains(
+      QStringLiteral("fixed-evaluation")));
   EXPECT_DOUBLE_EQ(runtime.evaluation.signalToNoiseRatio, 4.0);
   EXPECT_EQ(runtime.evaluationCount, 1U);
   EXPECT_EQ(runtime.detectionCount, 0U);

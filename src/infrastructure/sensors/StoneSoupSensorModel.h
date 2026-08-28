@@ -23,6 +23,7 @@ public:
   ~StoneSoupSensorModel() override;
 
   QString modelId() const override;
+  QStringList capabilities() const override;
   application::sensors::SensorEvaluationResult evaluate(
       const application::sensors::SensorEvaluationContext& context) const override;
 

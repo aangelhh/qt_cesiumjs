@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 #include <limits>
@@ -65,6 +66,7 @@ struct SensorEvaluationDiagnostics {
   QString requestedModelProviderId = QStringLiteral("native");
   QString effectiveModelProviderId = QStringLiteral("native");
   QString providerVersion;
+  QStringList providerCapabilities;
   bool fallbackUsed = false;
   QString fallbackReason;
   double detectionProbability = 0.0;

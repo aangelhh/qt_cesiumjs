@@ -70,6 +70,7 @@ typedef struct QttestSensorEvaluationOutputV1 {
 typedef uint32_t (*QttestSensorPluginAbiVersionFn)(void);
 typedef const char* (*QttestSensorPluginModelIdFn)(void);
 typedef const char* (*QttestSensorPluginVersionFn)(void);
+typedef const char* (*QttestSensorPluginCapabilitiesFn)(void);
 typedef int (*QttestSensorPluginEvaluateFn)(
     const QttestSensorEvaluationInputV1*,
     QttestSensorEvaluationOutputV1*);

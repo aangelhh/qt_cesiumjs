@@ -12,6 +12,13 @@ QString NativeSensorModel::modelId() const {
   return staticModelId();
 }
 
+QStringList NativeSensorModel::capabilities() const {
+  return {
+      QStringLiteral("deterministic-probability"),
+      QStringLiteral("radar-signal-metrics"),
+  };
+}
+
 SensorEvaluationResult NativeSensorModel::evaluate(
     const SensorEvaluationContext& context) const {
   SensorEvaluationResult result = application::SensorDetectionModel::evaluate(
@@ -23,6 +30,7 @@ SensorEvaluationResult NativeSensorModel::evaluate(
       context.evaluationIndex);
   result.effectiveModelId = staticModelId();
   result.providerVersion = QStringLiteral("native-v1");
+  result.providerCapabilities = this->capabilities();
   result.targetSignature = application::SensorDetectionModel::targetSignature(
       context.sensor,
       context.target);

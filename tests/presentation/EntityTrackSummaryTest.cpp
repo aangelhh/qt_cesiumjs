@@ -270,6 +270,10 @@ TEST(EntityTrackSummaryTest, ContainsSensorRuntimeDiagnosticsWithoutContact) {
   runtime.evaluation.effectiveModelProviderId = QStringLiteral("native");
   runtime.evaluation.fallbackUsed = true;
   runtime.evaluation.fallbackReason = QStringLiteral("plugin unavailable");
+  runtime.evaluation.providerCapabilities = {
+      QStringLiteral("rf-range-loss"),
+      QStringLiteral("radar-profile"),
+  };
   runtime.evaluation.rangeLossDecibels = 42.0;
   e.sensorRuntimeStatuses.push_back(runtime);
 
@@ -284,6 +288,11 @@ TEST(EntityTrackSummaryTest, ContainsSensorRuntimeDiagnosticsWithoutContact) {
   const QVariantMap evaluation =
       status.value(QStringLiteral("evaluation")).toMap();
   EXPECT_TRUE(evaluation.value(QStringLiteral("fallbackUsed")).toBool());
+  EXPECT_EQ(
+      evaluation.value(QStringLiteral("providerCapabilities"))
+          .toStringList(),
+      QStringList({QStringLiteral("rf-range-loss"),
+                   QStringLiteral("radar-profile")}));
   EXPECT_DOUBLE_EQ(
       evaluation.value(QStringLiteral("rangeLossDecibels")).toDouble(),
       42.0);
