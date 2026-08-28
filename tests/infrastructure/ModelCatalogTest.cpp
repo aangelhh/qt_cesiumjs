@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
+#include "infrastructure/JsbsimAircraftCatalog.h"
 #include "infrastructure/ModelCatalog.h"
+
+#include <QDir>
 
 namespace {
 
@@ -26,6 +29,9 @@ TEST(ModelCatalog, LoadsDeclarativeFighterDynamicsConfiguration) {
   ASSERT_NE(f16, nullptr);
   EXPECT_EQ(f16->dynamicsBackend, QStringLiteral("jsbsim"));
   EXPECT_EQ(f16->jsbsimAircraftModel, QStringLiteral("f16"));
+  EXPECT_EQ(
+      f16->dynamicsModelCompatibility,
+      QStringLiteral("family"));
   EXPECT_EQ(f16->controlProfileId, QStringLiteral("fighter-generic"));
   EXPECT_EQ(f16->cesiumAxes, QStringLiteral("x-forward-y-up"));
   EXPECT_EQ(
@@ -34,6 +40,58 @@ TEST(ModelCatalog, LoadsDeclarativeFighterDynamicsConfiguration) {
   EXPECT_EQ(f16->engineCount, 1);
   EXPECT_DOUBLE_EQ(f16->fuelCapacityKilograms, 5875.0);
   EXPECT_DOUBLE_EQ(f16->initialFuelKilograms, 3200.0);
+}
+
+TEST(ModelCatalog, PropagatesDynamicsBindingAcrossSharedVisualAsset) {
+  const QVector<ModelCatalogEntry> catalog = ModelCatalog::loadModels();
+
+  const ModelCatalogEntry* f16c = findModel(catalog, QStringLiteral("F-16C"));
+  const ModelCatalogEntry* f22a = findModel(catalog, QStringLiteral("F-22A"));
+  ASSERT_NE(f16c, nullptr);
+  ASSERT_NE(f22a, nullptr);
+  EXPECT_EQ(f16c->jsbsimAircraftModel, QStringLiteral("f16"));
+  EXPECT_EQ(f22a->jsbsimAircraftModel, QStringLiteral("f22"));
+  EXPECT_EQ(
+      f16c->dynamicsModelCompatibility,
+      QStringLiteral("family"));
+}
+
+TEST(ModelCatalog, MapsDistinctF16AndC130AssetsExplicitly) {
+  const QVector<ModelCatalogEntry> catalog = ModelCatalog::loadModels();
+
+  const ModelCatalogEntry* f16a = findModel(catalog, QStringLiteral("F-16A"));
+  const ModelCatalogEntry* c130 = findModel(
+      catalog,
+      QStringLiteral("Lockheed C-130 Hercules"));
+  ASSERT_NE(f16a, nullptr);
+  ASSERT_NE(c130, nullptr);
+  EXPECT_EQ(f16a->jsbsimAircraftModel, QStringLiteral("f16"));
+  EXPECT_EQ(c130->jsbsimAircraftModel, QStringLiteral("C130"));
+  EXPECT_EQ(c130->engineCount, 4);
+}
+
+TEST(ModelCatalog, EveryJsbsimBindingReferencesAnAvailableConfiguration) {
+  const QVector<ModelCatalogEntry> models = ModelCatalog::loadModels();
+#ifdef QTTEST_SOURCE_DIR
+  const QString aircraftRoot = QDir(QString::fromUtf8(QTTEST_SOURCE_DIR))
+      .absoluteFilePath(QStringLiteral("Dependencies/jsbsim/aircraft"));
+  const QStringList availableModels =
+      JsbsimAircraftCatalog::discover(aircraftRoot).modelIds();
+
+  int mappedModels = 0;
+  for (const ModelCatalogEntry& model : models) {
+    if (model.dynamicsBackend != QStringLiteral("jsbsim")) {
+      continue;
+    }
+    ++mappedModels;
+    EXPECT_TRUE(availableModels.contains(model.jsbsimAircraftModel))
+        << model.name.toStdString() << " references "
+        << model.jsbsimAircraftModel.toStdString();
+    EXPECT_FALSE(model.dynamicsModelCompatibility.isEmpty())
+        << model.name.toStdString();
+  }
+  EXPECT_GE(mappedModels, 16);
+#endif
 }
 
 TEST(ModelCatalog, AddsVerifiedOrientationWithoutDynamicsMetadata) {

@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QStringList>
 #include <QTextStream>
 
@@ -147,6 +148,48 @@ double parseTrailingDouble(const QString& line, const QString& key) {
   return ok ? parsed : 0.0;
 }
 
+struct DynamicsBinding {
+  QString backend;
+  QString jsbsimAircraftModel;
+  QString compatibility;
+  QString controlProfileId;
+  QString systemsDisplayProfileId;
+  int engineCount = 0;
+};
+
+void propagateSharedAssetDynamicsBindings(QVector<ModelCatalogEntry>& entries) {
+  QHash<QString, DynamicsBinding> bindingsByAsset;
+  for (const ModelCatalogEntry& entry : entries) {
+    if (entry.dynamicsBackend.isEmpty() || entry.absolutePath.isEmpty()) {
+      continue;
+    }
+    bindingsByAsset.insert(
+        entry.absolutePath,
+        {entry.dynamicsBackend,
+         entry.jsbsimAircraftModel,
+         entry.dynamicsModelCompatibility,
+         entry.controlProfileId,
+         entry.systemsDisplayProfileId,
+         entry.engineCount});
+  }
+
+  for (ModelCatalogEntry& entry : entries) {
+    if (!entry.dynamicsBackend.isEmpty()) {
+      continue;
+    }
+    const auto binding = bindingsByAsset.constFind(entry.absolutePath);
+    if (binding == bindingsByAsset.constEnd()) {
+      continue;
+    }
+    entry.dynamicsBackend = binding->backend;
+    entry.jsbsimAircraftModel = binding->jsbsimAircraftModel;
+    entry.dynamicsModelCompatibility = binding->compatibility;
+    entry.controlProfileId = binding->controlProfileId;
+    entry.systemsDisplayProfileId = binding->systemsDisplayProfileId;
+    entry.engineCount = binding->engineCount;
+  }
+}
+
 } // namespace
 
 QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
@@ -219,6 +262,12 @@ QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
           line.mid(QStringLiteral("jsbsimAircraftModel:").size()));
       continue;
     }
+    if (line.startsWith(QStringLiteral("dynamicsModelCompatibility:"))) {
+      pendingEntry.dynamicsModelCompatibility = trimValue(
+          line.mid(QStringLiteral("dynamicsModelCompatibility:").size()))
+          .toLower();
+      continue;
+    }
     if (line.startsWith(QStringLiteral("controlProfile:"))) {
       pendingEntry.controlProfileId = trimValue(
           line.mid(QStringLiteral("controlProfile:").size()));
@@ -265,5 +314,6 @@ QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
     }
   }
 
+  propagateSharedAssetDynamicsBindings(entries);
   return entries;
 }

@@ -55,6 +55,7 @@ AircraftModels:
       Extra: 0
     dynamicsBackend: jsbsim
     jsbsimAircraftModel: f16
+    dynamicsModelCompatibility: family
     controlProfile: fighter-generic
     systemsDisplayProfile: air-turbine-1-engine
     cesiumAxes: x-forward-y-up
@@ -72,6 +73,12 @@ AircraftModels:
       Subcategory: 1
       Specific: 1
       Extra: 0
+    dynamicsBackend: jsbsim
+    jsbsimAircraftModel: f16
+    dynamicsModelCompatibility: family
+    controlProfile: fighter-generic
+    systemsDisplayProfile: air-turbine-1-engine
+    engineCount: 1
     urlLocation: "/models/Air/Fighter/f-16a.glb"
 
   - name: F-16B
@@ -318,6 +325,7 @@ F22Raptor:
       Extra: 0
     dynamicsBackend: jsbsim
     jsbsimAircraftModel: f22
+    dynamicsModelCompatibility: family
     controlProfile: fighter-generic
     systemsDisplayProfile: air-turbine-2-engine
     engineCount: 2
@@ -1362,6 +1370,12 @@ C130_Hercules:
       Subcategory: 2 # Hercules C-130
       Specific: 0    # Variante base
       Extra: 0
+    dynamicsBackend: jsbsim
+    jsbsimAircraftModel: C130
+    dynamicsModelCompatibility: family
+    controlProfile: aircraft-generic
+    systemsDisplayProfile: air-turbine-4-engine
+    engineCount: 4
     urlLocation: "/models/Air/Transport/c-130j_super_hercules.glb"
 
   - name: Hercules C. Mk 1
@@ -1373,6 +1387,12 @@ C130_Hercules:
       Subcategory: 2
       Specific: 1
       Extra: 0
+    dynamicsBackend: jsbsim
+    jsbsimAircraftModel: C130
+    dynamicsModelCompatibility: family
+    controlProfile: aircraft-generic
+    systemsDisplayProfile: air-turbine-4-engine
+    engineCount: 4
     urlLocation: "/models/Air/Transport/c-130_c_mk1.glb"
 
   - name: Hercules C. Mk 1P
@@ -1384,6 +1404,12 @@ C130_Hercules:
       Subcategory: 2
       Specific: 2
       Extra: 0
+    dynamicsBackend: jsbsim
+    jsbsimAircraftModel: C130
+    dynamicsModelCompatibility: family
+    controlProfile: aircraft-generic
+    systemsDisplayProfile: air-turbine-4-engine
+    engineCount: 4
     urlLocation: "/models/Air/Transport/c-130_c_mk1p.glb"
 
   - name: Hercules C. Mk 1K
@@ -1395,6 +1421,12 @@ C130_Hercules:
       Subcategory: 2
       Specific: 3
       Extra: 0
+    dynamicsBackend: jsbsim
+    jsbsimAircraftModel: C130
+    dynamicsModelCompatibility: family
+    controlProfile: aircraft-generic
+    systemsDisplayProfile: air-turbine-4-engine
+    engineCount: 4
     urlLocation: "/models/Air/Transport/c-130_c_mk1k.glb"
 
   - name: Hercules C. Mk 3P
@@ -1406,6 +1438,12 @@ C130_Hercules:
       Subcategory: 2
       Specific: 4
       Extra: 0
+    dynamicsBackend: jsbsim
+    jsbsimAircraftModel: C130
+    dynamicsModelCompatibility: family
+    controlProfile: aircraft-generic
+    systemsDisplayProfile: air-turbine-4-engine
+    engineCount: 4
     urlLocation: "/models/Air/Transport/c-130_c_mk3p.glb"
 
 

@@ -11,6 +11,7 @@ struct ModelCatalogEntry {
   QString absolutePath;
   QString dynamicsBackend;
   QString jsbsimAircraftModel;
+  QString dynamicsModelCompatibility;
   QString controlProfileId;
   QString systemsDisplayProfileId;
   QString cesiumAxes;

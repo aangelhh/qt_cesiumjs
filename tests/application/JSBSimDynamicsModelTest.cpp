@@ -107,6 +107,39 @@ TEST(JSBSimDynamicsModel, RequiresConfigurationAndInitialization) {
   EXPECT_EQ(model.loadedModelName(), QStringLiteral("c172x"));
 }
 
+TEST(JSBSimDynamicsModel, LoadsAndAdvancesMappedC130Model) {
+  JSBSimDynamicsModel model;
+  const DynamicsModelConfiguration configuration{
+      QStringLiteral("C130"), QStringLiteral("C130VisualPlatform"), false, 9000.0};
+  ASSERT_TRUE(model.configure(configuration));
+
+  DynamicsState initialState = makeFighterState();
+  initialState.speedKnots = 250.0;
+  initialState.fuelRemainingKilograms = 6000.0;
+  ASSERT_TRUE(model.initialize(initialState));
+  EXPECT_EQ(model.loadedModelName(), QStringLiteral("C130"));
+
+  DynamicsStepContext context;
+  context.deltaTimeSeconds = 1.0 / 60.0;
+  context.controlSetpoint = DynamicsControlSetpoint{
+      true,
+      true,
+      90.0,
+      3000.0,
+      250.0,
+      QStringLiteral("aircraft-generic")};
+  for (int tick = 0; tick < 10; ++tick) {
+    context.simulationTimeSeconds += context.deltaTimeSeconds;
+    const auto result = model.step(context);
+    ASSERT_TRUE(result) << result.errorMessage.toStdString();
+  }
+
+  const DynamicsState state = model.state();
+  EXPECT_TRUE(std::isfinite(state.latitudeDegrees));
+  EXPECT_TRUE(std::isfinite(state.longitudeDegrees));
+  EXPECT_TRUE(std::isfinite(state.altitudeMeters));
+}
+
 TEST(JSBSimDynamicsModel, StepAdvancesStateAndFuelStaysBounded) {
   JSBSimDynamicsModel model;
   // Uses the turbine "f16" model rather than the piston "c172x": JSBSim's
