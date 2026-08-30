@@ -9,6 +9,7 @@ struct JsbsimAircraftCatalogEntry {
   QString displayName;
   QString configurationPath;
   QString formatVersion;
+  QString modelRootPath;
 };
 
 struct JsbsimAircraftCatalogDiagnostic {
@@ -19,6 +20,8 @@ struct JsbsimAircraftCatalogDiagnostic {
 class JsbsimAircraftCatalog {
 public:
   static JsbsimAircraftCatalog discover(const QString& aircraftRootPath);
+  static JsbsimAircraftCatalog discoverModelRoots(
+      const QStringList& modelRootPaths);
 
   const QVector<JsbsimAircraftCatalogEntry>& entries() const;
   const QVector<JsbsimAircraftCatalogDiagnostic>& diagnostics() const;

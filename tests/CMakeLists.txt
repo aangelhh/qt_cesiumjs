@@ -101,6 +101,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/infrastructure/CesiumScenePage.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/ModelCatalog.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/JsbsimAircraftCatalog.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/JsbsimModelRepository.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/ModelOrientation.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/SensorModelProviderCatalog.cpp
     ${CMAKE_SOURCE_DIR}/src/infrastructure/SensorModelProviderBootstrap.cpp
@@ -257,6 +258,7 @@ if(TARGET libJSBSim)
         ${CMAKE_SOURCE_DIR}/src/application/FlightDynamicsEngine.cpp
         ${CMAKE_SOURCE_DIR}/src/application/dynamics/KinematicDynamicsModel.cpp
         ${CMAKE_SOURCE_DIR}/src/application/dynamics/JSBSimDynamicsModel.cpp
+        ${CMAKE_SOURCE_DIR}/src/infrastructure/JsbsimModelRepository.cpp
         ${CMAKE_SOURCE_DIR}/src/application/JsbsimSetpointController.cpp
         ${CMAKE_SOURCE_DIR}/src/application/MovementIntent.cpp
         ${CMAKE_SOURCE_DIR}/src/application/SystemsTelemetry.cpp
@@ -284,6 +286,7 @@ if(TARGET libJSBSim)
     add_executable(qttest_jsbsim_dynamics_model_test
         application/JSBSimDynamicsModelTest.cpp
         ${CMAKE_SOURCE_DIR}/src/application/dynamics/JSBSimDynamicsModel.cpp
+        ${CMAKE_SOURCE_DIR}/src/infrastructure/JsbsimModelRepository.cpp
         ${CMAKE_SOURCE_DIR}/src/application/JsbsimSetpointController.cpp
         ${CMAKE_SOURCE_DIR}/src/application/SystemsTelemetry.cpp
         ${CMAKE_SOURCE_DIR}/src/domain/GeoMath.cpp

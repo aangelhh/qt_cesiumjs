@@ -64,8 +64,6 @@ private:
   double sumTankFuelKilograms() const;
   bool hasProperty(const std::string& propertyName) const;
   ControlMode detectControlMode() const;
-  static QString findJsbsimRoot();
-
   DynamicsModelConfiguration _configuration;
   std::unique_ptr<JSBSim::FGFDMExec> _exec;
   DynamicsState _state;

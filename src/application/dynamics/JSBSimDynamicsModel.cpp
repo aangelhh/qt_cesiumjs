@@ -1,12 +1,12 @@
 #include "application/dynamics/JSBSimDynamicsModel.h"
 
 #include "domain/GeoMath.h"
+#include "infrastructure/JsbsimModelRepository.h"
 
 #include <FGFDMExec.h>
 #include <models/FGPropulsion.h>
 #include <models/propulsion/FGTank.h>
 
-#include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QtMath>
@@ -245,7 +245,12 @@ QString JSBSimDynamicsModel::loadedModelName() const {
 }
 
 bool JSBSimDynamicsModel::buildAndLoadModel() {
-  const QString rootPath = findJsbsimRoot();
+  const QString rootPath =
+      JsbsimModelRepository::resolveModelRoot(_configuration.modelId);
+  if (rootPath.isEmpty()) {
+    qWarning() << "JSBSim model root not found for" << _configuration.modelId;
+    return false;
+  }
   const QString aircraftPath = QDir(rootPath).absoluteFilePath(QStringLiteral("aircraft"));
   const QString enginePath = QDir(rootPath).absoluteFilePath(QStringLiteral("engine"));
   const QString systemsPath = QDir(rootPath).absoluteFilePath(QStringLiteral("systems"));
@@ -405,37 +410,6 @@ JSBSimDynamicsModel::ControlMode JSBSimDynamicsModel::detectControlMode() const 
     return ControlMode::NativeAp;
   }
   return ControlMode::DirectFcs;
-}
-
-QString JSBSimDynamicsModel::findJsbsimRoot() {
-#ifdef QTTEST_SOURCE_DIR
-  const QString sourceRoot =
-      QDir(QString::fromUtf8(QTTEST_SOURCE_DIR)).absoluteFilePath(QStringLiteral("Dependencies/jsbsim"));
-  QDir sourceDir(sourceRoot);
-  if (sourceDir.exists(QStringLiteral("aircraft")) &&
-      sourceDir.exists(QStringLiteral("engine")) &&
-      sourceDir.exists(QStringLiteral("systems"))) {
-    return sourceDir.absolutePath();
-  }
-#else
-  Q_UNUSED(0);
-#endif
-
-  QDir appDir(QCoreApplication::applicationDirPath());
-  QDir cursor = appDir;
-  for (int depth = 0; depth < 8; ++depth) {
-    const QString candidate = cursor.absoluteFilePath(QStringLiteral("Dependencies/jsbsim"));
-    QDir candidateDir(candidate);
-    if (candidateDir.exists(QStringLiteral("aircraft")) &&
-        candidateDir.exists(QStringLiteral("engine")) &&
-        candidateDir.exists(QStringLiteral("systems"))) {
-      return candidateDir.absolutePath();
-    }
-    if (!cursor.cdUp()) {
-      break;
-    }
-  }
-  return QString();
 }
 
 } // namespace application::dynamics

@@ -215,6 +215,8 @@ qt_add_executable(qttest
     src/infrastructure/ModelCatalog.h
     src/infrastructure/JsbsimAircraftCatalog.cpp
     src/infrastructure/JsbsimAircraftCatalog.h
+    src/infrastructure/JsbsimModelRepository.cpp
+    src/infrastructure/JsbsimModelRepository.h
     src/infrastructure/ModelOrientation.cpp
     src/infrastructure/ModelOrientation.h
     src/infrastructure/SensorModelProviderCatalog.cpp

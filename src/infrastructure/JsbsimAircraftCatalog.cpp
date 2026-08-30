@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QXmlStreamReader>
+#include <QSet>
 
 #include <algorithm>
 
@@ -54,7 +55,11 @@ JsbsimAircraftCatalog JsbsimAircraftCatalog::discover(
         modelId,
         configuredName.isEmpty() ? modelId : configuredName,
         configurationPath,
-        attributes.value(QStringLiteral("version")).toString().trimmed()});
+        attributes.value(QStringLiteral("version")).toString().trimmed(),
+        aircraftRoot.dirName().compare(
+            QStringLiteral("aircraft"), Qt::CaseInsensitive) == 0
+            ? QFileInfo(aircraftRoot.absolutePath()).absoluteDir().absolutePath()
+            : QString()});
   }
 
   std::sort(
@@ -65,6 +70,43 @@ JsbsimAircraftCatalog JsbsimAircraftCatalog::discover(
         return left.modelId.compare(right.modelId, Qt::CaseInsensitive) < 0;
       });
   return catalog;
+}
+
+JsbsimAircraftCatalog JsbsimAircraftCatalog::discoverModelRoots(
+    const QStringList& modelRootPaths) {
+  JsbsimAircraftCatalog merged;
+  QSet<QString> discoveredIds;
+
+  for (const QString& modelRootPath : modelRootPaths) {
+    const QString aircraftRoot =
+        QDir(modelRootPath).absoluteFilePath(QStringLiteral("aircraft"));
+    JsbsimAircraftCatalog catalog = discover(aircraftRoot);
+    for (const JsbsimAircraftCatalogDiagnostic& diagnostic :
+         catalog._diagnostics) {
+      merged._diagnostics.push_back(diagnostic);
+    }
+    for (const JsbsimAircraftCatalogEntry& entry : catalog._entries) {
+      const QString normalizedId = entry.modelId.toCaseFolded();
+      if (discoveredIds.contains(normalizedId)) {
+        merged._diagnostics.push_back({
+            entry.modelId,
+            QStringLiteral("Duplicate model id ignored from %1")
+                .arg(modelRootPath)});
+        continue;
+      }
+      discoveredIds.insert(normalizedId);
+      merged._entries.push_back(entry);
+    }
+  }
+
+  std::sort(
+      merged._entries.begin(),
+      merged._entries.end(),
+      [](const JsbsimAircraftCatalogEntry& left,
+         const JsbsimAircraftCatalogEntry& right) {
+        return left.modelId.compare(right.modelId, Qt::CaseInsensitive) < 0;
+      });
+  return merged;
 }
 
 const QVector<JsbsimAircraftCatalogEntry>&
