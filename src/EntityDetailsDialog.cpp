@@ -689,6 +689,7 @@ void EntityDetailsDialog::populateSubsystemInformation() {
   rows.append({QStringLiteral("Dynamics Step Duration"), QStringLiteral("%1 ms").arg(formatNumber(summaryDoubleValue(_summary, "dynamicsStepDurationMilliseconds"), 3))});
   rows.append({QStringLiteral("Fallback Reason"), this->value("dynamicsFallbackReason")});
   rows.append({QStringLiteral("JSBSim Aircraft"), this->value("jsbsimAircraftModel")});
+  rows.append({QStringLiteral("Dynamics Model Match"), this->value("dynamicsModelCompatibility")});
   rows.append({QStringLiteral("Control Profile"), this->value("controlProfileId")});
   rows.append({QStringLiteral("Systems Display Profile"), this->value("systemsDisplayProfileId")});
   rows.append({QStringLiteral("Engine Count"), QString::number(_summary.value(QStringLiteral("engineCount")).toInt())});

@@ -155,6 +155,8 @@ struct DynamicsBinding {
   QString controlProfileId;
   QString systemsDisplayProfileId;
   int engineCount = 0;
+  double fuelCapacityKilograms = 0.0;
+  double initialFuelKilograms = 0.0;
 };
 
 void propagateSharedAssetDynamicsBindings(QVector<ModelCatalogEntry>& entries) {
@@ -170,7 +172,9 @@ void propagateSharedAssetDynamicsBindings(QVector<ModelCatalogEntry>& entries) {
          entry.dynamicsModelCompatibility,
          entry.controlProfileId,
          entry.systemsDisplayProfileId,
-         entry.engineCount});
+         entry.engineCount,
+         entry.fuelCapacityKilograms,
+         entry.initialFuelKilograms});
   }
 
   for (ModelCatalogEntry& entry : entries) {
@@ -187,6 +191,8 @@ void propagateSharedAssetDynamicsBindings(QVector<ModelCatalogEntry>& entries) {
     entry.controlProfileId = binding->controlProfileId;
     entry.systemsDisplayProfileId = binding->systemsDisplayProfileId;
     entry.engineCount = binding->engineCount;
+    entry.fuelCapacityKilograms = binding->fuelCapacityKilograms;
+    entry.initialFuelKilograms = binding->initialFuelKilograms;
   }
 }
 
@@ -203,13 +209,68 @@ QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
   QTextStream input(&file);
   ModelCatalogEntry pendingEntry;
   bool hasPendingEntry = false;
+  DynamicsBinding groupDynamicsDefaults;
 
   while (!input.atEnd()) {
     const QString rawLine = input.readLine();
     const QString line = rawLine.trimmed();
 
+    const bool isTopLevelGroup = !rawLine.isEmpty() &&
+        !rawLine.front().isSpace() && line.endsWith(':');
+    if (isTopLevelGroup) {
+      groupDynamicsDefaults = {};
+      continue;
+    }
+
+    const bool isGroupMetadata = !hasPendingEntry &&
+        rawLine.startsWith(QStringLiteral("  ")) &&
+        !rawLine.startsWith(QStringLiteral("    ")) &&
+        !line.startsWith(QStringLiteral("- name:"));
+    if (isGroupMetadata) {
+      if (line.startsWith(QStringLiteral("dynamicsBackend:"))) {
+        groupDynamicsDefaults.backend = trimValue(
+            line.mid(QStringLiteral("dynamicsBackend:").size())).toLower();
+      } else if (line.startsWith(QStringLiteral("jsbsimAircraftModel:"))) {
+        groupDynamicsDefaults.jsbsimAircraftModel = trimValue(
+            line.mid(QStringLiteral("jsbsimAircraftModel:").size()));
+      } else if (line.startsWith(QStringLiteral("dynamicsModelCompatibility:"))) {
+        groupDynamicsDefaults.compatibility = trimValue(
+            line.mid(QStringLiteral("dynamicsModelCompatibility:").size()))
+            .toLower();
+      } else if (line.startsWith(QStringLiteral("controlProfile:"))) {
+        groupDynamicsDefaults.controlProfileId = trimValue(
+            line.mid(QStringLiteral("controlProfile:").size()));
+      } else if (line.startsWith(QStringLiteral("systemsDisplayProfile:"))) {
+        groupDynamicsDefaults.systemsDisplayProfileId = trimValue(
+            line.mid(QStringLiteral("systemsDisplayProfile:").size()));
+      } else if (line.startsWith(QStringLiteral("engineCount:"))) {
+        groupDynamicsDefaults.engineCount = parseTrailingInteger(
+            line, QStringLiteral("engineCount:"));
+      } else if (line.startsWith(QStringLiteral("fuelCapacityKilograms:"))) {
+        groupDynamicsDefaults.fuelCapacityKilograms = parseTrailingDouble(
+            line, QStringLiteral("fuelCapacityKilograms:"));
+      } else if (line.startsWith(QStringLiteral("initialFuelKilograms:"))) {
+        groupDynamicsDefaults.initialFuelKilograms = parseTrailingDouble(
+            line, QStringLiteral("initialFuelKilograms:"));
+      }
+      continue;
+    }
+
     if (line.startsWith(QStringLiteral("- name:"))) {
       pendingEntry = ModelCatalogEntry{};
+      pendingEntry.dynamicsBackend = groupDynamicsDefaults.backend;
+      pendingEntry.jsbsimAircraftModel =
+          groupDynamicsDefaults.jsbsimAircraftModel;
+      pendingEntry.dynamicsModelCompatibility =
+          groupDynamicsDefaults.compatibility;
+      pendingEntry.controlProfileId = groupDynamicsDefaults.controlProfileId;
+      pendingEntry.systemsDisplayProfileId =
+          groupDynamicsDefaults.systemsDisplayProfileId;
+      pendingEntry.engineCount = groupDynamicsDefaults.engineCount;
+      pendingEntry.fuelCapacityKilograms =
+          groupDynamicsDefaults.fuelCapacityKilograms;
+      pendingEntry.initialFuelKilograms =
+          groupDynamicsDefaults.initialFuelKilograms;
       pendingEntry.name = trimValue(line.mid(QStringLiteral("- name:").size()));
       hasPendingEntry = true;
       continue;

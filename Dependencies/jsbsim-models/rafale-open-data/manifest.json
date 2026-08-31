@@ -1,0 +1,97 @@
+{
+  "packageId": "rafale-open-data",
+  "version": "0.1.0",
+  "modelId": "rafale-open-data",
+  "displayName": "Dassault Rafale Open-Data Baseline",
+  "license": "GPL-2.0",
+  "maturity": "experimental",
+  "platform": "Dassault Rafale",
+  "backend": "jsbsim",
+  "sourceModel": {
+    "id": "f16",
+    "description": "The flight-control law, ground-contact geometry and aerodynamic coefficient tables are derived from the upstream JSBSim F-16A baseline.",
+    "license": "GPL",
+    "path": "Dependencies/jsbsim/aircraft/f16",
+    "jsbsimRevision": "506773ad3790a5a621445631613faf51a15284e7"
+  },
+  "publicData": {
+    "lengthMeters": 15.3,
+    "wingspanMeters": 10.9,
+    "wingAreaSquareMeters": 45.7,
+    "emptyMassKilograms": 10000,
+    "maximumTakeoffMassKilograms": 24500,
+    "internalFuelKilograms": 4700,
+    "maximumMach": 1.8,
+    "serviceCeilingFeet": 50000,
+    "limitLoadFactorG": {
+      "minimum": -3.2,
+      "maximum": 9.0
+    },
+    "engineCount": 2,
+    "engine": {
+      "designation": "M88",
+      "dryThrustPoundsPerEngine": 11000,
+      "augmentedThrustPoundsPerEngine": 16500,
+      "bypassRatio": 0.3,
+      "specificFuelConsumptionDryKilogramsPerNewtonSecond": 0.0000222,
+      "specificFuelConsumptionAugmentedKilogramsPerNewtonSecond": 0.00005
+    }
+  },
+  "derivations": [
+    {
+      "field": "metrics/chord",
+      "method": "wingArea / wingspan",
+      "status": "derived"
+    },
+    {
+      "field": "mass_balance/inertia",
+      "method": "first-order scale of the upstream F-16 baseline by public empty-mass, span and length ratios",
+      "status": "derived"
+    },
+    {
+      "field": "engine/tsfc and atsfc",
+      "method": "unit conversion from the published M88 specific-fuel-consumption values",
+      "status": "derived"
+    }
+  ],
+  "knownLimitations": [
+    "Aerodynamic coefficient tables are inherited from the F-16 baseline and are not Rafale-specific.",
+    "The flight-control law is a generic fighter fly-by-wire baseline, not the Rafale control law.",
+    "Landing-gear positions and external-store modelling remain inherited or unsupported.",
+    "The 45.7 square metre wing reference area comes from an open secondary technical reference rather than the manufacturer specification page.",
+    "This model is not certified, validated or representative of classified aircraft data."
+  ],
+  "excludedSources": [
+    {
+      "name": "Historical FlightGear Rafale B addon",
+      "reason": "The author requested removal and redistribution must not be assumed. No content from that addon is used."
+    }
+  ],
+  "validationReferences": [
+    {
+      "name": "Rafale Specifications and Performance Data",
+      "url": "https://www.dassault-aviation.com/en/defense/rafale/specifications-and-performance-data/",
+      "use": "manufacturer-published dimensions, mass, fuel, thrust, load factors, speed and ceiling"
+    },
+    {
+      "name": "M88 Product Information",
+      "url": "https://www.safran-group.com/products-services/m88-proven-performance-and-reliability",
+      "use": "manufacturer-published engine installation and augmented thrust"
+    },
+    {
+      "name": "M88 Technical Data Sheet",
+      "url": "https://omnirole-rafale.com/wp-content/uploads/2019/01/Fiche-technique-M-88.pdf",
+      "use": "Snecma-published dry thrust, augmented thrust, bypass ratio and fuel-consumption values"
+    },
+    {
+      "name": "Rafale public technical characteristics",
+      "url": "https://www.armement-innovations.fr/grands-programmes/le-rafale",
+      "use": "open secondary reference for wing area"
+    },
+    {
+      "name": "FlightGear Rafale B removal request",
+      "url": "https://sourceforge.net/p/flightgear/mailman/message/29947758/",
+      "use": "exclusion and clean-room provenance boundary"
+    }
+  ]
+}

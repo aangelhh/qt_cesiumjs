@@ -102,6 +102,7 @@ void normalizeGroundEntity(Entity& entity) {
   entity.flightDynamicsEnabled = false;
   entity.flightDynamicsMode = QStringLiteral("kinematic");
   entity.jsbsimAircraftModel.clear();
+  entity.dynamicsModelCompatibility.clear();
   entity.controlProfileId.clear();
   entity.speedKnots = 0.0;
   entity.verticalSpeedMetersPerSecond = 0.0;

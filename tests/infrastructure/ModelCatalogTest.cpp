@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "infrastructure/JsbsimAircraftCatalog.h"
+#include "infrastructure/JsbsimModelRepository.h"
 #include "infrastructure/ModelCatalog.h"
 
 #include <QDir>
@@ -70,13 +71,56 @@ TEST(ModelCatalog, MapsDistinctF16AndC130AssetsExplicitly) {
   EXPECT_EQ(c130->engineCount, 4);
 }
 
+TEST(ModelCatalog, AppliesGroupDynamicsDefaultsToModernAircraftFamilies) {
+  const QVector<ModelCatalogEntry> catalog = ModelCatalog::loadModels();
+
+  const ModelCatalogEntry* typhoon = findModel(
+      catalog, QStringLiteral("Generic Typhoon"));
+  const ModelCatalogEntry* f2000 = findModel(
+      catalog, QStringLiteral("F-2000A Italian"));
+  const ModelCatalogEntry* rafale = findModel(
+      catalog, QStringLiteral("Rafale C"));
+  const ModelCatalogEntry* mirage = findModel(
+      catalog, QStringLiteral("Mirage 2000-5"));
+  const ModelCatalogEntry* b52 = findModel(catalog, QStringLiteral("B-52H"));
+  const ModelCatalogEntry* chinook = findModel(
+      catalog, QStringLiteral("CH-47 Chinook"));
+
+  ASSERT_NE(typhoon, nullptr);
+  ASSERT_NE(f2000, nullptr);
+  ASSERT_NE(rafale, nullptr);
+  ASSERT_NE(mirage, nullptr);
+  ASSERT_NE(b52, nullptr);
+  ASSERT_NE(chinook, nullptr);
+  EXPECT_EQ(
+      typhoon->jsbsimAircraftModel,
+      QStringLiteral("eurofighter-typhoon"));
+  EXPECT_EQ(
+      f2000->jsbsimAircraftModel,
+      QStringLiteral("eurofighter-typhoon"));
+  EXPECT_EQ(
+      rafale->jsbsimAircraftModel,
+      QStringLiteral("rafale-open-data"));
+  EXPECT_EQ(mirage->jsbsimAircraftModel, QStringLiteral("f16"));
+  EXPECT_EQ(b52->jsbsimAircraftModel, QStringLiteral("B747"));
+  EXPECT_EQ(chinook->jsbsimAircraftModel, QStringLiteral("ah1s"));
+  EXPECT_EQ(typhoon->dynamicsModelCompatibility,
+            QStringLiteral("experimental"));
+  EXPECT_DOUBLE_EQ(typhoon->fuelCapacityKilograms, 4996.0);
+  EXPECT_EQ(rafale->dynamicsModelCompatibility,
+            QStringLiteral("experimental"));
+  EXPECT_EQ(rafale->engineCount, 2);
+  EXPECT_DOUBLE_EQ(rafale->fuelCapacityKilograms, 4700.0);
+  EXPECT_EQ(b52->engineCount, 8);
+}
+
 TEST(ModelCatalog, EveryJsbsimBindingReferencesAnAvailableConfiguration) {
   const QVector<ModelCatalogEntry> models = ModelCatalog::loadModels();
 #ifdef QTTEST_SOURCE_DIR
-  const QString aircraftRoot = QDir(QString::fromUtf8(QTTEST_SOURCE_DIR))
-      .absoluteFilePath(QStringLiteral("Dependencies/jsbsim/aircraft"));
-  const QStringList availableModels =
-      JsbsimAircraftCatalog::discover(aircraftRoot).modelIds();
+  const QStringList availableModels = JsbsimAircraftCatalog::discoverModelRoots(
+      JsbsimModelRepository::modelRootsForProject(
+          QString::fromUtf8(QTTEST_SOURCE_DIR)))
+      .modelIds();
 
   int mappedModels = 0;
   for (const ModelCatalogEntry& model : models) {
@@ -90,7 +134,7 @@ TEST(ModelCatalog, EveryJsbsimBindingReferencesAnAvailableConfiguration) {
     EXPECT_FALSE(model.dynamicsModelCompatibility.isEmpty())
         << model.name.toStdString();
   }
-  EXPECT_GE(mappedModels, 16);
+  EXPECT_GE(mappedModels, 70);
 #endif
 }
 

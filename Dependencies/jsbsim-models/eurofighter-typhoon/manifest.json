@@ -1,0 +1,84 @@
+{
+  "packageId": "eurofighter-typhoon-open-data",
+  "version": "0.1.0",
+  "modelId": "eurofighter-typhoon",
+  "displayName": "Eurofighter Typhoon Open-Data Baseline",
+  "license": "GPL-2.0",
+  "maturity": "experimental",
+  "platform": "Eurofighter Typhoon",
+  "backend": "jsbsim",
+  "sourceModel": {
+    "id": "f16",
+    "description": "The flight-control law, ground contact geometry and aerodynamic coefficient tables are derived from the upstream JSBSim F-16A baseline.",
+    "license": "GPL",
+    "path": "Dependencies/jsbsim/aircraft/f16",
+    "jsbsimRevision": "506773ad3790a5a621445631613faf51a15284e7"
+  },
+  "publicData": {
+    "lengthMeters": 15.96,
+    "wingspanMeters": 10.95,
+    "wingAreaSquareMeters": 51.2,
+    "emptyMassKilograms": 11000,
+    "internalFuelKilograms": 4996,
+    "engineCount": 2,
+    "engine": {
+      "designation": "EJ200",
+      "dryThrustKilonewtonsPerEngine": 60,
+      "augmentedThrustKilonewtonsPerEngine": 90,
+      "bypassRatio": 0.4,
+      "specificFuelConsumptionDryGramsPerKilonewtonSecond": {
+        "minimum": 21,
+        "maximum": 23
+      },
+      "specificFuelConsumptionAugmentedGramsPerKilonewtonSecond": {
+        "minimum": 47,
+        "maximum": 49
+      }
+    }
+  },
+  "derivations": [
+    {
+      "field": "metrics/chord",
+      "method": "wingArea / wingspan",
+      "status": "derived"
+    },
+    {
+      "field": "mass_balance/inertia",
+      "method": "first-order scale of the upstream F-16 baseline by public empty-mass, span and length ratios",
+      "status": "derived"
+    },
+    {
+      "field": "engine/tsfc and atsfc",
+      "method": "unit conversion from the midpoints of the published EJ200 specific-fuel-consumption ranges",
+      "status": "derived"
+    }
+  ],
+  "knownLimitations": [
+    "Aerodynamic coefficient tables are inherited from the F-16 baseline and are not Eurofighter-specific.",
+    "The flight-control law is a generic fighter fly-by-wire baseline, not the Typhoon control law.",
+    "Landing-gear positions and external-store modelling remain inherited or unsupported.",
+    "This model is not certified, validated or representative of classified aircraft data."
+  ],
+  "validationReferences": [
+    {
+      "name": "Eurofighter Typhoon Performance",
+      "url": "https://world.eurofighter.com/the-aircraft/performance",
+      "use": "published thrust, speed, altitude, length and span"
+    },
+    {
+      "name": "EJ200 Product Information",
+      "url": "https://www.eurojet.eu/innovation/",
+      "use": "public engine thrust, bypass ratio and fuel-consumption ranges"
+    },
+    {
+      "name": "CJ Simulations Eurofighter Typhoon Manual",
+      "url": "https://downloads.justflight.com/products/JFF003773/CJSimulations_EurofighterTyphoon_Manual.pdf",
+      "use": "open secondary reference for wing area, baseline empty mass and internal fuel capacity"
+    },
+    {
+      "name": "FGAddon Eurofighter YASim",
+      "url": "https://sourceforge.net/p/flightgear/fgaddon/HEAD/tree/trunk/Aircraft/eurofighter/",
+      "use": "GPL reference for qualitative validation only; no XML parameters are copied into this package"
+    }
+  ]
+}
