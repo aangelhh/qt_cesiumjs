@@ -199,7 +199,9 @@ if(QTTEST_ENABLE_MIXR_SENSOR_PROVIDER AND APPLE)
         LIBRARY_OUTPUT_DIRECTORY ${QTTEST_MIXR_PLUGIN_DIR}
         OUTPUT_NAME qttest_mixr_sensor
     )
-    add_custom_target(qttest_setup_mixr DEPENDS qttest_mixr_sensor)
+    # Keep the provider opt-in through QTTEST_ENABLE_MIXR_SENSOR_PROVIDER, but
+    # build it with the default target whenever that option is enabled.
+    add_custom_target(qttest_setup_mixr ALL DEPENDS qttest_mixr_sensor)
 endif()
 
 qt_standard_project_setup()
