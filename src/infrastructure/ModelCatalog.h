@@ -7,8 +7,10 @@ struct ModelCatalogEntry {
   QString name;
   QString domain;
   QString category;
+  QString configuredRelativePath;
   QString relativePath;
   QString absolutePath;
+  QString visualModelCompatibility;
   QString dynamicsBackend;
   QString jsbsimAircraftModel;
   QString dynamicsModelCompatibility;

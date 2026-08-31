@@ -5,6 +5,9 @@
 #include "infrastructure/ModelCatalog.h"
 
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QTextStream>
 
 namespace {
 
@@ -178,4 +181,57 @@ TEST(ModelCatalog, LoadsMirageCesiumAxesConfiguration) {
   EXPECT_EQ(mirage->cesiumAxes, QStringLiteral("x-forward-y-up"));
   EXPECT_TRUE(mirage->absolutePath.endsWith(
       QStringLiteral("/dassault_mirage_2000.glb")));
+}
+
+TEST(ModelCatalog, ResolvesMissingVariantAssetFromDeclaredFamilyFallback) {
+  const QVector<ModelCatalogEntry> catalog = ModelCatalog::loadModels();
+
+  const ModelCatalogEntry* genericTyphoon = findModel(
+      catalog,
+      QStringLiteral("Generic Typhoon"));
+  const ModelCatalogEntry* typhoonF2 = findModel(
+      catalog,
+      QStringLiteral("Typhoon F2"));
+
+  ASSERT_NE(genericTyphoon, nullptr);
+  ASSERT_NE(typhoonF2, nullptr);
+  EXPECT_EQ(genericTyphoon->visualModelCompatibility,
+            QStringLiteral("exact"));
+  EXPECT_EQ(typhoonF2->visualModelCompatibility,
+            QStringLiteral("family"));
+  EXPECT_EQ(typhoonF2->configuredRelativePath,
+            QStringLiteral("/models/Air/Fighter/typhoon_f2.glb"));
+  EXPECT_EQ(typhoonF2->relativePath,
+            QStringLiteral("/models/Air/Fighter/eurofighter_typhoon.glb"));
+  EXPECT_EQ(typhoonF2->absolutePath, genericTyphoon->absolutePath);
+}
+
+TEST(ModelCatalog, EveryConfiguredModelResolvesToAnAvailableVisualAsset) {
+  const QVector<ModelCatalogEntry> catalog = ModelCatalog::loadModels();
+
+#ifdef QTTEST_SOURCE_DIR
+  QFile config(QDir(QString::fromUtf8(QTTEST_SOURCE_DIR))
+                   .filePath(QStringLiteral("Data/config3DModel.yaml")));
+  ASSERT_TRUE(config.open(QIODevice::ReadOnly | QIODevice::Text));
+
+  int configuredModelCount = 0;
+  QTextStream input(&config);
+  while (!input.atEnd()) {
+    if (input.readLine().trimmed().startsWith(QStringLiteral("- name:"))) {
+      ++configuredModelCount;
+    }
+  }
+
+  ASSERT_EQ(catalog.size(), configuredModelCount);
+  for (const ModelCatalogEntry& entry : catalog) {
+    EXPECT_FALSE(entry.configuredRelativePath.isEmpty())
+        << entry.name.toStdString();
+    EXPECT_TRUE(QFileInfo::exists(entry.absolutePath))
+        << entry.name.toStdString() << " resolves to "
+        << entry.absolutePath.toStdString();
+    EXPECT_TRUE(entry.visualModelCompatibility == QStringLiteral("exact") ||
+                entry.visualModelCompatibility == QStringLiteral("family"))
+        << entry.name.toStdString();
+  }
+#endif
 }
