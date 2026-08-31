@@ -13,7 +13,6 @@ namespace {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-constexpr double kEarthRadiusMeters = 6371000.0;
 constexpr double kKnotsToMetersPerSecond = 0.514444;
 constexpr double kDefaultMissileBoostMetersPerSecond = 250.0;
 constexpr double kDefaultMissileTtlSeconds = 12.0;
@@ -59,8 +58,6 @@ QString defaultBombModelUri() {
       .toString();
 }
 
-// ─── Geo math helpers (not in domain::GeoMath) ───────────────────────────────
-
 double clampStep(double current, double target, double maxStep) {
   if (maxStep <= 0.0) {
     return current;
@@ -69,31 +66,6 @@ double clampStep(double current, double target, double maxStep) {
     return qMin(target, current + maxStep);
   }
   return qMax(target, current - maxStep);
-}
-
-QPair<double, double> destinationPoint(
-    double latitude,
-    double longitude,
-    double bearingDegreesValue,
-    double distanceMetersValue) {
-  const double angularDistance = distanceMetersValue / kEarthRadiusMeters;
-  const double bearing = qDegreesToRadians(bearingDegreesValue);
-  const double lat1 = qDegreesToRadians(latitude);
-  const double lon1 = qDegreesToRadians(longitude);
-
-  const double sinLat1 = qSin(lat1);
-  const double cosLat1 = qCos(lat1);
-  const double sinAngular = qSin(angularDistance);
-  const double cosAngular = qCos(angularDistance);
-
-  const double lat2 = qAsin(
-      sinLat1 * cosAngular +
-      cosLat1 * sinAngular * qCos(bearing));
-  const double lon2 = lon1 + qAtan2(
-      qSin(bearing) * sinAngular * cosLat1,
-      cosAngular - sinLat1 * qSin(lat2));
-
-  return {qRadiansToDegrees(lat2), qRadiansToDegrees(lon2)};
 }
 
 // ─── Entity lookup ────────────────────────────────────────────────────────────
@@ -221,13 +193,14 @@ ActiveMunition makeBombMunition(const Entity& entity, int serial) {
   munition.blastRadiusMeters = kDefaultBombBlastRadiusMeters;
   munition.baseDamage = kDefaultBombBaseDamage;
 
-  const auto [offsetLatitude, offsetLongitude] = destinationPoint(
+  const domain::GeoCoordinate offsetPosition = domain::destinationPoint(
       entity.latitude,
       entity.longitude,
       munition.headingDegrees,
-      kDefaultBombForwardOffsetMeters);
-  munition.latitude = offsetLatitude;
-  munition.longitude = offsetLongitude;
+      kDefaultBombForwardOffsetMeters,
+      entity.altitude);
+  munition.latitude = offsetPosition.latitude;
+  munition.longitude = offsetPosition.longitude;
   munition.altitudeMeters = qMax(
       kMinimumMunitionAltitudeMeters,
       static_cast<double>(entity.altitude) - kDefaultBombDownOffsetMeters);
@@ -376,12 +349,15 @@ void advanceActiveMunitions(
       verticalDistanceMeters = totalDistanceMeters * qSin(pitchRadians);
     }
 
-    const auto [nextLatitude, nextLongitude] = destinationPoint(
-        munition.latitude, munition.longitude,
-        munition.headingDegrees, horizontalDistanceMeters);
+    const domain::GeoCoordinate nextPosition = domain::destinationPoint(
+        munition.latitude,
+        munition.longitude,
+        munition.headingDegrees,
+        horizontalDistanceMeters,
+        munition.altitudeMeters);
 
-    munition.latitude = nextLatitude;
-    munition.longitude = nextLongitude;
+    munition.latitude = nextPosition.latitude;
+    munition.longitude = nextPosition.longitude;
     munition.altitudeMeters += verticalDistanceMeters;
     munition.ageSeconds += deltaSeconds;
 

@@ -1,4 +1,5 @@
 #include "Task.h"
+#include "GeoMath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -9,7 +10,6 @@
 #endif
 
 namespace {
-    constexpr double kEarthRadiusMeters = 6371000.0;
     constexpr double kPatrolArrivalThresholdMeters = 200.0;
     constexpr double kRacetrackArrivalThresholdMeters = 500.0;
     constexpr int kGeneratedPatrolPointCount = 6;
@@ -17,48 +17,22 @@ namespace {
     constexpr double toRadians(double degrees) { return degrees * M_PI / 180.0; }
     constexpr double toDegrees(double radians) { return radians * 180.0 / M_PI; }
 
-    double bearingDegrees(double latitude1, double longitude1, double latitude2, double longitude2) {
-        const double lat1 = toRadians(latitude1);
-        const double lat2 = toRadians(latitude2);
-        const double deltaLongitude = toRadians(longitude2 - longitude1);
-        const double y = std::sin(deltaLongitude) * std::cos(lat2);
-        const double x = std::cos(lat1) * std::sin(lat2) - std::sin(lat1) * std::cos(lat2) * std::cos(deltaLongitude);
-        double degrees = toDegrees(std::atan2(y, x));
-        while (degrees < 0.0) { degrees += 360.0; }
-        return degrees;
-    }
-
-    double distanceMeters(double latitude1, double longitude1, double latitude2, double longitude2) {
-        const double lat1 = toRadians(latitude1);
-        const double lon1 = toRadians(longitude1);
-        const double lat2 = toRadians(latitude2);
-        const double lon2 = toRadians(longitude2);
-        const double deltaLat = lat2 - lat1;
-        const double deltaLon = lon2 - lon1;
-        const double sinHalfLat = std::sin(deltaLat / 2.0);
-        const double sinHalfLon = std::sin(deltaLon / 2.0);
-        const double a = sinHalfLat * sinHalfLat + std::cos(lat1) * std::cos(lat2) * sinHalfLon * sinHalfLon;
-        const double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
-        return kEarthRadiusMeters * c;
-    }
-
     RoutePoint offsetPointMeters(
         double centerLatitude,
         double centerLongitude,
         double northMeters,
         double eastMeters,
         double altitudeMeters) {
-        const double latitudeRadians = toRadians(centerLatitude);
-        const double deltaLatitudeRadians = northMeters / kEarthRadiusMeters;
-        const double cosLatitude = std::max(0.000001, std::cos(latitudeRadians));
-        const double deltaLongitudeRadians =
-            eastMeters / (kEarthRadiusMeters * cosLatitude);
-
-        RoutePoint point;
-        point.latitude = centerLatitude + toDegrees(deltaLatitudeRadians);
-        point.longitude = centerLongitude + toDegrees(deltaLongitudeRadians);
-        point.altitudeMeters = altitudeMeters;
-        return point;
+        const double distanceMeters = std::hypot(northMeters, eastMeters);
+        const double bearingDegrees = domain::normalizeDegrees360(
+            toDegrees(std::atan2(eastMeters, northMeters)));
+        const domain::GeoCoordinate point = domain::destinationPoint(
+            centerLatitude,
+            centerLongitude,
+            bearingDegrees,
+            distanceMeters,
+            altitudeMeters);
+        return {point.latitude, point.longitude, point.altitudeMeters};
     }
 }
 
@@ -478,16 +452,17 @@ DesiredState OrbitAreaTask::evaluate(double currentLat, double currentLon, doubl
         double bearingFromCenter = bearingDegrees(m_centerLat, m_centerLon, currentLat, currentLon);
         double lookAhead = m_isPatrol ? 115.0 : 55.0; // Math matched from legacy fallback
         
-        // Approximate the target coordinate on the circle
-        double angularDistance = orbitRadius / kEarthRadiusMeters;
-        double bearing = toRadians(bearingFromCenter + lookAhead);
-        double lat1 = toRadians(m_centerLat);
-        double lon1 = toRadians(m_centerLon);
-        
-        double lat2 = std::asin(std::sin(lat1) * std::cos(angularDistance) + std::cos(lat1) * std::sin(angularDistance) * std::cos(bearing));
-        double lon2 = lon1 + std::atan2(std::sin(bearing) * std::sin(angularDistance) * std::cos(lat1), std::cos(angularDistance) - std::sin(lat1) * std::sin(lat2));
-        
-        assignedHeading = bearingDegrees(currentLat, currentLon, toDegrees(lat2), toDegrees(lon2));
+        const GeoCoordinate lookAheadPoint = destinationPoint(
+            m_centerLat,
+            m_centerLon,
+            bearingFromCenter + lookAhead,
+            orbitRadius,
+            m_targetAlt);
+        assignedHeading = bearingDegrees(
+            currentLat,
+            currentLon,
+            lookAheadPoint.latitude,
+            lookAheadPoint.longitude);
     }
     
     return {assignedHeading, m_targetAlt, m_targetSpeed};
@@ -592,15 +567,13 @@ RoutePoint HoldRacetrackTask::endpoint(int index) const
 {
     const double endpointHeading = m_headingDegrees + (index == 0 ? 0.0 : 180.0);
     const double halfLegMeters = m_legLengthMeters * 0.5;
-    const double headingRadians = toRadians(endpointHeading);
-    const double northMeters = std::cos(headingRadians) * halfLegMeters;
-    const double eastMeters = std::sin(headingRadians) * halfLegMeters;
-    return offsetPointMeters(
+    const GeoCoordinate endpoint = destinationPoint(
         m_centerLat,
         m_centerLon,
-        northMeters,
-        eastMeters,
+        endpointHeading,
+        halfLegMeters,
         m_targetAlt);
+    return {endpoint.latitude, endpoint.longitude, endpoint.altitudeMeters};
 }
 
 DesiredState HoldRacetrackTask::evaluate(

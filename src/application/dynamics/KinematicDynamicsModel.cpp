@@ -1,4 +1,5 @@
 #include "application/dynamics/KinematicDynamicsModel.h"
+#include "domain/GeoMath.h"
 
 #include <QtMath>
 
@@ -7,7 +8,6 @@
 namespace application::dynamics {
 namespace {
 
-constexpr double kEarthRadiusMeters = 6371000.0;
 constexpr double kKnotsToMetersPerSecond = 0.514444;
 
 } // namespace
@@ -51,26 +51,14 @@ DynamicsStepResult KinematicDynamicsModel::step(
 
   const double speedMetersPerSecond =
       qMax(0.0, _state.speedKnots) * kKnotsToMetersPerSecond;
-  const double angularDistance =
-      (speedMetersPerSecond * context.deltaTimeSeconds) /
-      kEarthRadiusMeters;
-  const double headingRadians = qDegreesToRadians(_state.headingDegrees);
-  const double latitudeRadians = qDegreesToRadians(_state.latitudeDegrees);
-  const double longitudeRadians = qDegreesToRadians(_state.longitudeDegrees);
-
-  const double sinLatitude = qSin(latitudeRadians);
-  const double cosLatitude = qCos(latitudeRadians);
-  const double sinAngularDistance = qSin(angularDistance);
-  const double cosAngularDistance = qCos(angularDistance);
-  const double nextLatitudeRadians = qAsin(
-      sinLatitude * cosAngularDistance +
-      cosLatitude * sinAngularDistance * qCos(headingRadians));
-  const double nextLongitudeRadians = longitudeRadians + qAtan2(
-      qSin(headingRadians) * sinAngularDistance * cosLatitude,
-      cosAngularDistance - sinLatitude * qSin(nextLatitudeRadians));
-
-  _state.latitudeDegrees = qRadiansToDegrees(nextLatitudeRadians);
-  _state.longitudeDegrees = qRadiansToDegrees(nextLongitudeRadians);
+  const domain::GeoCoordinate nextPosition = domain::destinationPoint(
+      _state.latitudeDegrees,
+      _state.longitudeDegrees,
+      _state.headingDegrees,
+      speedMetersPerSecond * context.deltaTimeSeconds,
+      _state.altitudeMeters);
+  _state.latitudeDegrees = nextPosition.latitude;
+  _state.longitudeDegrees = nextPosition.longitude;
   if (_configuration.groundConstrained) {
     _state.verticalSpeedMetersPerSecond = 0.0;
     _state.pitchDegrees = 0.0;

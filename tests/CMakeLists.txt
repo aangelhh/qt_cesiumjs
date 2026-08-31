@@ -22,6 +22,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(qttest_unit_tests
     domain/TaskTest.cpp
     domain/GeoMathTest.cpp
+    geospatial/GeographicLibGeospatialServiceTest.cpp
     domain/BombReleaseGateTest.cpp
     domain/CombatRulesTest.cpp
     domain/SensorTest.cpp
@@ -79,7 +80,6 @@ add_executable(qttest_unit_tests
     # core code is moved into a static library this list will collapse into a
     # single target_link_libraries() call.
     ${CMAKE_SOURCE_DIR}/src/domain/Task.cpp
-    ${CMAKE_SOURCE_DIR}/src/domain/GeoMath.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/BombReleaseGate.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/CombatRules.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/Sensor.cpp
@@ -157,6 +157,7 @@ endif()
 
 target_link_libraries(qttest_unit_tests
     PRIVATE
+        qttest_geospatial
         Qt6::Core
         Qt6::Gui
         GTest::gtest
@@ -262,7 +263,6 @@ if(TARGET libJSBSim)
         ${CMAKE_SOURCE_DIR}/src/application/JsbsimSetpointController.cpp
         ${CMAKE_SOURCE_DIR}/src/application/MovementIntent.cpp
         ${CMAKE_SOURCE_DIR}/src/application/SystemsTelemetry.cpp
-        ${CMAKE_SOURCE_DIR}/src/domain/GeoMath.cpp
         ${CMAKE_SOURCE_DIR}/src/domain/Task.cpp
     )
     target_include_directories(qttest_jsbsim_control_smoke PRIVATE
@@ -273,6 +273,7 @@ if(TARGET libJSBSim)
         QTTEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     )
     target_link_libraries(qttest_jsbsim_control_smoke PRIVATE
+        qttest_geospatial
         Qt6::Core
         GTest::gtest
         GTest::gtest_main
@@ -289,7 +290,6 @@ if(TARGET libJSBSim)
         ${CMAKE_SOURCE_DIR}/src/infrastructure/JsbsimModelRepository.cpp
         ${CMAKE_SOURCE_DIR}/src/application/JsbsimSetpointController.cpp
         ${CMAKE_SOURCE_DIR}/src/application/SystemsTelemetry.cpp
-        ${CMAKE_SOURCE_DIR}/src/domain/GeoMath.cpp
         ${CMAKE_SOURCE_DIR}/src/domain/Task.cpp
     )
     target_include_directories(qttest_jsbsim_dynamics_model_test PRIVATE
@@ -300,6 +300,7 @@ if(TARGET libJSBSim)
         QTTEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     )
     target_link_libraries(qttest_jsbsim_dynamics_model_test PRIVATE
+        qttest_geospatial
         Qt6::Core
         GTest::gtest
         GTest::gtest_main

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(qttest VERSION 0.1 LANGUAGES CXX)
+project(qttest VERSION 0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,6 +11,29 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebEngineCore WebChannel Positioning)
+
+add_library(qttest_geodesic STATIC
+    Dependencies/geographiclib-c/geodesic.c
+)
+set_target_properties(qttest_geodesic PROPERTIES AUTOMOC OFF)
+target_include_directories(qttest_geodesic PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/Dependencies/geographiclib-c
+)
+
+add_library(qttest_geospatial STATIC
+    src/geospatial/GeographicLibGeospatialService.cpp
+    src/geospatial/GeographicLibGeospatialService.h
+    src/geospatial/IGeospatialService.h
+    src/domain/GeoMath.cpp
+    src/domain/GeoMath.h
+)
+target_include_directories(qttest_geospatial PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(qttest_geospatial PUBLIC
+    qttest_geodesic
+    Qt6::Core
+)
 
 option(
     QTTEST_ENABLE_ROS2_TELEMETRY
@@ -283,7 +306,6 @@ qt_add_executable(qttest
     src/domain/CombatRules.h
     src/domain/Entity.h
     src/domain/EntityIdentity.h
-    src/domain/GeoMath.cpp
     src/domain/GeoMath.h
     src/domain/Sensor.cpp
     src/domain/Sensor.h
@@ -357,6 +379,7 @@ endif()
 
 target_link_libraries(qttest
     PRIVATE
+        qttest_geospatial
         Qt6::Widgets
         Qt6::Gui
 )

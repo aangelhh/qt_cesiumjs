@@ -2,6 +2,7 @@
 #include "application/MovementIntent.h"
 #include "application/dynamics/KinematicDynamicsModel.h"
 #include "domain/EntityIdentity.h"
+#include "domain/GeoMath.h"
 
 #if defined(QTTEST_HAS_JSBSIM)
 #include "application/dynamics/DynamicsBackendHealth.h"
@@ -17,7 +18,6 @@
 
 namespace {
 
-constexpr double kEarthRadiusMeters = 6371000.0;
 constexpr double kKnotsToMetersPerSecond = 0.514444;
 constexpr double kClimbRateMetersPerSecond = 20.0;
 constexpr double kMinimumAttitudeSpeedMetersPerSecond = 5.0;
@@ -40,26 +40,8 @@ double clampStep(double currentValue, double targetValue, double maxStep) {
   return currentValue + (delta > 0.0 ? maxStep : -maxStep);
 }
 
-double normalizeDegrees360(double degrees) {
-  while (degrees < 0.0) {
-    degrees += 360.0;
-  }
-  while (degrees >= 360.0) {
-    degrees -= 360.0;
-  }
-  return degrees;
-}
-
-double shortestSignedAngle(double currentHeading, double targetHeading) {
-  double delta = normalizeDegrees360(targetHeading) - normalizeDegrees360(currentHeading);
-  while (delta > 180.0) {
-    delta -= 360.0;
-  }
-  while (delta < -180.0) {
-    delta += 360.0;
-  }
-  return delta;
-}
+using domain::normalizeDegrees360;
+using domain::shortestSignedAngle;
 
 double smoothAttitudeDegrees(
     double currentDegrees,
@@ -256,61 +238,8 @@ void updateDerivedKinematicAttitude(
       deltaSeconds);
 }
 
-double bearingDegrees(
-    double latitude1,
-    double longitude1,
-    double latitude2,
-    double longitude2) {
-  const double lat1 = qDegreesToRadians(latitude1);
-  const double lat2 = qDegreesToRadians(latitude2);
-  const double deltaLongitude = qDegreesToRadians(longitude2 - longitude1);
-  const double y = qSin(deltaLongitude) * qCos(lat2);
-  const double x = qCos(lat1) * qSin(lat2) -
-                   qSin(lat1) * qCos(lat2) * qCos(deltaLongitude);
-  return normalizeDegrees360(qRadiansToDegrees(qAtan2(y, x)));
-}
-
-double distanceMeters(
-    double latitude1,
-    double longitude1,
-    double latitude2,
-    double longitude2) {
-  const double lat1 = qDegreesToRadians(latitude1);
-  const double lon1 = qDegreesToRadians(longitude1);
-  const double lat2 = qDegreesToRadians(latitude2);
-  const double lon2 = qDegreesToRadians(longitude2);
-  const double deltaLat = lat2 - lat1;
-  const double deltaLon = lon2 - lon1;
-  const double a = qPow(qSin(deltaLat / 2.0), 2.0) +
-                   qCos(lat1) * qCos(lat2) * qPow(qSin(deltaLon / 2.0), 2.0);
-  const double c = 2.0 * qAtan2(qSqrt(a), qSqrt(1.0 - a));
-  return kEarthRadiusMeters * c;
-}
-
-QPair<double, double> destinationPoint(
-    double latitude,
-    double longitude,
-    double bearingDegreesValue,
-    double distanceMetersValue) {
-  const double angularDistance = distanceMetersValue / kEarthRadiusMeters;
-  const double bearing = qDegreesToRadians(bearingDegreesValue);
-  const double lat1 = qDegreesToRadians(latitude);
-  const double lon1 = qDegreesToRadians(longitude);
-
-  const double sinLat1 = qSin(lat1);
-  const double cosLat1 = qCos(lat1);
-  const double sinAngular = qSin(angularDistance);
-  const double cosAngular = qCos(angularDistance);
-
-  const double lat2 = qAsin(
-      sinLat1 * cosAngular +
-      cosLat1 * sinAngular * qCos(bearing));
-  const double lon2 = lon1 + qAtan2(
-      qSin(bearing) * sinAngular * cosLat1,
-      cosAngular - sinLat1 * qSin(lat2));
-
-  return {qRadiansToDegrees(lat2), qRadiansToDegrees(lon2)};
-}
+using domain::bearingDegrees;
+using domain::distanceMeters;
 
 #if defined(QTTEST_HAS_JSBSIM)
 QString defaultJsbsimAircraftModel(const Entity& entity) {

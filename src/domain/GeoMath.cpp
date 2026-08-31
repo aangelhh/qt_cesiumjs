@@ -1,29 +1,24 @@
 #include "GeoMath.h"
+#include "geospatial/GeographicLibGeospatialService.h"
+
 #include <cmath>
 #include <QString>
 
 namespace domain {
 
-static constexpr double kEarthRadiusMeters = 6371000.0;
-static constexpr double kPi = 3.14159265358979323846;
-
-static double toRadians(double degrees) { return degrees * kPi / 180.0; }
-static double toDegrees(double radians) { return radians * 180.0 / kPi; }
+GeodesicInverseResult inverseGeodesic(
+    double latitude1, double longitude1,
+    double latitude2, double longitude2) {
+  return geospatial::wgs84GeospatialService().inverseGeodesic(
+      {latitude1, longitude1, 0.0},
+      {latitude2, longitude2, 0.0});
+}
 
 double distanceMeters(
     double latitude1, double longitude1,
     double latitude2, double longitude2) {
-  const double lat1 = toRadians(latitude1);
-  const double lon1 = toRadians(longitude1);
-  const double lat2 = toRadians(latitude2);
-  const double lon2 = toRadians(longitude2);
-  const double deltaLat = lat2 - lat1;
-  const double deltaLon = lon2 - lon1;
-  const double a = std::pow(std::sin(deltaLat / 2.0), 2.0) +
-                   std::cos(lat1) * std::cos(lat2) *
-                       std::pow(std::sin(deltaLon / 2.0), 2.0);
-  const double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
-  return kEarthRadiusMeters * c;
+  return inverseGeodesic(
+      latitude1, longitude1, latitude2, longitude2).distanceMeters;
 }
 
 double normalizeDegrees360(double degrees) {
@@ -51,15 +46,69 @@ double shortestSignedAngle(double currentHeading, double targetHeading) {
 double bearingDegrees(
     double latitude1, double longitude1,
     double latitude2, double longitude2) {
-  const double lat1 = toRadians(latitude1);
-  const double lon1 = toRadians(longitude1);
-  const double lat2 = toRadians(latitude2);
-  const double lon2 = toRadians(longitude2);
-  const double deltaLon = lon2 - lon1;
-  const double y = std::sin(deltaLon) * std::cos(lat2);
-  const double x = std::cos(lat1) * std::sin(lat2) -
-                   std::sin(lat1) * std::cos(lat2) * std::cos(deltaLon);
-  return normalizeDegrees360(toDegrees(std::atan2(y, x)));
+  return inverseGeodesic(
+      latitude1, longitude1, latitude2, longitude2)
+      .initialBearingDegrees;
+}
+
+GeoCoordinate destinationPoint(
+    double latitude,
+    double longitude,
+    double bearingDegreesValue,
+    double distanceMetersValue,
+    double altitudeMeters) {
+  return geospatial::wgs84GeospatialService().directGeodesic(
+      {latitude, longitude, altitudeMeters},
+      bearingDegreesValue,
+      distanceMetersValue);
+}
+
+double slantDistanceMeters(
+    double latitude1,
+    double longitude1,
+    double altitudeMeters1,
+    double latitude2,
+    double longitude2,
+    double altitudeMeters2) {
+  const double horizontal = distanceMeters(
+      latitude1, longitude1, latitude2, longitude2);
+  return std::hypot(horizontal, altitudeMeters2 - altitudeMeters1);
+}
+
+EcefCoordinate geodeticToEcef(const GeoCoordinate& coordinate) {
+  return geospatial::wgs84GeospatialService().geodeticToEcef(coordinate);
+}
+
+GeoCoordinate ecefToGeodetic(const EcefCoordinate& coordinate) {
+  return geospatial::wgs84GeospatialService().ecefToGeodetic(coordinate);
+}
+
+EnuCoordinate geodeticToEnu(
+    const GeoCoordinate& coordinate,
+    const GeoCoordinate& origin) {
+  return geospatial::wgs84GeospatialService().geodeticToEnu(
+      coordinate, origin);
+}
+
+GeoCoordinate enuToGeodetic(
+    const EnuCoordinate& coordinate,
+    const GeoCoordinate& origin) {
+  return geospatial::wgs84GeospatialService().enuToGeodetic(
+      coordinate, origin);
+}
+
+NedCoordinate geodeticToNed(
+    const GeoCoordinate& coordinate,
+    const GeoCoordinate& origin) {
+  return geospatial::wgs84GeospatialService().geodeticToNed(
+      coordinate, origin);
+}
+
+GeoCoordinate nedToGeodetic(
+    const NedCoordinate& coordinate,
+    const GeoCoordinate& origin) {
+  return geospatial::wgs84GeospatialService().nedToGeodetic(
+      coordinate, origin);
 }
 
 QString formatPosition(double latitude, double longitude) {
