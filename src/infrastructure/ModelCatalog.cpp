@@ -210,6 +210,7 @@ QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
   ModelCatalogEntry pendingEntry;
   bool hasPendingEntry = false;
   DynamicsBinding groupDynamicsDefaults;
+  QString groupVisualFallback;
 
   while (!input.atEnd()) {
     const QString rawLine = input.readLine();
@@ -219,6 +220,7 @@ QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
         !rawLine.front().isSpace() && line.endsWith(':');
     if (isTopLevelGroup) {
       groupDynamicsDefaults = {};
+      groupVisualFallback.clear();
       continue;
     }
 
@@ -252,6 +254,9 @@ QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
       } else if (line.startsWith(QStringLiteral("initialFuelKilograms:"))) {
         groupDynamicsDefaults.initialFuelKilograms = parseTrailingDouble(
             line, QStringLiteral("initialFuelKilograms:"));
+      } else if (line.startsWith(QStringLiteral("visualFallbackUrl:"))) {
+        groupVisualFallback = trimValue(
+            line.mid(QStringLiteral("visualFallbackUrl:").size()));
       }
       continue;
     }
@@ -359,14 +364,32 @@ QVector<ModelCatalogEntry> ModelCatalog::loadModels() {
     }
 
     if (line.startsWith(QStringLiteral("urlLocation:"))) {
-      const QString relativePath = trimValue(line.mid(QStringLiteral("urlLocation:").size()));
-      pendingEntry.relativePath = relativePath;
-      pendingEntry.absolutePath = normalizeAbsolutePath(relativePath);
-      pendingEntry.domain = inferDomain(relativePath);
-      pendingEntry.category = inferCategory(relativePath);
+      const QString configuredRelativePath = trimValue(
+          line.mid(QStringLiteral("urlLocation:").size()));
+      QString resolvedRelativePath = configuredRelativePath;
+      QString resolvedAbsolutePath = normalizeAbsolutePath(resolvedRelativePath);
+      QString visualModelCompatibility = QStringLiteral("exact");
+
+      if (!QFileInfo::exists(resolvedAbsolutePath) &&
+          !groupVisualFallback.isEmpty()) {
+        const QString fallbackAbsolutePath =
+            normalizeAbsolutePath(groupVisualFallback);
+        if (QFileInfo::exists(fallbackAbsolutePath)) {
+          resolvedRelativePath = groupVisualFallback;
+          resolvedAbsolutePath = fallbackAbsolutePath;
+          visualModelCompatibility = QStringLiteral("family");
+        }
+      }
+
+      pendingEntry.configuredRelativePath = configuredRelativePath;
+      pendingEntry.relativePath = resolvedRelativePath;
+      pendingEntry.absolutePath = resolvedAbsolutePath;
+      pendingEntry.visualModelCompatibility = visualModelCompatibility;
+      pendingEntry.domain = inferDomain(resolvedRelativePath);
+      pendingEntry.category = inferCategory(resolvedRelativePath);
       pendingEntry.cesiumAxes = ModelOrientation::resolveCesiumAxes(
           pendingEntry.cesiumAxes,
-          relativePath);
+          resolvedRelativePath);
       if (QFileInfo::exists(pendingEntry.absolutePath)) {
         entries.push_back(pendingEntry);
       }

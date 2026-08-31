@@ -200,6 +200,7 @@ AircraftModels:
     urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
 
 EurofighterTyphoon:
+  visualFallbackUrl: "/models/Air/Fighter/eurofighter_typhoon.glb"
   dynamicsBackend: jsbsim
   jsbsimAircraftModel: eurofighter-typhoon
   dynamicsModelCompatibility: experimental
@@ -575,6 +576,7 @@ CF18_Hornet:
     urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
 
 Mirage2000:
+  visualFallbackUrl: "/models/Air/Fighter/dassault_mirage_2000.glb"
   dynamicsBackend: jsbsim
   jsbsimAircraftModel: f16
   dynamicsModelCompatibility: approximation
@@ -848,6 +850,7 @@ Mirage2000:
     urlLocation: "/models/Air/Fighter/mirage2000-5_mk2.glb"
 
 Rafale:
+  visualFallbackUrl: "/models/Air/Fighter/dassault_rafale.glb"
   dynamicsBackend: jsbsim
   jsbsimAircraftModel: rafale-open-data
   dynamicsModelCompatibility: experimental
@@ -912,6 +915,7 @@ Rafale:
     urlLocation: "/models/Air/Fighter/dassault_rafale_m.glb"
 
 MiG29Fulcrum:
+  visualFallbackUrl: "/models/Air/Fighter/mig-29_fighter.glb"
   dynamicsBackend: jsbsim
   jsbsimAircraftModel: f16
   dynamicsModelCompatibility: approximation
@@ -1029,6 +1033,7 @@ MiG29Fulcrum:
     urlLocation: "/models/Air/Fighter/mig-29sm.glb"
 
 Mirage_F1:
+  visualFallbackUrl: "/models/Air/Fighter/dassault_mirage_f1.glb"
   dynamicsBackend: jsbsim
   jsbsimAircraftModel: f104
   dynamicsModelCompatibility: approximation
@@ -1333,6 +1338,7 @@ Mirage_F1:
     urlLocation: "/models/Air/Fighter/mirage_f1_je.glb"
 
 Mirage_III:
+  visualFallbackUrl: "/models/Air/Fighter/dassault_mirage_iii.glb"
   dynamicsBackend: jsbsim
   jsbsimAircraftModel: f104
   dynamicsModelCompatibility: approximation
@@ -1439,6 +1445,7 @@ A400M_Atlas:
     urlLocation: "/models/Air/Transport/airbus_a400m.glb"
 
 C130_Hercules:
+  visualFallbackUrl: "/models/Air/Transport/c-130j_super_hercules.glb"
   - name: Lockheed C-130 Hercules
     entityType:
       Kind: 1        # Plataforma
@@ -1630,6 +1637,7 @@ US_Bombers:
 #Helicopter
 
 US_Helicopters:
+  visualFallbackUrl: "/models/Air/Helicopter/boeing_ch-47_chinook.glb"
   dynamicsBackend: jsbsim
   jsbsimAircraftModel: ah1s
   dynamicsModelCompatibility: approximation
