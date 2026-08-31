@@ -86,6 +86,7 @@ struct Entity {
   QString dynamicsFallbackReason;
   double dynamicsStepDurationMilliseconds = 0.0;
   QString jsbsimAircraftModel;
+  QString dynamicsModelCompatibility;
   QString controlProfileId;
   QString systemsDisplayProfileId;
   QString cesiumModelAxes;

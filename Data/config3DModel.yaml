@@ -9,6 +9,14 @@ AircraftModels:
       Subcategory: 27
       Specific: 1
       Extra: 0
+    dynamicsBackend: jsbsim
+    jsbsimAircraftModel: eurofighter-typhoon
+    dynamicsModelCompatibility: experimental
+    controlProfile: fighter-generic
+    systemsDisplayProfile: air-turbine-2-engine
+    engineCount: 2
+    fuelCapacityKilograms: 4996
+    initialFuelKilograms: 3000
     urlLocation: "/models/Air/Fighter/F-2000A_italian.glb"
 
   - name: A-10 Thunderbolt II (base)
@@ -192,6 +200,14 @@ AircraftModels:
     urlLocation: "/models/Air/Fighter/f-16_fighting_falcon.glb"
 
 EurofighterTyphoon:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: eurofighter-typhoon
+  dynamicsModelCompatibility: experimental
+  controlProfile: fighter-generic
+  systemsDisplayProfile: air-turbine-2-engine
+  engineCount: 2
+  fuelCapacityKilograms: 4996
+  initialFuelKilograms: 3000
   - name: Generic Typhoon
     entityType:
       Kind: 1
@@ -355,6 +371,12 @@ F22Raptor:
     urlLocation: "/models/Air/Fighter/f-22_raptor.glb"
 
 F35Lightning:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: f16
+  dynamicsModelCompatibility: approximation
+  controlProfile: fighter-generic
+  systemsDisplayProfile: air-turbine-1-engine
+  engineCount: 1
   - name: F-35 Lightning II (Generic)
     entityType:
       Kind: 1
@@ -400,6 +422,12 @@ F35Lightning:
     urlLocation: "/models/Air/Fighter/f-35b_lightning_ii.glb"
 
 FA18_Hornet:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: f16
+  dynamicsModelCompatibility: approximation
+  controlProfile: fighter-generic
+  systemsDisplayProfile: air-turbine-2-engine
+  engineCount: 2
   - name: F/A-18A
     entityType:
       Kind: 1
@@ -467,6 +495,12 @@ FA18_Hornet:
     urlLocation: "/models/Air/Fighter/fa-18ef_super_hornet.glb"
 
 EF18_Hornet:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: f16
+  dynamicsModelCompatibility: approximation
+  controlProfile: fighter-generic
+  systemsDisplayProfile: air-turbine-2-engine
+  engineCount: 2
   - name: McDonnell Douglas EF-18 Hornet (Generic)
     entityType:
       Kind: 1
@@ -501,6 +535,12 @@ EF18_Hornet:
     urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
 
 CF18_Hornet:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: f16
+  dynamicsModelCompatibility: approximation
+  controlProfile: fighter-generic
+  systemsDisplayProfile: air-turbine-2-engine
+  engineCount: 2
   - name: McDonnell Douglas CF-18 Hornet (Generic)
     entityType:
       Kind: 1
@@ -535,6 +575,12 @@ CF18_Hornet:
     urlLocation: "/models/Air/Fighter/fa-18f_super_hornet.glb"
 
 Mirage2000:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: f16
+  dynamicsModelCompatibility: approximation
+  controlProfile: fighter-generic
+  systemsDisplayProfile: air-turbine-1-engine
+  engineCount: 1
   - name: Mirage 2000 (Generic)
     entityType:
       Kind: 1
@@ -802,6 +848,14 @@ Mirage2000:
     urlLocation: "/models/Air/Fighter/mirage2000-5_mk2.glb"
 
 Rafale:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: rafale-open-data
+  dynamicsModelCompatibility: experimental
+  controlProfile: fighter-generic
+  systemsDisplayProfile: air-turbine-2-engine
+  engineCount: 2
+  fuelCapacityKilograms: 4700
+  initialFuelKilograms: 3000
   - name: Dassault Rafale (Squall) (Generic)
     entityType:
       Kind: 1
@@ -858,6 +912,12 @@ Rafale:
     urlLocation: "/models/Air/Fighter/dassault_rafale_m.glb"
 
 MiG29Fulcrum:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: f16
+  dynamicsModelCompatibility: approximation
+  controlProfile: fighter-generic
+  systemsDisplayProfile: air-turbine-2-engine
+  engineCount: 2
   - name: MiG-29 Fulcrum (Generic)
     entityType:
       Kind: 1
@@ -969,6 +1029,12 @@ MiG29Fulcrum:
     urlLocation: "/models/Air/Fighter/mig-29sm.glb"
 
 Mirage_F1:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: f104
+  dynamicsModelCompatibility: approximation
+  controlProfile: fighter-generic
+  systemsDisplayProfile: air-turbine-1-engine
+  engineCount: 1
   - name: Mirage F-1 AD
     entityType:
       Kind: 1
@@ -1267,6 +1333,12 @@ Mirage_F1:
     urlLocation: "/models/Air/Fighter/mirage_f1_je.glb"
 
 Mirage_III:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: f104
+  dynamicsModelCompatibility: approximation
+  controlProfile: fighter-generic
+  systemsDisplayProfile: air-turbine-1-engine
+  engineCount: 1
   - name: Mirage IIID
     entityType:
       Kind: 1
@@ -1315,6 +1387,12 @@ Mirage_III:
 #Transport
 
 A400M_Atlas:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: C130
+  dynamicsModelCompatibility: approximation
+  controlProfile: aircraft-generic
+  systemsDisplayProfile: air-turbine-4-engine
+  engineCount: 4
   - name: Airbus A400M Atlas
     entityType:
       Kind: 1          
@@ -1452,6 +1530,12 @@ C130_Hercules:
 
 
 B2_Spirit:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: B747
+  dynamicsModelCompatibility: approximation
+  controlProfile: aircraft-generic
+  systemsDisplayProfile: air-turbine-4-engine
+  engineCount: 4
   - name: Northrop B-2 Spirit
     entityType:
       Kind: 1          # Plataforma
@@ -1497,6 +1581,12 @@ B2_Spirit:
     urlLocation: "/models/Air/Bomber/b-2_spirit.glb"
 
 B52_Stratofortress:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: B747
+  dynamicsModelCompatibility: approximation
+  controlProfile: aircraft-generic
+  systemsDisplayProfile: air-turbine-8-engine
+  engineCount: 8
   - name: B-52G
     entityType:
       Kind: 1          # Plataforma
@@ -1520,6 +1610,12 @@ B52_Stratofortress:
     urlLocation: "/models/Air/Bomber/boeing_b-52_stratofortress.glb"
 
 US_Bombers:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: B747
+  dynamicsModelCompatibility: approximation
+  controlProfile: aircraft-generic
+  systemsDisplayProfile: air-turbine-4-engine
+  engineCount: 4
   - name: B-1B
     entityType:
       Kind: 1          # Plataforma
@@ -1534,6 +1630,12 @@ US_Bombers:
 #Helicopter
 
 US_Helicopters:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: ah1s
+  dynamicsModelCompatibility: approximation
+  controlProfile: aircraft-generic
+  systemsDisplayProfile: air-turbine-2-engine
+  engineCount: 2
   - name: CH-47 Chinook
     entityType:
       Kind: 1          # Plataforma
@@ -1712,6 +1814,12 @@ Sling_Loads:
     urlLocation: "/models/Air/Helicopter/boeing_ah-64d_apache.glb"
 
 Eurocopter_Tiger:
+  dynamicsBackend: jsbsim
+  jsbsimAircraftModel: ah1s
+  dynamicsModelCompatibility: approximation
+  controlProfile: aircraft-generic
+  systemsDisplayProfile: air-turbine-2-engine
+  engineCount: 2
   - name: Eurocopter EC665 HAP Tiger
     entityType:
       Kind: 1          # Plataforma

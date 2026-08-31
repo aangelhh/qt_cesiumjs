@@ -269,6 +269,108 @@ TEST(JSBSimDynamicsModel, EngineTelemetryReportsRunningEngineForFighterProfile) 
   EXPECT_EQ(destroyedEngines.front().state, QStringLiteral("FAILED"));
 }
 
+TEST(JSBSimDynamicsModel, LoadsExperimentalEurofighterWithTwinEngineTelemetry) {
+  JSBSimDynamicsModel model;
+  const DynamicsModelConfiguration configuration{
+      QStringLiteral("eurofighter-typhoon"),
+      QStringLiteral("TyphoonVisualPlatform"),
+      false,
+      4996.0};
+  ASSERT_TRUE(model.configure(configuration));
+  ASSERT_TRUE(model.initialize(makeFighterState()));
+  EXPECT_EQ(model.loadedModelName(), QStringLiteral("eurofighter-typhoon"));
+
+  const DynamicsState afterInit = model.state();
+  EXPECT_GT(afterInit.fuelCapacityKilograms, 4900.0);
+  EXPECT_LT(afterInit.fuelCapacityKilograms, 5100.0);
+
+  DynamicsStepContext context;
+  context.deltaTimeSeconds = 1.0 / 60.0;
+  context.controlSetpoint = DynamicsControlSetpoint{
+      true, true, 90.0, 3000.0, 320.0, QStringLiteral("fighter-generic")};
+  for (int tick = 0; tick < 180; ++tick) {
+    context.simulationTimeSeconds += context.deltaTimeSeconds;
+    const auto result = model.step(context);
+    ASSERT_TRUE(result) << result.errorMessage.toStdString();
+  }
+
+  EXPECT_LT(
+      model.state().fuelRemainingKilograms,
+      afterInit.fuelRemainingKilograms);
+
+  const auto engines = model.engineTelemetry(/*entityDestroyed=*/false);
+  ASSERT_EQ(engines.size(), 2);
+  for (const application::EngineTelemetry& engine : engines) {
+    EXPECT_EQ(engine.state, QStringLiteral("RUNNING"));
+    EXPECT_TRUE(engine.fuelFlowAvailable);
+    EXPECT_TRUE(engine.thrustAvailable);
+    EXPECT_GT(engine.thrustKilonewtons, 0.0);
+  }
+}
+
+TEST(JSBSimDynamicsModel, LoadsExperimentalRafaleWithTwinEngineTelemetry) {
+  JSBSimDynamicsModel model;
+  const DynamicsModelConfiguration configuration{
+      QStringLiteral("rafale-open-data"),
+      QStringLiteral("RafaleVisualPlatform"),
+      false,
+      4700.0};
+  ASSERT_TRUE(model.configure(configuration));
+  ASSERT_TRUE(model.initialize(makeFighterState()));
+  EXPECT_EQ(model.loadedModelName(), QStringLiteral("rafale-open-data"));
+
+  const DynamicsState afterInit = model.state();
+  EXPECT_GT(afterInit.fuelCapacityKilograms, 4650.0);
+  EXPECT_LT(afterInit.fuelCapacityKilograms, 4750.0);
+
+  DynamicsStepContext context;
+  context.deltaTimeSeconds = 1.0 / 60.0;
+  context.controlSetpoint = DynamicsControlSetpoint{
+      true, true, 90.0, 3000.0, 320.0, QStringLiteral("fighter-generic")};
+  for (int tick = 0; tick < 180; ++tick) {
+    context.simulationTimeSeconds += context.deltaTimeSeconds;
+    const auto result = model.step(context);
+    ASSERT_TRUE(result) << result.errorMessage.toStdString();
+  }
+
+  EXPECT_LT(
+      model.state().fuelRemainingKilograms,
+      afterInit.fuelRemainingKilograms);
+
+  const auto engines = model.engineTelemetry(/*entityDestroyed=*/false);
+  ASSERT_EQ(engines.size(), 2);
+  for (const application::EngineTelemetry& engine : engines) {
+    EXPECT_EQ(engine.state, QStringLiteral("RUNNING"));
+    EXPECT_TRUE(engine.fuelFlowAvailable);
+    EXPECT_TRUE(engine.thrustAvailable);
+    EXPECT_GT(engine.thrustKilonewtons, 0.0);
+  }
+}
+
+TEST(JSBSimDynamicsModel, ExperimentalRafaleRemainsDeterministic) {
+  const DynamicsModelConfiguration configuration{
+      QStringLiteral("rafale-open-data"),
+      QStringLiteral("DeterministicRafale"),
+      false,
+      4700.0};
+  JSBSimDynamicsModel first;
+  JSBSimDynamicsModel second;
+  ASSERT_TRUE(first.configure(configuration));
+  ASSERT_TRUE(second.configure(configuration));
+  ASSERT_TRUE(first.initialize(makeFighterState()));
+  ASSERT_TRUE(second.initialize(makeFighterState()));
+
+  for (int tick = 0; tick < 120; ++tick) {
+    SCOPED_TRACE(::testing::Message() << "tick=" << tick);
+    const DynamicsStepContext context = deterministicContextForTick(tick);
+    const auto firstResult = first.step(context);
+    const auto secondResult = second.step(context);
+    ASSERT_TRUE(firstResult) << firstResult.errorMessage.toStdString();
+    ASSERT_TRUE(secondResult) << secondResult.errorMessage.toStdString();
+    expectEquivalentDynamicsState(first.state(), second.state());
+  }
+}
+
 TEST(JSBSimDynamicsModel, IdenticalInstancesRemainEquivalentAtEveryTick) {
   const DynamicsModelConfiguration configuration{
       QStringLiteral("f16"), QStringLiteral("DeterministicFighter"), false, 3000.0};

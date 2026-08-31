@@ -48,10 +48,10 @@ bool isGroundDomain(const QString& domain) {
 
 namespace {
 
-QStringList availableJsbsimAircraftModels() {
+QVector<JsbsimAircraftCatalogEntry> availableJsbsimAircraftModels() {
   return JsbsimAircraftCatalog::discoverModelRoots(
              JsbsimModelRepository::defaultModelRoots())
-      .modelIds();
+      .entries();
 }
 
 QString suggestedJsbsimModel(const QString& domain, const QString& category, const QString& modelName) {
@@ -862,9 +862,14 @@ void AddEntityDialog::populateJsbsimModelCombo() {
   QSignalBlocker blocker(_jsbsimModelCombo);
   _jsbsimModelCombo->clear();
 
-  const QStringList models = availableJsbsimAircraftModels();
-  for (const QString& model : models) {
-    _jsbsimModelCombo->addItem(model, model);
+  const QVector<JsbsimAircraftCatalogEntry> models =
+      availableJsbsimAircraftModels();
+  for (const JsbsimAircraftCatalogEntry& model : models) {
+    const QString label = model.displayName.compare(
+        model.modelId, Qt::CaseInsensitive) == 0
+        ? model.modelId
+        : QStringLiteral("%1 (%2)").arg(model.displayName, model.modelId);
+    _jsbsimModelCombo->addItem(label, model.modelId);
   }
 
   const ModelCatalogEntry* selectedEntry = findSelectedModelEntry(
@@ -1231,6 +1236,12 @@ Entity AddEntityDialog::entity() const {
       entity.modelName,
       modelPath);
   if (selectedEntry) {
+    if (!entity.jsbsimAircraftModel.isEmpty()) {
+      entity.dynamicsModelCompatibility =
+          entity.jsbsimAircraftModel == selectedEntry->jsbsimAircraftModel
+          ? selectedEntry->dynamicsModelCompatibility
+          : QStringLiteral("custom");
+    }
     entity.controlProfileId = selectedEntry->controlProfileId;
     entity.systemsDisplayProfileId = selectedEntry->systemsDisplayProfileId;
     entity.cesiumModelAxes = selectedEntry->cesiumAxes;
@@ -1238,6 +1249,10 @@ Entity AddEntityDialog::entity() const {
     if (entity.modelName == selectedEntry->name && entity.type == entity.category) {
       entity.type = selectedEntry->name;
     }
+  }
+  if (!entity.jsbsimAircraftModel.isEmpty() &&
+      entity.dynamicsModelCompatibility.isEmpty()) {
+    entity.dynamicsModelCompatibility = QStringLiteral("custom");
   }
   if (entity.engineCount <= 0) {
     entity.engineCount = application::engineCountForEntity(entity);

@@ -98,6 +98,7 @@ TEST(ScenarioSerializer, RoundTripEntityFields) {
   e.altitude = 12000;
   e.headingDegrees = 90.0;
   e.damagePercent = 25.0;
+  e.dynamicsModelCompatibility = QStringLiteral("approximation");
   e.systemsDisplayProfileId = QStringLiteral("air-turbine-2-engine");
   e.controlProfileId = QStringLiteral("fighter-generic");
   e.cesiumModelAxes = QStringLiteral("x-forward-y-up");
@@ -118,6 +119,7 @@ TEST(ScenarioSerializer, RoundTripEntityFields) {
   EXPECT_EQ(le.altitude, 12000);
   EXPECT_NEAR(le.damagePercent, 25.0, 0.001);
   EXPECT_EQ(le.behaviorMode, QStringLiteral("Aggressive"));
+  EXPECT_EQ(le.dynamicsModelCompatibility, QStringLiteral("approximation"));
   EXPECT_EQ(
       le.systemsDisplayProfileId,
       QStringLiteral("air-turbine-2-engine"));

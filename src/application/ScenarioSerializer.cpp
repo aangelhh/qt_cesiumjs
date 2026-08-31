@@ -48,6 +48,7 @@ void normalizeGroundEntity(Entity& entity) {
   entity.flightDynamicsEnabled = false;
   entity.flightDynamicsMode = QStringLiteral("kinematic");
   entity.jsbsimAircraftModel.clear();
+  entity.dynamicsModelCompatibility.clear();
   entity.controlProfileId.clear();
   entity.fuelCapacityKilograms = 0.0;
   entity.fuelRemainingKilograms = 0.0;
@@ -383,6 +384,7 @@ QJsonObject toJson(const Entity& entity) {
       {QStringLiteral("flightDynamicsEnabled"), entity.flightDynamicsEnabled},
       {QStringLiteral("flightDynamicsMode"), entity.flightDynamicsMode},
       {QStringLiteral("jsbsimAircraftModel"), entity.jsbsimAircraftModel},
+      {QStringLiteral("dynamicsModelCompatibility"), entity.dynamicsModelCompatibility},
       {QStringLiteral("controlProfileId"), entity.controlProfileId},
       {QStringLiteral("systemsDisplayProfileId"), entity.systemsDisplayProfileId},
       {QStringLiteral("cesiumModelAxes"), entity.cesiumModelAxes},
@@ -437,6 +439,8 @@ Entity entityFromJson(const QJsonObject& object) {
   entity.flightDynamicsEnabled = object.value(QStringLiteral("flightDynamicsEnabled")).toBool(false);
   entity.flightDynamicsMode = object.value(QStringLiteral("flightDynamicsMode")).toString(QStringLiteral("kinematic"));
   entity.jsbsimAircraftModel = object.value(QStringLiteral("jsbsimAircraftModel")).toString();
+  entity.dynamicsModelCompatibility = object.value(
+      QStringLiteral("dynamicsModelCompatibility")).toString();
   entity.controlProfileId = object.value(QStringLiteral("controlProfileId")).toString();
   entity.systemsDisplayProfileId =
       object.value(QStringLiteral("systemsDisplayProfileId")).toString();

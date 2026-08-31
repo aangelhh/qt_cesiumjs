@@ -95,6 +95,7 @@ QVariantMap makeTrackSummary(
       {QStringLiteral("dynamicsFallbackReason"), QString()},
       {QStringLiteral("dynamicsStepDurationMilliseconds"), 0.0},
       {QStringLiteral("jsbsimAircraftModel"), QString()},
+      {QStringLiteral("dynamicsModelCompatibility"), QString()},
       {QStringLiteral("controlProfileId"), QString()},
       {QStringLiteral("systemsDisplayProfileId"), QString()},
       {QStringLiteral("engineCount"), 0},
@@ -330,6 +331,7 @@ QVariantMap makeEntityTrackSummary(
   summary.insert(QStringLiteral("dynamicsFallbackReason"), entity.dynamicsFallbackReason);
   summary.insert(QStringLiteral("dynamicsStepDurationMilliseconds"), entity.dynamicsStepDurationMilliseconds);
   summary.insert(QStringLiteral("jsbsimAircraftModel"),    entity.jsbsimAircraftModel);
+  summary.insert(QStringLiteral("dynamicsModelCompatibility"), entity.dynamicsModelCompatibility);
   summary.insert(QStringLiteral("controlProfileId"),       entity.controlProfileId);
   summary.insert(QStringLiteral("systemsDisplayProfileId"), entity.systemsDisplayProfileId);
   summary.insert(QStringLiteral("engineCount"),             entity.engineCount);
