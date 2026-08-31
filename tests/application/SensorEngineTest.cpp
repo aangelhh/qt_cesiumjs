@@ -155,6 +155,28 @@ TEST(SensorEngine, AirborneRadarRejectsTargetsOutsideMaximumRange) {
   EXPECT_TRUE(entities.at(0).sensorContacts.isEmpty());
 }
 
+TEST(SensorEngine, UsesWgs84GeodesicsAcrossTheAntimeridian) {
+  QVector<Entity> entities;
+  Entity observer = makeEntity(
+      QStringLiteral("Observer"), 1, QStringLiteral("Air"), 179.9);
+  observer.latitude = 10.0;
+  SensorDefinition radar = makeRadar();
+  radar.maxRangeMeters = 30000.0;
+  observer.sensors.push_back(radar);
+
+  Entity target = makeEntity(
+      QStringLiteral("Target"), 2, QStringLiteral("Air"), -179.9);
+  target.latitude = 10.0;
+  entities = {observer, target};
+
+  SensorEngine::updateEntityContacts(entities);
+
+  ASSERT_EQ(entities.at(0).sensorContacts.size(), 1);
+  const SensorContact& contact = entities.at(0).sensorContacts.front();
+  EXPECT_NEAR(contact.rangeMeters, 21927.9, 1.0);
+  EXPECT_NEAR(contact.bearingDegrees, 89.9826, 0.001);
+}
+
 TEST(SensorEngine, AirborneRadarDoesNotOperateFromGroundPlatform) {
   QVector<Entity> entities;
   Entity observer = makeEntity(QStringLiteral("Observer"), 1, QStringLiteral("Ground"), 0.0);

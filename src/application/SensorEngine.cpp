@@ -2,6 +2,7 @@
 
 #include "application/sensors/SensorModelRegistry.h"
 #include "domain/EntityIdentity.h"
+#include "domain/GeoMath.h"
 
 #include <QElapsedTimer>
 #include <QtMath>
@@ -10,8 +11,6 @@
 #include <cmath>
 
 namespace {
-
-constexpr double kEarthRadiusMeters = 6371000.0;
 
 double normalizeDegrees180(double degrees) {
   while (degrees < -180.0) {
@@ -24,49 +23,23 @@ double normalizeDegrees180(double degrees) {
 }
 
 double distanceMeters(const Entity& source, const Entity& target) {
-  const double lat1 = qDegreesToRadians(source.latitude);
-  const double lon1 = qDegreesToRadians(source.longitude);
-  const double lat2 = qDegreesToRadians(target.latitude);
-  const double lon2 = qDegreesToRadians(target.longitude);
-
-  const double deltaLat = lat2 - lat1;
-  const double deltaLon = lon2 - lon1;
-  const double a = qPow(qSin(deltaLat / 2.0), 2.0) +
-      qCos(lat1) * qCos(lat2) * qPow(qSin(deltaLon / 2.0), 2.0);
-  const double surfaceDistance = 2.0 * kEarthRadiusMeters * qAtan2(qSqrt(a), qSqrt(1.0 - a));
-
-  const double altitudeDelta = static_cast<double>(target.altitude - source.altitude);
-  return qSqrt(surfaceDistance * surfaceDistance + altitudeDelta * altitudeDelta);
+  return domain::slantDistanceMeters(
+      source.latitude,
+      source.longitude,
+      source.altitude,
+      target.latitude,
+      target.longitude,
+      target.altitude);
 }
 
 double horizontalDistanceMeters(const Entity& source, const Entity& target) {
-  const double lat1 = qDegreesToRadians(source.latitude);
-  const double lon1 = qDegreesToRadians(source.longitude);
-  const double lat2 = qDegreesToRadians(target.latitude);
-  const double lon2 = qDegreesToRadians(target.longitude);
-
-  const double deltaLat = lat2 - lat1;
-  const double deltaLon = lon2 - lon1;
-  const double a = qPow(qSin(deltaLat / 2.0), 2.0) +
-      qCos(lat1) * qCos(lat2) * qPow(qSin(deltaLon / 2.0), 2.0);
-  const double c = 2.0 * qAtan2(qSqrt(a), qSqrt(1.0 - a));
-  return kEarthRadiusMeters * c;
+  return domain::distanceMeters(
+      source.latitude, source.longitude, target.latitude, target.longitude);
 }
 
 double bearingDegrees(const Entity& source, const Entity& target) {
-  const double lat1 = qDegreesToRadians(source.latitude);
-  const double lon1 = qDegreesToRadians(source.longitude);
-  const double lat2 = qDegreesToRadians(target.latitude);
-  const double lon2 = qDegreesToRadians(target.longitude);
-
-  const double y = qSin(lon2 - lon1) * qCos(lat2);
-  const double x = qCos(lat1) * qSin(lat2) -
-      qSin(lat1) * qCos(lat2) * qCos(lon2 - lon1);
-  double bearing = qRadiansToDegrees(qAtan2(y, x));
-  if (bearing < 0.0) {
-    bearing += 360.0;
-  }
-  return bearing;
+  return domain::bearingDegrees(
+      source.latitude, source.longitude, target.latitude, target.longitude);
 }
 
 bool isCombatObserver(const Entity& entity) {
