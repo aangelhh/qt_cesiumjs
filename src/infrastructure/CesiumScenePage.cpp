@@ -1194,11 +1194,13 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
       }
 
       function createInterpolatedMotionState(initialPosition) {
+        const nowMs = performance.now();
         return {
           previousPosition: Cesium.Cartesian3.clone(initialPosition),
           targetPosition: Cesium.Cartesian3.clone(initialPosition),
-          startTimeMs: performance.now(),
-          durationMs: 90.0,
+          startTimeMs: nowMs,
+          lastUpdateTimeMs: nowMs,
+          durationMs: 33.0,
         };
       }
 
@@ -1350,68 +1352,24 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         }, false);
       }
 
-      function predictTrackPosition(track, altitude, secondsAhead) {
-        if (!track || !secondsAhead || secondsAhead <= 0.0) {
-          return Cesium.Cartesian3.fromDegrees(
-            Number(track && track.longitude || 0.0),
-            Number(track && track.latitude || 0.0),
-            altitude
-          );
-        }
-
-        const longitude = Number(track.longitude || 0.0);
-        const latitude = Number(track.latitude || 0.0);
-        const headingRadians = Cesium.Math.toRadians(Number(track.headingDegrees || 0.0));
-        const speedMetersPerSecond = Number(track.speedKnots || 0.0) * 0.514444;
-        const surfaceDistance = speedMetersPerSecond * secondsAhead;
-        const earthRadiusMeters = 6371000.0;
-        const latitudeRadians = Cesium.Math.toRadians(latitude);
-        const longitudeRadians = Cesium.Math.toRadians(longitude);
-        const angularDistance = surfaceDistance / earthRadiusMeters;
-        const predictedLatitudeRadians = Math.asin(
-          Math.sin(latitudeRadians) * Math.cos(angularDistance) +
-          Math.cos(latitudeRadians) * Math.sin(angularDistance) * Math.cos(headingRadians)
-        );
-        const predictedLongitudeRadians = longitudeRadians + Math.atan2(
-          Math.sin(headingRadians) * Math.sin(angularDistance) * Math.cos(latitudeRadians),
-          Math.cos(angularDistance) - Math.sin(latitudeRadians) * Math.sin(predictedLatitudeRadians)
-        );
-
-        return Cesium.Cartesian3.fromRadians(
-          predictedLongitudeRadians,
-          predictedLatitudeRadians,
-          altitude
-        );
-      }
-
-      function predictedEntityPosition(track, nextPosition) {
-        if (!track) {
-          return nextPosition;
-        }
-
-        const altitudeMatch = String(track.altitude || '').match(/-?\d+(?:\.\d+)?/);
-        const altitude = altitudeMatch ? Number(altitudeMatch[0]) : 0.0;
-        const speedKnots = Number(track.speedKnots || 0.0);
-        if (speedKnots <= 1.0) {
-          return nextPosition;
-        }
-
-        return predictTrackPosition(track, altitude, 0.10);
-      }
-
-      function updateInterpolatedPosition(entity, nextPosition, track) {
+      function updateInterpolatedPosition(entity, nextPosition) {
         if (!entity._qtMotionState) {
           installInterpolatedPosition(entity, nextPosition);
           return;
         }
 
         const motionState = entity._qtMotionState;
+        const nowMs = performance.now();
+        const updateIntervalMs = nowMs - motionState.lastUpdateTimeMs;
         motionState.previousPosition = motionStatePosition(motionState);
-        motionState.targetPosition = Cesium.Cartesian3.clone(
-          predictedEntityPosition(track, nextPosition)
+        motionState.targetPosition = Cesium.Cartesian3.clone(nextPosition);
+        motionState.startTimeMs = nowMs;
+        motionState.lastUpdateTimeMs = nowMs;
+        motionState.durationMs = Cesium.Math.clamp(
+          Number.isFinite(updateIntervalMs) ? updateIntervalMs : 33.0,
+          16.0,
+          100.0
         );
-        motionState.startTimeMs = performance.now();
-        motionState.durationMs = 90.0;
       }
 
       function currentEntityCartesian(entity) {
@@ -2371,7 +2329,6 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               (bombTargetDistanceText.length > 0 ? ('\n' + bombTargetDistanceText) : '') +
               (bombTargetCcrpText.length > 0 ? ('\n' + bombTargetCcrpText) : ''))
           : track.name;
-        const wasTrackedEntity = canTrack && viewer.trackedEntity && viewer.trackedEntity === entity;
         let overlayBundle = qtOverlayEntitiesByName.get(trackId) || {
           route: null,
           area: null,
@@ -2463,7 +2420,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
           }
           qtEntitiesByName.set(trackId, entity);
         } else {
-          updateInterpolatedPosition(entity, position, track);
+          updateInterpolatedPosition(entity, position);
           updateInterpolatedAttitude(entity, track);
           entity.name = track.name;
           entity._qtTrackData = Object.assign({}, track);
@@ -2521,7 +2478,7 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
         }
 
         if (!entity._qtMotionState) {
-          updateInterpolatedPosition(entity, position, track);
+          updateInterpolatedPosition(entity, position);
         }
 
         if (shouldShowTrackLine(track)) {
@@ -2735,8 +2692,6 @@ QString CesiumScenePage::buildHtml(const QString& accessToken) {
               viewer.trackedEntity = entity;
             }
           }, 0);
-        } else if (wasTrackedEntity) {
-          viewer.trackedEntity = entity;
         }
 
         return true;
