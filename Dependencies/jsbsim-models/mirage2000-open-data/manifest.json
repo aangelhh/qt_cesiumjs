@@ -1,0 +1,79 @@
+{
+  "packageId": "mirage2000-open-data",
+  "version": "0.1.0",
+  "modelId": "mirage2000-open-data",
+  "displayName": "Mirage 2000-5 Open-Data VSPAERO Baseline",
+  "license": "GPL-2.0-or-later",
+  "maturity": "experimental",
+  "platform": "Dassault Mirage 2000-5",
+  "backend": "jsbsim",
+  "sourceModel": {
+    "repository": "https://github.com/5H1N0B11/flightgear-mirage2000",
+    "revision": "1b7ab24737d95b7e0b0f4bd8222787565482b857",
+    "license": "GPL-2.0-or-later",
+    "aircraftConfiguration": "Mirage-2000/Mirage2000-vsp.xml",
+    "aircraftConfigurationSha256": "4c1239641ab8033fc5942e05494977c7caa4ac3a6e106989186093621f070856",
+    "engineConfiguration": "Mirage-2000/Engines/SNECMA_M53-P2.xml",
+    "engineConfigurationSha256": "9416503968c0e100f011b180e5ecc285f5034e3c0b76d69eb9e523001839f0e9",
+    "description": "Mirage 2000-5 aerodynamic data generated with VSPAERO, plus aircraft-specific M53-P2 propulsion and flight-control systems."
+  },
+  "publicValidationData": {
+    "manufacturerDimensionsMeters": {
+      "length": 14.3,
+      "wingspan": 9.1,
+      "height": 5.2
+    },
+    "manufacturerMassKilograms": {
+      "empty": 8000,
+      "maximumTakeoff": 16500
+    },
+    "sourceInternalFuelKilograms": 3209.2,
+    "maximumMach": 1.4,
+    "serviceCeilingMeters": 15000,
+    "engineCount": 1,
+    "engine": {
+      "designation": "SNECMA M53-P2",
+      "augmentedThrustMetricTons": 9.7
+    }
+  },
+  "packagingChanges": [
+    "The canonical model id and filename are changed to mirage2000-open-data for qttest discovery.",
+    "Only files required by the headless JSBSim runtime are included; FlightGear graphics, cockpit display controls, weapons, pushback, cockpit-driven hydraulics, scripts and audio are excluded.",
+    "A qttest packaging note and version suffix are added to the original aircraft file header.",
+    "FlightGear-provided external-tank and point-mass drag properties default to zero so the clean aircraft configuration runs in standalone JSBSim.",
+    "The CFYDRD table declaration is corrected from an invalid three-axis form to the two axes represented by its unchanged source data: angle of attack and rudder deflection.",
+    "FlightGear cockpit control inputs used by the FCS are mapped to native JSBSim command and angular-rate properties.",
+    "External fuel tanks and the FlightGear-dependent transfer system are excluded; the eight source internal tanks feed the engine directly."
+  ],
+  "knownLimitations": [
+    "The model is experimental and is not certified or representative of classified aircraft data.",
+    "The VSPAERO reference geometry in the source FDM uses aerodynamic reference dimensions that differ from published full-aircraft manufacturer dimensions; changing those values without regenerating coefficient tables would invalidate force scaling.",
+    "Mass properties, control laws, propulsion tables and fuel-system behavior require independent validation across the full envelope.",
+    "The standalone package assumes both hydraulic control circuits are serviceable; hydraulic failures and cockpit pump controls are not simulated.",
+    "Internal fuel feed order and transfer behavior are simplified for standalone operation and require dedicated fuel-system validation.",
+    "The M53-P2 thrust tables use documented engineering assumptions and NASA-derived normalized trends described in the engine source header.",
+    "External stores, damage, terrain interaction and operational avionics fidelity are outside this package's validation scope."
+  ],
+  "validationReferences": [
+    {
+      "name": "Dassault Aviation aircraft programs - Mirage 2000-5",
+      "url": "https://www.dassault-aviation.com/en/group/about-us/civil-and-military-aircraft/",
+      "use": "manufacturer-published dimensions and masses"
+    },
+    {
+      "name": "French Ministry of Armed Forces Mirage 2000D technical sheet",
+      "url": "https://www.defense.gouv.fr/sites/default/files/air/Fiche%20technique%20Mirage%202000D.pdf",
+      "use": "dimensions, M53-P2 installation, augmented thrust, maximum mass, fuel carriage, speed and ceiling"
+    },
+    {
+      "name": "Safran M53 program history",
+      "url": "https://www.safran-group.com/fr/actualite/il-45-ans-premier-vol-du-mirage-2000-equipe-du-moteur-m53-2-2023-03-10",
+      "use": "manufacturer-published M53 architecture, dimensions, mass and thrust history"
+    },
+    {
+      "name": "NASA TM-75793 - Aerodynamics of the New Generation of Combat Aircraft with Delta Wings",
+      "url": "https://ntrs.nasa.gov/api/citations/19800013819/downloads/19800013819.pdf",
+      "use": "public delta-wing aerodynamic reference cited by the upstream model"
+    }
+  ]
+}

@@ -371,6 +371,70 @@ TEST(JSBSimDynamicsModel, ExperimentalRafaleRemainsDeterministic) {
   }
 }
 
+TEST(JSBSimDynamicsModel, LoadsMirage2000SpecificFdmAndM53Telemetry) {
+  JSBSimDynamicsModel model;
+  const DynamicsModelConfiguration configuration{
+      QStringLiteral("mirage2000-open-data"),
+      QStringLiteral("Mirage2000VisualPlatform"),
+      false,
+      3209.2};
+  ASSERT_TRUE(model.configure(configuration));
+  ASSERT_TRUE(model.initialize(makeFighterState()));
+  EXPECT_EQ(model.loadedModelName(), QStringLiteral("mirage2000-open-data"));
+
+  const DynamicsState afterInit = model.state();
+  EXPECT_GT(afterInit.fuelCapacityKilograms, 3200.0);
+  EXPECT_LT(afterInit.fuelCapacityKilograms, 3220.0);
+
+  DynamicsStepContext context;
+  context.deltaTimeSeconds = 1.0 / 60.0;
+  context.controlSetpoint = DynamicsControlSetpoint{
+      true, true, 90.0, 3000.0, 320.0, QStringLiteral("fighter-generic")};
+  for (int tick = 0; tick < 180; ++tick) {
+    context.simulationTimeSeconds += context.deltaTimeSeconds;
+    const auto result = model.step(context);
+    ASSERT_TRUE(result) << result.errorMessage.toStdString();
+  }
+
+  const DynamicsState finalState = model.state();
+  EXPECT_TRUE(std::isfinite(finalState.latitudeDegrees));
+  EXPECT_TRUE(std::isfinite(finalState.longitudeDegrees));
+  EXPECT_TRUE(std::isfinite(finalState.altitudeMeters));
+  EXPECT_LT(finalState.fuelRemainingKilograms,
+            afterInit.fuelRemainingKilograms);
+
+  const auto engines = model.engineTelemetry(/*entityDestroyed=*/false);
+  ASSERT_EQ(engines.size(), 1);
+  EXPECT_EQ(engines.front().state, QStringLiteral("RUNNING"));
+  EXPECT_TRUE(engines.front().fuelFlowAvailable);
+  EXPECT_TRUE(engines.front().thrustAvailable);
+  EXPECT_GT(engines.front().thrustKilonewtons, 0.0);
+}
+
+TEST(JSBSimDynamicsModel, Mirage2000SpecificFdmRemainsDeterministic) {
+  const DynamicsModelConfiguration configuration{
+      QStringLiteral("mirage2000-open-data"),
+      QStringLiteral("DeterministicMirage2000"),
+      false,
+      3209.2};
+  JSBSimDynamicsModel first;
+  JSBSimDynamicsModel second;
+  ASSERT_TRUE(first.configure(configuration));
+  ASSERT_TRUE(second.configure(configuration));
+  ASSERT_TRUE(first.initialize(makeFighterState()));
+  ASSERT_TRUE(second.initialize(makeFighterState()));
+
+  for (int tick = 0; tick < 120; ++tick) {
+    SCOPED_TRACE(::testing::Message() << "tick=" << tick);
+    const DynamicsStepContext context = deterministicContextForTick(tick);
+    const auto firstResult = first.step(context);
+    const auto secondResult = second.step(context);
+    ASSERT_TRUE(firstResult) << firstResult.errorMessage.toStdString();
+    ASSERT_TRUE(secondResult) << secondResult.errorMessage.toStdString();
+    expectEquivalentDynamicsState(first.state(), second.state());
+  }
+}
+
 TEST(JSBSimDynamicsModel, IdenticalInstancesRemainEquivalentAtEveryTick) {
   const DynamicsModelConfiguration configuration{
       QStringLiteral("f16"), QStringLiteral("DeterministicFighter"), false, 3000.0};

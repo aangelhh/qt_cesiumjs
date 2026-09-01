@@ -578,11 +578,13 @@ CF18_Hornet:
 Mirage2000:
   visualFallbackUrl: "/models/Air/Fighter/dassault_mirage_2000.glb"
   dynamicsBackend: jsbsim
-  jsbsimAircraftModel: f16
-  dynamicsModelCompatibility: approximation
+  jsbsimAircraftModel: mirage2000-open-data
+  dynamicsModelCompatibility: experimental
   controlProfile: fighter-generic
   systemsDisplayProfile: air-turbine-1-engine
   engineCount: 1
+  fuelCapacityKilograms: 3209.2
+  initialFuelKilograms: 3000
   - name: Mirage 2000 (Generic)
     entityType:
       Kind: 1
