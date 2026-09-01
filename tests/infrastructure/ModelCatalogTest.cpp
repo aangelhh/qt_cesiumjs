@@ -104,7 +104,9 @@ TEST(ModelCatalog, AppliesGroupDynamicsDefaultsToModernAircraftFamilies) {
   EXPECT_EQ(
       rafale->jsbsimAircraftModel,
       QStringLiteral("rafale-open-data"));
-  EXPECT_EQ(mirage->jsbsimAircraftModel, QStringLiteral("f16"));
+  EXPECT_EQ(
+      mirage->jsbsimAircraftModel,
+      QStringLiteral("mirage2000-open-data"));
   EXPECT_EQ(b52->jsbsimAircraftModel, QStringLiteral("B747"));
   EXPECT_EQ(chinook->jsbsimAircraftModel, QStringLiteral("ah1s"));
   EXPECT_EQ(typhoon->dynamicsModelCompatibility,
@@ -114,6 +116,9 @@ TEST(ModelCatalog, AppliesGroupDynamicsDefaultsToModernAircraftFamilies) {
             QStringLiteral("experimental"));
   EXPECT_EQ(rafale->engineCount, 2);
   EXPECT_DOUBLE_EQ(rafale->fuelCapacityKilograms, 4700.0);
+  EXPECT_EQ(mirage->dynamicsModelCompatibility,
+            QStringLiteral("experimental"));
+  EXPECT_DOUBLE_EQ(mirage->fuelCapacityKilograms, 3209.2);
   EXPECT_EQ(b52->engineCount, 8);
 }
 
