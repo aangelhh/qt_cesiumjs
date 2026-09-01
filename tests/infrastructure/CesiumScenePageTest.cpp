@@ -65,3 +65,23 @@ TEST(CesiumScenePageTest, BuildHtmlKeysTracksByStableEntityId) {
   EXPECT_TRUE(html.contains(QStringLiteral("qtEntitiesByName.get(trackId)")));
   EXPECT_TRUE(html.contains(QStringLiteral("qtTrackName: trackId")));
 }
+
+TEST(CesiumScenePageTest, BuildHtmlDoesNotRestartTrackedCameraOnTrackUpdates) {
+  const QString html = CesiumScenePage::buildHtml(QStringLiteral("token"));
+
+  EXPECT_FALSE(html.contains(QStringLiteral("wasTrackedEntity")));
+  EXPECT_TRUE(html.contains(QStringLiteral("if (focus && canTrack)")));
+  EXPECT_TRUE(html.contains(QStringLiteral(
+      "viewer.trackedEntity && viewer.trackedEntity !== entity")));
+}
+
+TEST(CesiumScenePageTest, BuildHtmlInterpolatesPositionsWithoutForwardPrediction) {
+  const QString html = CesiumScenePage::buildHtml(QStringLiteral("token"));
+
+  EXPECT_TRUE(html.contains(QStringLiteral("lastUpdateTimeMs")));
+  EXPECT_TRUE(html.contains(QStringLiteral(
+      "motionState.targetPosition = Cesium.Cartesian3.clone(nextPosition)")));
+  EXPECT_TRUE(html.contains(QStringLiteral("Number.isFinite(updateIntervalMs)")));
+  EXPECT_FALSE(html.contains(QStringLiteral("predictedEntityPosition")));
+  EXPECT_FALSE(html.contains(QStringLiteral("predictTrackPosition")));
+}
