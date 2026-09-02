@@ -120,7 +120,7 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
   configuration.federateName = QStringLiteral("qttest-pitch-test-%1")
       .arg(QCoreApplication::applicationPid());
   configuration.federateType = QStringLiteral("qttest-integration-test");
-  configuration.createFederationIfMissing = false;
+  configuration.createFederationIfMissing = true;
 
   application::HlaStartupSession session;
   const tactical::hla::Result startResult = session.start(configuration);
