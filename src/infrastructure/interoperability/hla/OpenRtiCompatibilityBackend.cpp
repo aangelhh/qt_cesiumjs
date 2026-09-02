@@ -226,6 +226,12 @@ Result OpenRtiCompatibilityBackend::publishObjectClass(
   return _backend->publishObjectClass(objectClassName, attributeNames);
 }
 
+Result OpenRtiCompatibilityBackend::subscribeObjectClass(
+    const std::string& objectClassName,
+    const std::vector<std::string>& attributeNames) {
+  return _backend->subscribeObjectClass(objectClassName, attributeNames);
+}
+
 Result OpenRtiCompatibilityBackend::registerObjectInstance(
     const std::string& objectClassName,
     const std::string& instanceName,
@@ -252,6 +258,13 @@ Result OpenRtiCompatibilityBackend::publishInteractionClass(
   return _backend->publishInteractionClass(interactionClassName);
 }
 
+Result OpenRtiCompatibilityBackend::subscribeInteractionClass(
+    const std::string& interactionClassName,
+    const std::vector<std::string>& parameterNames) {
+  return _backend->subscribeInteractionClass(
+      interactionClassName, parameterNames);
+}
+
 Result OpenRtiCompatibilityBackend::sendInteraction(
     const std::string& interactionClassName,
     const std::vector<NamedValue>& parameters,
@@ -261,6 +274,10 @@ Result OpenRtiCompatibilityBackend::sendInteraction(
 
 Result OpenRtiCompatibilityBackend::poll(double maximumSeconds) {
   return _backend->poll(maximumSeconds);
+}
+
+void OpenRtiCompatibilityBackend::setEventSink(IHlaEventSink* eventSink) {
+  _backend->setEventSink(eventSink);
 }
 
 Result OpenRtiCompatibilityBackend::resign() {

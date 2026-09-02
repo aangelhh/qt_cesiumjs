@@ -42,4 +42,36 @@ struct NamedValue {
   ByteBuffer value;
 };
 
+struct RemoteObjectDiscovery {
+  ObjectInstanceId instanceId = 0;
+  std::string objectClassName;
+  std::string instanceName;
+};
+
+struct RemoteObjectReflection {
+  ObjectInstanceId instanceId = 0;
+  std::vector<NamedValue> attributes;
+  ByteBuffer tag;
+};
+
+struct RemoteObjectRemoval {
+  ObjectInstanceId instanceId = 0;
+  ByteBuffer tag;
+};
+
+struct RemoteInteraction {
+  std::string interactionClassName;
+  std::vector<NamedValue> parameters;
+  ByteBuffer tag;
+};
+
+class IHlaEventSink {
+public:
+  virtual ~IHlaEventSink() = default;
+  virtual void onObjectDiscovered(const RemoteObjectDiscovery& event) = 0;
+  virtual void onObjectReflected(const RemoteObjectReflection& event) = 0;
+  virtual void onObjectRemoved(const RemoteObjectRemoval& event) = 0;
+  virtual void onInteractionReceived(const RemoteInteraction& event) = 0;
+};
+
 } // namespace tactical::hla

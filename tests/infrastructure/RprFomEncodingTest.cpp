@@ -66,3 +66,46 @@ TEST(RprFomEncoding, EncodesCoreRprAttributesWithStandardSizes) {
   EXPECT_EQ(findAttribute(attributes, "Marking")->value.size(), 12U);
   EXPECT_EQ(findAttribute(attributes, "Marking")->value.front(), 1U);
 }
+
+TEST(RprFomEncoding, DecodesPublishedStateBackToLocalCoordinates) {
+  tactical::hla::RprEntityState source;
+  source.name = "mirage2000";
+  source.domain = "Air";
+  source.entityKind = 1;
+  source.entityDomain = 2;
+  source.countryCode = 71;
+  source.category = 1;
+  source.forceIdentifier = 1;
+  source.latitudeDegrees = 40.3366;
+  source.longitudeDegrees = -4.5017;
+  source.altitudeMeters = 2087.0;
+  source.headingDegrees = 325.0;
+  source.pitchDegrees = 8.0;
+  source.rollDegrees = -20.0;
+  source.speedKnots = 370.0;
+
+  const auto encoded = tactical::hla::RprFomEncoding::encodeAttributes(
+      source, 1, 1, 7);
+  tactical::hla::RprEntityState decoded;
+  const auto result = tactical::hla::RprFomEncoding::decodeAttributes(
+      encoded, decoded);
+
+  ASSERT_TRUE(result.success) << result.message;
+  EXPECT_EQ(decoded.name, source.name);
+  EXPECT_EQ(decoded.entityKind, source.entityKind);
+  EXPECT_EQ(decoded.forceIdentifier, source.forceIdentifier);
+  EXPECT_NEAR(decoded.latitudeDegrees, source.latitudeDegrees, 1e-5);
+  EXPECT_NEAR(decoded.longitudeDegrees, source.longitudeDegrees, 1e-5);
+  EXPECT_NEAR(decoded.altitudeMeters, source.altitudeMeters, 0.1);
+  EXPECT_NEAR(decoded.headingDegrees, source.headingDegrees, 0.05);
+  EXPECT_NEAR(decoded.pitchDegrees, source.pitchDegrees, 0.05);
+  EXPECT_NEAR(decoded.rollDegrees, source.rollDegrees, 0.05);
+  EXPECT_NEAR(decoded.speedKnots, source.speedKnots, 0.01);
+}
+
+TEST(RprFomEncoding, RejectsMalformedSpatialPayload) {
+  tactical::hla::RprEntityState decoded;
+  const auto result = tactical::hla::RprFomEncoding::decodeAttributes(
+      {{"Spatial", {1, 2, 3}}}, decoded);
+  EXPECT_FALSE(result.success);
+}

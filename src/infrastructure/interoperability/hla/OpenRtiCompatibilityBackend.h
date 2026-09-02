@@ -26,6 +26,9 @@ public:
   Result publishObjectClass(
       const std::string& objectClassName,
       const std::vector<std::string>& attributeNames) override;
+  Result subscribeObjectClass(
+      const std::string& objectClassName,
+      const std::vector<std::string>& attributeNames) override;
   Result registerObjectInstance(
       const std::string& objectClassName,
       const std::string& instanceName,
@@ -39,11 +42,15 @@ public:
       const ByteBuffer& tag) override;
   Result publishInteractionClass(
       const std::string& interactionClassName) override;
+  Result subscribeInteractionClass(
+      const std::string& interactionClassName,
+      const std::vector<std::string>& parameterNames) override;
   Result sendInteraction(
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag) override;
   Result poll(double maximumSeconds) override;
+  void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;
   Result disconnect() override;
 

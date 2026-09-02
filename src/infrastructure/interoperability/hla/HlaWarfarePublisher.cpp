@@ -57,6 +57,14 @@ ByteBuffer encodeWorldLocation(const RprWeaponFireState& munition) {
   return output;
 }
 
+ByteBuffer encodeWorldLocation(const RprMunitionDetonationState& detonation) {
+  RprWeaponFireState location;
+  location.latitudeDegrees = detonation.latitudeDegrees;
+  location.longitudeDegrees = detonation.longitudeDegrees;
+  location.altitudeMeters = detonation.altitudeMeters;
+  return encodeWorldLocation(location);
+}
+
 ByteBuffer encodeVelocity(const RprWeaponFireState& munition) {
   const double latitude = munition.latitudeDegrees * kPi / 180.0;
   const double longitude = munition.longitudeDegrees * kPi / 180.0;
@@ -133,8 +141,35 @@ Result HlaWarfarePublisher::synchronize(
   return Result::ok();
 }
 
+Result HlaWarfarePublisher::synchronizeDetonations(
+    const std::vector<RprMunitionDetonationState>& detonations) {
+  for (const RprMunitionDetonationState& detonation : detonations) {
+    if (detonation.effectId.empty() ||
+        _sentDetonationIds.count(detonation.effectId) != 0) {
+      continue;
+    }
+    if (!_detonationPublished) {
+      const Result publishResult = _runtime.publishInteractionClass(
+          "HLAinteractionRoot.MunitionDetonation");
+      if (!publishResult.success) return publishResult;
+      _detonationPublished = true;
+    }
+    const Result result = _runtime.sendInteraction(
+        "HLAinteractionRoot.MunitionDetonation",
+        this->encodeDetonation(detonation, _nextEventNumber));
+    if (!result.success) return result;
+    _sentDetonationIds.insert(detonation.effectId);
+    if (++_nextEventNumber == 0) _nextEventNumber = 1;
+  }
+  return Result::ok();
+}
+
 std::size_t HlaWarfarePublisher::sentWeaponFireCount() const {
   return _sentMunitionIds.size();
+}
+
+std::size_t HlaWarfarePublisher::sentDetonationCount() const {
+  return _sentDetonationIds.size();
 }
 
 Result HlaWarfarePublisher::ensurePublished() {
@@ -158,6 +193,24 @@ std::vector<NamedValue> HlaWarfarePublisher::encodeWeaponFire(
       {"MunitionType", encodeMunitionType(munition.munitionType)},
       {"QuantityFired", encodeUnsigned16(1)},
       {"RateOfFire", encodeUnsigned16(0)},
+      {"WarheadType", encodeUnsigned16(0)}};
+}
+
+std::vector<NamedValue> HlaWarfarePublisher::encodeDetonation(
+    const RprMunitionDetonationState& detonation,
+    std::uint16_t eventNumber) const {
+  RprWeaponFireState munition;
+  munition.munitionType = detonation.munitionType;
+  return {
+      {"DetonationLocation", encodeWorldLocation(detonation)},
+      {"DetonationResultCode", {1}},
+      {"EventIdentifier", encodeEventIdentifier(eventNumber)},
+      {"FinalVelocityVector", ByteBuffer(12, 0)},
+      {"FuseType", encodeUnsigned16(0)},
+      {"MunitionType", encodeMunitionType(munition.munitionType)},
+      {"QuantityFired", encodeUnsigned16(1)},
+      {"RateOfFire", encodeUnsigned16(0)},
+      {"RelativeDetonationLocation", ByteBuffer(12, 0)},
       {"WarheadType", encodeUnsigned16(0)}};
 }
 

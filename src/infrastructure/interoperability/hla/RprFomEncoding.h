@@ -34,6 +34,8 @@ struct RprEntityState {
 class RprFomEncoding {
 public:
   static std::string objectClassName(const std::string& domain);
+  static std::string domainFromObjectClassName(
+      const std::string& objectClassName);
   static std::string objectInstanceName(const std::string& stableId);
   static std::vector<std::string> publishedAttributeNames();
   static std::vector<NamedValue> encodeAttributes(
@@ -41,6 +43,9 @@ public:
       std::uint16_t siteId,
       std::uint16_t applicationId,
       std::uint16_t entityNumber);
+  static Result decodeAttributes(
+      const std::vector<NamedValue>& attributes,
+      RprEntityState& entity);
 };
 
 } // namespace tactical::hla

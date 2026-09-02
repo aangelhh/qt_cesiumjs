@@ -13,10 +13,12 @@ public:
     CreateFederation,
     JoinFederation,
     PublishObjectClass,
+    SubscribeObjectClass,
     RegisterObjectInstance,
     UpdateObjectAttributes,
     DeleteObjectInstance,
     PublishInteractionClass,
+    SubscribeInteractionClass,
     SendInteraction,
     Poll,
     Resign,
@@ -38,6 +40,9 @@ public:
   Result publishObjectClass(
       const std::string& objectClassName,
       const std::vector<std::string>& attributeNames) override;
+  Result subscribeObjectClass(
+      const std::string& objectClassName,
+      const std::vector<std::string>& attributeNames) override;
   Result registerObjectInstance(
       const std::string& objectClassName,
       const std::string& instanceName,
@@ -51,11 +56,15 @@ public:
       const ByteBuffer& tag) override;
   Result publishInteractionClass(
       const std::string& interactionClassName) override;
+  Result subscribeInteractionClass(
+      const std::string& interactionClassName,
+      const std::vector<std::string>& parameterNames) override;
   Result sendInteraction(
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag) override;
   Result poll(double maximumSeconds) override;
+  void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;
   Result disconnect() override;
   BackendState state() const override;
@@ -63,6 +72,13 @@ public:
 
   void failNext(Operation operation, std::string message);
   const std::vector<Operation>& operations() const;
+  const std::vector<std::string>& publishedObjectClasses() const;
+  const std::vector<std::string>& subscribedObjectClasses() const;
+  const std::vector<std::string>& sentInteractionClasses() const;
+  void emitObjectDiscovered(const RemoteObjectDiscovery& event);
+  void emitObjectReflected(const RemoteObjectReflection& event);
+  void emitObjectRemoved(const RemoteObjectRemoval& event);
+  void emitInteraction(const RemoteInteraction& event);
 
 private:
   Result begin(Operation operation);
@@ -75,6 +91,10 @@ private:
   std::vector<Operation> _operations;
   ObjectInstanceId _nextObjectInstanceId = 1;
   std::vector<ObjectInstanceId> _objectInstances;
+  std::vector<std::string> _publishedObjectClasses;
+  std::vector<std::string> _subscribedObjectClasses;
+  std::vector<std::string> _sentInteractionClasses;
+  IHlaEventSink* _eventSink = nullptr;
 };
 
 } // namespace tactical::hla

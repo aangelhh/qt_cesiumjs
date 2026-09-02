@@ -30,6 +30,9 @@ public:
   Result publishObjectClass(
       const std::string& objectClassName,
       const std::vector<std::string>& attributeNames) override;
+  Result subscribeObjectClass(
+      const std::string& objectClassName,
+      const std::vector<std::string>& attributeNames) override;
   Result registerObjectInstance(
       const std::string& objectClassName,
       const std::string& instanceName,
@@ -43,11 +46,15 @@ public:
       const ByteBuffer& tag) override;
   Result publishInteractionClass(
       const std::string& interactionClassName) override;
+  Result subscribeInteractionClass(
+      const std::string& interactionClassName,
+      const std::vector<std::string>& parameterNames) override;
   Result sendInteraction(
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag) override;
   Result poll(double maximumSeconds) override;
+  void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;
   Result disconnect() override;
   BackendState state() const override;
@@ -60,12 +67,32 @@ public:
 private:
   Result pluginResult(int status) const;
   static BackendState mapState(QttestHlaBackendStateV1 state);
+  static void objectDiscoveredCallback(
+      void* context,
+      uint64_t instanceId,
+      const char* objectClassName,
+      const char* instanceName);
+  static void objectReflectedCallback(
+      void* context,
+      uint64_t instanceId,
+      const QttestHlaNamedValueArrayV2* attributes,
+      const QttestHlaByteSpanV2* tag);
+  static void objectRemovedCallback(
+      void* context,
+      uint64_t instanceId,
+      const QttestHlaByteSpanV2* tag);
+  static void interactionReceivedCallback(
+      void* context,
+      const char* interactionClassName,
+      const QttestHlaNamedValueArrayV2* parameters,
+      const QttestHlaByteSpanV2* tag);
 
   std::string _libraryPath;
   mutable QLibrary _library;
-  const QttestHlaBackendApiV2* _api = nullptr;
+  const QttestHlaBackendApiV3* _api = nullptr;
   QttestHlaBackendHandle _handle = nullptr;
   std::string _loadError;
+  IHlaEventSink* _eventSink = nullptr;
 };
 
 } // namespace tactical::hla

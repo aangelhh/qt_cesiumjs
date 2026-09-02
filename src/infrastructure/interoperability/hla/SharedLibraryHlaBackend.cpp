@@ -47,6 +47,32 @@ std::string safeString(const char* value) {
   return value ? std::string(value) : std::string();
 }
 
+tactical::hla::ByteBuffer copyBytes(const QttestHlaByteSpanV2* value) {
+  if (!value || value->structSize < sizeof(QttestHlaByteSpanV2) ||
+      !value->data || value->size == 0) {
+    return {};
+  }
+  return {value->data, value->data + value->size};
+}
+
+std::vector<tactical::hla::NamedValue> copyNamedValues(
+    const QttestHlaNamedValueArrayV2* source) {
+  std::vector<tactical::hla::NamedValue> result;
+  if (!source || source->structSize < sizeof(QttestHlaNamedValueArrayV2) ||
+      !source->values) {
+    return result;
+  }
+  result.reserve(source->count);
+  for (size_t index = 0; index < source->count; ++index) {
+    const QttestHlaNamedValueV2& item = source->values[index];
+    if (item.structSize < sizeof(QttestHlaNamedValueV2) || !item.name) {
+      continue;
+    }
+    result.push_back({item.name, copyBytes(&item.value)});
+  }
+  return result;
+}
+
 } // namespace
 
 namespace tactical::hla {
@@ -64,7 +90,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   const auto apiFactory = reinterpret_cast<QttestHlaBackendApiFn>(
-      _library.resolve("qttest_hla_backend_api_v2"));
+      _library.resolve("qttest_hla_backend_api_v3"));
   if (!apiFactory) {
     _loadError = "Required HLA backend API symbol is missing";
     _library.unload();
@@ -72,7 +98,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   _api = apiFactory();
-  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV2) ||
+  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV3) ||
       _api->abiVersion != QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION) {
     _loadError = "Unsupported HLA backend plugin ABI";
     _api = nullptr;
@@ -81,9 +107,11 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
   if (!_api->backendId || !_api->create || !_api->destroy ||
       !_api->connect || !_api->createFederation || !_api->joinFederation ||
-      !_api->publishObjectClass || !_api->registerObjectInstance ||
+      !_api->publishObjectClass || !_api->subscribeObjectClass ||
+      !_api->registerObjectInstance ||
       !_api->updateObjectAttributes || !_api->deleteObjectInstance ||
-      !_api->publishInteractionClass || !_api->sendInteraction ||
+      !_api->publishInteractionClass || !_api->subscribeInteractionClass ||
+      !_api->sendInteraction || !_api->setCallbacks ||
       !_api->poll || !_api->resign || !_api->disconnect || !_api->state ||
       !_api->lastError) {
     _loadError = "HLA backend plugin API is incomplete";
@@ -95,6 +123,21 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   _handle = _api->create();
   if (!_handle) {
     _loadError = "HLA backend plugin could not create a session";
+    _api = nullptr;
+    _library.unload();
+    return;
+  }
+  const QttestHlaCallbacksV3 callbacks = {
+      sizeof(QttestHlaCallbacksV3),
+      this,
+      &SharedLibraryHlaBackend::objectDiscoveredCallback,
+      &SharedLibraryHlaBackend::objectReflectedCallback,
+      &SharedLibraryHlaBackend::objectRemovedCallback,
+      &SharedLibraryHlaBackend::interactionReceivedCallback};
+  if (_api->setCallbacks(_handle, &callbacks) != 0) {
+    _loadError = safeString(_api->lastError(_handle));
+    _api->destroy(_handle);
+    _handle = nullptr;
     _api = nullptr;
     _library.unload();
   }
@@ -188,6 +231,17 @@ Result SharedLibraryHlaBackend::publishObjectClass(
       _handle, objectClassName.c_str(), &attributes));
 }
 
+Result SharedLibraryHlaBackend::subscribeObjectClass(
+    const std::string& objectClassName,
+    const std::vector<std::string>& attributeNames) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  std::vector<const char*> values;
+  const QttestHlaStringArrayV1 attributes =
+      makeStringArray(attributeNames, values);
+  return this->pluginResult(_api->subscribeObjectClass(
+      _handle, objectClassName.c_str(), &attributes));
+}
+
 Result SharedLibraryHlaBackend::registerObjectInstance(
     const std::string& objectClassName,
     const std::string& instanceName,
@@ -234,6 +288,17 @@ Result SharedLibraryHlaBackend::publishInteractionClass(
       _handle, interactionClassName.c_str()));
 }
 
+Result SharedLibraryHlaBackend::subscribeInteractionClass(
+    const std::string& interactionClassName,
+    const std::vector<std::string>& parameterNames) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  std::vector<const char*> values;
+  const QttestHlaStringArrayV1 parameters =
+      makeStringArray(parameterNames, values);
+  return this->pluginResult(_api->subscribeInteractionClass(
+      _handle, interactionClassName.c_str(), &parameters));
+}
+
 Result SharedLibraryHlaBackend::sendInteraction(
     const std::string& interactionClassName,
     const std::vector<NamedValue>& parameters,
@@ -254,6 +319,54 @@ Result SharedLibraryHlaBackend::poll(double maximumSeconds) {
     return Result::failure(_loadError);
   }
   return this->pluginResult(_api->poll(_handle, maximumSeconds));
+}
+
+void SharedLibraryHlaBackend::setEventSink(IHlaEventSink* eventSink) {
+  _eventSink = eventSink;
+}
+
+void SharedLibraryHlaBackend::objectDiscoveredCallback(
+    void* context,
+    uint64_t instanceId,
+    const char* objectClassName,
+    const char* instanceName) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onObjectDiscovered({
+      instanceId, safeString(objectClassName), safeString(instanceName)});
+}
+
+void SharedLibraryHlaBackend::objectReflectedCallback(
+    void* context,
+    uint64_t instanceId,
+    const QttestHlaNamedValueArrayV2* attributes,
+    const QttestHlaByteSpanV2* tag) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onObjectReflected(
+      {instanceId, copyNamedValues(attributes), copyBytes(tag)});
+}
+
+void SharedLibraryHlaBackend::objectRemovedCallback(
+    void* context,
+    uint64_t instanceId,
+    const QttestHlaByteSpanV2* tag) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onObjectRemoved({instanceId, copyBytes(tag)});
+}
+
+void SharedLibraryHlaBackend::interactionReceivedCallback(
+    void* context,
+    const char* interactionClassName,
+    const QttestHlaNamedValueArrayV2* parameters,
+    const QttestHlaByteSpanV2* tag) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onInteractionReceived({
+      safeString(interactionClassName),
+      copyNamedValues(parameters),
+      copyBytes(tag)});
 }
 
 Result SharedLibraryHlaBackend::resign() {

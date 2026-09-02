@@ -69,6 +69,20 @@ Result MockHlaBackend::publishObjectClass(
       attributeNames.empty()) {
     return this->fail("Mock object publication is invalid");
   }
+  _publishedObjectClasses.push_back(objectClassName);
+  return Result::ok();
+}
+
+Result MockHlaBackend::subscribeObjectClass(
+    const std::string& objectClassName,
+    const std::vector<std::string>& attributeNames) {
+  const Result beginResult = this->begin(Operation::SubscribeObjectClass);
+  if (!beginResult.success) return beginResult;
+  if (_state != BackendState::Joined || objectClassName.empty() ||
+      attributeNames.empty()) {
+    return this->fail("Mock object subscription is invalid");
+  }
+  _subscribedObjectClasses.push_back(objectClassName);
   return Result::ok();
 }
 
@@ -125,6 +139,17 @@ Result MockHlaBackend::publishInteractionClass(
   return Result::ok();
 }
 
+Result MockHlaBackend::subscribeInteractionClass(
+    const std::string& interactionClassName,
+    const std::vector<std::string>&) {
+  const Result beginResult = this->begin(Operation::SubscribeInteractionClass);
+  if (!beginResult.success) return beginResult;
+  if (_state != BackendState::Joined || interactionClassName.empty()) {
+    return this->fail("Mock interaction subscription is invalid");
+  }
+  return Result::ok();
+}
+
 Result MockHlaBackend::sendInteraction(
     const std::string& interactionClassName,
     const std::vector<NamedValue>& parameters,
@@ -134,6 +159,7 @@ Result MockHlaBackend::sendInteraction(
   if (_state != BackendState::Joined || interactionClassName.empty()) {
     return this->fail("Mock interaction is invalid");
   }
+  _sentInteractionClasses.push_back(interactionClassName);
   return Result::ok();
 }
 
@@ -149,6 +175,28 @@ Result MockHlaBackend::poll(double maximumSeconds) {
     return this->fail("Polling duration cannot be negative");
   }
   return Result::ok();
+}
+
+void MockHlaBackend::setEventSink(IHlaEventSink* eventSink) {
+  _eventSink = eventSink;
+}
+
+void MockHlaBackend::emitObjectDiscovered(
+    const RemoteObjectDiscovery& event) {
+  if (_eventSink) _eventSink->onObjectDiscovered(event);
+}
+
+void MockHlaBackend::emitObjectReflected(
+    const RemoteObjectReflection& event) {
+  if (_eventSink) _eventSink->onObjectReflected(event);
+}
+
+void MockHlaBackend::emitObjectRemoved(const RemoteObjectRemoval& event) {
+  if (_eventSink) _eventSink->onObjectRemoved(event);
+}
+
+void MockHlaBackend::emitInteraction(const RemoteInteraction& event) {
+  if (_eventSink) _eventSink->onInteractionReceived(event);
 }
 
 Result MockHlaBackend::resign() {
@@ -186,6 +234,18 @@ void MockHlaBackend::failNext(Operation operation, std::string message) {
 
 const std::vector<MockHlaBackend::Operation>& MockHlaBackend::operations() const {
   return _operations;
+}
+
+const std::vector<std::string>& MockHlaBackend::publishedObjectClasses() const {
+  return _publishedObjectClasses;
+}
+
+const std::vector<std::string>& MockHlaBackend::subscribedObjectClasses() const {
+  return _subscribedObjectClasses;
+}
+
+const std::vector<std::string>& MockHlaBackend::sentInteractionClasses() const {
+  return _sentInteractionClasses;
 }
 
 Result MockHlaBackend::begin(Operation operation) {

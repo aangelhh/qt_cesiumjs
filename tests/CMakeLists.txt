@@ -49,6 +49,9 @@ add_executable(qttest_unit_tests
     infrastructure/HlaRuntimeTest.cpp
     infrastructure/HlaEntityPublisherTest.cpp
     infrastructure/HlaWarfarePublisherTest.cpp
+    infrastructure/HlaInboundAdapterTest.cpp
+    infrastructure/HlaSensorPublisherTest.cpp
+    infrastructure/HlaSimulationControlPublisherTest.cpp
     infrastructure/RprFomEncodingTest.cpp
     infrastructure/HlaBackendFactoryTest.cpp
     infrastructure/HlaBackendPluginTest.cpp

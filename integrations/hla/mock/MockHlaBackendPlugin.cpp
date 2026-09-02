@@ -10,6 +10,7 @@ struct MockSession {
   std::string error;
   uint64_t nextObjectId = 1;
   std::set<uint64_t> objects;
+  QttestHlaCallbacksV3 callbacks = {};
 };
 
 MockSession* session(QttestHlaBackendHandle handle) {
@@ -89,6 +90,13 @@ int publishObjectClass(
   return 0;
 }
 
+int subscribeObjectClass(
+    QttestHlaBackendHandle handle,
+    const char* className,
+    const QttestHlaStringArrayV1* attributes) {
+  return publishObjectClass(handle, className, attributes);
+}
+
 int registerObjectInstance(
     QttestHlaBackendHandle handle,
     const char* className,
@@ -145,6 +153,13 @@ int publishInteractionClass(
   return 0;
 }
 
+int subscribeInteractionClass(
+    QttestHlaBackendHandle handle,
+    const char* className,
+    const QttestHlaStringArrayV1*) {
+  return publishInteractionClass(handle, className);
+}
+
 int sendInteraction(
     QttestHlaBackendHandle handle,
     const char* className,
@@ -155,6 +170,19 @@ int sendInteraction(
       !*className || !parameters) {
     return fail(value, "Invalid mock interaction");
   }
+  value->error.clear();
+  return 0;
+}
+
+int setCallbacks(
+    QttestHlaBackendHandle handle,
+    const QttestHlaCallbacksV3* callbacks) {
+  MockSession* value = session(handle);
+  if (!value || !callbacks ||
+      callbacks->structSize < sizeof(QttestHlaCallbacksV3)) {
+    return fail(value, "Invalid mock callback configuration");
+  }
+  value->callbacks = *callbacks;
   value->error.clear();
   return 0;
 }
@@ -201,8 +229,8 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "Mock plugin session is unavailable";
 }
 
-const QttestHlaBackendApiV2 api = {
-    sizeof(QttestHlaBackendApiV2),
+const QttestHlaBackendApiV3 api = {
+    sizeof(QttestHlaBackendApiV3),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     "mock-plugin",
     "1.0",
@@ -213,11 +241,14 @@ const QttestHlaBackendApiV2 api = {
     &createFederation,
     &joinFederation,
     &publishObjectClass,
+    &subscribeObjectClass,
     &registerObjectInstance,
     &updateObjectAttributes,
     &deleteObjectInstance,
     &publishInteractionClass,
+    &subscribeInteractionClass,
     &sendInteraction,
+    &setCallbacks,
     &pollBackend,
     &resignBackend,
     &disconnectBackend,
@@ -226,7 +257,7 @@ const QttestHlaBackendApiV2 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV2*
-qttest_hla_backend_api_v2(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV3*
+qttest_hla_backend_api_v3(void) {
   return &api;
 }

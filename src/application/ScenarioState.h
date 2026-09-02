@@ -32,6 +32,8 @@ public:
   ScopedLock lock() const { return ScopedLock(_mutex); }
 
   void addEntity(const Entity& entity);
+  void upsertExternalEntity(const Entity& entity);
+  bool removeExternalEntity(const QString& entityId);
   const QVector<Entity>& entities() const;
   const QVector<ActiveMunition>& activeMunitions() const;
   const QVector<TransientEffect>& transientEffects() const;

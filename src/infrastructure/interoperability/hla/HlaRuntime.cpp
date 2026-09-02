@@ -76,6 +76,15 @@ Result HlaRuntime::publishObjectClass(
   return _backend->publishObjectClass(objectClassName, attributeNames);
 }
 
+Result HlaRuntime::subscribeObjectClass(
+    const std::string& objectClassName,
+    const std::vector<std::string>& attributeNames) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  return _backend->subscribeObjectClass(objectClassName, attributeNames);
+}
+
 Result HlaRuntime::registerObjectInstance(
     const std::string& objectClassName,
     const std::string& instanceName,
@@ -114,6 +123,16 @@ Result HlaRuntime::publishInteractionClass(
   return _backend->publishInteractionClass(interactionClassName);
 }
 
+Result HlaRuntime::subscribeInteractionClass(
+    const std::string& interactionClassName,
+    const std::vector<std::string>& parameterNames) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  return _backend->subscribeInteractionClass(
+      interactionClassName, parameterNames);
+}
+
 Result HlaRuntime::sendInteraction(
     const std::string& interactionClassName,
     const std::vector<NamedValue>& parameters,
@@ -122,6 +141,12 @@ Result HlaRuntime::sendInteraction(
     return Result::failure("HLA federate is not joined");
   }
   return _backend->sendInteraction(interactionClassName, parameters, tag);
+}
+
+void HlaRuntime::setEventSink(IHlaEventSink* eventSink) {
+  if (_backend) {
+    _backend->setEventSink(eventSink);
+  }
 }
 
 Result HlaRuntime::stop() {

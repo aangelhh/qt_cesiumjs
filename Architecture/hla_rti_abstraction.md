@@ -3,9 +3,9 @@
 ## Purpose
 
 The HLA integration belongs to the interoperability infrastructure. The
-application owns simulation time and domain state; an RTI backend only
-transports federation operations and, in later increments, object updates and
-interactions.
+application owns simulation time and domain state. An RTI backend transports
+federation operations, object updates, and interactions; received exercise
+control is applied explicitly by the application layer.
 
 The abstraction prevents Qt UI, Cesium, tasks, sensors, and entity models from
 depending directly on a vendor SDK.
@@ -87,7 +87,7 @@ deployment. Production packaging must select an RTI with compatible licensing.
 
 ## Current scope
 
-Implemented lifecycle and publication:
+Implemented lifecycle, publication, and reception:
 
 1. Connect to RTI.
 2. Create the federation when configured.
@@ -95,10 +95,15 @@ Implemented lifecycle and publication:
 4. Publish RPR object and interaction classes.
 5. Register, update, and delete local entity object instances.
 6. Emit one `WeaponFire` interaction per newly launched munition.
-7. Poll callbacks.
-8. Resign and disconnect with rollback on partial startup failure.
+7. Publish `MunitionDetonation` once for every missile or bomb impact effect.
+8. Publish RPR `EmitterSystem` and `RadarBeam` objects for enabled local radars.
+9. Subscribe to supported RPR platform classes and reflect remote state.
+10. Create, update, and remove externally controlled runtime entities.
+11. Publish and receive RPR `StartResume` and `StopFreeze` controls.
+12. Poll callbacks.
+13. Remove owned objects, resign, and disconnect with rollback on failure.
 
-The plugin ABI v2 keeps RTI handles private to each plugin and exposes opaque
+The plugin ABI v3 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
 classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 `DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
@@ -107,17 +112,37 @@ WGS84 positions and local NED attitude are converted to ECEF for `Spatial`.
 
 `HlaWarfarePublisher` sends `HLAinteractionRoot.WeaponFire` with event ID,
 mission index, ECEF firing location and velocity, munition type, quantity,
-rate, fuse, and warhead. RTI object-identifier parameters are deferred until
-the object-handle correlation contract is exposed explicitly.
+rate, fuse, and warhead. It also sends `MunitionDetonation` from the existing
+transient impact effects, exactly once per effect ID. RTI object-identifier
+parameters are deferred until the object-handle correlation contract is
+exposed explicitly.
 
-Subscription and discovery of remote objects, reflected attributes, ownership,
-time management, DDM, save/restore, and `MunitionDetonation` remain subsequent
-Feature 19.2 tasks.
+`HlaSensorPublisher` represents an enabled radar as an `EmitterSystem`. While
+the radar is emitting, it also owns a `RadarBeam` with azimuth/elevation scan,
+frequency, bandwidth, effective radiated power, and a high-density-track flag.
+Stopping emission removes only the beam; disabling/removing the sensor removes
+both objects.
+
+`HlaInboundAdapter` decodes remote RPR `Spatial`, entity type, force, damage,
+speed, and marking. Remote entities carry stable IDs prefixed with `hla:` and
+are marked `externallyControlled`; local flight dynamics and outbound HLA
+publication skip them, preventing feedback loops and competing writers.
+
+| qttest action | RPR interaction | Receive behavior |
+| --- | --- | --- |
+| Play / Resume | `HLAinteractionRoot.StartResume` | Starts or resumes local simulation |
+| Pause | `HLAinteractionRoot.StopFreeze`, non-terminal reason | Pauses without clearing the scenario |
+| Stop | `HLAinteractionRoot.StopFreeze`, terminal reason | Stops the exercise using the normal lifecycle |
+
+Ownership Management, HLA Time Management, synchronization points, DDM,
+save/restore, explicit sensor-track object arrays, and NETN-ETR task exchange
+remain subsequent Feature 19 tasks.
 
 ## Adding another RTI
 
 1. Add `integrations/hla/<backend>/<Backend>Plugin.cpp`.
-2. Implement every function in `QttestHlaBackendApiV2`.
+2. Implement every function in `QttestHlaBackendApiV3`, including callback
+   registration and object/interaction subscriptions.
 3. Keep vendor headers and libraries private to that plugin target.
 4. Return backend identity, version, capabilities, and diagnostic errors.
 5. Add a load/lifecycle test without linking the SDK into the main executable.

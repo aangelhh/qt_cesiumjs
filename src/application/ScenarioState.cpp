@@ -184,6 +184,40 @@ void ScenarioState::addEntity(const Entity& entity) {
   this->save();
 }
 
+void ScenarioState::upsertExternalEntity(const Entity& entity) {
+  ScopedLock lock(_mutex);
+  if (entity.entityId.trimmed().isEmpty()) return;
+  for (Entity& existing : _entities) {
+    if (existing.entityId.compare(entity.entityId, Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    if (!existing.externallyControlled) return;
+    existing = entity;
+    existing.externallyControlled = true;
+    existing.currentTask = EntityTask{};
+    existing.currentTask.status = QStringLiteral("Remote");
+    return;
+  }
+  Entity remote = entity;
+  remote.externallyControlled = true;
+  remote.flightDynamicsEnabled = false;
+  remote.currentTask = EntityTask{};
+  remote.currentTask.status = QStringLiteral("Remote");
+  _entities.push_back(std::move(remote));
+}
+
+bool ScenarioState::removeExternalEntity(const QString& entityId) {
+  ScopedLock lock(_mutex);
+  for (qsizetype index = 0; index < _entities.size(); ++index) {
+    if (_entities[index].externallyControlled &&
+        _entities[index].entityId.compare(entityId, Qt::CaseInsensitive) == 0) {
+      _entities.removeAt(index);
+      return true;
+    }
+  }
+  return false;
+}
+
 const QVector<Entity>& ScenarioState::entities() const {
   return _entities;
 }

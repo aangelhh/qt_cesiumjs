@@ -34,6 +34,11 @@ public:
       const std::vector<std::string>&) override {
     return tactical::hla::Result::ok();
   }
+  tactical::hla::Result subscribeObjectClass(
+      const std::string&,
+      const std::vector<std::string>&) override {
+    return tactical::hla::Result::ok();
+  }
   tactical::hla::Result registerObjectInstance(
       const std::string&,
       const std::string&,
@@ -56,6 +61,11 @@ public:
       const std::string&) override {
     return tactical::hla::Result::ok();
   }
+  tactical::hla::Result subscribeInteractionClass(
+      const std::string&,
+      const std::vector<std::string>&) override {
+    return tactical::hla::Result::ok();
+  }
   tactical::hla::Result sendInteraction(
       const std::string&,
       const std::vector<tactical::hla::NamedValue>&,
@@ -65,6 +75,7 @@ public:
   tactical::hla::Result poll(double) override {
     return tactical::hla::Result::ok();
   }
+  void setEventSink(tactical::hla::IHlaEventSink*) override {}
   tactical::hla::Result resign() override {
     currentState = tactical::hla::BackendState::Connected;
     return tactical::hla::Result::ok();

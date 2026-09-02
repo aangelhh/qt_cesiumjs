@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include "infrastructure/interoperability/hla/HlaInboundAdapter.h"
 #include <QHash>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -51,6 +52,7 @@ class QWebEngineView;
 #endif
 struct AreaDefinition;
 struct ActiveMunition;
+struct TransientEffect;
 struct Entity;
 struct RouteGraphic;
 struct Waypoint;
@@ -82,6 +84,16 @@ public:
   ~MainWindow();
   QVector<Entity> entitySnapshot() const;
   QVector<ActiveMunition> activeMunitionSnapshot() const;
+  QVector<TransientEffect> transientEffectSnapshot() const;
+  void applyHlaRemoteEntityChanges(
+      const std::vector<tactical::hla::RemoteEntityChange>& changes);
+  void applyHlaRemoteSimulationControl(
+      tactical::hla::RemoteSimulationControl control);
+
+signals:
+  void hlaSimulationControlRequested(
+      tactical::hla::RemoteSimulationControl control,
+      double simulationTimeSeconds);
 
 protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -305,6 +317,8 @@ private:
   QTimer* _simulationTimer;
   bool _applyingMapSelection;
   bool _simulationRunning;
+  bool _simulationStopped = true;
+  bool _applyingHlaSimulationControl = false;
   QList<QToolButton*> _taskQuickButtons;
   QSet<QString> _activeMunitionTrackNames;
   QSet<QString> _activeEffectTrackNames;

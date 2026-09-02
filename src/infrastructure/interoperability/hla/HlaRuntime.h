@@ -18,6 +18,9 @@ public:
   Result publishObjectClass(
       const std::string& objectClassName,
       const std::vector<std::string>& attributeNames);
+  Result subscribeObjectClass(
+      const std::string& objectClassName,
+      const std::vector<std::string>& attributeNames);
   Result registerObjectInstance(
       const std::string& objectClassName,
       const std::string& instanceName,
@@ -30,11 +33,15 @@ public:
       ObjectInstanceId instanceId,
       const ByteBuffer& tag = {});
   Result publishInteractionClass(const std::string& interactionClassName);
+  Result subscribeInteractionClass(
+      const std::string& interactionClassName,
+      const std::vector<std::string>& parameterNames);
   Result sendInteraction(
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag = {});
   Result poll(double maximumSeconds);
+  void setEventSink(IHlaEventSink* eventSink);
   Result stop();
 
   const IHlaBackend* backend() const;

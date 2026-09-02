@@ -98,6 +98,21 @@ int main(int argc, char *argv[])
     QTimer hlaPublishTimer;
     qsizetype lastPublishedEntityCount = -1;
     if (hlaSession.isActive()) {
+      QObject::connect(
+          &window,
+          &MainWindow::hlaSimulationControlRequested,
+          &window,
+          [&](tactical::hla::RemoteSimulationControl control,
+              double simulationTimeSeconds) {
+            const tactical::hla::Result result =
+                hlaSession.publishSimulationControl(
+                    control, simulationTimeSeconds);
+            if (!result.success) {
+              qCritical().noquote()
+                  << "HLA simulation control publication failed:"
+                  << QString::fromStdString(result.message);
+            }
+          });
       hlaPollTimer.setInterval(20);
       QObject::connect(&hlaPollTimer, &QTimer::timeout, &window, [&]() {
         const tactical::hla::Result result = hlaSession.poll(0.0);
@@ -108,6 +123,13 @@ int main(int argc, char *argv[])
           hlaPollTimer.stop();
           window.setWindowTitle(
               window.windowTitle() + QStringLiteral(" [HLA callback error]"));
+          return;
+        }
+        window.applyHlaRemoteEntityChanges(
+            hlaSession.takeRemoteEntityChanges());
+        for (const tactical::hla::RemoteSimulationControl control :
+             hlaSession.takeRemoteSimulationControls()) {
+          window.applyHlaRemoteSimulationControl(control);
         }
       });
       hlaPollTimer.start();
@@ -143,6 +165,28 @@ int main(int argc, char *argv[])
           hlaPublishTimer.stop();
           window.setWindowTitle(
               window.windowTitle() + QStringLiteral(" [HLA interaction error]"));
+          return;
+        }
+        const tactical::hla::Result detonationResult =
+            hlaSession.publishDetonations(window.transientEffectSnapshot());
+        if (!detonationResult.success) {
+          qCritical().noquote()
+              << "HLA detonation publication failed:"
+              << QString::fromStdString(detonationResult.message);
+          hlaPublishTimer.stop();
+          window.setWindowTitle(
+              window.windowTitle() + QStringLiteral(" [HLA detonation error]"));
+          return;
+        }
+        const tactical::hla::Result sensorResult =
+            hlaSession.publishSensors(entities);
+        if (!sensorResult.success) {
+          qCritical().noquote()
+              << "HLA sensor publication failed:"
+              << QString::fromStdString(sensorResult.message);
+          hlaPublishTimer.stop();
+          window.setWindowTitle(
+              window.windowTitle() + QStringLiteral(" [HLA sensor error]"));
         }
       });
       hlaPublishTimer.start();

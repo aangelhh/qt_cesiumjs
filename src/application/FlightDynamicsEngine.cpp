@@ -885,6 +885,10 @@ void FlightDynamicsEngine::advanceEntity(
     double simulationTimeSeconds,
     double deltaSeconds,
     const FlightDynamicsExecutionPolicy& executionPolicy) {
+  if (entity.externallyControlled) {
+    setDynamicsRuntimeStatus(entity, QStringLiteral("hla-remote"));
+    return;
+  }
   application::ensureFuelConfiguration(entity);
   // An entity must only move when it has an active task.
   // flightDynamicsEnabled / flightDynamicsMode only control how movement is simulated,

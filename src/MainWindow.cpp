@@ -838,6 +838,70 @@ QVector<ActiveMunition> MainWindow::activeMunitionSnapshot() const {
   return _scenarioState->activeMunitions();
 }
 
+QVector<TransientEffect> MainWindow::transientEffectSnapshot() const {
+  const auto lock = _scenarioState->lock();
+  return _scenarioState->transientEffects();
+}
+
+void MainWindow::applyHlaRemoteEntityChanges(
+    const std::vector<tactical::hla::RemoteEntityChange>& changes) {
+  if (changes.empty()) return;
+  for (const tactical::hla::RemoteEntityChange& change : changes) {
+    if (change.removed) {
+      _scenarioState->removeExternalEntity(
+          QString::fromStdString(change.state.stableId));
+      continue;
+    }
+    const tactical::hla::RprEntityState& state = change.state;
+    Entity entity;
+    entity.entityId = QString::fromStdString(state.stableId);
+    entity.name = QString::fromStdString(state.name);
+    entity.domain = QString::fromStdString(state.domain);
+    entity.type = entity.domain == QStringLiteral("Air")
+        ? QStringLiteral("Aircraft")
+        : entity.domain;
+    entity.category = QStringLiteral("HLA Remote");
+    entity.entityKind = state.entityKind;
+    entity.entityDomain = state.entityDomain;
+    entity.entityCountry = state.countryCode;
+    entity.entityCategory = state.category;
+    entity.entitySubcategory = state.subcategory;
+    entity.entitySpecific = state.specific;
+    entity.entityExtra = state.extra;
+    entity.refreshEntityTypeCode();
+    entity.forceIdentifier = state.forceIdentifier;
+    entity.latitude = state.latitudeDegrees;
+    entity.longitude = state.longitudeDegrees;
+    entity.altitude = qMax(0, qRound(state.altitudeMeters));
+    entity.headingDegrees = state.headingDegrees;
+    entity.pitchDegrees = state.pitchDegrees;
+    entity.rollDegrees = state.rollDegrees;
+    entity.speedKnots = state.speedKnots;
+    entity.damagePercent = state.damagePercent;
+    entity.destroyed = state.destroyed;
+    entity.externallyControlled = true;
+    _scenarioState->upsertExternalEntity(entity);
+  }
+  this->syncScenarioStateToUi();
+}
+
+void MainWindow::applyHlaRemoteSimulationControl(
+    tactical::hla::RemoteSimulationControl control) {
+  _applyingHlaSimulationControl = true;
+  switch (control) {
+    case tactical::hla::RemoteSimulationControl::StartResume:
+      this->startSimulation();
+      break;
+    case tactical::hla::RemoteSimulationControl::Pause:
+      this->pauseSimulation();
+      break;
+    case tactical::hla::RemoteSimulationControl::Stop:
+      this->stopSimulation();
+      break;
+  }
+  _applyingHlaSimulationControl = false;
+}
+
 void MainWindow::initializeKinematicsCockpit() {
   this->_kinematicsCockpitDock = new QDockWidget(
       QStringLiteral("Modern PFD"),
@@ -1813,15 +1877,38 @@ void MainWindow::reportMapStatus(const QString& message) {
 }
 
 void MainWindow::startSimulation() {
+  if (_simulationRunning) return;
   this->_simulationLifecycleController->start();
+  _simulationStopped = false;
+  if (!_applyingHlaSimulationControl) {
+    emit hlaSimulationControlRequested(
+        tactical::hla::RemoteSimulationControl::StartResume,
+        _scenarioState->simulationTimeSeconds());
+  }
 }
 
 void MainWindow::pauseSimulation() {
+  if (!_simulationRunning) return;
   this->_simulationLifecycleController->pause();
+  _simulationStopped = false;
+  if (!_applyingHlaSimulationControl) {
+    emit hlaSimulationControlRequested(
+        tactical::hla::RemoteSimulationControl::Pause,
+        _scenarioState->simulationTimeSeconds());
+  }
 }
 
 void MainWindow::stopSimulation() {
+  const bool publishStop = !_simulationStopped;
+  const double simulationTimeSeconds =
+      _scenarioState->simulationTimeSeconds();
   this->_simulationLifecycleController->stop();
+  _simulationStopped = true;
+  if (publishStop && !_applyingHlaSimulationControl) {
+    emit hlaSimulationControlRequested(
+        tactical::hla::RemoteSimulationControl::Stop,
+        simulationTimeSeconds);
+  }
 }
 
 void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex&) {

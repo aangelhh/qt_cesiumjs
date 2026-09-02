@@ -6,6 +6,8 @@
 #include "infrastructure/interoperability/hla/HlaRuntime.h"
 #include "infrastructure/interoperability/hla/HlaEntityPublisher.h"
 #include "infrastructure/interoperability/hla/HlaWarfarePublisher.h"
+#include "infrastructure/interoperability/hla/HlaSensorPublisher.h"
+#include "infrastructure/interoperability/hla/HlaSimulationControlPublisher.h"
 #include "infrastructure/interoperability/hla/SharedLibraryHlaBackend.h"
 
 #include <QFileInfo>
@@ -240,7 +242,38 @@ TEST(HlaBackendPlugin, OpenRtiLoadsRepositoryNetnModules) {
       warfarePublisher.synchronize({munition});
   ASSERT_TRUE(sendInteractionResult.success) << sendInteractionResult.message;
 
+  tactical::hla::RprMunitionDetonationState detonation;
+  detonation.effectId = "openrti-missile-01-impact";
+  detonation.munitionStableId = munition.stableId;
+  detonation.munitionType = munition.munitionType;
+  detonation.latitudeDegrees = munition.latitudeDegrees;
+  detonation.longitudeDegrees = munition.longitudeDegrees;
+  detonation.altitudeMeters = munition.altitudeMeters;
+  const tactical::hla::Result detonationResult =
+      warfarePublisher.synchronizeDetonations({detonation});
+  ASSERT_TRUE(detonationResult.success) << detonationResult.message;
+
+  tactical::hla::HlaSensorPublisher sensorPublisher(runtime);
+  tactical::hla::RprSensorState radar;
+  radar.entityStableId = entity.stableId;
+  radar.sensorId = "radar-01";
+  radar.frequencyHertz = 10.0e9;
+  radar.bandwidthHertz = 2.0e6;
+  radar.peakPowerWatts = 5000.0;
+  const tactical::hla::Result sensorResult =
+      sensorPublisher.synchronize({radar});
+  ASSERT_TRUE(sensorResult.success) << sensorResult.message;
+
+  tactical::hla::HlaSimulationControlPublisher controlPublisher(runtime);
+  ASSERT_TRUE(controlPublisher.publish(
+      tactical::hla::RemoteSimulationControl::StartResume, 1.0).success);
+  ASSERT_TRUE(controlPublisher.publish(
+      tactical::hla::RemoteSimulationControl::Pause, 2.0).success);
+  ASSERT_TRUE(controlPublisher.publish(
+      tactical::hla::RemoteSimulationControl::Stop, 3.0).success);
+
   EXPECT_TRUE(runtime.poll(0.0).success);
+  EXPECT_TRUE(sensorPublisher.removeAll().success);
   EXPECT_TRUE(publisher.removeAll().success);
   EXPECT_TRUE(runtime.stop().success);
 }

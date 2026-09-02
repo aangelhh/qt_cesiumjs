@@ -56,6 +56,16 @@ std::vector<std::wstring> fromStringArray(
 class PluginFederateAmbassador final
     : public rti1516e::NullFederateAmbassador {
 public:
+  struct SubscribedObjectClass {
+    std::string name;
+    std::map<rti1516e::AttributeHandle, std::string> attributes;
+  };
+
+  struct RemoteObject {
+    uint64_t id = 0;
+    rti1516e::ObjectClassHandle classHandle;
+  };
+
   void objectInstanceNameReservationSucceeded(
       const std::wstring& objectInstanceName)
 #ifdef QTTEST_HLA_OPENRTI_BACKEND
@@ -80,8 +90,159 @@ public:
     reservedNames.erase(objectInstanceName);
   }
 
+  void discoverObjectInstance(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      rti1516e::ObjectClassHandle classHandle,
+      const std::wstring& objectInstanceName)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    const auto classIterator = subscribedObjectClasses.find(classHandle);
+    if (classIterator == subscribedObjectClasses.end()) return;
+    const uint64_t remoteId = nextRemoteObjectId++;
+    remoteObjects.emplace(objectHandle, RemoteObject{remoteId, classHandle});
+    if (callbacks.objectDiscovered) {
+      const std::string instanceName = toUtf8(objectInstanceName);
+      callbacks.objectDiscovered(
+          callbacks.context,
+          remoteId,
+          classIterator->second.name.c_str(),
+          instanceName.c_str());
+    }
+  }
+
+  void reflectAttributeValues(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::AttributeHandleValueMap& attributeValues,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType,
+      rti1516e::TransportationType,
+      rti1516e::SupplementalReflectInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    const auto objectIterator = remoteObjects.find(objectHandle);
+    if (objectIterator == remoteObjects.end() || !callbacks.objectReflected) return;
+    const auto classIterator =
+        subscribedObjectClasses.find(objectIterator->second.classHandle);
+    if (classIterator == subscribedObjectClasses.end()) return;
+
+    std::vector<std::string> names;
+    std::vector<QttestHlaNamedValueV2> values;
+    names.reserve(attributeValues.size());
+    values.reserve(attributeValues.size());
+    for (const auto& item : attributeValues) {
+      const auto nameIterator = classIterator->second.attributes.find(item.first);
+      if (nameIterator == classIterator->second.attributes.end()) continue;
+      names.push_back(nameIterator->second);
+      values.push_back({
+          sizeof(QttestHlaNamedValueV2),
+          names.back().c_str(),
+          {sizeof(QttestHlaByteSpanV2),
+           static_cast<const uint8_t*>(item.second.data()),
+           item.second.size()}});
+    }
+    const QttestHlaNamedValueArrayV2 array = {
+        sizeof(QttestHlaNamedValueArrayV2),
+        values.empty() ? nullptr : values.data(),
+        values.size()};
+    const QttestHlaByteSpanV2 tagSpan = {
+        sizeof(QttestHlaByteSpanV2),
+        static_cast<const uint8_t*>(tag.data()),
+        tag.size()};
+    callbacks.objectReflected(
+        callbacks.context, objectIterator->second.id, &array, &tagSpan);
+  }
+
+  void removeObjectInstance(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType,
+      rti1516e::SupplementalRemoveInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    const auto iterator = remoteObjects.find(objectHandle);
+    if (iterator == remoteObjects.end()) return;
+    const uint64_t remoteId = iterator->second.id;
+    remoteObjects.erase(iterator);
+    if (callbacks.objectRemoved) {
+      const QttestHlaByteSpanV2 tagSpan = {
+          sizeof(QttestHlaByteSpanV2),
+          static_cast<const uint8_t*>(tag.data()),
+          tag.size()};
+      callbacks.objectRemoved(callbacks.context, remoteId, &tagSpan);
+    }
+  }
+
+  void receiveInteraction(
+      rti1516e::InteractionClassHandle interactionHandle,
+      const rti1516e::ParameterHandleValueMap& parameterValues,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType,
+      rti1516e::TransportationType,
+      rti1516e::SupplementalReceiveInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    const auto interactionIterator = subscribedInteractions.find(interactionHandle);
+    if (interactionIterator == subscribedInteractions.end() ||
+        !callbacks.interactionReceived) {
+      return;
+    }
+    std::vector<std::string> names;
+    std::vector<QttestHlaNamedValueV2> values;
+    names.reserve(parameterValues.size());
+    values.reserve(parameterValues.size());
+    for (const auto& item : parameterValues) {
+      const auto nameIterator = interactionIterator->second.second.find(item.first);
+      if (nameIterator == interactionIterator->second.second.end()) continue;
+      names.push_back(nameIterator->second);
+      values.push_back({
+          sizeof(QttestHlaNamedValueV2),
+          names.back().c_str(),
+          {sizeof(QttestHlaByteSpanV2),
+           static_cast<const uint8_t*>(item.second.data()),
+           item.second.size()}});
+    }
+    const QttestHlaNamedValueArrayV2 array = {
+        sizeof(QttestHlaNamedValueArrayV2),
+        values.empty() ? nullptr : values.data(),
+        values.size()};
+    const QttestHlaByteSpanV2 tagSpan = {
+        sizeof(QttestHlaByteSpanV2),
+        static_cast<const uint8_t*>(tag.data()),
+        tag.size()};
+    callbacks.interactionReceived(
+        callbacks.context,
+        interactionIterator->second.first.c_str(),
+        &array,
+        &tagSpan);
+  }
+
   std::set<std::wstring> reservedNames;
   std::set<std::wstring> failedNames;
+  QttestHlaCallbacksV3 callbacks = {};
+  uint64_t nextRemoteObjectId = 1;
+  std::map<rti1516e::ObjectClassHandle, SubscribedObjectClass>
+      subscribedObjectClasses;
+  std::map<rti1516e::ObjectInstanceHandle, RemoteObject> remoteObjects;
+  std::map<
+      rti1516e::InteractionClassHandle,
+      std::pair<std::string, std::map<rti1516e::ParameterHandle, std::string>>>
+      subscribedInteractions;
 };
 
 struct PitchSession {
@@ -270,6 +431,44 @@ int publishObjectClass(
   }
 }
 
+int subscribeObjectClass(
+    QttestHlaBackendHandle handle,
+    const char* objectClassName,
+    const QttestHlaStringArrayV1* attributeNames) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      !objectClassName || !*objectClassName || !attributeNames ||
+      attributeNames->structSize < sizeof(QttestHlaStringArrayV1) ||
+      !attributeNames->values || attributeNames->count == 0) {
+    return fail(value, "Invalid HLA object subscription", QTTEST_HLA_STATE_ERROR);
+  }
+  try {
+    const std::wstring className = fromUtf8(objectClassName);
+    const rti1516e::ObjectClassHandle classHandle =
+        value->rtiAmbassador->getObjectClassHandle(className);
+    rti1516e::AttributeHandleSet attributes;
+    PluginFederateAmbassador::SubscribedObjectClass subscription;
+    subscription.name = objectClassName;
+    for (size_t index = 0; index < attributeNames->count; ++index) {
+      const std::string attributeName = attributeNames->values[index];
+      const rti1516e::AttributeHandle attributeHandle =
+          value->rtiAmbassador->getAttributeHandle(
+              classHandle, fromUtf8(attributeNames->values[index]));
+      attributes.insert(attributeHandle);
+      subscription.attributes.emplace(attributeHandle, attributeName);
+    }
+    value->rtiAmbassador->subscribeObjectClassAttributes(classHandle, attributes);
+    value->federateAmbassador.subscribedObjectClasses[classHandle] =
+        std::move(subscription);
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
 int registerObjectInstance(
     QttestHlaBackendHandle handle,
     const char* objectClassName,
@@ -421,6 +620,53 @@ int publishInteractionClass(
   }
 }
 
+int subscribeInteractionClass(
+    QttestHlaBackendHandle handle,
+    const char* interactionClassName,
+    const QttestHlaStringArrayV1* parameterNames) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      !interactionClassName || !*interactionClassName || !parameterNames ||
+      parameterNames->structSize < sizeof(QttestHlaStringArrayV1)) {
+    return fail(
+        value, "Invalid HLA interaction subscription", QTTEST_HLA_STATE_ERROR);
+  }
+  try {
+    const rti1516e::InteractionClassHandle interactionHandle =
+        value->rtiAmbassador->getInteractionClassHandle(
+            fromUtf8(interactionClassName));
+    std::map<rti1516e::ParameterHandle, std::string> parameters;
+    for (size_t index = 0; index < parameterNames->count; ++index) {
+      const rti1516e::ParameterHandle parameterHandle =
+          value->rtiAmbassador->getParameterHandle(
+              interactionHandle, fromUtf8(parameterNames->values[index]));
+      parameters.emplace(parameterHandle, parameterNames->values[index]);
+    }
+    value->rtiAmbassador->subscribeInteractionClass(interactionHandle);
+    value->federateAmbassador.subscribedInteractions[interactionHandle] = {
+        interactionClassName, std::move(parameters)};
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
+int setCallbacks(
+    QttestHlaBackendHandle handle,
+    const QttestHlaCallbacksV3* callbacks) {
+  PitchSession* value = session(handle);
+  if (!value || !callbacks ||
+      callbacks->structSize < sizeof(QttestHlaCallbacksV3)) {
+    return fail(value, "Invalid HLA callback configuration", QTTEST_HLA_STATE_ERROR);
+  }
+  value->federateAmbassador.callbacks = *callbacks;
+  value->error.clear();
+  return 0;
+}
+
 int sendInteraction(
     QttestHlaBackendHandle handle,
     const char* interactionClassName,
@@ -536,8 +782,8 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "HLA backend session is unavailable";
 }
 
-const QttestHlaBackendApiV2 api = {
-    sizeof(QttestHlaBackendApiV2),
+const QttestHlaBackendApiV3 api = {
+    sizeof(QttestHlaBackendApiV3),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     QTTEST_HLA_1516E_BACKEND_ID,
     QTTEST_HLA_1516E_BACKEND_NAME,
@@ -548,11 +794,14 @@ const QttestHlaBackendApiV2 api = {
     &createFederation,
     &joinFederation,
     &publishObjectClass,
+    &subscribeObjectClass,
     &registerObjectInstance,
     &updateObjectAttributes,
     &deleteObjectInstance,
     &publishInteractionClass,
+    &subscribeInteractionClass,
     &sendInteraction,
+    &setCallbacks,
     &pollBackend,
     &resignBackend,
     &disconnectBackend,
@@ -561,7 +810,7 @@ const QttestHlaBackendApiV2 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV2*
-qttest_hla_backend_api_v2(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV3*
+qttest_hla_backend_api_v3(void) {
   return &api;
 }

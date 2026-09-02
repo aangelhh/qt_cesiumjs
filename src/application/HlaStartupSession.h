@@ -4,6 +4,9 @@
 #include "infrastructure/interoperability/hla/HlaRuntime.h"
 #include "infrastructure/interoperability/hla/HlaEntityPublisher.h"
 #include "infrastructure/interoperability/hla/HlaWarfarePublisher.h"
+#include "infrastructure/interoperability/hla/HlaInboundAdapter.h"
+#include "infrastructure/interoperability/hla/HlaSimulationControlPublisher.h"
+#include "infrastructure/interoperability/hla/HlaSensorPublisher.h"
 #include "domain/Entity.h"
 #include "domain/Munition.h"
 
@@ -19,6 +22,15 @@ public:
   tactical::hla::Result publishEntities(const QVector<Entity>& entities);
   tactical::hla::Result publishMunitions(
       const QVector<ActiveMunition>& activeMunitions);
+  tactical::hla::Result publishDetonations(
+      const QVector<TransientEffect>& transientEffects);
+  tactical::hla::Result publishSensors(const QVector<Entity>& entities);
+  std::vector<tactical::hla::RemoteEntityChange> takeRemoteEntityChanges();
+  std::vector<tactical::hla::RemoteSimulationControl>
+      takeRemoteSimulationControls();
+  tactical::hla::Result publishSimulationControl(
+      tactical::hla::RemoteSimulationControl control,
+      double simulationTimeSeconds);
   tactical::hla::Result stop();
 
   bool isActive() const;
@@ -28,6 +40,10 @@ private:
   std::unique_ptr<tactical::hla::HlaRuntime> _runtime;
   std::unique_ptr<tactical::hla::HlaEntityPublisher> _entityPublisher;
   std::unique_ptr<tactical::hla::HlaWarfarePublisher> _warfarePublisher;
+  std::unique_ptr<tactical::hla::HlaInboundAdapter> _inboundAdapter;
+  std::unique_ptr<tactical::hla::HlaSimulationControlPublisher>
+      _simulationControlPublisher;
+  std::unique_ptr<tactical::hla::HlaSensorPublisher> _sensorPublisher;
   QString _backendId;
 };
 

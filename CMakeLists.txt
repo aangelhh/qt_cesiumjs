@@ -45,6 +45,12 @@ add_library(tactical_hla_core STATIC
     src/infrastructure/interoperability/hla/HlaRuntime.h
     src/infrastructure/interoperability/hla/HlaWarfarePublisher.cpp
     src/infrastructure/interoperability/hla/HlaWarfarePublisher.h
+    src/infrastructure/interoperability/hla/HlaInboundAdapter.cpp
+    src/infrastructure/interoperability/hla/HlaInboundAdapter.h
+    src/infrastructure/interoperability/hla/HlaSimulationControlPublisher.cpp
+    src/infrastructure/interoperability/hla/HlaSimulationControlPublisher.h
+    src/infrastructure/interoperability/hla/HlaSensorPublisher.cpp
+    src/infrastructure/interoperability/hla/HlaSensorPublisher.h
     src/infrastructure/interoperability/hla/HlaTypes.h
     src/infrastructure/interoperability/hla/IHlaBackend.h
     src/infrastructure/interoperability/hla/MockHlaBackend.cpp
