@@ -427,6 +427,8 @@ endif()
 
 qt_add_executable(qttest
     main.cpp
+    src/application/HlaCombatDemoScenario.cpp
+    src/application/HlaCombatDemoScenario.h
     src/application/HlaStartupSession.cpp
     src/application/HlaStartupSession.h
     src/application/StartupConfiguration.cpp

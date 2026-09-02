@@ -85,6 +85,7 @@ public:
   QVector<Entity> entitySnapshot() const;
   QVector<ActiveMunition> activeMunitionSnapshot() const;
   QVector<TransientEffect> transientEffectSnapshot() const;
+  void startHlaCombatDemo();
   void applyHlaRemoteEntityChanges(
       const std::vector<tactical::hla::RemoteEntityChange>& changes);
   void applyHlaRemoteSimulationControl(

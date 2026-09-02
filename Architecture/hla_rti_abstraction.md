@@ -138,6 +138,29 @@ Ownership Management, HLA Time Management, synchronization points, DDM,
 save/restore, explicit sensor-track object arrays, and NETN-ETR task exchange
 remain subsequent Feature 19 tasks.
 
+### Graphical combat demo
+
+The VS Code configuration `Launch HLA Combat Demo (Pitch)` starts one graphical
+qttest process connected to `qttest-federation`. It bypasses the startup dialog
+and creates a reproducible local scenario with two RPR-published aircraft:
+
+- `Blue Mirage 2000`, friendly, rendered with the Mirage 2000 model, with an
+  emitting 120 by 60 degree airborne radar and enough missiles to tolerate
+  missed shots during the sustained engagement.
+- `Red Bandit`, opposing, flying a constant heading, altitude, and speed.
+
+The friendly plan is `Follow Entity -> Attack Until Destroyed`. The simulation
+starts automatically, so Pitch Explorer can observe both Aircraft objects, both
+`EmitterSystem` / `RadarBeam` pairs, `WeaponFire`, damage updates,
+`MunitionDetonation`, and the final destroyed state from a single GUI process.
+The demo resets the runtime scenario before creating its entities and therefore
+must only be used as a test mode.
+
+The existing opt-in CTest
+`HlaBackendPlugin.PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled`
+remains the headless backend integration test. It creates the federation when
+needed, publishes one synthetic Aircraft, updates and removes it, then exits.
+
 ## Adding another RTI
 
 1. Add `integrations/hla/<backend>/<Backend>Plugin.cpp`.

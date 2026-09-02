@@ -17,6 +17,7 @@
 #include "presentation/DetectedContactsPresenter.h"
 #include "presentation/EntityDefaultsResolver.h"
 #include "presentation/EntityPlanExecutor.h"
+#include "application/HlaCombatDemoScenario.h"
 #include "presentation/BombTargetMapSync.h"
 #include "presentation/MapBridgeScripts.h"
 #include "presentation/KinematicsCockpitWidget.h"
@@ -831,6 +832,50 @@ MainWindow::~MainWindow() {
 QVector<Entity> MainWindow::entitySnapshot() const {
   const auto lock = _scenarioState->lock();
   return _scenarioState->entities();
+}
+
+void MainWindow::startHlaCombatDemo() {
+  const application::HlaCombatDemoScenario demo =
+      application::makeHlaCombatDemoScenario();
+
+  this->_scenarioState->reset();
+  this->_planExecutor->plans().clear();
+  this->_scenarioState->addEntity(demo.friendly);
+  this->_scenarioState->addEntity(demo.opposing);
+
+  if (!this->applyEntityTask(
+          demo.opposing.entityId,
+          demo.opposingMovementTask,
+          /*syncUi=*/false)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No se pudo iniciar el movimiento del rival HLA."));
+    return;
+  }
+
+  EntityPlan& plan = this->ensureEntityPlan(demo.friendly.entityId);
+  PlanStep followStep;
+  followStep.kind = PlanStepKind::FollowEntity;
+  followStep.task = demo.friendlyPlanTasks.at(0);
+  followStep.label = QStringLiteral("Follow %1").arg(demo.opposing.name);
+  PlanStep attackStep;
+  attackStep.kind = PlanStepKind::AttackUntilDestroyed;
+  attackStep.task = demo.friendlyPlanTasks.at(1);
+  attackStep.label = QStringLiteral("Attack %1 Until Destroyed")
+      .arg(demo.opposing.name);
+  plan.steps = {followStep, attackStep};
+
+  this->syncScenarioStateToUi();
+  if (!this->startEntityPlan(demo.friendly.entityId)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No se pudo iniciar el plan de combate HLA."));
+    return;
+  }
+  this->startSimulation();
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Demo HLA: %1 sigue y ataca a %2 hasta destruirlo.")
+          .arg(demo.friendly.name, demo.opposing.name));
+  this->appendLogMessage(QStringLiteral(
+      "HLA combat demo started: Follow Entity -> Attack Until Destroyed."));
 }
 
 QVector<ActiveMunition> MainWindow::activeMunitionSnapshot() const {

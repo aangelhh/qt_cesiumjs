@@ -93,6 +93,42 @@
                 }
             ],
             "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/f47bb2143408e3406aebae287f31b343/tonka3000.qtvsctools/qt.natvis.xml"
+        },
+        {
+            "name": "Launch HLA Combat Demo (Pitch)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build-macos-debug/qttest.app/Contents/MacOS/qttest",
+            "args": [
+                "--hla-combat-demo",
+                "--hla-federation",
+                "qttest-federation",
+                "--hla-local-settings",
+                "crcAddress=localhost:8989"
+            ],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "environment": [
+                {
+                    "name": "QTTEST_STONESOUP_PYTHON",
+                    "value": "${workspaceFolder}/build-macos-debug/stonesoup-venv/bin/python"
+                },
+                {
+                    "name": "QTTEST_MIXR_SENSOR_PLUGIN",
+                    "value": "${workspaceFolder}/build-macos-debug/sensor-plugins/libqttest_mixr_sensor.dylib"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "CMake Build",
+            "setupCommands": [
+                {
+                    "description": "Let the embedded Pitch JVM handle SIGBUS",
+                    "text": "process handle SIGBUS -n false -p true -s false",
+                    "ignoreFailures": false
+                }
+            ],
+            "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/f47bb2143408e3406aebae287f31b343/tonka3000.qtvsctools/qt.natvis.xml"
         }
     ]
 }

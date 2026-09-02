@@ -27,6 +27,7 @@ add_executable(qttest_unit_tests
     domain/CombatRulesTest.cpp
     domain/SensorTest.cpp
     application/EventBusTest.cpp
+    application/HlaCombatDemoScenarioTest.cpp
     application/HlaStartupSessionTest.cpp
     application/StartupConfigurationTest.cpp
     application/AttackTaskProcessorTest.cpp
@@ -95,6 +96,7 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/domain/CombatRules.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/Sensor.cpp
     ${CMAKE_SOURCE_DIR}/src/application/ScenarioState.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/HlaCombatDemoScenario.cpp
     ${CMAKE_SOURCE_DIR}/src/application/HlaStartupSession.cpp
     ${CMAKE_SOURCE_DIR}/src/application/StartupConfiguration.cpp
     ${CMAKE_SOURCE_DIR}/src/application/TacticalGraphicRepository.cpp

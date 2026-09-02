@@ -4,12 +4,15 @@
 #include "presentation/StartupConfigurationDialog.h"
 
 #include <QApplication>
+#include <QCommandLineParser>
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QSettings>
 #include <QTimer>
+
+#include <algorithm>
 
 namespace {
 
@@ -42,6 +45,27 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("qttest"));
     QCoreApplication::setApplicationName(QStringLiteral("qttest"));
 
+    QCommandLineParser commandLine;
+    commandLine.setApplicationDescription(
+        QStringLiteral("Tactical entity simulation and interoperability runtime."));
+    commandLine.addHelpOption();
+    commandLine.addOption({
+        QStringLiteral("hla-combat-demo"),
+        QStringLiteral("Start the graphical two-aircraft HLA combat demo.")});
+    commandLine.addOption({
+        QStringLiteral("hla-federation"),
+        QStringLiteral("Federation name used by the HLA combat demo."),
+        QStringLiteral("name"),
+        QStringLiteral("qttest-federation")});
+    commandLine.addOption({
+        QStringLiteral("hla-local-settings"),
+        QStringLiteral("Local settings designator used by the HLA combat demo."),
+        QStringLiteral("value"),
+        QStringLiteral("crcAddress=localhost:8989")});
+    commandLine.process(app);
+    const bool hlaCombatDemo =
+        commandLine.isSet(QStringLiteral("hla-combat-demo"));
+
     QSettings settings;
     application::StartupConfiguration startupConfiguration =
         application::StartupConfiguration::load(settings);
@@ -51,41 +75,76 @@ int main(int argc, char *argv[])
     application::HlaStartupSession hlaSession;
     const QVector<presentation::HlaBackendOption> hlaBackends =
         availableHlaBackends();
-    presentation::StartupConfigurationDialog startupDialog(
-        startupConfiguration,
-        hlaBackends,
-#ifdef QTTEST_HAS_ROS2_TELEMETRY
-        true
-#else
-        false
-#endif
-    );
-    while (true) {
-      if (startupDialog.exec() != QDialog::Accepted) {
-        return 0;
+    if (hlaCombatDemo) {
+      const auto pitchBackend = std::find_if(
+          hlaBackends.cbegin(), hlaBackends.cend(),
+          [](const presentation::HlaBackendOption& backend) {
+            return backend.id == QStringLiteral("pitch1516e");
+          });
+      if (pitchBackend == hlaBackends.cend()) {
+        QMessageBox::critical(
+            nullptr,
+            QStringLiteral("HLA combat demo"),
+            QStringLiteral("The Pitch pRTI backend is not available in this build."));
+        return 1;
       }
-      startupConfiguration = startupDialog.configuration();
-      startupConfiguration.save(settings);
-
-      if (startupConfiguration.federationMode !=
-          application::FederationMode::Hla) {
-        break;
-      }
-
+      startupConfiguration.federationMode = application::FederationMode::Hla;
+      startupConfiguration.hla.backendId = pitchBackend->id;
+      startupConfiguration.hla.backendLibraryPath = pitchBackend->libraryPath;
+      startupConfiguration.hla.localSettingsDesignator =
+          commandLine.value(QStringLiteral("hla-local-settings"));
+      startupConfiguration.hla.federationName =
+          commandLine.value(QStringLiteral("hla-federation"));
+      startupConfiguration.hla.federateName = QStringLiteral("qttest-combat-demo-%1")
+                                                  .arg(QCoreApplication::applicationPid());
+      startupConfiguration.hla.federateType = QStringLiteral("qttest-combat-demo");
+      startupConfiguration.hla.createFederationIfMissing = true;
       const tactical::hla::Result hlaResult =
           hlaSession.start(startupConfiguration.hla);
-      if (hlaResult.success) {
-        qInfo().noquote()
-            << "HLA joined:"
-            << startupConfiguration.hla.federateName
-            << "backend=" << startupConfiguration.hla.backendId
-            << "federation=" << startupConfiguration.hla.federationName;
-        break;
+      if (!hlaResult.success) {
+        QMessageBox::critical(
+            nullptr,
+            QStringLiteral("HLA combat demo startup failed"),
+            QString::fromStdString(hlaResult.message));
+        return 1;
       }
-      QMessageBox::critical(
-          &startupDialog,
-          QStringLiteral("HLA startup failed"),
-          QString::fromStdString(hlaResult.message));
+    } else {
+      presentation::StartupConfigurationDialog startupDialog(
+          startupConfiguration,
+          hlaBackends,
+#ifdef QTTEST_HAS_ROS2_TELEMETRY
+          true
+#else
+          false
+#endif
+      );
+      while (true) {
+        if (startupDialog.exec() != QDialog::Accepted) {
+          return 0;
+        }
+        startupConfiguration = startupDialog.configuration();
+        startupConfiguration.save(settings);
+
+        if (startupConfiguration.federationMode !=
+            application::FederationMode::Hla) {
+          break;
+        }
+
+        const tactical::hla::Result hlaResult =
+            hlaSession.start(startupConfiguration.hla);
+        if (hlaResult.success) {
+          qInfo().noquote()
+              << "HLA joined:"
+              << startupConfiguration.hla.federateName
+              << "backend=" << startupConfiguration.hla.backendId
+              << "federation=" << startupConfiguration.hla.federationName;
+          break;
+        }
+        QMessageBox::critical(
+            &startupDialog,
+            QStringLiteral("HLA startup failed"),
+            QString::fromStdString(hlaResult.message));
+      }
     }
 
     MainWindow window;
@@ -93,6 +152,9 @@ int main(int argc, char *argv[])
         QStringLiteral("%1 [%2]")
             .arg(window.windowTitle(), startupConfiguration.modeDisplayName()));
     window.show();
+    if (hlaCombatDemo) {
+      QTimer::singleShot(0, &window, &MainWindow::startHlaCombatDemo);
+    }
 
     QTimer hlaPollTimer;
     QTimer hlaPublishTimer;
