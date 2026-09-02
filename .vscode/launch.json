@@ -50,6 +50,11 @@
                     "description": "Enable pretty-printing for lldb",
                     "text": "settings set target.max-children-count 256",
                     "ignoreFailures": true
+                },
+                {
+                    "description": "Let the embedded Pitch JVM handle SIGBUS",
+                    "text": "process handle SIGBUS -n false -p true -s false",
+                    "ignoreFailures": false
                 }
             ],
             "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/f47bb2143408e3406aebae287f31b343/tonka3000.qtvsctools/qt.natvis.xml"
@@ -80,6 +85,11 @@
                     "description": "Enable pretty-printing for lldb",
                     "text": "settings set target.max-children-count 256",
                     "ignoreFailures": true
+                },
+                {
+                    "description": "Let the embedded Pitch JVM handle SIGBUS",
+                    "text": "process handle SIGBUS -n false -p true -s false",
+                    "ignoreFailures": false
                 }
             ],
             "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/f47bb2143408e3406aebae287f31b343/tonka3000.qtvsctools/qt.natvis.xml"

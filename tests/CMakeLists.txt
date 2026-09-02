@@ -27,6 +27,8 @@ add_executable(qttest_unit_tests
     domain/CombatRulesTest.cpp
     domain/SensorTest.cpp
     application/EventBusTest.cpp
+    application/HlaStartupSessionTest.cpp
+    application/StartupConfigurationTest.cpp
     application/AttackTaskProcessorTest.cpp
     application/TaskApplicatorTest.cpp
     application/FlightDynamicsEngineConsistencyTest.cpp
@@ -44,6 +46,12 @@ add_executable(qttest_unit_tests
     infrastructure/SensorModelProviderCatalogTest.cpp
     infrastructure/SensorProviderAdapterTest.cpp
     infrastructure/Ros2TelemetryPublisherTest.cpp
+    infrastructure/HlaRuntimeTest.cpp
+    infrastructure/HlaEntityPublisherTest.cpp
+    infrastructure/HlaWarfarePublisherTest.cpp
+    infrastructure/RprFomEncodingTest.cpp
+    infrastructure/HlaBackendFactoryTest.cpp
+    infrastructure/HlaBackendPluginTest.cpp
     application/MunitionSimulatorTest.cpp
     application/BehaviorEngineTest.cpp
     application/SensorDetectionModelTest.cpp
@@ -84,6 +92,8 @@ add_executable(qttest_unit_tests
     ${CMAKE_SOURCE_DIR}/src/domain/CombatRules.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/Sensor.cpp
     ${CMAKE_SOURCE_DIR}/src/application/ScenarioState.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/HlaStartupSession.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/StartupConfiguration.cpp
     ${CMAKE_SOURCE_DIR}/src/application/TacticalGraphicRepository.cpp
     ${CMAKE_SOURCE_DIR}/src/application/ScenarioSerializer.cpp
     ${CMAKE_SOURCE_DIR}/src/application/BehaviorEngine.cpp
@@ -148,7 +158,18 @@ target_include_directories(qttest_unit_tests PRIVATE
 target_compile_definitions(qttest_unit_tests PRIVATE
     QTTEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     QTTEST_BINARY_DIR="${CMAKE_BINARY_DIR}"
+    QTTEST_HLA_MOCK_PLUGIN_PATH="${QTTEST_HLA_MOCK_PLUGIN_PATH}"
 )
+if(DEFINED QTTEST_HLA_PITCH_PLUGIN_PATH)
+    target_compile_definitions(qttest_unit_tests PRIVATE
+        QTTEST_HLA_PITCH_PLUGIN_PATH="${QTTEST_HLA_PITCH_PLUGIN_PATH}"
+    )
+endif()
+if(DEFINED QTTEST_HLA_OPENRTI_PLUGIN_PATH)
+    target_compile_definitions(qttest_unit_tests PRIVATE
+        QTTEST_HLA_OPENRTI_PLUGIN_PATH="${QTTEST_HLA_OPENRTI_PLUGIN_PATH}"
+    )
+endif()
 if(DEFINED QTTEST_MIXR_PLUGIN_PATH)
     target_compile_definitions(qttest_unit_tests PRIVATE
         QTTEST_MIXR_PLUGIN_PATH="${QTTEST_MIXR_PLUGIN_PATH}"
@@ -158,11 +179,20 @@ endif()
 target_link_libraries(qttest_unit_tests
     PRIVATE
         qttest_geospatial
+        qttest_hla_infrastructure
         Qt6::Core
         Qt6::Gui
         GTest::gtest
         GTest::gtest_main
 )
+
+add_dependencies(qttest_unit_tests qttest_hla_mock_backend)
+if(TARGET qttest_hla_pitch1516e_backend)
+    add_dependencies(qttest_unit_tests qttest_hla_pitch1516e_backend)
+endif()
+if(TARGET qttest_hla_openrti1516e_backend)
+    add_dependencies(qttest_unit_tests qttest_hla_openrti1516e_backend)
+endif()
 
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)

@@ -828,6 +828,16 @@ MainWindow::~MainWindow() {
   delete this->_ui;
 }
 
+QVector<Entity> MainWindow::entitySnapshot() const {
+  const auto lock = _scenarioState->lock();
+  return _scenarioState->entities();
+}
+
+QVector<ActiveMunition> MainWindow::activeMunitionSnapshot() const {
+  const auto lock = _scenarioState->lock();
+  return _scenarioState->activeMunitions();
+}
+
 void MainWindow::initializeKinematicsCockpit() {
   this->_kinematicsCockpitDock = new QDockWidget(
       QStringLiteral("Modern PFD"),

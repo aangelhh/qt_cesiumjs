@@ -1,0 +1,126 @@
+# HLA RTI Abstraction
+
+## Purpose
+
+The HLA integration belongs to the interoperability infrastructure. The
+application owns simulation time and domain state; an RTI backend only
+transports federation operations and, in later increments, object updates and
+interactions.
+
+The abstraction prevents Qt UI, Cesium, tasks, sensors, and entity models from
+depending directly on a vendor SDK.
+
+## Location and boundaries
+
+- Neutral runtime: `src/infrastructure/interoperability/hla`
+- RTI integrations: `integrations/hla/<backend>`
+- Optional built plugins: `build-macos-debug/hla-plugins`
+
+`HlaRuntime` owns the federation lifecycle. `IHlaBackend` is the C++ boundary
+used by the application. Dynamic plugins implement the stable C ABI declared
+in `HlaBackendPluginApi.h`, avoiding C++ ABI coupling between the application
+and a vendor RTI.
+
+## Backend selection
+
+`HlaBackendFactory` accepts a `BackendConfiguration`:
+
+- `Mock` creates the built-in deterministic test backend.
+- `SharedLibrary` loads an RTI adapter from `libraryPath`.
+- `expectedBackendId` prevents accidentally loading the wrong plugin.
+
+An OpenRTI, Portico, Pitch, or future RTI adapter therefore implements the C
+plugin API without changing `HlaRuntime`.
+
+## OpenRTI backend
+
+OpenRTI is included as the `Dependencies/OpenRTI` submodule and built as an
+isolated CMake external project. Only its IEEE 1516e interface is enabled. Its
+headers and libraries stay private to `qttest_hla_openrti1516e_backend`; the
+main executable does not link against OpenRTI.
+
+The dependency is pinned by the submodule commit and may be disabled with:
+
+```bash
+cmake -S . -B build-macos-debug \
+  -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=OFF
+```
+
+OpenRTI offers LGPL 2.1, LGPL 3.0, or MPL 2.0 licensing. The project currently
+uses it under MPL 2.0; release packaging must retain the applicable notices and
+source modifications required by that license.
+
+### Legacy NETN compatibility
+
+The upstream RTI remains untouched. `OpenRtiCompatibilityBackend` decorates the
+loaded OpenRTI plugin at the qttest infrastructure boundary and provides two
+isolated compatibility rules:
+
+- `crcAddress=host:port` is translated to OpenRTI's native
+  `rti://host:port` local settings designator.
+- Multiple legacy RPR/NETN modules are combined into a temporary FOM before
+  federation creation. This fills incomplete parent declarations found in
+  older modular FOM sets without modifying the source XML files.
+
+Callbacks use the standard `HLA_EVOKED` model and are driven by
+`HlaRuntime::poll`; no RTI-owned callback thread controls qttest execution.
+An integration test creates and joins an in-process OpenRTI federation using
+all repository RPR/NETN modules, polls callbacks, resigns, and disconnects.
+
+## Pitch pRTI backend
+
+When `/Applications/prti1516e` or `PitchRTI_ROOT` is available, CMake builds
+`qttest_hla_pitch1516e_backend`. The adapter uses the standard IEEE 1516e API
+behind the neutral plugin contract.
+
+Configure explicitly when needed:
+
+```bash
+cmake -S . -B build-macos-debug \
+  -DQTTEST_ENABLE_PITCH_HLA_BACKEND=ON \
+  -DQTTEST_PITCH_RTI_ROOT=/Applications/prti1516e
+```
+
+The local pRTI Free installation is not redistributed. Its license restricts
+use to learning and testing and must not be assumed suitable for commercial
+deployment. Production packaging must select an RTI with compatible licensing.
+
+## Current scope
+
+Implemented lifecycle and publication:
+
+1. Connect to RTI.
+2. Create the federation when configured.
+3. Join the federation.
+4. Publish RPR object and interaction classes.
+5. Register, update, and delete local entity object instances.
+6. Emit one `WeaponFire` interaction per newly launched munition.
+7. Poll callbacks.
+8. Resign and disconnect with rollback on partial startup failure.
+
+The plugin ABI v2 keeps RTI handles private to each plugin and exposes opaque
+object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
+classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
+`DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
+10 Hz. Instance names use stable entity UUIDs, so display names may repeat.
+WGS84 positions and local NED attitude are converted to ECEF for `Spatial`.
+
+`HlaWarfarePublisher` sends `HLAinteractionRoot.WeaponFire` with event ID,
+mission index, ECEF firing location and velocity, munition type, quantity,
+rate, fuse, and warhead. RTI object-identifier parameters are deferred until
+the object-handle correlation contract is exposed explicitly.
+
+Subscription and discovery of remote objects, reflected attributes, ownership,
+time management, DDM, save/restore, and `MunitionDetonation` remain subsequent
+Feature 19.2 tasks.
+
+## Adding another RTI
+
+1. Add `integrations/hla/<backend>/<Backend>Plugin.cpp`.
+2. Implement every function in `QttestHlaBackendApiV2`.
+3. Keep vendor headers and libraries private to that plugin target.
+4. Return backend identity, version, capabilities, and diagnostic errors.
+5. Add a load/lifecycle test without linking the SDK into the main executable.
+
+This keeps the HLA contract open while each backend remains independently
+buildable and licensable.

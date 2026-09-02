@@ -50,6 +50,8 @@ class QWidget;
 class QWebEngineView;
 #endif
 struct AreaDefinition;
+struct ActiveMunition;
+struct Entity;
 struct RouteGraphic;
 struct Waypoint;
 
@@ -78,6 +80,8 @@ class MainWindow : public QMainWindow {
 public:
   explicit MainWindow(QWidget* parent = nullptr);
   ~MainWindow();
+  QVector<Entity> entitySnapshot() const;
+  QVector<ActiveMunition> activeMunitionSnapshot() const;
 
 protected:
   bool eventFilter(QObject* watched, QEvent* event) override;

@@ -1,3 +1,6 @@
 [submodule "Dependencies/jsbsim"]
 	path = Dependencies/jsbsim
 	url = https://github.com/JSBSim-Team/jsbsim.git
+[submodule "Dependencies/OpenRTI"]
+	path = Dependencies/OpenRTI
+	url = https://git.code.sf.net/p/openrti/OpenRTI
