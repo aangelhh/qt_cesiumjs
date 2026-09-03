@@ -28,6 +28,7 @@ add_executable(qttest_unit_tests
     domain/SensorTest.cpp
     application/EventBusTest.cpp
     application/HlaCombatDemoScenarioTest.cpp
+    application/HlaExternalStateTest.cpp
     application/HlaStartupSessionTest.cpp
     application/StartupConfigurationTest.cpp
     application/AttackTaskProcessorTest.cpp

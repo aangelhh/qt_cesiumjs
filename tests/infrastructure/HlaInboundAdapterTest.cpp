@@ -1,6 +1,57 @@
 #include <gtest/gtest.h>
 
 #include "infrastructure/interoperability/hla/HlaInboundAdapter.h"
+#include "geospatial/GeographicLibGeospatialService.h"
+
+#include <cmath>
+#include <cstring>
+
+namespace {
+
+void appendUnsigned32(tactical::hla::ByteBuffer& output, std::uint32_t value) {
+  output.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xffU));
+  output.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xffU));
+  output.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xffU));
+  output.push_back(static_cast<std::uint8_t>(value & 0xffU));
+}
+
+tactical::hla::ByteBuffer float32(float value) {
+  std::uint32_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  tactical::hla::ByteBuffer output;
+  appendUnsigned32(output, bits);
+  return output;
+}
+
+void appendFloat64(tactical::hla::ByteBuffer& output, double value) {
+  std::uint64_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  for (int shift = 56; shift >= 0; shift -= 8) {
+    output.push_back(static_cast<std::uint8_t>((bits >> shift) & 0xffU));
+  }
+}
+
+tactical::hla::ByteBuffer worldLocation(
+    double latitude,
+    double longitude,
+    double altitude) {
+  const geospatial::GeographicLibGeospatialService service;
+  const geospatial::EcefCoordinate ecef = service.geodeticToEcef(
+      {latitude, longitude, altitude});
+  tactical::hla::ByteBuffer output;
+  appendFloat64(output, ecef.xMeters);
+  appendFloat64(output, ecef.yMeters);
+  appendFloat64(output, ecef.zMeters);
+  return output;
+}
+
+tactical::hla::ByteBuffer encodedString(const std::string& value) {
+  tactical::hla::ByteBuffer output(value.begin(), value.end());
+  output.push_back(0);
+  return output;
+}
+
+} // namespace
 
 TEST(HlaInboundAdapter, ConvertsRemotePlatformLifecycleToEntityChanges) {
   tactical::hla::HlaInboundAdapter adapter;
@@ -50,4 +101,88 @@ TEST(HlaInboundAdapter, ConvertsRprSimulationControlInteractions) {
   EXPECT_EQ(controls[1], tactical::hla::RemoteSimulationControl::Pause);
   EXPECT_EQ(controls[2], tactical::hla::RemoteSimulationControl::Stop);
   EXPECT_TRUE(adapter.takeSimulationControls().empty());
+}
+
+TEST(HlaInboundAdapter, ConvertsEmitterAndRadarBeamWithoutCreatingEntity) {
+  tactical::hla::HlaInboundAdapter adapter;
+  adapter.onObjectDiscovered({
+      20,
+      "HLAobjectRoot.EmbeddedSystem.EmitterSystem",
+      "qttest.sensor-remote-radar"});
+  adapter.onObjectReflected({
+      20,
+      {{"HostObjectIdentifier", encodedString("qttest.remote-aircraft")}},
+      {}});
+  adapter.onObjectDiscovered({
+      21,
+      "HLAobjectRoot.EmitterBeam.RadarBeam",
+      "qttest.radar-beam-remote-radar"});
+  adapter.onObjectReflected({
+      21,
+      {{"EmitterSystemIdentifier",
+        encodedString("qttest.sensor-remote-radar")},
+       {"BeamAzimuthCenter", float32(0.1F)},
+       {"BeamAzimuthSweep", float32(1.0471976F)},
+       {"BeamElevationCenter", float32(0.0F)},
+       {"BeamElevationSweep", float32(0.5235988F)},
+       {"EmissionFrequency", float32(10.0e9F)},
+       {"FrequencyRange", float32(1.0e6F)},
+       {"EffectiveRadiatedPower", float32(80.0F)},
+       {"HighDensityTrack", {1}}},
+      {}});
+
+  EXPECT_TRUE(adapter.takeEntityChanges().empty());
+  const auto changes = adapter.takeSensorChanges();
+  ASSERT_EQ(changes.size(), 2U);
+  EXPECT_FALSE(changes[0].emitting);
+  EXPECT_TRUE(changes[1].emitting);
+  EXPECT_EQ(changes[1].hostEntityId, "hla:qttest.remote-aircraft");
+  EXPECT_NEAR(changes[1].azimuthWidthDegrees, 120.0, 0.01);
+  EXPECT_NEAR(changes[1].elevationWidthDegrees, 60.0, 0.01);
+  EXPECT_TRUE(changes[1].hasTracks);
+
+  adapter.onObjectRemoved({21, {}});
+  const auto removalChanges = adapter.takeSensorChanges();
+  ASSERT_EQ(removalChanges.size(), 1U);
+  EXPECT_FALSE(removalChanges.front().removed);
+  EXPECT_FALSE(removalChanges.front().emitting);
+}
+
+TEST(HlaInboundAdapter, DecodesAndDeduplicatesRemoteWarfareInteractions) {
+  tactical::hla::HlaInboundAdapter adapter;
+  const tactical::hla::RemoteInteraction fire = {
+      "HLAinteractionRoot.WeaponFire",
+      {{"EventIdentifier", {0, 1, 0, 2, 0, 3}},
+       {"FiringLocation", worldLocation(40.4, -3.7, 4500.0)},
+       {"MunitionType", {2, 2, 0, 0, 1, 0, 0, 0}}},
+      {}};
+  adapter.onInteractionReceived(fire);
+  adapter.onInteractionReceived(fire);
+  adapter.onInteractionReceived({
+      "HLAinteractionRoot.MunitionDetonation",
+      {{"EventIdentifier", {0, 1, 0, 2, 0, 4}},
+       {"DetonationLocation", worldLocation(40.5, -3.6, 4200.0)},
+       {"MunitionType", {2, 2, 0, 0, 2, 0, 0, 0}}},
+      {}});
+
+  const auto events = adapter.takeWarfareEvents();
+  ASSERT_EQ(events.size(), 2U);
+  EXPECT_EQ(
+      events[0].kind,
+      tactical::hla::RemoteWarfareEventKind::WeaponFire);
+  EXPECT_EQ(events[0].munitionType, "Missile");
+  EXPECT_NEAR(events[0].latitudeDegrees, 40.4, 1.0e-6);
+  EXPECT_NEAR(events[0].longitudeDegrees, -3.7, 1.0e-6);
+  EXPECT_NEAR(events[0].altitudeMeters, 4500.0, 0.01);
+  EXPECT_EQ(
+      events[1].kind,
+      tactical::hla::RemoteWarfareEventKind::MunitionDetonation);
+  EXPECT_EQ(events[1].munitionType, "Bomb");
+  EXPECT_TRUE(adapter.takeWarfareEvents().empty());
+
+  adapter.onInteractionReceived({
+      "HLAinteractionRoot.WeaponFire",
+      {{"FiringLocation", worldLocation(40.4, -3.7, 4500.0)}},
+      {}});
+  EXPECT_TRUE(adapter.takeWarfareEvents().empty());
 }

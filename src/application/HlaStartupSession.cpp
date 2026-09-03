@@ -64,6 +64,28 @@ tactical::hla::Result HlaStartupSession::start(
       return subscribeResult;
     }
   }
+  const tactical::hla::Result emitterSubscribeResult =
+      _runtime->subscribeObjectClass(
+          "HLAobjectRoot.EmbeddedSystem.EmitterSystem",
+          {"EntityIdentifier", "HostObjectIdentifier", "RelativePosition",
+           "EmitterFunctionCode", "EmitterType", "EmitterIndex",
+           "EventIdentifier"});
+  if (!emitterSubscribeResult.success) {
+    this->stop();
+    return emitterSubscribeResult;
+  }
+  const tactical::hla::Result beamSubscribeResult =
+      _runtime->subscribeObjectClass(
+          "HLAobjectRoot.EmitterBeam.RadarBeam",
+          {"BeamAzimuthCenter", "BeamAzimuthSweep",
+           "BeamElevationCenter", "BeamElevationSweep", "BeamFunctionCode",
+           "BeamIdentifier", "BeamParameterIndex", "EffectiveRadiatedPower",
+           "EmissionFrequency", "EmitterSystemIdentifier", "EventIdentifier",
+           "FrequencyRange", "SweepSynch", "HighDensityTrack"});
+  if (!beamSubscribeResult.success) {
+    this->stop();
+    return beamSubscribeResult;
+  }
   const tactical::hla::Result startResumeResult =
       _runtime->subscribeInteractionClass(
           "HLAinteractionRoot.StartResume",
@@ -83,6 +105,27 @@ tactical::hla::Result HlaStartupSession::start(
     this->stop();
     return stopFreezeResult;
   }
+  const tactical::hla::Result weaponFireResult =
+      _runtime->subscribeInteractionClass(
+          "HLAinteractionRoot.WeaponFire",
+          {"EventIdentifier", "FireControlSolutionRange", "FireMissionIndex",
+           "FiringLocation", "FuseType", "InitialVelocityVector",
+           "MunitionType", "QuantityFired", "RateOfFire", "WarheadType"});
+  if (!weaponFireResult.success) {
+    this->stop();
+    return weaponFireResult;
+  }
+  const tactical::hla::Result detonationResult =
+      _runtime->subscribeInteractionClass(
+          "HLAinteractionRoot.MunitionDetonation",
+          {"DetonationLocation", "DetonationResultCode", "EventIdentifier",
+           "FinalVelocityVector", "FuseType", "MunitionType",
+           "QuantityFired", "RateOfFire", "RelativeDetonationLocation",
+           "WarheadType"});
+  if (!detonationResult.success) {
+    this->stop();
+    return detonationResult;
+  }
   _entityPublisher =
       std::make_unique<tactical::hla::HlaEntityPublisher>(*_runtime);
   _warfarePublisher =
@@ -98,6 +141,18 @@ std::vector<tactical::hla::RemoteEntityChange>
 HlaStartupSession::takeRemoteEntityChanges() {
   return _inboundAdapter ? _inboundAdapter->takeEntityChanges()
                          : std::vector<tactical::hla::RemoteEntityChange>{};
+}
+
+std::vector<tactical::hla::RemoteSensorChange>
+HlaStartupSession::takeRemoteSensorChanges() {
+  return _inboundAdapter ? _inboundAdapter->takeSensorChanges()
+                         : std::vector<tactical::hla::RemoteSensorChange>{};
+}
+
+std::vector<tactical::hla::RemoteWarfareEvent>
+HlaStartupSession::takeRemoteWarfareEvents() {
+  return _inboundAdapter ? _inboundAdapter->takeWarfareEvents()
+                         : std::vector<tactical::hla::RemoteWarfareEvent>{};
 }
 
 std::vector<tactical::hla::RemoteSimulationControl>

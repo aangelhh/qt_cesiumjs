@@ -34,6 +34,13 @@ public:
   void addEntity(const Entity& entity);
   void upsertExternalEntity(const Entity& entity);
   bool removeExternalEntity(const QString& entityId);
+  void upsertExternalSensor(
+      const QString& entityId,
+      const SensorDefinition& sensor);
+  void removeExternalSensor(
+      const QString& entityId,
+      const QString& sensorId);
+  void appendExternalEffect(const TransientEffect& effect);
   const QVector<Entity>& entities() const;
   const QVector<ActiveMunition>& activeMunitions() const;
   const QVector<TransientEffect>& transientEffects() const;

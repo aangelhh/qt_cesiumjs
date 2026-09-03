@@ -192,8 +192,15 @@ void ScenarioState::upsertExternalEntity(const Entity& entity) {
       continue;
     }
     if (!existing.externallyControlled) return;
+    const SensorDefinitions sensors = existing.sensors;
+    const SensorContacts sensorContacts = existing.sensorContacts;
+    const SensorRuntimeStatuses sensorRuntimeStatuses =
+        existing.sensorRuntimeStatuses;
     existing = entity;
     existing.externallyControlled = true;
+    existing.sensors = sensors;
+    existing.sensorContacts = sensorContacts;
+    existing.sensorRuntimeStatuses = sensorRuntimeStatuses;
     existing.currentTask = EntityTask{};
     existing.currentTask.status = QStringLiteral("Remote");
     return;
@@ -216,6 +223,56 @@ bool ScenarioState::removeExternalEntity(const QString& entityId) {
     }
   }
   return false;
+}
+
+void ScenarioState::upsertExternalSensor(
+    const QString& entityId,
+    const SensorDefinition& sensor) {
+  ScopedLock lock(_mutex);
+  for (Entity& entity : _entities) {
+    if (!entity.externallyControlled ||
+        entity.entityId.compare(entityId, Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    for (SensorDefinition& existing : entity.sensors) {
+      if (existing.id == sensor.id) {
+        existing = sensor;
+        return;
+      }
+    }
+    entity.sensors.push_back(sensor);
+    return;
+  }
+}
+
+void ScenarioState::removeExternalSensor(
+    const QString& entityId,
+    const QString& sensorId) {
+  ScopedLock lock(_mutex);
+  for (Entity& entity : _entities) {
+    if (!entity.externallyControlled ||
+        entity.entityId.compare(entityId, Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    for (qsizetype index = entity.sensors.size() - 1; index >= 0; --index) {
+      if (entity.sensors.at(index).id == sensorId) {
+        entity.sensors.removeAt(index);
+      }
+    }
+    return;
+  }
+}
+
+void ScenarioState::appendExternalEffect(const TransientEffect& effect) {
+  ScopedLock lock(_mutex);
+  const auto duplicate = std::find_if(
+      _transientEffects.cbegin(), _transientEffects.cend(),
+      [&effect](const TransientEffect& existing) {
+        return existing.id == effect.id;
+      });
+  if (duplicate == _transientEffects.cend()) {
+    _transientEffects.push_back(effect);
+  }
 }
 
 const QVector<Entity>& ScenarioState::entities() const {

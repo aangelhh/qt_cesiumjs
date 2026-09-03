@@ -78,6 +78,7 @@
 #include <QInputDialog>
 #include <QSizePolicy>
 #include <QStandardItem>
+#include <cmath>
 #include <QStandardItemModel>
 #include <QScrollBar>
 #include <QSet>
@@ -926,6 +927,72 @@ void MainWindow::applyHlaRemoteEntityChanges(
     entity.destroyed = state.destroyed;
     entity.externallyControlled = true;
     _scenarioState->upsertExternalEntity(entity);
+  }
+  this->syncScenarioStateToUi();
+}
+
+void MainWindow::applyHlaRemoteSensorChanges(
+    const std::vector<tactical::hla::RemoteSensorChange>& changes) {
+  if (changes.empty()) return;
+  for (const tactical::hla::RemoteSensorChange& change : changes) {
+    const QString entityId = QString::fromStdString(change.hostEntityId);
+    const QString sensorId = QString::fromStdString(change.sensorId);
+    if (change.removed) {
+      _scenarioState->removeExternalSensor(entityId, sensorId);
+      continue;
+    }
+    SensorDefinition sensor;
+    sensor.id = sensorId;
+    sensor.name = QStringLiteral("HLA Radar");
+    sensor.modelProviderId = QStringLiteral("hla-rpr");
+    sensor.sensorType = QStringLiteral("radar");
+    sensor.sensorSubType = QStringLiteral("airborne-radar");
+    sensor.enabled = true;
+    sensor.emitting = change.emitting;
+    sensor.azimuthCenterDegrees = change.azimuthCenterDegrees;
+    sensor.azimuthWidthDegrees = change.azimuthWidthDegrees;
+    sensor.elevationCenterDegrees = change.elevationCenterDegrees;
+    sensor.elevationWidthDegrees = change.elevationWidthDegrees;
+    sensor.radarProfile.frequencyHertz = change.frequencyHertz;
+    sensor.radarProfile.bandwidthHertz = change.bandwidthHertz;
+    sensor.radarProfile.peakPowerWatts =
+        change.effectiveRadiatedPowerDbm > 0.0
+            ? std::pow(10.0, change.effectiveRadiatedPowerDbm / 10.0) / 1000.0
+            : 0.0;
+    _scenarioState->upsertExternalSensor(entityId, sensor);
+  }
+  this->syncScenarioStateToUi();
+}
+
+void MainWindow::applyHlaRemoteWarfareEvents(
+    const std::vector<tactical::hla::RemoteWarfareEvent>& events) {
+  if (events.empty()) return;
+  for (const tactical::hla::RemoteWarfareEvent& event : events) {
+    TransientEffect effect;
+    effect.id = QStringLiteral("hla-event-%1")
+                    .arg(QString::fromStdString(event.eventId));
+    effect.effectType =
+        event.kind == tactical::hla::RemoteWarfareEventKind::WeaponFire
+            ? QStringLiteral("LaunchFlash")
+            : QStringLiteral("ImpactFlash");
+    effect.latitude = event.latitudeDegrees;
+    effect.longitude = event.longitudeDegrees;
+    effect.altitudeMeters = event.altitudeMeters;
+    effect.ttlSeconds =
+        event.kind == tactical::hla::RemoteWarfareEventKind::WeaponFire
+            ? 0.5
+            : 0.8;
+    _scenarioState->appendExternalEffect(effect);
+    this->appendLogMessage(
+        QStringLiteral("HLA %1: %2 at %3, %4, %5 m")
+            .arg(
+                event.kind == tactical::hla::RemoteWarfareEventKind::WeaponFire
+                    ? QStringLiteral("WeaponFire")
+                    : QStringLiteral("MunitionDetonation"),
+                QString::fromStdString(event.munitionType))
+            .arg(event.latitudeDegrees, 0, 'f', 5)
+            .arg(event.longitudeDegrees, 0, 'f', 5)
+            .arg(event.altitudeMeters, 0, 'f', 0));
   }
   this->syncScenarioStateToUi();
 }

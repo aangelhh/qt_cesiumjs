@@ -100,8 +100,11 @@ Implemented lifecycle, publication, and reception:
 9. Subscribe to supported RPR platform classes and reflect remote state.
 10. Create, update, and remove externally controlled runtime entities.
 11. Publish and receive RPR `StartResume` and `StopFreeze` controls.
-12. Poll callbacks.
-13. Remove owned objects, resign, and disconnect with rollback on failure.
+12. Receive remote `EmitterSystem` / `RadarBeam` lifecycle and attach its
+    directional radar state to the externally controlled host platform.
+13. Receive and deduplicate remote `WeaponFire` / `MunitionDetonation` events.
+14. Poll callbacks.
+15. Remove owned objects, resign, and disconnect with rollback on failure.
 
 The plugin ABI v3 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
@@ -127,6 +130,17 @@ both objects.
 speed, and marking. Remote entities carry stable IDs prefixed with `hla:` and
 are marked `externallyControlled`; local flight dynamics and outbound HLA
 publication skip them, preventing feedback loops and competing writers.
+The adapter classifies platform, emitter, and beam objects before decoding, so
+an RPR sensor object cannot accidentally become a scenario entity. Remote beam
+geometry, RF values, emission state, and high-density-track indication are
+attached only to externally controlled entities.
+
+Remote warfare interactions are decoded from ECEF to WGS84 and reflected as
+short-lived launch/detonation effects plus operator log entries. They are
+deduplicated by RPR `EventIdentifier`. This reception path is observational:
+it does not simulate a second local projectile and does not apply damage.
+Damage authority and target correlation require explicit ownership semantics
+before remote detonations may mutate local entities.
 
 | qttest action | RPR interaction | Receive behavior |
 | --- | --- | --- |

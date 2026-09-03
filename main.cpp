@@ -189,6 +189,10 @@ int main(int argc, char *argv[])
         }
         window.applyHlaRemoteEntityChanges(
             hlaSession.takeRemoteEntityChanges());
+        window.applyHlaRemoteSensorChanges(
+            hlaSession.takeRemoteSensorChanges());
+        window.applyHlaRemoteWarfareEvents(
+            hlaSession.takeRemoteWarfareEvents());
         for (const tactical::hla::RemoteSimulationControl control :
              hlaSession.takeRemoteSimulationControls()) {
           window.applyHlaRemoteSimulationControl(control);
@@ -199,6 +203,10 @@ int main(int argc, char *argv[])
       hlaPublishTimer.setInterval(100);
       QObject::connect(&hlaPublishTimer, &QTimer::timeout, &window, [&]() {
         const QVector<Entity> entities = window.entitySnapshot();
+        const qsizetype localEntityCount = std::count_if(
+            entities.cbegin(), entities.cend(), [](const Entity& entity) {
+              return !entity.externallyControlled;
+            });
         const tactical::hla::Result result =
             hlaSession.publishEntities(entities);
         if (!result.success) {
@@ -210,8 +218,8 @@ int main(int argc, char *argv[])
               window.windowTitle() + QStringLiteral(" [HLA publish error]"));
           return;
         }
-        if (lastPublishedEntityCount != entities.size()) {
-          lastPublishedEntityCount = entities.size();
+        if (lastPublishedEntityCount != localEntityCount) {
+          lastPublishedEntityCount = localEntityCount;
           qInfo().noquote()
               << "HLA entity synchronization active:"
               << lastPublishedEntityCount

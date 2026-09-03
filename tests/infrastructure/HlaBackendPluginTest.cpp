@@ -142,8 +142,44 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
   aircraft.altitude = 3000.0;
   aircraft.headingDegrees = 90.0;
   aircraft.speedKnots = 320.0;
+  SensorDefinition radar;
+  radar.id = QStringLiteral("pitch-radar-01");
+  radar.name = QStringLiteral("Pitch Test Radar");
+  radar.sensorType = QStringLiteral("radar");
+  radar.sensorSubType = QStringLiteral("airborne-radar");
+  radar.enabled = true;
+  radar.emitting = true;
+  radar.azimuthWidthDegrees = 120.0;
+  radar.elevationWidthDegrees = 60.0;
+  radar.radarProfile.frequencyHertz = 10.0e9;
+  radar.radarProfile.bandwidthHertz = 2.0e6;
+  radar.radarProfile.peakPowerWatts = 5000.0;
+  aircraft.sensors.push_back(radar);
 
   tactical::hla::Result result = session.publishEntities({aircraft});
+  ASSERT_TRUE(result.success) << result.message;
+  result = session.publishSensors({aircraft});
+  ASSERT_TRUE(result.success) << result.message;
+
+  ActiveMunition munition;
+  munition.id = QStringLiteral("pitch-missile-%1")
+      .arg(QCoreApplication::applicationPid());
+  munition.munitionType = QStringLiteral("Missile");
+  munition.latitude = aircraft.latitude;
+  munition.longitude = aircraft.longitude;
+  munition.altitudeMeters = aircraft.altitude;
+  munition.headingDegrees = aircraft.headingDegrees;
+  munition.speedMetersPerSecond = 600.0;
+  result = session.publishMunitions({munition});
+  ASSERT_TRUE(result.success) << result.message;
+
+  TransientEffect detonation;
+  detonation.id = munition.id + QStringLiteral("-impact");
+  detonation.effectType = QStringLiteral("ImpactFlash");
+  detonation.latitude = aircraft.latitude;
+  detonation.longitude = aircraft.longitude + 0.001;
+  detonation.altitudeMeters = aircraft.altitude;
+  result = session.publishDetonations({detonation});
   ASSERT_TRUE(result.success) << result.message;
   ASSERT_TRUE(session.poll(0.05).success);
 
@@ -165,12 +201,16 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
           aircraft.headingDegrees + 0.5, 360.0);
       result = session.publishEntities({aircraft});
       ASSERT_TRUE(result.success) << result.message;
+      result = session.publishSensors({aircraft});
+      ASSERT_TRUE(result.success) << result.message;
       ASSERT_TRUE(session.poll(0.01).success);
       QThread::msleep(100);
     }
   }
 
   result = session.publishEntities({});
+  ASSERT_TRUE(result.success) << result.message;
+  result = session.publishSensors({});
   ASSERT_TRUE(result.success) << result.message;
   EXPECT_TRUE(session.stop().success);
 }
