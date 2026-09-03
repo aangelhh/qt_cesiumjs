@@ -297,6 +297,10 @@ void HlaInboundAdapter::onInteractionReceived(
     warfare.eventId = eventId;
     warfare.munitionType = decodeMunitionType(
         findValue(event.parameters, "MunitionType"));
+    warfare.firingObjectInstanceName = decodeString(
+        findValue(event.parameters, "FiringObjectIdentifier"));
+    warfare.targetObjectInstanceName = decodeString(
+        findValue(event.parameters, "TargetObjectIdentifier"));
     const char* locationName =
         warfare.kind == RemoteWarfareEventKind::WeaponFire
             ? "FiringLocation"

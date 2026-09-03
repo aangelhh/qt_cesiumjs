@@ -111,8 +111,9 @@ tactical::hla::Result HlaStartupSession::start(
       _runtime->subscribeInteractionClass(
           "HLAinteractionRoot.WeaponFire",
           {"EventIdentifier", "FireControlSolutionRange", "FireMissionIndex",
-           "FiringLocation", "FuseType", "InitialVelocityVector",
-           "MunitionType", "QuantityFired", "RateOfFire", "WarheadType"});
+           "FiringLocation", "FiringObjectIdentifier", "FuseType",
+           "InitialVelocityVector", "MunitionType", "QuantityFired",
+           "RateOfFire", "TargetObjectIdentifier", "WarheadType"});
   if (!weaponFireResult.success) {
     this->stop();
     return weaponFireResult;
@@ -121,8 +122,9 @@ tactical::hla::Result HlaStartupSession::start(
       _runtime->subscribeInteractionClass(
           "HLAinteractionRoot.MunitionDetonation",
           {"DetonationLocation", "DetonationResultCode", "EventIdentifier",
-           "FinalVelocityVector", "FuseType", "MunitionType",
-           "QuantityFired", "RateOfFire", "RelativeDetonationLocation",
+           "FiringObjectIdentifier", "FinalVelocityVector", "FuseType",
+           "MunitionType", "QuantityFired", "RateOfFire",
+           "RelativeDetonationLocation", "TargetObjectIdentifier",
            "WarheadType"});
   if (!detonationResult.success) {
     this->stop();
@@ -231,10 +233,21 @@ tactical::hla::Result HlaStartupSession::publishMunitions(
   }
   std::vector<tactical::hla::RprWeaponFireState> states;
   states.reserve(static_cast<std::size_t>(activeMunitions.size()));
+  const auto objectInstanceName = [](const QString& entityId) {
+    const std::string stableId = entityId.trimmed().toStdString();
+    if (stableId.empty()) return stableId;
+    constexpr const char* remotePrefix = "hla:";
+    if (stableId.rfind(remotePrefix, 0) == 0) return stableId.substr(4);
+    return tactical::hla::RprFomEncoding::objectInstanceName(stableId);
+  };
   for (const ActiveMunition& munition : activeMunitions) {
     tactical::hla::RprWeaponFireState state;
     state.stableId = munition.id.toStdString();
     state.munitionType = munition.munitionType.toStdString();
+    state.firingObjectInstanceName = objectInstanceName(
+        munition.launcherEntityId);
+    state.targetObjectInstanceName = objectInstanceName(
+        munition.targetEntityId);
     state.latitudeDegrees = munition.latitude;
     state.longitudeDegrees = munition.longitude;
     state.altitudeMeters = munition.altitudeMeters;

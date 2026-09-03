@@ -161,6 +161,7 @@ Result MockHlaBackend::sendInteraction(
     return this->fail("Mock interaction is invalid");
   }
   _sentInteractionClasses.push_back(interactionClassName);
+  _sentInteractions.push_back({interactionClassName, parameters});
   return Result::ok();
 }
 
@@ -247,6 +248,11 @@ const std::vector<std::string>& MockHlaBackend::subscribedObjectClasses() const 
 
 const std::vector<std::string>& MockHlaBackend::sentInteractionClasses() const {
   return _sentInteractionClasses;
+}
+
+const std::vector<MockHlaBackend::SentInteraction>&
+MockHlaBackend::sentInteractions() const {
+  return _sentInteractions;
 }
 
 const std::vector<MockHlaBackend::AttributeUpdate>&

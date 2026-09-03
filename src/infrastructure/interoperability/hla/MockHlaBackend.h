@@ -13,6 +13,11 @@ public:
     std::vector<NamedValue> attributes;
   };
 
+  struct SentInteraction {
+    std::string interactionClassName;
+    std::vector<NamedValue> parameters;
+  };
+
   enum class Operation {
     Connect,
     CreateFederation,
@@ -80,6 +85,7 @@ public:
   const std::vector<std::string>& publishedObjectClasses() const;
   const std::vector<std::string>& subscribedObjectClasses() const;
   const std::vector<std::string>& sentInteractionClasses() const;
+  const std::vector<SentInteraction>& sentInteractions() const;
   const std::vector<AttributeUpdate>& attributeUpdates() const;
   void emitObjectDiscovered(const RemoteObjectDiscovery& event);
   void emitObjectReflected(const RemoteObjectReflection& event);
@@ -100,6 +106,7 @@ private:
   std::vector<std::string> _publishedObjectClasses;
   std::vector<std::string> _subscribedObjectClasses;
   std::vector<std::string> _sentInteractionClasses;
+  std::vector<SentInteraction> _sentInteractions;
   std::vector<AttributeUpdate> _attributeUpdates;
   IHlaEventSink* _eventSink = nullptr;
 };

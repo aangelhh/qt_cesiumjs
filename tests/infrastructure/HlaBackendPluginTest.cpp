@@ -182,6 +182,10 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
   ActiveMunition munition;
   munition.id = QStringLiteral("pitch-missile-%1")
       .arg(QCoreApplication::applicationPid());
+  munition.launcherEntityId = aircraft.entityId;
+  munition.launcherEntityName = aircraft.name;
+  munition.targetEntityId = target.entityId;
+  munition.targetEntityName = target.name;
   munition.munitionType = QStringLiteral("Missile");
   munition.latitude = aircraft.latitude;
   munition.longitude = aircraft.longitude;
