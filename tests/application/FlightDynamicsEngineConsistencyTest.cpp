@@ -78,6 +78,42 @@ TEST(FlightDynamicsEngineConsistency, TargetUnavailableTaskDoesNotMoveEntity) {
   EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
 }
 
+TEST(FlightDynamicsEngineConsistency, DestroyedEntityCannotResumeMovement) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.destroyed = true;
+  entity.damagePercent = 100.0;
+  QVector<Entity> entities = {entity};
+  const Entity before = entities.first();
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 10.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  expectPositionUnchanged(before, entities.first());
+  EXPECT_DOUBLE_EQ(entities.first().speedKnots, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
+  EXPECT_EQ(
+      entities.first().activeDynamicsBackend,
+      QStringLiteral("destroyed"));
+}
+
+TEST(FlightDynamicsEngineConsistency, TerminalDamageCannotResumeMovement) {
+  Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
+  entity.destroyed = false;
+  entity.damagePercent = 100.0;
+  QVector<Entity> entities = {entity};
+  const Entity before = entities.first();
+  std::unordered_map<QString, domain::TaskStack> stacks;
+
+  FlightDynamicsEngine::advanceEntities(entities, stacks, 10.0);
+
+  ASSERT_EQ(entities.size(), 1);
+  expectPositionUnchanged(before, entities.first());
+  EXPECT_TRUE(entities.first().destroyed);
+  EXPECT_DOUBLE_EQ(entities.first().speedKnots, 0.0);
+  EXPECT_DOUBLE_EQ(entities.first().verticalSpeedMetersPerSecond, 0.0);
+}
+
 TEST(FlightDynamicsEngineConsistency, DisabledTaskDoesNotMoveEntity) {
   Entity entity = makeMovingAirEntity(QStringLiteral("Running"));
   entity.currentTask.enabled = false;

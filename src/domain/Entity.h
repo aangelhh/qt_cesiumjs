@@ -80,6 +80,9 @@ struct Entity {
   double pitchDegrees = 0.0;
   double rollDegrees = 0.0;
   bool flightDynamicsEnabled = false;
+  // Runtime-only authority flag. Remote HLA entities are reflected by their
+  // owning federate and must not be advanced or republished locally.
+  bool externallyControlled = false;
   QString flightDynamicsMode = QStringLiteral("kinematic");
   // Runtime-only backend used by the most recent simulation tick.
   QString activeDynamicsBackend;

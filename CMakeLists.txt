@@ -9,7 +9,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Xml)
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebEngineCore WebChannel Positioning)
 
 add_library(qttest_geodesic STATIC
@@ -34,6 +34,215 @@ target_link_libraries(qttest_geospatial PUBLIC
     qttest_geodesic
     Qt6::Core
 )
+
+# ---------------------------------------------------------------------------
+# Open-source HLA runtime abstraction
+# ---------------------------------------------------------------------------
+add_library(tactical_hla_core STATIC
+    src/infrastructure/interoperability/hla/HlaEntityPublisher.cpp
+    src/infrastructure/interoperability/hla/HlaEntityPublisher.h
+    src/infrastructure/interoperability/hla/HlaRuntime.cpp
+    src/infrastructure/interoperability/hla/HlaRuntime.h
+    src/infrastructure/interoperability/hla/HlaWarfarePublisher.cpp
+    src/infrastructure/interoperability/hla/HlaWarfarePublisher.h
+    src/infrastructure/interoperability/hla/HlaInboundAdapter.cpp
+    src/infrastructure/interoperability/hla/HlaInboundAdapter.h
+    src/infrastructure/interoperability/hla/HlaSimulationControlPublisher.cpp
+    src/infrastructure/interoperability/hla/HlaSimulationControlPublisher.h
+    src/infrastructure/interoperability/hla/HlaSensorPublisher.cpp
+    src/infrastructure/interoperability/hla/HlaSensorPublisher.h
+    src/infrastructure/interoperability/hla/HlaTypes.h
+    src/infrastructure/interoperability/hla/IHlaBackend.h
+    src/infrastructure/interoperability/hla/MockHlaBackend.cpp
+    src/infrastructure/interoperability/hla/MockHlaBackend.h
+    src/infrastructure/interoperability/hla/RprFomEncoding.cpp
+    src/infrastructure/interoperability/hla/RprFomEncoding.h
+)
+target_include_directories(tactical_hla_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(tactical_hla_core PUBLIC qttest_geospatial)
+
+add_library(qttest_hla_infrastructure STATIC
+    src/infrastructure/interoperability/hla/HlaBackendFactory.cpp
+    src/infrastructure/interoperability/hla/HlaBackendFactory.h
+    src/infrastructure/interoperability/hla/HlaBackendPluginApi.h
+    src/infrastructure/interoperability/hla/OpenRtiCompatibilityBackend.cpp
+    src/infrastructure/interoperability/hla/OpenRtiCompatibilityBackend.h
+    src/infrastructure/interoperability/hla/SharedLibraryHlaBackend.cpp
+    src/infrastructure/interoperability/hla/SharedLibraryHlaBackend.h
+)
+target_include_directories(qttest_hla_infrastructure PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(qttest_hla_infrastructure PUBLIC
+    tactical_hla_core
+    Qt6::Core
+    Qt6::Xml
+)
+
+set(QTTEST_HLA_PLUGIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/hla-plugins)
+
+add_library(qttest_hla_mock_backend SHARED
+    integrations/hla/mock/MockHlaBackendPlugin.cpp
+    src/infrastructure/interoperability/hla/HlaBackendPluginApi.h
+)
+target_include_directories(qttest_hla_mock_backend PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+set_target_properties(qttest_hla_mock_backend PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${QTTEST_HLA_PLUGIN_DIR}
+    RUNTIME_OUTPUT_DIRECTORY ${QTTEST_HLA_PLUGIN_DIR}
+    OUTPUT_NAME qttest_hla_mock_backend
+)
+set(QTTEST_HLA_MOCK_PLUGIN_PATH
+    ${QTTEST_HLA_PLUGIN_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}qttest_hla_mock_backend${CMAKE_SHARED_LIBRARY_SUFFIX})
+
+option(
+    QTTEST_ENABLE_OPENRTI_HLA_BACKEND
+    "Build the open-source OpenRTI IEEE 1516e backend"
+    ON
+)
+set(QTTEST_OPENRTI_SOURCE_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/Dependencies/OpenRTI
+    CACHE PATH "OpenRTI source tree"
+)
+
+if(QTTEST_ENABLE_OPENRTI_HLA_BACKEND AND
+   EXISTS "${QTTEST_OPENRTI_SOURCE_DIR}/CMakeLists.txt")
+    include(ExternalProject)
+    set(QTTEST_OPENRTI_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/openrti-install)
+    set(QTTEST_OPENRTI_LIBRARY_DIR ${QTTEST_OPENRTI_INSTALL_DIR}/lib)
+    set(QTTEST_OPENRTI_RTI1516E_LIBRARY
+        ${QTTEST_OPENRTI_LIBRARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}rti1516e${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(QTTEST_OPENRTI_FEDTIME1516E_LIBRARY
+        ${QTTEST_OPENRTI_LIBRARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}fedtime1516e${CMAKE_SHARED_LIBRARY_SUFFIX})
+    file(MAKE_DIRECTORY ${QTTEST_OPENRTI_INSTALL_DIR}/include/rti1516e)
+
+    ExternalProject_Add(qttest_openrti_external
+        SOURCE_DIR ${QTTEST_OPENRTI_SOURCE_DIR}
+        BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/openrti-build
+        INSTALL_DIR ${QTTEST_OPENRTI_INSTALL_DIR}
+        CMAKE_ARGS
+            -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+            -DCMAKE_CXX_STANDARD=14
+            -DCMAKE_INSTALL_LIBDIR=lib
+            -DCMAKE_INSTALL_INCLUDEDIR=include
+            -DOPENRTI_BUILD_SHARED=ON
+            -DOPENRTI_ENABLE_RTI13=OFF
+            -DOPENRTI_ENABLE_RTI1516=OFF
+            -DOPENRTI_ENABLE_RTI1516E=ON
+            -DOPENRTI_ENABLE_PYTHON_BINDINGS=OFF
+            -DOPENRTI_INSTALL_WITH_RPATH=OFF
+        BUILD_BYPRODUCTS
+            ${QTTEST_OPENRTI_RTI1516E_LIBRARY}
+            ${QTTEST_OPENRTI_FEDTIME1516E_LIBRARY}
+        TEST_COMMAND ""
+        UPDATE_COMMAND ""
+    )
+
+    add_library(qttest_hla_openrti1516e_backend SHARED
+        integrations/hla/pitch1516e/Pitch1516eBackendPlugin.cpp
+        src/infrastructure/interoperability/hla/HlaBackendPluginApi.h
+    )
+    add_dependencies(qttest_hla_openrti1516e_backend qttest_openrti_external)
+    target_include_directories(qttest_hla_openrti1516e_backend PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${QTTEST_OPENRTI_INSTALL_DIR}/include/rti1516e
+    )
+    target_compile_definitions(qttest_hla_openrti1516e_backend PRIVATE
+        QTTEST_HLA_OPENRTI_BACKEND=1
+        QTTEST_HLA_1516E_BACKEND_ID="openrti1516e"
+        QTTEST_HLA_1516E_BACKEND_NAME="OpenRTI IEEE 1516e"
+    )
+    target_link_libraries(qttest_hla_openrti1516e_backend PRIVATE
+        ${QTTEST_OPENRTI_RTI1516E_LIBRARY}
+        ${QTTEST_OPENRTI_FEDTIME1516E_LIBRARY}
+    )
+    if(APPLE)
+        target_link_options(qttest_hla_openrti1516e_backend PRIVATE
+            "LINKER:-needed_library,${QTTEST_OPENRTI_FEDTIME1516E_LIBRARY}"
+        )
+    endif()
+    set_target_properties(qttest_hla_openrti1516e_backend PROPERTIES
+        CXX_STANDARD 14
+        CXX_STANDARD_REQUIRED ON
+        LIBRARY_OUTPUT_DIRECTORY ${QTTEST_HLA_PLUGIN_DIR}
+        RUNTIME_OUTPUT_DIRECTORY ${QTTEST_HLA_PLUGIN_DIR}
+        OUTPUT_NAME qttest_hla_openrti1516e_backend
+        BUILD_RPATH ${QTTEST_OPENRTI_LIBRARY_DIR}
+    )
+    set(QTTEST_HLA_OPENRTI_PLUGIN_PATH
+        ${QTTEST_HLA_PLUGIN_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}qttest_hla_openrti1516e_backend${CMAKE_SHARED_LIBRARY_SUFFIX})
+    message(STATUS "OpenRTI IEEE 1516e backend enabled from ${QTTEST_OPENRTI_SOURCE_DIR}")
+else()
+    message(STATUS "OpenRTI IEEE 1516e backend disabled: source tree not found")
+endif()
+
+option(
+    QTTEST_ENABLE_PITCH_HLA_BACKEND
+    "Build the optional Pitch pRTI IEEE 1516e backend when locally installed"
+    ON
+)
+set(
+    QTTEST_PITCH_RTI_ROOT
+    "$ENV{PitchRTI_ROOT}"
+    CACHE PATH "Local Pitch pRTI installation used only to build the optional backend"
+)
+if(NOT QTTEST_PITCH_RTI_ROOT AND APPLE AND EXISTS "/Applications/prti1516e")
+    set(QTTEST_PITCH_RTI_ROOT "/Applications/prti1516e")
+endif()
+
+if(QTTEST_ENABLE_PITCH_HLA_BACKEND AND QTTEST_PITCH_RTI_ROOT)
+    find_package(PitchRTI QUIET CONFIG
+        PATHS ${QTTEST_PITCH_RTI_ROOT}/cmake
+        NO_DEFAULT_PATH
+    )
+endif()
+
+if(QTTEST_ENABLE_PITCH_HLA_BACKEND AND TARGET PitchRTI::librti1516e)
+    add_library(qttest_hla_pitch1516e_backend SHARED
+        integrations/hla/pitch1516e/Pitch1516eBackendPlugin.cpp
+        src/infrastructure/interoperability/hla/HlaBackendPluginApi.h
+    )
+    target_include_directories(qttest_hla_pitch1516e_backend PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_compile_definitions(qttest_hla_pitch1516e_backend PRIVATE
+        QTTEST_HLA_1516E_BACKEND_ID="pitch1516e"
+        QTTEST_HLA_1516E_BACKEND_NAME="pRTI IEEE 1516e"
+    )
+    target_link_libraries(qttest_hla_pitch1516e_backend PRIVATE
+        PitchRTI::librti1516e
+    )
+    set_target_properties(qttest_hla_pitch1516e_backend PROPERTIES
+        CXX_STANDARD 14
+        CXX_STANDARD_REQUIRED ON
+        LIBRARY_OUTPUT_DIRECTORY ${QTTEST_HLA_PLUGIN_DIR}
+        RUNTIME_OUTPUT_DIRECTORY ${QTTEST_HLA_PLUGIN_DIR}
+        OUTPUT_NAME qttest_hla_pitch1516e_backend
+    )
+    get_target_property(
+        QTTEST_PITCH_RTI_LIBRARY
+        PitchRTI::librti1516e
+        IMPORTED_LOCATION
+    )
+    get_filename_component(
+        QTTEST_PITCH_RTI_LIBRARY_DIR
+        ${QTTEST_PITCH_RTI_LIBRARY}
+        DIRECTORY
+    )
+    set_target_properties(qttest_hla_pitch1516e_backend PROPERTIES
+        BUILD_RPATH
+            "${QTTEST_PITCH_RTI_LIBRARY_DIR};${QTTEST_PITCH_RTI_ROOT}/lib;${QTTEST_PITCH_RTI_ROOT}/jre/lib/server"
+    )
+    set(QTTEST_HLA_PITCH_PLUGIN_PATH
+        ${QTTEST_HLA_PLUGIN_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}qttest_hla_pitch1516e_backend${CMAKE_SHARED_LIBRARY_SUFFIX})
+    message(STATUS "Pitch IEEE 1516e backend enabled from ${QTTEST_PITCH_RTI_ROOT}")
+else()
+    message(STATUS "Pitch IEEE 1516e backend disabled: local pRTI SDK not found")
+endif()
 
 option(
     QTTEST_ENABLE_ROS2_TELEMETRY
@@ -218,6 +427,12 @@ endif()
 
 qt_add_executable(qttest
     main.cpp
+    src/application/HlaCombatDemoScenario.cpp
+    src/application/HlaCombatDemoScenario.h
+    src/application/HlaStartupSession.cpp
+    src/application/HlaStartupSession.h
+    src/application/StartupConfiguration.cpp
+    src/application/StartupConfiguration.h
     src/AssignTaskDialog.cpp
     src/AssignTaskDialog.h
     src/AddEntityDialog.cpp
@@ -341,6 +556,8 @@ qt_add_executable(qttest
     src/presentation/PlanStepConfigurator.h
     src/presentation/Ros2TelemetryDialog.cpp
     src/presentation/Ros2TelemetryDialog.h
+    src/presentation/StartupConfigurationDialog.cpp
+    src/presentation/StartupConfigurationDialog.h
     src/presentation/DetectedContactsPresenter.cpp
     src/presentation/DetectedContactsPresenter.h
     src/presentation/KinematicsCockpitModel.cpp
@@ -382,6 +599,7 @@ endif()
 target_link_libraries(qttest
     PRIVATE
         qttest_geospatial
+        qttest_hla_infrastructure
         Qt6::Widgets
         Qt6::Gui
 )
@@ -432,6 +650,19 @@ target_compile_definitions(qttest PRIVATE
     QTTEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     QTTEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}"
 )
+
+if(DEFINED QTTEST_HLA_OPENRTI_PLUGIN_PATH)
+    target_compile_definitions(qttest PRIVATE
+        QTTEST_HLA_OPENRTI_PLUGIN_PATH="${QTTEST_HLA_OPENRTI_PLUGIN_PATH}"
+    )
+    add_dependencies(qttest qttest_hla_openrti1516e_backend)
+endif()
+if(DEFINED QTTEST_HLA_PITCH_PLUGIN_PATH)
+    target_compile_definitions(qttest PRIVATE
+        QTTEST_HLA_PITCH_PLUGIN_PATH="${QTTEST_HLA_PITCH_PLUGIN_PATH}"
+    )
+    add_dependencies(qttest qttest_hla_pitch1516e_backend)
+endif()
 
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)

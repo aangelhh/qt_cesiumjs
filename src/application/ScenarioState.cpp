@@ -184,6 +184,97 @@ void ScenarioState::addEntity(const Entity& entity) {
   this->save();
 }
 
+void ScenarioState::upsertExternalEntity(const Entity& entity) {
+  ScopedLock lock(_mutex);
+  if (entity.entityId.trimmed().isEmpty()) return;
+  for (Entity& existing : _entities) {
+    if (existing.entityId.compare(entity.entityId, Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    if (!existing.externallyControlled) return;
+    const SensorDefinitions sensors = existing.sensors;
+    const SensorContacts sensorContacts = existing.sensorContacts;
+    const SensorRuntimeStatuses sensorRuntimeStatuses =
+        existing.sensorRuntimeStatuses;
+    existing = entity;
+    existing.externallyControlled = true;
+    existing.sensors = sensors;
+    existing.sensorContacts = sensorContacts;
+    existing.sensorRuntimeStatuses = sensorRuntimeStatuses;
+    existing.currentTask = EntityTask{};
+    existing.currentTask.status = QStringLiteral("Remote");
+    return;
+  }
+  Entity remote = entity;
+  remote.externallyControlled = true;
+  remote.flightDynamicsEnabled = false;
+  remote.currentTask = EntityTask{};
+  remote.currentTask.status = QStringLiteral("Remote");
+  _entities.push_back(std::move(remote));
+}
+
+bool ScenarioState::removeExternalEntity(const QString& entityId) {
+  ScopedLock lock(_mutex);
+  for (qsizetype index = 0; index < _entities.size(); ++index) {
+    if (_entities[index].externallyControlled &&
+        _entities[index].entityId.compare(entityId, Qt::CaseInsensitive) == 0) {
+      _entities.removeAt(index);
+      return true;
+    }
+  }
+  return false;
+}
+
+void ScenarioState::upsertExternalSensor(
+    const QString& entityId,
+    const SensorDefinition& sensor) {
+  ScopedLock lock(_mutex);
+  for (Entity& entity : _entities) {
+    if (!entity.externallyControlled ||
+        entity.entityId.compare(entityId, Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    for (SensorDefinition& existing : entity.sensors) {
+      if (existing.id == sensor.id) {
+        existing = sensor;
+        return;
+      }
+    }
+    entity.sensors.push_back(sensor);
+    return;
+  }
+}
+
+void ScenarioState::removeExternalSensor(
+    const QString& entityId,
+    const QString& sensorId) {
+  ScopedLock lock(_mutex);
+  for (Entity& entity : _entities) {
+    if (!entity.externallyControlled ||
+        entity.entityId.compare(entityId, Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    for (qsizetype index = entity.sensors.size() - 1; index >= 0; --index) {
+      if (entity.sensors.at(index).id == sensorId) {
+        entity.sensors.removeAt(index);
+      }
+    }
+    return;
+  }
+}
+
+void ScenarioState::appendExternalEffect(const TransientEffect& effect) {
+  ScopedLock lock(_mutex);
+  const auto duplicate = std::find_if(
+      _transientEffects.cbegin(), _transientEffects.cend(),
+      [&effect](const TransientEffect& existing) {
+        return existing.id == effect.id;
+      });
+  if (duplicate == _transientEffects.cend()) {
+    _transientEffects.push_back(effect);
+  }
+}
+
 const QVector<Entity>& ScenarioState::entities() const {
   return _entities;
 }

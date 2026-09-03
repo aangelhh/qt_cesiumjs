@@ -17,6 +17,7 @@
 #include "presentation/DetectedContactsPresenter.h"
 #include "presentation/EntityDefaultsResolver.h"
 #include "presentation/EntityPlanExecutor.h"
+#include "application/HlaCombatDemoScenario.h"
 #include "presentation/BombTargetMapSync.h"
 #include "presentation/MapBridgeScripts.h"
 #include "presentation/KinematicsCockpitWidget.h"
@@ -77,6 +78,7 @@
 #include <QInputDialog>
 #include <QSizePolicy>
 #include <QStandardItem>
+#include <cmath>
 #include <QStandardItemModel>
 #include <QScrollBar>
 #include <QSet>
@@ -826,6 +828,190 @@ MainWindow::~MainWindow() {
   this->_ros2TelemetryPublisher = nullptr;
   delete this->_scenarioState;
   delete this->_ui;
+}
+
+QVector<Entity> MainWindow::entitySnapshot() const {
+  const auto lock = _scenarioState->lock();
+  return _scenarioState->entities();
+}
+
+void MainWindow::startHlaCombatDemo() {
+  const application::HlaCombatDemoScenario demo =
+      application::makeHlaCombatDemoScenario();
+
+  this->_scenarioState->reset();
+  this->_planExecutor->plans().clear();
+  this->_scenarioState->addEntity(demo.friendly);
+  this->_scenarioState->addEntity(demo.opposing);
+
+  if (!this->applyEntityTask(
+          demo.opposing.entityId,
+          demo.opposingMovementTask,
+          /*syncUi=*/false)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No se pudo iniciar el movimiento del rival HLA."));
+    return;
+  }
+
+  EntityPlan& plan = this->ensureEntityPlan(demo.friendly.entityId);
+  PlanStep followStep;
+  followStep.kind = PlanStepKind::FollowEntity;
+  followStep.task = demo.friendlyPlanTasks.at(0);
+  followStep.label = QStringLiteral("Follow %1").arg(demo.opposing.name);
+  PlanStep attackStep;
+  attackStep.kind = PlanStepKind::AttackUntilDestroyed;
+  attackStep.task = demo.friendlyPlanTasks.at(1);
+  attackStep.label = QStringLiteral("Attack %1 Until Destroyed")
+      .arg(demo.opposing.name);
+  plan.steps = {followStep, attackStep};
+
+  this->syncScenarioStateToUi();
+  if (!this->startEntityPlan(demo.friendly.entityId)) {
+    this->_ui->statusLabel->setText(
+        QStringLiteral("No se pudo iniciar el plan de combate HLA."));
+    return;
+  }
+  this->startSimulation();
+  this->_ui->statusLabel->setText(
+      QStringLiteral("Demo HLA: %1 sigue y ataca a %2 hasta destruirlo.")
+          .arg(demo.friendly.name, demo.opposing.name));
+  this->appendLogMessage(QStringLiteral(
+      "HLA combat demo started: Follow Entity -> Attack Until Destroyed."));
+}
+
+QVector<ActiveMunition> MainWindow::activeMunitionSnapshot() const {
+  const auto lock = _scenarioState->lock();
+  return _scenarioState->activeMunitions();
+}
+
+QVector<TransientEffect> MainWindow::transientEffectSnapshot() const {
+  const auto lock = _scenarioState->lock();
+  return _scenarioState->transientEffects();
+}
+
+void MainWindow::applyHlaRemoteEntityChanges(
+    const std::vector<tactical::hla::RemoteEntityChange>& changes) {
+  if (changes.empty()) return;
+  for (const tactical::hla::RemoteEntityChange& change : changes) {
+    if (change.removed) {
+      _scenarioState->removeExternalEntity(
+          QString::fromStdString(change.state.stableId));
+      continue;
+    }
+    const tactical::hla::RprEntityState& state = change.state;
+    Entity entity;
+    entity.entityId = QString::fromStdString(state.stableId);
+    entity.name = QString::fromStdString(state.name);
+    entity.domain = QString::fromStdString(state.domain);
+    entity.type = entity.domain == QStringLiteral("Air")
+        ? QStringLiteral("Aircraft")
+        : entity.domain;
+    entity.category = QStringLiteral("HLA Remote");
+    entity.entityKind = state.entityKind;
+    entity.entityDomain = state.entityDomain;
+    entity.entityCountry = state.countryCode;
+    entity.entityCategory = state.category;
+    entity.entitySubcategory = state.subcategory;
+    entity.entitySpecific = state.specific;
+    entity.entityExtra = state.extra;
+    entity.refreshEntityTypeCode();
+    entity.forceIdentifier = state.forceIdentifier;
+    entity.latitude = state.latitudeDegrees;
+    entity.longitude = state.longitudeDegrees;
+    entity.altitude = qMax(0, qRound(state.altitudeMeters));
+    entity.headingDegrees = state.headingDegrees;
+    entity.pitchDegrees = state.pitchDegrees;
+    entity.rollDegrees = state.rollDegrees;
+    entity.speedKnots = state.speedKnots;
+    entity.damagePercent = state.damagePercent;
+    entity.destroyed = state.destroyed;
+    entity.externallyControlled = true;
+    _scenarioState->upsertExternalEntity(entity);
+  }
+  this->syncScenarioStateToUi();
+}
+
+void MainWindow::applyHlaRemoteSensorChanges(
+    const std::vector<tactical::hla::RemoteSensorChange>& changes) {
+  if (changes.empty()) return;
+  for (const tactical::hla::RemoteSensorChange& change : changes) {
+    const QString entityId = QString::fromStdString(change.hostEntityId);
+    const QString sensorId = QString::fromStdString(change.sensorId);
+    if (change.removed) {
+      _scenarioState->removeExternalSensor(entityId, sensorId);
+      continue;
+    }
+    SensorDefinition sensor;
+    sensor.id = sensorId;
+    sensor.name = QStringLiteral("HLA Radar");
+    sensor.modelProviderId = QStringLiteral("hla-rpr");
+    sensor.sensorType = QStringLiteral("radar");
+    sensor.sensorSubType = QStringLiteral("airborne-radar");
+    sensor.enabled = true;
+    sensor.emitting = change.emitting;
+    sensor.azimuthCenterDegrees = change.azimuthCenterDegrees;
+    sensor.azimuthWidthDegrees = change.azimuthWidthDegrees;
+    sensor.elevationCenterDegrees = change.elevationCenterDegrees;
+    sensor.elevationWidthDegrees = change.elevationWidthDegrees;
+    sensor.radarProfile.frequencyHertz = change.frequencyHertz;
+    sensor.radarProfile.bandwidthHertz = change.bandwidthHertz;
+    sensor.radarProfile.peakPowerWatts =
+        change.effectiveRadiatedPowerDbm > 0.0
+            ? std::pow(10.0, change.effectiveRadiatedPowerDbm / 10.0) / 1000.0
+            : 0.0;
+    _scenarioState->upsertExternalSensor(entityId, sensor);
+  }
+  this->syncScenarioStateToUi();
+}
+
+void MainWindow::applyHlaRemoteWarfareEvents(
+    const std::vector<tactical::hla::RemoteWarfareEvent>& events) {
+  if (events.empty()) return;
+  for (const tactical::hla::RemoteWarfareEvent& event : events) {
+    TransientEffect effect;
+    effect.id = QStringLiteral("hla-event-%1")
+                    .arg(QString::fromStdString(event.eventId));
+    effect.effectType =
+        event.kind == tactical::hla::RemoteWarfareEventKind::WeaponFire
+            ? QStringLiteral("LaunchFlash")
+            : QStringLiteral("ImpactFlash");
+    effect.latitude = event.latitudeDegrees;
+    effect.longitude = event.longitudeDegrees;
+    effect.altitudeMeters = event.altitudeMeters;
+    effect.ttlSeconds =
+        event.kind == tactical::hla::RemoteWarfareEventKind::WeaponFire
+            ? 0.5
+            : 0.8;
+    _scenarioState->appendExternalEffect(effect);
+    this->appendLogMessage(
+        QStringLiteral("HLA %1: %2 at %3, %4, %5 m")
+            .arg(
+                event.kind == tactical::hla::RemoteWarfareEventKind::WeaponFire
+                    ? QStringLiteral("WeaponFire")
+                    : QStringLiteral("MunitionDetonation"),
+                QString::fromStdString(event.munitionType))
+            .arg(event.latitudeDegrees, 0, 'f', 5)
+            .arg(event.longitudeDegrees, 0, 'f', 5)
+            .arg(event.altitudeMeters, 0, 'f', 0));
+  }
+  this->syncScenarioStateToUi();
+}
+
+void MainWindow::applyHlaRemoteSimulationControl(
+    tactical::hla::RemoteSimulationControl control) {
+  _applyingHlaSimulationControl = true;
+  switch (control) {
+    case tactical::hla::RemoteSimulationControl::StartResume:
+      this->startSimulation();
+      break;
+    case tactical::hla::RemoteSimulationControl::Pause:
+      this->pauseSimulation();
+      break;
+    case tactical::hla::RemoteSimulationControl::Stop:
+      this->stopSimulation();
+      break;
+  }
+  _applyingHlaSimulationControl = false;
 }
 
 void MainWindow::initializeKinematicsCockpit() {
@@ -1803,15 +1989,38 @@ void MainWindow::reportMapStatus(const QString& message) {
 }
 
 void MainWindow::startSimulation() {
+  if (_simulationRunning) return;
   this->_simulationLifecycleController->start();
+  _simulationStopped = false;
+  if (!_applyingHlaSimulationControl) {
+    emit hlaSimulationControlRequested(
+        tactical::hla::RemoteSimulationControl::StartResume,
+        _scenarioState->simulationTimeSeconds());
+  }
 }
 
 void MainWindow::pauseSimulation() {
+  if (!_simulationRunning) return;
   this->_simulationLifecycleController->pause();
+  _simulationStopped = false;
+  if (!_applyingHlaSimulationControl) {
+    emit hlaSimulationControlRequested(
+        tactical::hla::RemoteSimulationControl::Pause,
+        _scenarioState->simulationTimeSeconds());
+  }
 }
 
 void MainWindow::stopSimulation() {
+  const bool publishStop = !_simulationStopped;
+  const double simulationTimeSeconds =
+      _scenarioState->simulationTimeSeconds();
   this->_simulationLifecycleController->stop();
+  _simulationStopped = true;
+  if (publishStop && !_applyingHlaSimulationControl) {
+    emit hlaSimulationControlRequested(
+        tactical::hla::RemoteSimulationControl::Stop,
+        simulationTimeSeconds);
+  }
 }
 
 void MainWindow::updateSelectedTrackPanel(const QModelIndex& current, const QModelIndex&) {

@@ -885,6 +885,18 @@ void FlightDynamicsEngine::advanceEntity(
     double simulationTimeSeconds,
     double deltaSeconds,
     const FlightDynamicsExecutionPolicy& executionPolicy) {
+  if (entity.destroyed || entity.damagePercent >= 100.0) {
+    entity.destroyed = true;
+    entity.damagePercent = 100.0;
+    entity.speedKnots = 0.0;
+    entity.verticalSpeedMetersPerSecond = 0.0;
+    setDynamicsRuntimeStatus(entity, QStringLiteral("destroyed"));
+    return;
+  }
+  if (entity.externallyControlled) {
+    setDynamicsRuntimeStatus(entity, QStringLiteral("hla-remote"));
+    return;
+  }
   application::ensureFuelConfiguration(entity);
   // An entity must only move when it has an active task.
   // flightDynamicsEnabled / flightDynamicsMode only control how movement is simulated,
