@@ -51,6 +51,17 @@ tactical::hla::ByteBuffer encodedString(const std::string& value) {
   return output;
 }
 
+tactical::hla::ByteBuffer objectIdentifierArray(
+    const std::vector<std::string>& values) {
+  tactical::hla::ByteBuffer output;
+  appendUnsigned32(output, static_cast<std::uint32_t>(values.size()));
+  for (const std::string& value : values) {
+    output.insert(output.end(), value.begin(), value.end());
+    output.push_back(0);
+  }
+  return output;
+}
+
 } // namespace
 
 TEST(HlaInboundAdapter, ConvertsRemotePlatformLifecycleToEntityChanges) {
@@ -128,7 +139,9 @@ TEST(HlaInboundAdapter, ConvertsEmitterAndRadarBeamWithoutCreatingEntity) {
        {"EmissionFrequency", float32(10.0e9F)},
        {"FrequencyRange", float32(1.0e6F)},
        {"EffectiveRadiatedPower", float32(80.0F)},
-       {"HighDensityTrack", {1}}},
+       {"HighDensityTrack", {1}},
+       {"TrackObjectIdentifiers", objectIdentifierArray(
+            {"qttest.target-01", "qttest.target-02"})}},
       {}});
 
   EXPECT_TRUE(adapter.takeEntityChanges().empty());
@@ -140,6 +153,11 @@ TEST(HlaInboundAdapter, ConvertsEmitterAndRadarBeamWithoutCreatingEntity) {
   EXPECT_NEAR(changes[1].azimuthWidthDegrees, 120.0, 0.01);
   EXPECT_NEAR(changes[1].elevationWidthDegrees, 60.0, 0.01);
   EXPECT_TRUE(changes[1].hasTracks);
+  ASSERT_EQ(changes[1].trackedObjectInstanceNames.size(), 2U);
+  EXPECT_EQ(
+      changes[1].trackedObjectInstanceNames[0], "qttest.target-01");
+  EXPECT_EQ(
+      changes[1].trackedObjectInstanceNames[1], "qttest.target-02");
 
   adapter.onObjectRemoved({21, {}});
   const auto removalChanges = adapter.takeSensorChanges();

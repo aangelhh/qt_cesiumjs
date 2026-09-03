@@ -156,9 +156,27 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
   radar.radarProfile.peakPowerWatts = 5000.0;
   aircraft.sensors.push_back(radar);
 
-  tactical::hla::Result result = session.publishEntities({aircraft});
+  Entity target;
+  target.entityId = QStringLiteral("pitch-track-target-%1")
+      .arg(QCoreApplication::applicationPid());
+  target.name = QStringLiteral("PitchTrackTarget");
+  target.domain = QStringLiteral("Air");
+  target.latitude = 40.01;
+  target.longitude = -3.99;
+  target.altitude = 3200.0;
+  target.headingDegrees = 270.0;
+  target.speedKnots = 280.0;
+  SensorContact track;
+  track.sensorId = radar.id;
+  track.targetEntityId = target.entityId;
+  track.targetEntityName = target.name;
+  track.detected = true;
+  track.confidence = 0.9;
+  aircraft.sensorContacts.push_back(track);
+
+  tactical::hla::Result result = session.publishEntities({aircraft, target});
   ASSERT_TRUE(result.success) << result.message;
-  result = session.publishSensors({aircraft});
+  result = session.publishSensors({aircraft, target});
   ASSERT_TRUE(result.success) << result.message;
 
   ActiveMunition munition;
@@ -187,7 +205,7 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
   aircraft.headingDegrees = 100.0;
   aircraft.altitude = 3200.0;
   aircraft.speedKnots = 340.0;
-  result = session.publishEntities({aircraft});
+  result = session.publishEntities({aircraft, target});
   ASSERT_TRUE(result.success) << result.message;
   ASSERT_TRUE(session.poll(0.05).success);
 
@@ -199,9 +217,9 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
       aircraft.longitude += 0.00001;
       aircraft.headingDegrees = std::fmod(
           aircraft.headingDegrees + 0.5, 360.0);
-      result = session.publishEntities({aircraft});
+      result = session.publishEntities({aircraft, target});
       ASSERT_TRUE(result.success) << result.message;
-      result = session.publishSensors({aircraft});
+      result = session.publishSensors({aircraft, target});
       ASSERT_TRUE(result.success) << result.message;
       ASSERT_TRUE(session.poll(0.01).success);
       QThread::msleep(100);

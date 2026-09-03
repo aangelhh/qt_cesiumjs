@@ -35,6 +35,7 @@ struct RemoteSensorChange {
   double bandwidthHertz = 0.0;
   double effectiveRadiatedPowerDbm = 0.0;
   bool hasTracks = false;
+  std::vector<std::string> trackedObjectInstanceNames;
 };
 
 enum class RemoteWarfareEventKind {

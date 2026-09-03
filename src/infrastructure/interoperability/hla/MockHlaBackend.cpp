@@ -112,6 +112,7 @@ Result MockHlaBackend::updateObjectAttributes(
           _objectInstances.end()) {
     return this->fail("Mock object update is invalid");
   }
+  _attributeUpdates.push_back({instanceId, attributes});
   return Result::ok();
 }
 
@@ -246,6 +247,11 @@ const std::vector<std::string>& MockHlaBackend::subscribedObjectClasses() const 
 
 const std::vector<std::string>& MockHlaBackend::sentInteractionClasses() const {
   return _sentInteractionClasses;
+}
+
+const std::vector<MockHlaBackend::AttributeUpdate>&
+MockHlaBackend::attributeUpdates() const {
+  return _attributeUpdates;
 }
 
 Result MockHlaBackend::begin(Operation operation) {

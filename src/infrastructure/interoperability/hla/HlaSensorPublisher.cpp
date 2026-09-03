@@ -19,6 +19,13 @@ void appendUnsigned16(ByteBuffer& output, std::uint16_t value) {
   output.push_back(static_cast<std::uint8_t>(value & 0xffU));
 }
 
+void appendUnsigned32(ByteBuffer& output, std::uint32_t value) {
+  output.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xffU));
+  output.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xffU));
+  output.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xffU));
+  output.push_back(static_cast<std::uint8_t>(value & 0xffU));
+}
+
 void appendFloat32(ByteBuffer& output, float value) {
   std::uint32_t bits = 0;
   std::memcpy(&bits, &value, sizeof(bits));
@@ -60,6 +67,18 @@ ByteBuffer relativePosition() {
 ByteBuffer objectIdentifier(const std::string& instanceName) {
   ByteBuffer output(instanceName.begin(), instanceName.end());
   output.push_back(0);
+  return output;
+}
+
+ByteBuffer objectIdentifierArray(
+    const std::vector<std::string>& instanceNames) {
+  ByteBuffer output;
+  appendUnsigned32(
+      output, static_cast<std::uint32_t>(instanceNames.size()));
+  for (const std::string& instanceName : instanceNames) {
+    output.insert(output.end(), instanceName.begin(), instanceName.end());
+    output.push_back(0);
+  }
   return output;
 }
 
@@ -183,7 +202,8 @@ Result HlaSensorPublisher::ensurePublished() {
        "BeamElevationSweep", "BeamFunctionCode", "BeamIdentifier",
        "BeamParameterIndex", "EffectiveRadiatedPower",
        "EmissionFrequency", "EmitterSystemIdentifier", "EventIdentifier",
-       "FrequencyRange", "SweepSynch", "HighDensityTrack"});
+       "FrequencyRange", "SweepSynch", "HighDensityTrack",
+       "TrackObjectIdentifiers"});
   if (result.success) _published = true;
   return result;
 }
@@ -232,7 +252,9 @@ std::vector<NamedValue> HlaSensorPublisher::encodeBeam(
       {"FrequencyRange", float32(sensor.bandwidthHertz)},
       {"SweepSynch", float32(0.0)},
       {"HighDensityTrack", {static_cast<std::uint8_t>(
-           sensor.hasTracks ? 1 : 0)}}};
+           sensor.hasTracks ? 1 : 0)}},
+      {"TrackObjectIdentifiers", objectIdentifierArray(
+           sensor.trackedObjectInstanceNames)}};
 }
 
 } // namespace tactical::hla

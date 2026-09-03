@@ -259,6 +259,33 @@ void ScenarioState::removeExternalSensor(
         entity.sensors.removeAt(index);
       }
     }
+    for (qsizetype index = entity.sensorContacts.size() - 1;
+         index >= 0; --index) {
+      if (entity.sensorContacts.at(index).sensorId == sensorId) {
+        entity.sensorContacts.removeAt(index);
+      }
+    }
+    return;
+  }
+}
+
+void ScenarioState::replaceExternalSensorContacts(
+    const QString& entityId,
+    const QString& sensorId,
+    const SensorContacts& contacts) {
+  ScopedLock lock(_mutex);
+  for (Entity& entity : _entities) {
+    if (!entity.externallyControlled ||
+        entity.entityId.compare(entityId, Qt::CaseInsensitive) != 0) {
+      continue;
+    }
+    for (qsizetype index = entity.sensorContacts.size() - 1;
+         index >= 0; --index) {
+      if (entity.sensorContacts.at(index).sensorId == sensorId) {
+        entity.sensorContacts.removeAt(index);
+      }
+    }
+    entity.sensorContacts += contacts;
     return;
   }
 }

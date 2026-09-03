@@ -1,5 +1,6 @@
 #include "application/HlaStartupSession.h"
 
+#include "domain/EntityIdentity.h"
 #include "infrastructure/interoperability/hla/HlaBackendFactory.h"
 
 #include <utility>
@@ -81,7 +82,8 @@ tactical::hla::Result HlaStartupSession::start(
            "BeamElevationCenter", "BeamElevationSweep", "BeamFunctionCode",
            "BeamIdentifier", "BeamParameterIndex", "EffectiveRadiatedPower",
            "EmissionFrequency", "EmitterSystemIdentifier", "EventIdentifier",
-           "FrequencyRange", "SweepSynch", "HighDensityTrack"});
+           "FrequencyRange", "SweepSynch", "HighDensityTrack",
+           "TrackObjectIdentifiers"});
   if (!beamSubscribeResult.success) {
     this->stop();
     return beamSubscribeResult;
@@ -275,6 +277,15 @@ tactical::hla::Result HlaStartupSession::publishSensors(
   if (!_sensorPublisher) {
     return tactical::hla::Result::failure("HLA sensor publisher is not active");
   }
+  const auto objectInstanceName = [](const Entity& entity) {
+    const std::string stableId = domain::entityKey(entity).toStdString();
+    constexpr const char* remotePrefix = "hla:";
+    if (entity.externallyControlled &&
+        stableId.rfind(remotePrefix, 0) == 0) {
+      return stableId.substr(4);
+    }
+    return tactical::hla::RprFomEncoding::objectInstanceName(stableId);
+  };
   std::vector<tactical::hla::RprSensorState> states;
   for (const Entity& entity : entities) {
     if (entity.externallyControlled) continue;
@@ -295,12 +306,22 @@ tactical::hla::Result HlaStartupSession::publishSensors(
       state.frequencyHertz = definition.radarProfile.frequencyHertz;
       state.bandwidthHertz = definition.radarProfile.bandwidthHertz;
       state.peakPowerWatts = definition.radarProfile.peakPowerWatts;
-      state.hasTracks = std::any_of(
-          entity.sensorContacts.begin(),
-          entity.sensorContacts.end(),
-          [&definition](const SensorContact& contact) {
-            return contact.detected && contact.sensorId == definition.id;
-          });
+      for (const SensorContact& contact : entity.sensorContacts) {
+        if (!contact.detected || contact.sensorId != definition.id) continue;
+        const QString targetReference = contact.targetEntityId.isEmpty()
+            ? contact.targetEntityName
+            : contact.targetEntityId;
+        const auto target = std::find_if(
+            entities.cbegin(), entities.cend(),
+            [&targetReference](const Entity& value) {
+              return domain::entityMatchesReference(value, targetReference);
+            });
+        if (target != entities.cend()) {
+          state.trackedObjectInstanceNames.push_back(
+              objectInstanceName(*target));
+        }
+      }
+      state.hasTracks = !state.trackedObjectInstanceNames.empty();
       states.push_back(std::move(state));
     }
   }

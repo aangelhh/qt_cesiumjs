@@ -79,6 +79,27 @@ bool decodeFloat64(const ByteBuffer& value, std::size_t offset, double& output) 
   return std::isfinite(output);
 }
 
+std::vector<std::string> decodeObjectIdentifierArray(const ByteBuffer* value) {
+  std::vector<std::string> result;
+  if (!value || value->size() < 4) return result;
+  const std::uint32_t count =
+      (static_cast<std::uint32_t>((*value)[0]) << 24U) |
+      (static_cast<std::uint32_t>((*value)[1]) << 16U) |
+      (static_cast<std::uint32_t>((*value)[2]) << 8U) |
+      (*value)[3];
+  if (count > value->size() - 4) return result;
+  std::size_t offset = 4;
+  result.reserve(count);
+  for (std::uint32_t index = 0; index < count; ++index) {
+    const auto begin = value->begin() + static_cast<std::ptrdiff_t>(offset);
+    const auto terminator = std::find(begin, value->end(), 0);
+    if (terminator == value->end()) return {};
+    result.emplace_back(begin, terminator);
+    offset = static_cast<std::size_t>(terminator - value->begin()) + 1;
+  }
+  return result;
+}
+
 bool decodeWorldLocation(
     const ByteBuffer* value,
     double& latitude,
@@ -198,6 +219,10 @@ void HlaInboundAdapter::onObjectReflected(
         findValue(event.attributes, "HighDensityTrack");
     change.hasTracks = highDensityTrack && !highDensityTrack->empty() &&
         highDensityTrack->front() != 0;
+    change.trackedObjectInstanceNames = decodeObjectIdentifierArray(
+        findValue(event.attributes, "TrackObjectIdentifiers"));
+    change.hasTracks = change.hasTracks ||
+        !change.trackedObjectInstanceNames.empty();
     _sensorChanges.push_back(std::move(change));
     return;
   }
