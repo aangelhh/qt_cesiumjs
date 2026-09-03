@@ -112,8 +112,9 @@ tactical::hla::Result HlaStartupSession::start(
           "HLAinteractionRoot.WeaponFire",
           {"EventIdentifier", "FireControlSolutionRange", "FireMissionIndex",
            "FiringLocation", "FiringObjectIdentifier", "FuseType",
-           "InitialVelocityVector", "MunitionType", "QuantityFired",
-           "RateOfFire", "TargetObjectIdentifier", "WarheadType"});
+           "InitialVelocityVector", "MunitionObjectIdentifier",
+           "MunitionType", "QuantityFired", "RateOfFire",
+           "TargetObjectIdentifier", "WarheadType"});
   if (!weaponFireResult.success) {
     this->stop();
     return weaponFireResult;
@@ -123,9 +124,9 @@ tactical::hla::Result HlaStartupSession::start(
           "HLAinteractionRoot.MunitionDetonation",
           {"DetonationLocation", "DetonationResultCode", "EventIdentifier",
            "FiringObjectIdentifier", "FinalVelocityVector", "FuseType",
-           "MunitionType", "QuantityFired", "RateOfFire",
-           "RelativeDetonationLocation", "TargetObjectIdentifier",
-           "WarheadType"});
+           "MunitionObjectIdentifier", "MunitionType", "QuantityFired",
+           "RateOfFire", "RelativeDetonationLocation",
+           "TargetObjectIdentifier", "WarheadType"});
   if (!detonationResult.success) {
     this->stop();
     return detonationResult;
@@ -348,6 +349,9 @@ tactical::hla::Result HlaStartupSession::stop() {
   if (_sensorPublisher) {
     _sensorPublisher->removeAll();
     _sensorPublisher.reset();
+  }
+  if (_warfarePublisher) {
+    _warfarePublisher->removeAll();
   }
   if (_entityPublisher) {
     _entityPublisher->removeAll();

@@ -39,8 +39,10 @@ public:
   Result synchronize(const std::vector<RprWeaponFireState>& activeMunitions);
   Result synchronizeDetonations(
       const std::vector<RprMunitionDetonationState>& detonations);
+  Result removeAll();
   std::size_t sentWeaponFireCount() const;
   std::size_t sentDetonationCount() const;
+  std::size_t registeredMunitionCount() const;
 
 private:
   Result ensurePublished();
@@ -63,6 +65,12 @@ private:
     std::string targetObjectInstanceName;
   };
   std::unordered_map<std::string, FireCorrelation> _fireCorrelations;
+  struct RegisteredMunition {
+    ObjectInstanceId instanceId = 0;
+    std::uint16_t entityNumber = 0;
+  };
+  std::uint16_t _nextMunitionEntityNumber = 32768;
+  std::unordered_map<std::string, RegisteredMunition> _registeredMunitions;
 };
 
 } // namespace tactical::hla

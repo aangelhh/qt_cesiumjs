@@ -94,18 +94,21 @@ Implemented lifecycle, publication, and reception:
 3. Join the federation.
 4. Publish RPR object and interaction classes.
 5. Register, update, and delete local entity object instances.
-6. Emit one `WeaponFire` interaction per newly launched munition.
-7. Publish `MunitionDetonation` once for every missile or bomb impact effect.
-8. Publish RPR `EmitterSystem` and `RadarBeam` objects for enabled local radars.
-9. Subscribe to supported RPR platform classes and reflect remote state.
-10. Create, update, and remove externally controlled runtime entities.
-11. Publish and receive RPR `StartResume` and `StopFreeze` controls.
-12. Receive remote `EmitterSystem` / `RadarBeam` lifecycle and attach its
+6. Register and update an RPR `Munition` object for every active local munition.
+7. Emit one `WeaponFire` interaction per newly launched munition, correlated
+   through `MunitionObjectIdentifier`.
+8. Publish `MunitionDetonation` once for every missile or bomb impact effect,
+   then remove the corresponding `Munition` object.
+9. Publish RPR `EmitterSystem` and `RadarBeam` objects for enabled local radars.
+10. Subscribe to supported RPR platform classes and reflect remote state.
+11. Create, update, and remove externally controlled runtime entities.
+12. Publish and receive RPR `StartResume` and `StopFreeze` controls.
+13. Receive remote `EmitterSystem` / `RadarBeam` lifecycle and attach its
     directional radar state to the externally controlled host platform.
-13. Receive and deduplicate remote `WeaponFire` / `MunitionDetonation` events.
-14. Publish and receive the object identifiers tracked by each radar beam.
-15. Poll callbacks.
-16. Remove owned objects, resign, and disconnect with rollback on failure.
+14. Receive and deduplicate remote `WeaponFire` / `MunitionDetonation` events.
+15. Publish and receive the object identifiers tracked by each radar beam.
+16. Poll callbacks.
+17. Remove owned objects, resign, and disconnect with rollback on failure.
 
 The plugin ABI v3 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
@@ -114,15 +117,17 @@ classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 10 Hz. Instance names use stable entity UUIDs, so display names may repeat.
 WGS84 positions and local NED attitude are converted to ECEF for `Spatial`.
 
-`HlaWarfarePublisher` sends `HLAinteractionRoot.WeaponFire` with event ID,
+`HlaWarfarePublisher` owns the outbound RPR `Munition` object lifecycle and
+sends `HLAinteractionRoot.WeaponFire` with event ID,
 mission index, ECEF firing location and velocity, munition type, quantity,
-rate, fuse, and warhead. It also sends `MunitionDetonation` from the existing
+rate, fuse, warhead, and the registered munition object identifier. It also
+sends `MunitionDetonation` from the existing
 transient impact effects, exactly once per effect ID. A fire and its matching
 detonation reuse the same RPR `EventIdentifier`. `FiringObjectIdentifier` and
 `TargetObjectIdentifier` reference the registered platform instance names and
 are decoded on reception for diagnostics and future authority decisions.
-`MunitionObjectIdentifier` remains absent until active munitions are registered
-as RPR `PhysicalEntity.Munition` objects.
+`MunitionObjectIdentifier` references the active RPR
+`PhysicalEntity.Munition` instance for both launch and detonation.
 
 `HlaSensorPublisher` represents an enabled radar as an `EmitterSystem`. While
 the radar is emitting, it also owns a `RadarBeam` with azimuth/elevation scan,

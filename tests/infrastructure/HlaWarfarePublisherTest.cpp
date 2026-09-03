@@ -50,6 +50,17 @@ TEST(HlaWarfarePublisher, SendsEachWeaponFireExactlyOnce) {
   ASSERT_TRUE(publisher.synchronize({munition}).success);
 
   EXPECT_EQ(publisher.sentWeaponFireCount(), 1U);
+  EXPECT_EQ(publisher.registeredMunitionCount(), 1U);
+  EXPECT_NE(std::find(
+      backendView->publishedObjectClasses().begin(),
+      backendView->publishedObjectClasses().end(),
+      "HLAobjectRoot.BaseEntity.PhysicalEntity.Munition"),
+      backendView->publishedObjectClasses().end());
+  EXPECT_EQ(std::count(
+      backendView->operations().begin(),
+      backendView->operations().end(),
+      tactical::hla::MockHlaBackend::Operation::RegisterObjectInstance), 1);
+  EXPECT_EQ(backendView->attributeUpdates().size(), 2U);
   EXPECT_EQ(std::count(
       backendView->operations().begin(),
       backendView->operations().end(),
@@ -61,11 +72,24 @@ TEST(HlaWarfarePublisher, SendsEachWeaponFireExactlyOnce) {
   ASSERT_EQ(backendView->sentInteractions().size(), 1U);
   const auto& parameters = backendView->sentInteractions().front().parameters;
   const auto* firing = findParameter(parameters, "FiringObjectIdentifier");
+  const auto* munitionObject =
+      findParameter(parameters, "MunitionObjectIdentifier");
   const auto* target = findParameter(parameters, "TargetObjectIdentifier");
   ASSERT_NE(firing, nullptr);
+  ASSERT_NE(munitionObject, nullptr);
   ASSERT_NE(target, nullptr);
   EXPECT_EQ(decodeObjectIdentifier(firing->value), "qttest.fighter-01");
+  EXPECT_EQ(
+      decodeObjectIdentifier(munitionObject->value),
+      "qttest.munition-missile-01");
   EXPECT_EQ(decodeObjectIdentifier(target->value), "qttest.target-01");
+
+  ASSERT_TRUE(publisher.synchronize({}).success);
+  EXPECT_EQ(publisher.registeredMunitionCount(), 0U);
+  EXPECT_EQ(std::count(
+      backendView->operations().begin(),
+      backendView->operations().end(),
+      tactical::hla::MockHlaBackend::Operation::DeleteObjectInstance), 1);
 }
 
 TEST(HlaWarfarePublisher, SendsEachMunitionDetonationExactlyOnce) {
@@ -117,12 +141,19 @@ TEST(HlaWarfarePublisher, SendsEachMunitionDetonationExactlyOnce) {
       findParameter(detonationParameters, "FiringObjectIdentifier");
   const auto* detonationTarget =
       findParameter(detonationParameters, "TargetObjectIdentifier");
+  const auto* fireMunition =
+      findParameter(fireParameters, "MunitionObjectIdentifier");
+  const auto* detonationMunition =
+      findParameter(detonationParameters, "MunitionObjectIdentifier");
   ASSERT_NE(detonationFiring, nullptr);
   ASSERT_NE(detonationTarget, nullptr);
+  ASSERT_NE(fireMunition, nullptr);
+  ASSERT_NE(detonationMunition, nullptr);
   EXPECT_EQ(
       decodeObjectIdentifier(detonationFiring->value),
       "qttest.fighter-01");
   EXPECT_EQ(
       decodeObjectIdentifier(detonationTarget->value),
       "qttest.target-01");
+  EXPECT_EQ(fireMunition->value, detonationMunition->value);
 }

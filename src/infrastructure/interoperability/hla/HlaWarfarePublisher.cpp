@@ -1,14 +1,18 @@
 #include "infrastructure/interoperability/hla/HlaWarfarePublisher.h"
 
 #include "geospatial/GeographicLibGeospatialService.h"
+#include "infrastructure/interoperability/hla/RprFomEncoding.h"
 
 #include <cmath>
 #include <cstring>
+#include <unordered_set>
 
 namespace tactical::hla {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
+const char* kMunitionClass =
+    "HLAobjectRoot.BaseEntity.PhysicalEntity.Munition";
 
 void appendUnsigned16(ByteBuffer& output, std::uint16_t value) {
   output.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xffU));
@@ -123,6 +127,27 @@ ByteBuffer encodeFloat32(float value) {
   return output;
 }
 
+std::string munitionObjectInstanceName(const std::string& stableId) {
+  return RprFomEncoding::objectInstanceName("munition-" + stableId);
+}
+
+RprEntityState munitionEntityState(const RprWeaponFireState& munition) {
+  RprEntityState state;
+  state.stableId = "munition-" + munition.stableId;
+  state.name = munition.stableId;
+  state.domain = "Air";
+  state.entityKind = 2;
+  state.entityDomain = 2;
+  state.category = munition.munitionType == "Bomb" ? 2 : 1;
+  state.latitudeDegrees = munition.latitudeDegrees;
+  state.longitudeDegrees = munition.longitudeDegrees;
+  state.altitudeMeters = munition.altitudeMeters;
+  state.headingDegrees = munition.headingDegrees;
+  state.pitchDegrees = munition.pitchDegrees;
+  state.speedKnots = munition.speedMetersPerSecond * 1.9438444924406;
+  return state;
+}
+
 } // namespace
 
 HlaWarfarePublisher::HlaWarfarePublisher(HlaRuntime& runtime)
@@ -130,23 +155,56 @@ HlaWarfarePublisher::HlaWarfarePublisher(HlaRuntime& runtime)
 
 Result HlaWarfarePublisher::synchronize(
     const std::vector<RprWeaponFireState>& activeMunitions) {
+  std::unordered_set<std::string> activeIds;
   for (const RprWeaponFireState& munition : activeMunitions) {
-    if (munition.stableId.empty() ||
-        _sentMunitionIds.count(munition.stableId) != 0) {
-      continue;
-    }
+    if (munition.stableId.empty()) continue;
+    activeIds.insert(munition.stableId);
     Result result = this->ensurePublished();
     if (!result.success) return result;
-    result = _runtime.sendInteraction(
-        "HLAinteractionRoot.WeaponFire",
-        this->encodeWeaponFire(munition, _nextEventNumber));
+    auto registered = _registeredMunitions.find(munition.stableId);
+    if (registered == _registeredMunitions.end()) {
+      RegisteredMunition value;
+      value.entityNumber = _nextMunitionEntityNumber++;
+      if (_nextMunitionEntityNumber == 0) _nextMunitionEntityNumber = 32768;
+      result = _runtime.registerObjectInstance(
+          kMunitionClass,
+          munitionObjectInstanceName(munition.stableId),
+          value.instanceId);
+      if (!result.success) return result;
+      registered = _registeredMunitions.emplace(
+          munition.stableId, value).first;
+    }
+    result = _runtime.updateObjectAttributes(
+        registered->second.instanceId,
+        RprFomEncoding::encodeAttributes(
+            munitionEntityState(munition),
+            1,
+            1,
+            registered->second.entityNumber));
     if (!result.success) return result;
-    _fireCorrelations[munition.stableId] = {
-        _nextEventNumber,
-        munition.firingObjectInstanceName,
-        munition.targetObjectInstanceName};
-    _sentMunitionIds.insert(munition.stableId);
-    if (++_nextEventNumber == 0) _nextEventNumber = 1;
+    if (_sentMunitionIds.count(munition.stableId) == 0) {
+      result = _runtime.sendInteraction(
+          "HLAinteractionRoot.WeaponFire",
+          this->encodeWeaponFire(munition, _nextEventNumber));
+      if (!result.success) return result;
+      _fireCorrelations[munition.stableId] = {
+          _nextEventNumber,
+          munition.firingObjectInstanceName,
+          munition.targetObjectInstanceName};
+      _sentMunitionIds.insert(munition.stableId);
+      if (++_nextEventNumber == 0) _nextEventNumber = 1;
+    }
+  }
+  for (auto iterator = _registeredMunitions.begin();
+       iterator != _registeredMunitions.end();) {
+    if (activeIds.count(iterator->first) != 0) {
+      ++iterator;
+      continue;
+    }
+    const Result result = _runtime.deleteObjectInstance(
+        iterator->second.instanceId);
+    if (!result.success) return result;
+    iterator = _registeredMunitions.erase(iterator);
   }
   return Result::ok();
 }
@@ -193,10 +251,27 @@ std::size_t HlaWarfarePublisher::sentDetonationCount() const {
   return _sentDetonationIds.size();
 }
 
+std::size_t HlaWarfarePublisher::registeredMunitionCount() const {
+  return _registeredMunitions.size();
+}
+
+Result HlaWarfarePublisher::removeAll() {
+  for (const auto& item : _registeredMunitions) {
+    const Result result = _runtime.deleteObjectInstance(
+        item.second.instanceId);
+    if (!result.success) return result;
+  }
+  _registeredMunitions.clear();
+  return Result::ok();
+}
+
 Result HlaWarfarePublisher::ensurePublished() {
   if (_published) return Result::ok();
-  const Result result =
+  Result result =
       _runtime.publishInteractionClass("HLAinteractionRoot.WeaponFire");
+  if (!result.success) return result;
+  result = _runtime.publishObjectClass(
+      kMunitionClass, RprFomEncoding::publishedAttributeNames());
   if (result.success) _published = true;
   return result;
 }
@@ -213,6 +288,8 @@ std::vector<NamedValue> HlaWarfarePublisher::encodeWeaponFire(
            munition.firingObjectInstanceName)},
       {"FuseType", encodeUnsigned16(0)},
       {"InitialVelocityVector", encodeVelocity(munition)},
+      {"MunitionObjectIdentifier", encodeObjectIdentifier(
+           munitionObjectInstanceName(munition.stableId))},
       {"MunitionType", encodeMunitionType(munition.munitionType)},
       {"QuantityFired", encodeUnsigned16(1)},
       {"RateOfFire", encodeUnsigned16(0)},
@@ -244,6 +321,8 @@ std::vector<NamedValue> HlaWarfarePublisher::encodeDetonation(
            firingObjectInstanceName)},
       {"FinalVelocityVector", ByteBuffer(12, 0)},
       {"FuseType", encodeUnsigned16(0)},
+      {"MunitionObjectIdentifier", encodeObjectIdentifier(
+           munitionObjectInstanceName(detonation.munitionStableId))},
       {"MunitionType", encodeMunitionType(munition.munitionType)},
       {"QuantityFired", encodeUnsigned16(1)},
       {"RateOfFire", encodeUnsigned16(0)},
