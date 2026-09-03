@@ -226,17 +226,6 @@ int main(int argc, char *argv[])
               << "local object(s) registered and updating at 10 Hz via"
               << hlaSession.backendId();
         }
-        const tactical::hla::Result warfareResult =
-            hlaSession.publishMunitions(window.activeMunitionSnapshot());
-        if (!warfareResult.success) {
-          qCritical().noquote()
-              << "HLA interaction publication failed:"
-              << QString::fromStdString(warfareResult.message);
-          hlaPublishTimer.stop();
-          window.setWindowTitle(
-              window.windowTitle() + QStringLiteral(" [HLA interaction error]"));
-          return;
-        }
         const tactical::hla::Result detonationResult =
             hlaSession.publishDetonations(window.transientEffectSnapshot());
         if (!detonationResult.success) {
@@ -246,6 +235,17 @@ int main(int argc, char *argv[])
           hlaPublishTimer.stop();
           window.setWindowTitle(
               window.windowTitle() + QStringLiteral(" [HLA detonation error]"));
+          return;
+        }
+        const tactical::hla::Result warfareResult =
+            hlaSession.publishMunitions(window.activeMunitionSnapshot());
+        if (!warfareResult.success) {
+          qCritical().noquote()
+              << "HLA interaction publication failed:"
+              << QString::fromStdString(warfareResult.message);
+          hlaPublishTimer.stop();
+          window.setWindowTitle(
+              window.windowTitle() + QStringLiteral(" [HLA interaction error]"));
           return;
         }
         const tactical::hla::Result sensorResult =

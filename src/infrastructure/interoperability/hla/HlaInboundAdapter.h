@@ -48,6 +48,7 @@ struct RemoteWarfareEvent {
   std::string eventId;
   std::string munitionType;
   std::string firingObjectInstanceName;
+  std::string munitionObjectInstanceName;
   std::string targetObjectInstanceName;
   double latitudeDegrees = 0.0;
   double longitudeDegrees = 0.0;

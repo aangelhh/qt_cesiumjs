@@ -1034,6 +1034,10 @@ void MainWindow::applyHlaRemoteWarfareEvents(
       correlation += QStringLiteral(" firing=%1").arg(
           QString::fromStdString(event.firingObjectInstanceName));
     }
+    if (!event.munitionObjectInstanceName.empty()) {
+      correlation += QStringLiteral(" munition=%1").arg(
+          QString::fromStdString(event.munitionObjectInstanceName));
+    }
     if (!event.targetObjectInstanceName.empty()) {
       correlation += QStringLiteral(" target=%1").arg(
           QString::fromStdString(event.targetObjectInstanceName));

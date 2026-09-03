@@ -21,8 +21,9 @@ failure returns the operator to this dialog with the RTI error. The DIS
 transport adapter remains a separate follow-up integration.
 
 After joining, local entity objects are registered and updated every 100 ms.
-New active munitions emit an RPR-FOM `WeaponFire` interaction once. Impacts
-emit `MunitionDetonation`; enabled radars publish `EmitterSystem` and
+Each active munition owns an RPR `PhysicalEntity.Munition` object and emits one
+correlated `WeaponFire` interaction. Impacts emit `MunitionDetonation` before
+the munition object is removed; enabled radars publish `EmitterSystem` and
 `RadarBeam`. Supported remote RPR platforms are reflected into runtime-only,
 externally controlled entities. Play, pause, and stop use the standard
 `StartResume` and `StopFreeze` interactions. Owned objects are deleted before

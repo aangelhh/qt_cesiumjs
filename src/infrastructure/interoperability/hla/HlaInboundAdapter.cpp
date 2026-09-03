@@ -299,6 +299,8 @@ void HlaInboundAdapter::onInteractionReceived(
         findValue(event.parameters, "MunitionType"));
     warfare.firingObjectInstanceName = decodeString(
         findValue(event.parameters, "FiringObjectIdentifier"));
+    warfare.munitionObjectInstanceName = decodeString(
+        findValue(event.parameters, "MunitionObjectIdentifier"));
     warfare.targetObjectInstanceName = decodeString(
         findValue(event.parameters, "TargetObjectIdentifier"));
     const char* locationName =
