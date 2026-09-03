@@ -101,14 +101,16 @@ Implemented lifecycle, publication, and reception:
    then remove the corresponding `Munition` object.
 9. Publish RPR `EmitterSystem` and `RadarBeam` objects for enabled local radars.
 10. Subscribe to supported RPR platform classes and reflect remote state.
-11. Create, update, and remove externally controlled runtime entities.
-12. Publish and receive RPR `StartResume` and `StopFreeze` controls.
-13. Receive remote `EmitterSystem` / `RadarBeam` lifecycle and attach its
+11. Subscribe to remote RPR `Munition` objects and mirror their visual
+    lifecycle without applying local guidance, collision, or damage.
+12. Create, update, and remove externally controlled runtime entities.
+13. Publish and receive RPR `StartResume` and `StopFreeze` controls.
+14. Receive remote `EmitterSystem` / `RadarBeam` lifecycle and attach its
     directional radar state to the externally controlled host platform.
-14. Receive and deduplicate remote `WeaponFire` / `MunitionDetonation` events.
-15. Publish and receive the object identifiers tracked by each radar beam.
-16. Poll callbacks.
-17. Remove owned objects, resign, and disconnect with rollback on failure.
+15. Receive and deduplicate remote `WeaponFire` / `MunitionDetonation` events.
+16. Publish and receive the object identifiers tracked by each radar beam.
+17. Poll callbacks.
+18. Remove owned objects, resign, and disconnect with rollback on failure.
 
 The plugin ABI v3 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
@@ -128,6 +130,9 @@ detonation reuse the same RPR `EventIdentifier`. `FiringObjectIdentifier` and
 are decoded on reception for diagnostics and future authority decisions.
 `MunitionObjectIdentifier` references the active RPR
 `PhysicalEntity.Munition` instance for both launch and detonation.
+Remote munition objects are rendered as runtime-only Cesium tracks. Their
+kinematics remain authoritative in the remote federate, and qttest does not
+run them through `MunitionSimulator` or apply damage from their object state.
 
 `HlaSensorPublisher` represents an enabled radar as an `EmitterSystem`. While
 the radar is emitting, it also owns a `RadarBeam` with azimuth/elevation scan,

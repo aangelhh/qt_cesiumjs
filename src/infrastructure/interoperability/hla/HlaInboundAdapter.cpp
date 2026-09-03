@@ -39,6 +39,9 @@ bool endsWith(const std::string& value, const char* suffix) {
 }
 
 HlaInboundAdapter::RemoteObjectKind objectKind(const std::string& className) {
+  if (className.find(".PhysicalEntity.Munition") != std::string::npos) {
+    return HlaInboundAdapter::RemoteObjectKind::Munition;
+  }
   if (endsWith(className, "EmitterSystem")) {
     return HlaInboundAdapter::RemoteObjectKind::EmitterSystem;
   }
@@ -150,6 +153,15 @@ void HlaInboundAdapter::onObjectDiscovered(
     _emitterIdsByName[event.instanceName] = event.instanceId;
     return;
   }
+  if (kind == RemoteObjectKind::Munition) {
+    RprEntityState state;
+    state.stableId = stableRemoteId(event.instanceName);
+    state.name = event.instanceName;
+    state.domain = "Air";
+    state.entityKind = 2;
+    _munitions[event.instanceId] = {std::move(state), true};
+    return;
+  }
   if (kind != RemoteObjectKind::Platform) return;
   RprEntityState state;
   state.stableId = stableRemoteId(event.instanceName);
@@ -226,6 +238,15 @@ void HlaInboundAdapter::onObjectReflected(
     _sensorChanges.push_back(std::move(change));
     return;
   }
+  if (object->second.kind == RemoteObjectKind::Munition) {
+    const auto iterator = _munitions.find(event.instanceId);
+    if (iterator == _munitions.end()) return;
+    if (RprFomEncoding::decodeAttributes(
+            event.attributes, iterator->second.state).success) {
+      iterator->second.dirty = true;
+    }
+    return;
+  }
   if (object->second.kind != RemoteObjectKind::Platform) return;
   const auto iterator = _entities.find(event.instanceId);
   if (iterator == _entities.end()) return;
@@ -268,6 +289,15 @@ void HlaInboundAdapter::onObjectRemoved(const RemoteObjectRemoval& event) {
       _beamEmitterIds.erase(beamEmitter);
     }
     _objects.erase(object);
+    return;
+  }
+  if (object->second.kind == RemoteObjectKind::Munition) {
+    _objects.erase(object);
+    const auto iterator = _munitions.find(event.instanceId);
+    if (iterator == _munitions.end()) return;
+    _removedMunitions.push_back(
+        {event.instanceId, iterator->second.state, true});
+    _munitions.erase(iterator);
     return;
   }
   _objects.erase(object);
@@ -341,6 +371,17 @@ std::vector<RemoteEntityChange> HlaInboundAdapter::takeEntityChanges() {
   std::vector<RemoteEntityChange> result = std::move(_removedEntities);
   _removedEntities.clear();
   for (auto& item : _entities) {
+    if (!item.second.dirty) continue;
+    result.push_back({item.first, item.second.state, false});
+    item.second.dirty = false;
+  }
+  return result;
+}
+
+std::vector<RemoteMunitionChange> HlaInboundAdapter::takeMunitionChanges() {
+  std::vector<RemoteMunitionChange> result = std::move(_removedMunitions);
+  _removedMunitions.clear();
+  for (auto& item : _munitions) {
     if (!item.second.dirty) continue;
     result.push_back({item.first, item.second.state, false});
     item.second.dirty = false;

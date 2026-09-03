@@ -65,6 +65,14 @@ tactical::hla::Result HlaStartupSession::start(
       return subscribeResult;
     }
   }
+  const tactical::hla::Result munitionSubscribeResult =
+      _runtime->subscribeObjectClass(
+          "HLAobjectRoot.BaseEntity.PhysicalEntity.Munition",
+          entityAttributes);
+  if (!munitionSubscribeResult.success) {
+    this->stop();
+    return munitionSubscribeResult;
+  }
   const tactical::hla::Result emitterSubscribeResult =
       _runtime->subscribeObjectClass(
           "HLAobjectRoot.EmbeddedSystem.EmitterSystem",
@@ -146,6 +154,12 @@ std::vector<tactical::hla::RemoteEntityChange>
 HlaStartupSession::takeRemoteEntityChanges() {
   return _inboundAdapter ? _inboundAdapter->takeEntityChanges()
                          : std::vector<tactical::hla::RemoteEntityChange>{};
+}
+
+std::vector<tactical::hla::RemoteMunitionChange>
+HlaStartupSession::takeRemoteMunitionChanges() {
+  return _inboundAdapter ? _inboundAdapter->takeMunitionChanges()
+                         : std::vector<tactical::hla::RemoteMunitionChange>{};
 }
 
 std::vector<tactical::hla::RemoteSensorChange>

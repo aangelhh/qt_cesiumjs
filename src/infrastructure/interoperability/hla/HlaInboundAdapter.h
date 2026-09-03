@@ -21,6 +21,12 @@ struct RemoteEntityChange {
   bool removed = false;
 };
 
+struct RemoteMunitionChange {
+  ObjectInstanceId instanceId = 0;
+  RprEntityState state;
+  bool removed = false;
+};
+
 struct RemoteSensorChange {
   ObjectInstanceId instanceId = 0;
   std::string sensorId;
@@ -59,6 +65,7 @@ class HlaInboundAdapter final : public IHlaEventSink {
 public:
   enum class RemoteObjectKind {
     Platform,
+    Munition,
     EmitterSystem,
     RadarBeam,
     Unsupported
@@ -70,6 +77,7 @@ public:
   void onInteractionReceived(const RemoteInteraction& event) override;
 
   std::vector<RemoteEntityChange> takeEntityChanges();
+  std::vector<RemoteMunitionChange> takeMunitionChanges();
   std::vector<RemoteSensorChange> takeSensorChanges();
   std::vector<RemoteWarfareEvent> takeWarfareEvents();
   std::vector<RemoteSimulationControl> takeSimulationControls();
@@ -92,10 +100,12 @@ private:
 
   std::unordered_map<ObjectInstanceId, RemoteObject> _objects;
   std::unordered_map<ObjectInstanceId, RemoteEntity> _entities;
+  std::unordered_map<ObjectInstanceId, RemoteEntity> _munitions;
   std::unordered_map<ObjectInstanceId, RemoteEmitter> _emitters;
   std::unordered_map<std::string, ObjectInstanceId> _emitterIdsByName;
   std::unordered_map<ObjectInstanceId, ObjectInstanceId> _beamEmitterIds;
   std::vector<RemoteEntityChange> _removedEntities;
+  std::vector<RemoteMunitionChange> _removedMunitions;
   std::vector<RemoteSensorChange> _sensorChanges;
   std::vector<RemoteWarfareEvent> _warfareEvents;
   std::vector<RemoteSimulationControl> _simulationControls;
