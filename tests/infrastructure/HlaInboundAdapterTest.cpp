@@ -98,6 +98,51 @@ TEST(HlaInboundAdapter, ConvertsRemotePlatformLifecycleToEntityChanges) {
   EXPECT_EQ(changes.front().state.stableId, "hla:remote-fighter-01");
 }
 
+TEST(HlaInboundAdapter, ConvertsRemoteMunitionLifecycleWithoutCreatingEntity) {
+  tactical::hla::HlaInboundAdapter adapter;
+  tactical::hla::RprEntityState source;
+  source.name = "remote-missile";
+  source.domain = "Air";
+  source.entityKind = 2;
+  source.entityDomain = 2;
+  source.category = 1;
+  source.latitudeDegrees = 40.5;
+  source.longitudeDegrees = -3.5;
+  source.altitudeMeters = 4200.0;
+  source.headingDegrees = 135.0;
+  source.pitchDegrees = -4.0;
+  source.speedKnots = 950.0;
+  const auto attributes = tactical::hla::RprFomEncoding::encodeAttributes(
+      source, 2, 3, 40);
+
+  adapter.onObjectDiscovered({
+      40,
+      "HLAobjectRoot.BaseEntity.PhysicalEntity.Munition.NETN_Munition",
+      "remote-missile-01"});
+  adapter.onObjectReflected({40, attributes, {}});
+
+  EXPECT_TRUE(adapter.takeEntityChanges().empty());
+  auto changes = adapter.takeMunitionChanges();
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_FALSE(changes.front().removed);
+  EXPECT_EQ(changes.front().state.stableId, "hla:remote-missile-01");
+  EXPECT_EQ(changes.front().state.entityKind, 2);
+  EXPECT_EQ(changes.front().state.category, 1);
+  EXPECT_NEAR(changes.front().state.latitudeDegrees, 40.5, 1.0e-6);
+  EXPECT_NEAR(changes.front().state.longitudeDegrees, -3.5, 1.0e-6);
+  EXPECT_NEAR(changes.front().state.altitudeMeters, 4200.0, 0.01);
+  EXPECT_NEAR(changes.front().state.headingDegrees, 135.0, 0.01);
+  EXPECT_NEAR(changes.front().state.pitchDegrees, -4.0, 0.01);
+  EXPECT_NEAR(changes.front().state.speedKnots, 950.0, 0.01);
+  EXPECT_TRUE(adapter.takeMunitionChanges().empty());
+
+  adapter.onObjectRemoved({40, {}});
+  changes = adapter.takeMunitionChanges();
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_TRUE(changes.front().removed);
+  EXPECT_EQ(changes.front().state.stableId, "hla:remote-missile-01");
+}
+
 TEST(HlaInboundAdapter, ConvertsRprSimulationControlInteractions) {
   tactical::hla::HlaInboundAdapter adapter;
   adapter.onInteractionReceived({"HLAinteractionRoot.StartResume", {}, {}});

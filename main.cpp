@@ -189,6 +189,8 @@ int main(int argc, char *argv[])
         }
         window.applyHlaRemoteEntityChanges(
             hlaSession.takeRemoteEntityChanges());
+        window.applyHlaRemoteMunitionChanges(
+            hlaSession.takeRemoteMunitionChanges());
         window.applyHlaRemoteSensorChanges(
             hlaSession.takeRemoteSensorChanges());
         window.applyHlaRemoteWarfareEvents(

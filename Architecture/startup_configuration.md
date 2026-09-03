@@ -25,7 +25,8 @@ Each active munition owns an RPR `PhysicalEntity.Munition` object and emits one
 correlated `WeaponFire` interaction. Impacts emit `MunitionDetonation` before
 the munition object is removed; enabled radars publish `EmitterSystem` and
 `RadarBeam`. Supported remote RPR platforms are reflected into runtime-only,
-externally controlled entities. Play, pause, and stop use the standard
+externally controlled entities. Remote RPR munition objects are mirrored as
+visual tracks without local simulation or damage. Play, pause, and stop use the standard
 `StartResume` and `StopFreeze` interactions. Owned objects are deleted before
 the federate resigns.
 

@@ -88,6 +88,8 @@ public:
   void startHlaCombatDemo();
   void applyHlaRemoteEntityChanges(
       const std::vector<tactical::hla::RemoteEntityChange>& changes);
+  void applyHlaRemoteMunitionChanges(
+      const std::vector<tactical::hla::RemoteMunitionChange>& changes);
   void applyHlaRemoteSensorChanges(
       const std::vector<tactical::hla::RemoteSensorChange>& changes);
   void applyHlaRemoteWarfareEvents(

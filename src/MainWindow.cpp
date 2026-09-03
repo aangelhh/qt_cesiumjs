@@ -932,6 +932,32 @@ void MainWindow::applyHlaRemoteEntityChanges(
   this->syncScenarioStateToUi();
 }
 
+void MainWindow::applyHlaRemoteMunitionChanges(
+    const std::vector<tactical::hla::RemoteMunitionChange>& changes) {
+  for (const tactical::hla::RemoteMunitionChange& change : changes) {
+    const QString trackId = QString::fromStdString(change.state.stableId);
+    if (change.removed) {
+      this->removeTrackFromMap(trackId);
+      continue;
+    }
+    ActiveMunition munition;
+    munition.id = trackId;
+    munition.munitionType = change.state.category == 2
+        ? QStringLiteral("Bomb")
+        : QStringLiteral("Missile");
+    munition.status = QStringLiteral("HLA Remote");
+    munition.latitude = change.state.latitudeDegrees;
+    munition.longitude = change.state.longitudeDegrees;
+    munition.altitudeMeters = change.state.altitudeMeters;
+    munition.headingDegrees = change.state.headingDegrees;
+    munition.pitchDegrees = change.state.pitchDegrees;
+    munition.rollDegrees = change.state.rollDegrees;
+    munition.speedMetersPerSecond = change.state.speedKnots * 0.514444;
+    this->sendTrackToMap(
+        presentation::makeMunitionTrackSummary(munition), false);
+  }
+}
+
 void MainWindow::applyHlaRemoteSensorChanges(
     const std::vector<tactical::hla::RemoteSensorChange>& changes) {
   if (changes.empty()) return;

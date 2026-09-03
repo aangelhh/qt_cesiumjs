@@ -26,6 +26,8 @@ public:
       const QVector<TransientEffect>& transientEffects);
   tactical::hla::Result publishSensors(const QVector<Entity>& entities);
   std::vector<tactical::hla::RemoteEntityChange> takeRemoteEntityChanges();
+  std::vector<tactical::hla::RemoteMunitionChange>
+      takeRemoteMunitionChanges();
   std::vector<tactical::hla::RemoteSensorChange> takeRemoteSensorChanges();
   std::vector<tactical::hla::RemoteWarfareEvent> takeRemoteWarfareEvents();
   std::vector<tactical::hla::RemoteSimulationControl>
