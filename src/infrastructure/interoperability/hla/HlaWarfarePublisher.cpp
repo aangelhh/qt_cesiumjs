@@ -99,6 +99,12 @@ ByteBuffer encodeMunitionType(const std::string& munitionType) {
   return output;
 }
 
+ByteBuffer encodeObjectIdentifier(const std::string& instanceName) {
+  ByteBuffer output(instanceName.begin(), instanceName.end());
+  output.push_back(0);
+  return output;
+}
+
 ByteBuffer encodeUnsigned16(std::uint16_t value) {
   ByteBuffer output;
   appendUnsigned16(output, value);
@@ -135,6 +141,10 @@ Result HlaWarfarePublisher::synchronize(
         "HLAinteractionRoot.WeaponFire",
         this->encodeWeaponFire(munition, _nextEventNumber));
     if (!result.success) return result;
+    _fireCorrelations[munition.stableId] = {
+        _nextEventNumber,
+        munition.firingObjectInstanceName,
+        munition.targetObjectInstanceName};
     _sentMunitionIds.insert(munition.stableId);
     if (++_nextEventNumber == 0) _nextEventNumber = 1;
   }
@@ -154,12 +164,23 @@ Result HlaWarfarePublisher::synchronizeDetonations(
       if (!publishResult.success) return publishResult;
       _detonationPublished = true;
     }
+    std::uint16_t eventNumber = _nextEventNumber;
+    const auto correlation = _fireCorrelations.find(
+        detonation.munitionStableId);
+    if (correlation != _fireCorrelations.end()) {
+      eventNumber = correlation->second.eventNumber;
+    }
     const Result result = _runtime.sendInteraction(
         "HLAinteractionRoot.MunitionDetonation",
-        this->encodeDetonation(detonation, _nextEventNumber));
+        this->encodeDetonation(detonation, eventNumber));
     if (!result.success) return result;
     _sentDetonationIds.insert(detonation.effectId);
-    if (++_nextEventNumber == 0) _nextEventNumber = 1;
+    const bool standaloneDetonation = correlation == _fireCorrelations.end();
+    _fireCorrelations.erase(detonation.munitionStableId);
+    if (standaloneDetonation &&
+        ++_nextEventNumber == 0) {
+      _nextEventNumber = 1;
+    }
   }
   return Result::ok();
 }
@@ -188,11 +209,15 @@ std::vector<NamedValue> HlaWarfarePublisher::encodeWeaponFire(
       {"FireControlSolutionRange", encodeFloat32(0.0F)},
       {"FireMissionIndex", encodeUnsigned32(eventNumber)},
       {"FiringLocation", encodeWorldLocation(munition)},
+      {"FiringObjectIdentifier", encodeObjectIdentifier(
+           munition.firingObjectInstanceName)},
       {"FuseType", encodeUnsigned16(0)},
       {"InitialVelocityVector", encodeVelocity(munition)},
       {"MunitionType", encodeMunitionType(munition.munitionType)},
       {"QuantityFired", encodeUnsigned16(1)},
       {"RateOfFire", encodeUnsigned16(0)},
+      {"TargetObjectIdentifier", encodeObjectIdentifier(
+           munition.targetObjectInstanceName)},
       {"WarheadType", encodeUnsigned16(0)}};
 }
 
@@ -201,16 +226,30 @@ std::vector<NamedValue> HlaWarfarePublisher::encodeDetonation(
     std::uint16_t eventNumber) const {
   RprWeaponFireState munition;
   munition.munitionType = detonation.munitionType;
+  const auto correlation = _fireCorrelations.find(
+      detonation.munitionStableId);
+  const std::string firingObjectInstanceName =
+      correlation == _fireCorrelations.end()
+          ? std::string{}
+          : correlation->second.firingObjectInstanceName;
+  const std::string targetObjectInstanceName =
+      correlation == _fireCorrelations.end()
+          ? std::string{}
+          : correlation->second.targetObjectInstanceName;
   return {
       {"DetonationLocation", encodeWorldLocation(detonation)},
       {"DetonationResultCode", {1}},
       {"EventIdentifier", encodeEventIdentifier(eventNumber)},
+      {"FiringObjectIdentifier", encodeObjectIdentifier(
+           firingObjectInstanceName)},
       {"FinalVelocityVector", ByteBuffer(12, 0)},
       {"FuseType", encodeUnsigned16(0)},
       {"MunitionType", encodeMunitionType(munition.munitionType)},
       {"QuantityFired", encodeUnsigned16(1)},
       {"RateOfFire", encodeUnsigned16(0)},
       {"RelativeDetonationLocation", ByteBuffer(12, 0)},
+      {"TargetObjectIdentifier", encodeObjectIdentifier(
+           targetObjectInstanceName)},
       {"WarheadType", encodeUnsigned16(0)}};
 }
 

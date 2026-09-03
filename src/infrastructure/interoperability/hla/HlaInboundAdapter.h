@@ -47,6 +47,8 @@ struct RemoteWarfareEvent {
   RemoteWarfareEventKind kind = RemoteWarfareEventKind::WeaponFire;
   std::string eventId;
   std::string munitionType;
+  std::string firingObjectInstanceName;
+  std::string targetObjectInstanceName;
   double latitudeDegrees = 0.0;
   double longitudeDegrees = 0.0;
   double altitudeMeters = 0.0;

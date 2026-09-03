@@ -172,14 +172,18 @@ TEST(HlaInboundAdapter, DecodesAndDeduplicatesRemoteWarfareInteractions) {
       "HLAinteractionRoot.WeaponFire",
       {{"EventIdentifier", {0, 1, 0, 2, 0, 3}},
        {"FiringLocation", worldLocation(40.4, -3.7, 4500.0)},
+       {"FiringObjectIdentifier", encodedString("qttest.fighter-01")},
+       {"TargetObjectIdentifier", encodedString("qttest.target-01")},
        {"MunitionType", {2, 2, 0, 0, 1, 0, 0, 0}}},
       {}};
   adapter.onInteractionReceived(fire);
   adapter.onInteractionReceived(fire);
   adapter.onInteractionReceived({
       "HLAinteractionRoot.MunitionDetonation",
-      {{"EventIdentifier", {0, 1, 0, 2, 0, 4}},
+      {{"EventIdentifier", {0, 1, 0, 2, 0, 3}},
        {"DetonationLocation", worldLocation(40.5, -3.6, 4200.0)},
+       {"FiringObjectIdentifier", encodedString("qttest.fighter-01")},
+       {"TargetObjectIdentifier", encodedString("qttest.target-01")},
        {"MunitionType", {2, 2, 0, 0, 2, 0, 0, 0}}},
       {}});
 
@@ -189,6 +193,8 @@ TEST(HlaInboundAdapter, DecodesAndDeduplicatesRemoteWarfareInteractions) {
       events[0].kind,
       tactical::hla::RemoteWarfareEventKind::WeaponFire);
   EXPECT_EQ(events[0].munitionType, "Missile");
+  EXPECT_EQ(events[0].firingObjectInstanceName, "qttest.fighter-01");
+  EXPECT_EQ(events[0].targetObjectInstanceName, "qttest.target-01");
   EXPECT_NEAR(events[0].latitudeDegrees, 40.4, 1.0e-6);
   EXPECT_NEAR(events[0].longitudeDegrees, -3.7, 1.0e-6);
   EXPECT_NEAR(events[0].altitudeMeters, 4500.0, 0.01);
@@ -196,6 +202,8 @@ TEST(HlaInboundAdapter, DecodesAndDeduplicatesRemoteWarfareInteractions) {
       events[1].kind,
       tactical::hla::RemoteWarfareEventKind::MunitionDetonation);
   EXPECT_EQ(events[1].munitionType, "Bomb");
+  EXPECT_EQ(events[1].firingObjectInstanceName, "qttest.fighter-01");
+  EXPECT_EQ(events[1].targetObjectInstanceName, "qttest.target-01");
   EXPECT_TRUE(adapter.takeWarfareEvents().empty());
 
   adapter.onInteractionReceived({

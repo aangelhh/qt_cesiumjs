@@ -1029,8 +1029,17 @@ void MainWindow::applyHlaRemoteWarfareEvents(
             ? 0.5
             : 0.8;
     _scenarioState->appendExternalEffect(effect);
+    QString correlation;
+    if (!event.firingObjectInstanceName.empty()) {
+      correlation += QStringLiteral(" firing=%1").arg(
+          QString::fromStdString(event.firingObjectInstanceName));
+    }
+    if (!event.targetObjectInstanceName.empty()) {
+      correlation += QStringLiteral(" target=%1").arg(
+          QString::fromStdString(event.targetObjectInstanceName));
+    }
     this->appendLogMessage(
-        QStringLiteral("HLA %1: %2 at %3, %4, %5 m")
+        QStringLiteral("HLA %1: %2 at %3, %4, %5 m%6")
             .arg(
                 event.kind == tactical::hla::RemoteWarfareEventKind::WeaponFire
                     ? QStringLiteral("WeaponFire")
@@ -1038,7 +1047,8 @@ void MainWindow::applyHlaRemoteWarfareEvents(
                 QString::fromStdString(event.munitionType))
             .arg(event.latitudeDegrees, 0, 'f', 5)
             .arg(event.longitudeDegrees, 0, 'f', 5)
-            .arg(event.altitudeMeters, 0, 'f', 0));
+            .arg(event.altitudeMeters, 0, 'f', 0)
+            .arg(correlation));
   }
   this->syncScenarioStateToUi();
 }

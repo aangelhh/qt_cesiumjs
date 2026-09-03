@@ -117,9 +117,12 @@ WGS84 positions and local NED attitude are converted to ECEF for `Spatial`.
 `HlaWarfarePublisher` sends `HLAinteractionRoot.WeaponFire` with event ID,
 mission index, ECEF firing location and velocity, munition type, quantity,
 rate, fuse, and warhead. It also sends `MunitionDetonation` from the existing
-transient impact effects, exactly once per effect ID. RTI object-identifier
-parameters are deferred until the object-handle correlation contract is
-exposed explicitly.
+transient impact effects, exactly once per effect ID. A fire and its matching
+detonation reuse the same RPR `EventIdentifier`. `FiringObjectIdentifier` and
+`TargetObjectIdentifier` reference the registered platform instance names and
+are decoded on reception for diagnostics and future authority decisions.
+`MunitionObjectIdentifier` remains absent until active munitions are registered
+as RPR `PhysicalEntity.Munition` objects.
 
 `HlaSensorPublisher` represents an enabled radar as an `EmitterSystem`. While
 the radar is emitting, it also owns a `RadarBeam` with azimuth/elevation scan,
@@ -160,7 +163,8 @@ before remote detonations may mutate local entities.
 | Stop | `HLAinteractionRoot.StopFreeze`, terminal reason | Stops the exercise using the normal lifecycle |
 
 Ownership Management, HLA Time Management, synchronization points, DDM,
-save/restore, and NETN-ETR task exchange remain subsequent Feature 19 tasks.
+save/restore, RPR munition object lifecycle, and NETN-ETR task exchange remain
+subsequent Feature 19 tasks.
 
 ### Graphical combat demo
 

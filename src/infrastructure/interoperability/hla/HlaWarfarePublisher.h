@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -12,6 +13,8 @@ namespace tactical::hla {
 struct RprWeaponFireState {
   std::string stableId;
   std::string munitionType;
+  std::string firingObjectInstanceName;
+  std::string targetObjectInstanceName;
   double latitudeDegrees = 0.0;
   double longitudeDegrees = 0.0;
   double altitudeMeters = 0.0;
@@ -54,6 +57,12 @@ private:
   std::uint16_t _nextEventNumber = 1;
   std::unordered_set<std::string> _sentMunitionIds;
   std::unordered_set<std::string> _sentDetonationIds;
+  struct FireCorrelation {
+    std::uint16_t eventNumber = 0;
+    std::string firingObjectInstanceName;
+    std::string targetObjectInstanceName;
+  };
+  std::unordered_map<std::string, FireCorrelation> _fireCorrelations;
 };
 
 } // namespace tactical::hla
