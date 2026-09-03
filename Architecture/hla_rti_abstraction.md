@@ -103,8 +103,9 @@ Implemented lifecycle, publication, and reception:
 12. Receive remote `EmitterSystem` / `RadarBeam` lifecycle and attach its
     directional radar state to the externally controlled host platform.
 13. Receive and deduplicate remote `WeaponFire` / `MunitionDetonation` events.
-14. Poll callbacks.
-15. Remove owned objects, resign, and disconnect with rollback on failure.
+14. Publish and receive the object identifiers tracked by each radar beam.
+15. Poll callbacks.
+16. Remove owned objects, resign, and disconnect with rollback on failure.
 
 The plugin ABI v3 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
@@ -125,6 +126,16 @@ the radar is emitting, it also owns a `RadarBeam` with azimuth/elevation scan,
 frequency, bandwidth, effective radiated power, and a high-density-track flag.
 Stopping emission removes only the beam; disabling/removing the sensor removes
 both objects.
+
+Detected contacts are correlated with their registered platform instances and
+published through the RPR `RadarBeam.TrackObjectIdentifiers` attribute. The
+attribute uses the standard `RTIobjectIdArray` representation and contains only
+contacts currently detected by that sensor. On reception, qttest resolves each
+identifier against local or externally controlled platforms and populates the
+existing sensor-contact model with target ID, marking, range, bearing, and
+track state. Removing a beam or emitter also removes its remote contacts.
+`HighDensityTrack` remains a beam-level indication; it is not treated as a
+substitute for explicit target identifiers.
 
 `HlaInboundAdapter` decodes remote RPR `Spatial`, entity type, force, damage,
 speed, and marking. Remote entities carry stable IDs prefixed with `hla:` and
@@ -149,8 +160,7 @@ before remote detonations may mutate local entities.
 | Stop | `HLAinteractionRoot.StopFreeze`, terminal reason | Stops the exercise using the normal lifecycle |
 
 Ownership Management, HLA Time Management, synchronization points, DDM,
-save/restore, explicit sensor-track object arrays, and NETN-ETR task exchange
-remain subsequent Feature 19 tasks.
+save/restore, and NETN-ETR task exchange remain subsequent Feature 19 tasks.
 
 ### Graphical combat demo
 

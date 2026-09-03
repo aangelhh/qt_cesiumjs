@@ -76,3 +76,36 @@ TEST(HlaExternalState, PlatformReflectionPreservesRemoteSensorObjects) {
       state.entities().first().sensors.first().id,
       QStringLiteral("hla:radar-1"));
 }
+
+TEST(HlaExternalState, ReplacesAndRemovesContactsOwnedByRemoteSensor) {
+  ScenarioState state;
+  state.reset();
+  const Entity remote = entity(QStringLiteral("hla:remote"), true);
+  state.upsertExternalEntity(remote);
+  state.upsertExternalSensor(remote.entityId, remoteRadar());
+
+  SensorContact first;
+  first.sensorId = remoteRadar().id;
+  first.targetEntityId = QStringLiteral("target-1");
+  first.detected = true;
+  state.replaceExternalSensorContacts(
+      remote.entityId, first.sensorId, {first});
+
+  SensorContact second = first;
+  second.targetEntityId = QStringLiteral("target-2");
+  state.replaceExternalSensorContacts(
+      remote.entityId, second.sensorId, {second});
+
+  {
+    const auto lock = state.lock();
+    ASSERT_EQ(state.entities().first().sensorContacts.size(), 1);
+    EXPECT_EQ(
+        state.entities().first().sensorContacts.first().targetEntityId,
+        QStringLiteral("target-2"));
+  }
+
+  state.removeExternalSensor(remote.entityId, remoteRadar().id);
+  const auto lock = state.lock();
+  EXPECT_TRUE(state.entities().first().sensors.isEmpty());
+  EXPECT_TRUE(state.entities().first().sensorContacts.isEmpty());
+}

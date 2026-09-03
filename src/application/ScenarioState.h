@@ -40,6 +40,10 @@ public:
   void removeExternalSensor(
       const QString& entityId,
       const QString& sensorId);
+  void replaceExternalSensorContacts(
+      const QString& entityId,
+      const QString& sensorId,
+      const SensorContacts& contacts);
   void appendExternalEffect(const TransientEffect& effect);
   const QVector<Entity>& entities() const;
   const QVector<ActiveMunition>& activeMunitions() const;

@@ -33,6 +33,7 @@
 #include "infrastructure/CesiumScenePage.h"
 #include "infrastructure/MapBridge.h"
 #include "infrastructure/ModelCatalog.h"
+#include "infrastructure/interoperability/hla/RprFomEncoding.h"
 #include "infrastructure/SensorModelProviderCatalog.h"
 #include "infrastructure/SensorModelProviderBootstrap.h"
 #include "presentation/EntityTextFormatter.h"
@@ -960,6 +961,51 @@ void MainWindow::applyHlaRemoteSensorChanges(
             ? std::pow(10.0, change.effectiveRadiatedPowerDbm / 10.0) / 1000.0
             : 0.0;
     _scenarioState->upsertExternalSensor(entityId, sensor);
+
+    const QVector<Entity> entities = this->entitySnapshot();
+    const auto host = std::find_if(
+        entities.cbegin(), entities.cend(), [&entityId](const Entity& entity) {
+          return entity.entityId.compare(entityId, Qt::CaseInsensitive) == 0;
+        });
+    SensorContacts contacts;
+    if (host != entities.cend()) {
+      for (const std::string& trackedName :
+           change.trackedObjectInstanceNames) {
+        const auto target = std::find_if(
+            entities.cbegin(), entities.cend(),
+            [&trackedName](const Entity& entity) {
+              if (entity.externallyControlled) {
+                return entity.entityId ==
+                    QStringLiteral("hla:%1")
+                        .arg(QString::fromStdString(trackedName));
+              }
+              return tactical::hla::RprFomEncoding::objectInstanceName(
+                         domain::entityKey(entity).toStdString()) == trackedName;
+            });
+        if (target == entities.cend()) continue;
+        SensorContact contact;
+        contact.sensorId = sensorId;
+        contact.sensorModelProviderId = QStringLiteral("hla-rpr");
+        contact.sensorType = QStringLiteral("radar");
+        contact.sensorSubType = QStringLiteral("airborne-radar");
+        contact.targetEntityId = domain::entityKey(*target);
+        contact.targetEntityName = target->name;
+        contact.rangeMeters = domain::distanceMeters(
+            host->latitude, host->longitude,
+            target->latitude, target->longitude);
+        contact.bearingDegrees = domain::bearingDegrees(
+            host->latitude, host->longitude,
+            target->latitude, target->longitude);
+        contact.detected = true;
+        contact.confidence = 1.0;
+        contact.lastSeenSimulationSeconds =
+            _scenarioState->simulationTimeSeconds();
+        contact.trackState = QStringLiteral("Tracked");
+        contacts.push_back(std::move(contact));
+      }
+    }
+    _scenarioState->replaceExternalSensorContacts(
+        entityId, sensorId, contacts);
   }
   this->syncScenarioStateToUi();
 }

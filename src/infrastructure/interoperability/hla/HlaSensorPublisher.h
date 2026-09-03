@@ -22,6 +22,7 @@ struct RprSensorState {
   double bandwidthHertz = 0.0;
   double peakPowerWatts = 0.0;
   bool hasTracks = false;
+  std::vector<std::string> trackedObjectInstanceNames;
 };
 
 class HlaSensorPublisher {
