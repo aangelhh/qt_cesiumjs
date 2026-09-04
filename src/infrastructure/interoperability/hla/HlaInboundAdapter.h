@@ -19,12 +19,14 @@ struct RemoteEntityChange {
   ObjectInstanceId instanceId = 0;
   RprEntityState state;
   bool removed = false;
+  ReceiveMetadata receiveMetadata;
 };
 
 struct RemoteMunitionChange {
   ObjectInstanceId instanceId = 0;
   RprEntityState state;
   bool removed = false;
+  ReceiveMetadata receiveMetadata;
 };
 
 struct RemoteSensorChange {
@@ -109,6 +111,10 @@ public:
   std::vector<RemoteSimulationControl> takeSimulationControls();
 
 private:
+  bool shouldApply(
+      ObjectInstanceId instanceId,
+      const ReceiveMetadata& metadata);
+
   struct RemoteObject {
     RemoteObjectKind kind = RemoteObjectKind::Unsupported;
     std::string instanceName;
@@ -117,6 +123,7 @@ private:
   struct RemoteEntity {
     RprEntityState state;
     bool dirty = false;
+    ReceiveMetadata receiveMetadata;
   };
 
   struct RemoteEmitter {
@@ -130,6 +137,7 @@ private:
   std::unordered_map<ObjectInstanceId, RemoteEmitter> _emitters;
   std::unordered_map<std::string, ObjectInstanceId> _emitterIdsByName;
   std::unordered_map<ObjectInstanceId, ObjectInstanceId> _beamEmitterIds;
+  std::unordered_map<ObjectInstanceId, double> _lastLogicalTimes;
   std::vector<RemoteEntityChange> _removedEntities;
   std::vector<RemoteMunitionChange> _removedMunitions;
   std::vector<RemoteSensorChange> _sensorChanges;

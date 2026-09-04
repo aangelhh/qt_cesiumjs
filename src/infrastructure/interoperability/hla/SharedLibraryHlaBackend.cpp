@@ -73,6 +73,21 @@ std::vector<tactical::hla::NamedValue> copyNamedValues(
   return result;
 }
 
+tactical::hla::ReceiveMetadata copyReceiveMetadata(
+    const QttestHlaReceiveInfoV7* source) {
+  tactical::hla::ReceiveMetadata result;
+  if (!source || source->structSize < sizeof(QttestHlaReceiveInfoV7)) {
+    return result;
+  }
+  result.order = source->order == QTTEST_HLA_TIMESTAMP_ORDER
+      ? tactical::hla::DeliveryOrder::Timestamp
+      : tactical::hla::DeliveryOrder::Receive;
+  if (source->hasLogicalTime) {
+    result.logicalTimeSeconds = source->logicalTimeSeconds;
+  }
+  return result;
+}
+
 } // namespace
 
 namespace tactical::hla {
@@ -90,7 +105,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   const auto apiFactory = reinterpret_cast<QttestHlaBackendApiFn>(
-      _library.resolve("qttest_hla_backend_api_v6"));
+      _library.resolve("qttest_hla_backend_api_v7"));
   if (!apiFactory) {
     _loadError = "Required HLA backend API symbol is missing";
     _library.unload();
@@ -98,7 +113,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   _api = apiFactory();
-  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV6) ||
+  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV7) ||
       _api->abiVersion != QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION) {
     _loadError = "Unsupported HLA backend plugin ABI";
     _api = nullptr;
@@ -132,8 +147,8 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
     _library.unload();
     return;
   }
-  const QttestHlaCallbacksV6 callbacks = {
-      sizeof(QttestHlaCallbacksV6),
+  const QttestHlaCallbacksV7 callbacks = {
+      sizeof(QttestHlaCallbacksV7),
       this,
       &SharedLibraryHlaBackend::objectDiscoveredCallback,
       &SharedLibraryHlaBackend::objectReflectedCallback,
@@ -427,33 +442,39 @@ void SharedLibraryHlaBackend::objectReflectedCallback(
     void* context,
     uint64_t instanceId,
     const QttestHlaNamedValueArrayV2* attributes,
-    const QttestHlaByteSpanV2* tag) {
+    const QttestHlaByteSpanV2* tag,
+    const QttestHlaReceiveInfoV7* receiveInfo) {
   auto* self = static_cast<SharedLibraryHlaBackend*>(context);
   if (!self || !self->_eventSink) return;
   self->_eventSink->onObjectReflected(
-      {instanceId, copyNamedValues(attributes), copyBytes(tag)});
+      {instanceId, copyNamedValues(attributes), copyBytes(tag),
+       copyReceiveMetadata(receiveInfo)});
 }
 
 void SharedLibraryHlaBackend::objectRemovedCallback(
     void* context,
     uint64_t instanceId,
-    const QttestHlaByteSpanV2* tag) {
+    const QttestHlaByteSpanV2* tag,
+    const QttestHlaReceiveInfoV7* receiveInfo) {
   auto* self = static_cast<SharedLibraryHlaBackend*>(context);
   if (!self || !self->_eventSink) return;
-  self->_eventSink->onObjectRemoved({instanceId, copyBytes(tag)});
+  self->_eventSink->onObjectRemoved(
+      {instanceId, copyBytes(tag), copyReceiveMetadata(receiveInfo)});
 }
 
 void SharedLibraryHlaBackend::interactionReceivedCallback(
     void* context,
     const char* interactionClassName,
     const QttestHlaNamedValueArrayV2* parameters,
-    const QttestHlaByteSpanV2* tag) {
+    const QttestHlaByteSpanV2* tag,
+    const QttestHlaReceiveInfoV7* receiveInfo) {
   auto* self = static_cast<SharedLibraryHlaBackend*>(context);
   if (!self || !self->_eventSink) return;
   self->_eventSink->onInteractionReceived({
       safeString(interactionClassName),
       copyNamedValues(parameters),
-      copyBytes(tag)});
+      copyBytes(tag),
+      copyReceiveMetadata(receiveInfo)});
 }
 
 void SharedLibraryHlaBackend::synchronizationPointAnnouncedCallback(

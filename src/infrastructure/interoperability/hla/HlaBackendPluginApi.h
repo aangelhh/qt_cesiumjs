@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION 6U
+#define QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION 7U
 
 #ifdef _WIN32
 #define QTTEST_HLA_PLUGIN_EXPORT __declspec(dllexport)
@@ -49,7 +49,19 @@ typedef struct QttestHlaNamedValueArrayV2 {
   size_t count;
 } QttestHlaNamedValueArrayV2;
 
-typedef struct QttestHlaCallbacksV6 {
+typedef enum QttestHlaReceiveOrderV7 {
+  QTTEST_HLA_RECEIVE_ORDER = 0,
+  QTTEST_HLA_TIMESTAMP_ORDER = 1
+} QttestHlaReceiveOrderV7;
+
+typedef struct QttestHlaReceiveInfoV7 {
+  uint32_t structSize;
+  QttestHlaReceiveOrderV7 order;
+  int hasLogicalTime;
+  double logicalTimeSeconds;
+} QttestHlaReceiveInfoV7;
+
+typedef struct QttestHlaCallbacksV7 {
   uint32_t structSize;
   void* context;
   void (*objectDiscovered)(
@@ -61,16 +73,19 @@ typedef struct QttestHlaCallbacksV6 {
       void* context,
       uint64_t instanceId,
       const QttestHlaNamedValueArrayV2* attributes,
-      const QttestHlaByteSpanV2* tag);
+      const QttestHlaByteSpanV2* tag,
+      const QttestHlaReceiveInfoV7* receiveInfo);
   void (*objectRemoved)(
       void* context,
       uint64_t instanceId,
-      const QttestHlaByteSpanV2* tag);
+      const QttestHlaByteSpanV2* tag,
+      const QttestHlaReceiveInfoV7* receiveInfo);
   void (*interactionReceived)(
       void* context,
       const char* interactionClassName,
       const QttestHlaNamedValueArrayV2* parameters,
-      const QttestHlaByteSpanV2* tag);
+      const QttestHlaByteSpanV2* tag,
+      const QttestHlaReceiveInfoV7* receiveInfo);
   void (*synchronizationPointAnnounced)(
       void* context,
       const char* label,
@@ -79,9 +94,9 @@ typedef struct QttestHlaCallbacksV6 {
   void (*timeRegulationEnabled)(void* context, double logicalTimeSeconds);
   void (*timeConstrainedEnabled)(void* context, double logicalTimeSeconds);
   void (*timeAdvanceGranted)(void* context, double logicalTimeSeconds);
-} QttestHlaCallbacksV6;
+} QttestHlaCallbacksV7;
 
-typedef struct QttestHlaBackendApiV6 {
+typedef struct QttestHlaBackendApiV7 {
   uint32_t structSize;
   uint32_t abiVersion;
   const char* backendId;
@@ -168,18 +183,18 @@ typedef struct QttestHlaBackendApiV6 {
       double logicalTimeSeconds);
   int (*setCallbacks)(
       QttestHlaBackendHandle,
-      const QttestHlaCallbacksV6* callbacks);
+      const QttestHlaCallbacksV7* callbacks);
   int (*poll)(QttestHlaBackendHandle, double maximumSeconds);
   int (*resign)(QttestHlaBackendHandle);
   int (*disconnect)(QttestHlaBackendHandle);
   QttestHlaBackendStateV1 (*state)(QttestHlaBackendHandle);
   const char* (*lastError)(QttestHlaBackendHandle);
-} QttestHlaBackendApiV6;
+} QttestHlaBackendApiV7;
 
-typedef const QttestHlaBackendApiV6* (*QttestHlaBackendApiFn)(void);
+typedef const QttestHlaBackendApiV7* (*QttestHlaBackendApiFn)(void);
 
-QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV6*
-qttest_hla_backend_api_v6(void);
+QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV7*
+qttest_hla_backend_api_v7(void);
 
 #ifdef __cplusplus
 } // extern "C"

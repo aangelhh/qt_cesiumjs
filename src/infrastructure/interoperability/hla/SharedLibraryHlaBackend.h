@@ -97,16 +97,19 @@ private:
       void* context,
       uint64_t instanceId,
       const QttestHlaNamedValueArrayV2* attributes,
-      const QttestHlaByteSpanV2* tag);
+      const QttestHlaByteSpanV2* tag,
+      const QttestHlaReceiveInfoV7* receiveInfo);
   static void objectRemovedCallback(
       void* context,
       uint64_t instanceId,
-      const QttestHlaByteSpanV2* tag);
+      const QttestHlaByteSpanV2* tag,
+      const QttestHlaReceiveInfoV7* receiveInfo);
   static void interactionReceivedCallback(
       void* context,
       const char* interactionClassName,
       const QttestHlaNamedValueArrayV2* parameters,
-      const QttestHlaByteSpanV2* tag);
+      const QttestHlaByteSpanV2* tag,
+      const QttestHlaReceiveInfoV7* receiveInfo);
   static void synchronizationPointAnnouncedCallback(
       void* context,
       const char* label,
@@ -126,7 +129,7 @@ private:
 
   std::string _libraryPath;
   mutable QLibrary _library;
-  const QttestHlaBackendApiV6* _api = nullptr;
+  const QttestHlaBackendApiV7* _api = nullptr;
   QttestHlaBackendHandle _handle = nullptr;
   std::string _loadError;
   IHlaEventSink* _eventSink = nullptr;

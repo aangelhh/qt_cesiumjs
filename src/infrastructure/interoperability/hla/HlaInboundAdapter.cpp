@@ -145,6 +145,7 @@ std::string decodeMunitionType(const ByteBuffer* value) {
 
 void HlaInboundAdapter::onObjectDiscovered(
     const RemoteObjectDiscovery& event) {
+  _lastLogicalTimes.erase(event.instanceId);
   const RemoteObjectKind kind = objectKind(event.objectClassName);
   _objects[event.instanceId] = {kind, event.instanceName};
   if (kind == RemoteObjectKind::EmitterSystem) {
@@ -159,7 +160,7 @@ void HlaInboundAdapter::onObjectDiscovered(
     state.name = event.instanceName;
     state.domain = "Air";
     state.entityKind = 2;
-    _munitions[event.instanceId] = {std::move(state), true};
+    _munitions[event.instanceId] = {std::move(state), true, {}};
     return;
   }
   if (kind != RemoteObjectKind::Platform) return;
@@ -168,11 +169,12 @@ void HlaInboundAdapter::onObjectDiscovered(
   state.name = event.instanceName;
   state.domain = RprFomEncoding::domainFromObjectClassName(
       event.objectClassName);
-  _entities[event.instanceId] = {std::move(state), true};
+  _entities[event.instanceId] = {std::move(state), true, {}};
 }
 
 void HlaInboundAdapter::onObjectReflected(
     const RemoteObjectReflection& event) {
+  if (!this->shouldApply(event.instanceId, event.receiveMetadata)) return;
   const auto object = _objects.find(event.instanceId);
   if (object == _objects.end()) return;
   if (object->second.kind == RemoteObjectKind::EmitterSystem) {
@@ -244,6 +246,7 @@ void HlaInboundAdapter::onObjectReflected(
     if (RprFomEncoding::decodeAttributes(
             event.attributes, iterator->second.state).success) {
       iterator->second.dirty = true;
+      iterator->second.receiveMetadata = event.receiveMetadata;
     }
     return;
   }
@@ -253,10 +256,12 @@ void HlaInboundAdapter::onObjectReflected(
   if (RprFomEncoding::decodeAttributes(
           event.attributes, iterator->second.state).success) {
     iterator->second.dirty = true;
+    iterator->second.receiveMetadata = event.receiveMetadata;
   }
 }
 
 void HlaInboundAdapter::onObjectRemoved(const RemoteObjectRemoval& event) {
+  if (!this->shouldApply(event.instanceId, event.receiveMetadata)) return;
   const auto object = _objects.find(event.instanceId);
   if (object == _objects.end()) return;
   if (object->second.kind == RemoteObjectKind::EmitterSystem) {
@@ -272,6 +277,7 @@ void HlaInboundAdapter::onObjectRemoved(const RemoteObjectRemoval& event) {
       _emitters.erase(emitter);
     }
     _objects.erase(object);
+    _lastLogicalTimes.erase(event.instanceId);
     return;
   }
   if (object->second.kind == RemoteObjectKind::RadarBeam) {
@@ -289,22 +295,41 @@ void HlaInboundAdapter::onObjectRemoved(const RemoteObjectRemoval& event) {
       _beamEmitterIds.erase(beamEmitter);
     }
     _objects.erase(object);
+    _lastLogicalTimes.erase(event.instanceId);
     return;
   }
   if (object->second.kind == RemoteObjectKind::Munition) {
     _objects.erase(object);
+    _lastLogicalTimes.erase(event.instanceId);
     const auto iterator = _munitions.find(event.instanceId);
     if (iterator == _munitions.end()) return;
     _removedMunitions.push_back(
-        {event.instanceId, iterator->second.state, true});
+        {event.instanceId, iterator->second.state, true,
+         event.receiveMetadata});
     _munitions.erase(iterator);
     return;
   }
   _objects.erase(object);
+  _lastLogicalTimes.erase(event.instanceId);
   const auto iterator = _entities.find(event.instanceId);
   if (iterator == _entities.end()) return;
-  _removedEntities.push_back({event.instanceId, iterator->second.state, true});
+  _removedEntities.push_back(
+      {event.instanceId, iterator->second.state, true,
+       event.receiveMetadata});
   _entities.erase(iterator);
+}
+
+bool HlaInboundAdapter::shouldApply(
+    ObjectInstanceId instanceId,
+    const ReceiveMetadata& metadata) {
+  if (!metadata.logicalTimeSeconds) return true;
+  const auto iterator = _lastLogicalTimes.find(instanceId);
+  if (iterator != _lastLogicalTimes.end() &&
+      *metadata.logicalTimeSeconds < iterator->second) {
+    return false;
+  }
+  _lastLogicalTimes[instanceId] = *metadata.logicalTimeSeconds;
+  return true;
 }
 
 void HlaInboundAdapter::onInteractionReceived(
@@ -418,7 +443,8 @@ std::vector<RemoteEntityChange> HlaInboundAdapter::takeEntityChanges() {
   _removedEntities.clear();
   for (auto& item : _entities) {
     if (!item.second.dirty) continue;
-    result.push_back({item.first, item.second.state, false});
+    result.push_back({
+        item.first, item.second.state, false, item.second.receiveMetadata});
     item.second.dirty = false;
   }
   return result;
@@ -429,7 +455,8 @@ std::vector<RemoteMunitionChange> HlaInboundAdapter::takeMunitionChanges() {
   _removedMunitions.clear();
   for (auto& item : _munitions) {
     if (!item.second.dirty) continue;
-    result.push_back({item.first, item.second.state, false});
+    result.push_back({
+        item.first, item.second.state, false, item.second.receiveMetadata});
     item.second.dirty = false;
   }
   return result;

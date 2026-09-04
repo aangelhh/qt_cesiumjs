@@ -200,19 +200,11 @@ public:
         objectHandle, classHandle, objectInstanceName);
   }
 
-  void reflectAttributeValues(
+  void emitObjectReflection(
       rti1516e::ObjectInstanceHandle objectHandle,
       const rti1516e::AttributeHandleValueMap& attributeValues,
       const rti1516e::VariableLengthData& tag,
-      rti1516e::OrderType,
-      rti1516e::TransportationType,
-      rti1516e::SupplementalReflectInfo)
-#ifdef QTTEST_HLA_OPENRTI_BACKEND
-      RTI_THROW ((rti1516e::FederateInternalError))
-#elif __cplusplus < 201703L
-      RTI_THROW (rti1516e::FederateInternalError)
-#endif
-      override {
+      const QttestHlaReceiveInfoV7& receiveInfo) {
     const auto objectIterator = remoteObjects.find(objectHandle);
     if (objectIterator == remoteObjects.end() || !callbacks.objectReflected) return;
     const auto classIterator =
@@ -243,7 +235,27 @@ public:
         static_cast<const uint8_t*>(tag.data()),
         tag.size()};
     callbacks.objectReflected(
-        callbacks.context, objectIterator->second.id, &array, &tagSpan);
+        callbacks.context, objectIterator->second.id, &array, &tagSpan,
+        &receiveInfo);
+  }
+
+  void reflectAttributeValues(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::AttributeHandleValueMap& attributeValues,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType,
+      rti1516e::TransportationType,
+      rti1516e::SupplementalReflectInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    const QttestHlaReceiveInfoV7 receiveInfo = {
+        sizeof(QttestHlaReceiveInfoV7), QTTEST_HLA_RECEIVE_ORDER, 0, 0.0};
+    this->emitObjectReflection(
+        objectHandle, attributeValues, tag, receiveInfo);
   }
 
   void reflectAttributeValues(
@@ -252,7 +264,7 @@ public:
       const rti1516e::VariableLengthData& tag,
       rti1516e::OrderType sentOrder,
       rti1516e::TransportationType transportation,
-      const rti1516e::LogicalTime&,
+      const rti1516e::LogicalTime& logicalTime,
       rti1516e::OrderType,
       rti1516e::SupplementalReflectInfo reflectInfo)
 #ifdef QTTEST_HLA_OPENRTI_BACKEND
@@ -261,9 +273,12 @@ public:
       RTI_THROW (rti1516e::FederateInternalError)
 #endif
       override {
-    this->reflectAttributeValues(
-        objectHandle, attributeValues, tag, sentOrder, transportation,
-        reflectInfo);
+    const rti1516e::HLAfloat64Time time(logicalTime);
+    const QttestHlaReceiveInfoV7 receiveInfo = {
+        sizeof(QttestHlaReceiveInfoV7), QTTEST_HLA_TIMESTAMP_ORDER, 1,
+        time.getTime()};
+    this->emitObjectReflection(
+        objectHandle, attributeValues, tag, receiveInfo);
   }
 
   void reflectAttributeValues(
@@ -287,6 +302,24 @@ public:
         logicalTime, receivedOrder, reflectInfo);
   }
 
+  void emitObjectRemoval(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::VariableLengthData& tag,
+      const QttestHlaReceiveInfoV7& receiveInfo) {
+    const auto iterator = remoteObjects.find(objectHandle);
+    if (iterator == remoteObjects.end()) return;
+    const uint64_t remoteId = iterator->second.id;
+    remoteObjects.erase(iterator);
+    if (callbacks.objectRemoved) {
+      const QttestHlaByteSpanV2 tagSpan = {
+          sizeof(QttestHlaByteSpanV2),
+          static_cast<const uint8_t*>(tag.data()),
+          tag.size()};
+      callbacks.objectRemoved(
+          callbacks.context, remoteId, &tagSpan, &receiveInfo);
+    }
+  }
+
   void removeObjectInstance(
       rti1516e::ObjectInstanceHandle objectHandle,
       const rti1516e::VariableLengthData& tag,
@@ -298,24 +331,16 @@ public:
       RTI_THROW (rti1516e::FederateInternalError)
 #endif
       override {
-    const auto iterator = remoteObjects.find(objectHandle);
-    if (iterator == remoteObjects.end()) return;
-    const uint64_t remoteId = iterator->second.id;
-    remoteObjects.erase(iterator);
-    if (callbacks.objectRemoved) {
-      const QttestHlaByteSpanV2 tagSpan = {
-          sizeof(QttestHlaByteSpanV2),
-          static_cast<const uint8_t*>(tag.data()),
-          tag.size()};
-      callbacks.objectRemoved(callbacks.context, remoteId, &tagSpan);
-    }
+    const QttestHlaReceiveInfoV7 receiveInfo = {
+        sizeof(QttestHlaReceiveInfoV7), QTTEST_HLA_RECEIVE_ORDER, 0, 0.0};
+    this->emitObjectRemoval(objectHandle, tag, receiveInfo);
   }
 
   void removeObjectInstance(
       rti1516e::ObjectInstanceHandle objectHandle,
       const rti1516e::VariableLengthData& tag,
       rti1516e::OrderType sentOrder,
-      const rti1516e::LogicalTime&,
+      const rti1516e::LogicalTime& logicalTime,
       rti1516e::OrderType,
       rti1516e::SupplementalRemoveInfo removeInfo)
 #ifdef QTTEST_HLA_OPENRTI_BACKEND
@@ -324,7 +349,11 @@ public:
       RTI_THROW (rti1516e::FederateInternalError)
 #endif
       override {
-    this->removeObjectInstance(objectHandle, tag, sentOrder, removeInfo);
+    const rti1516e::HLAfloat64Time time(logicalTime);
+    const QttestHlaReceiveInfoV7 receiveInfo = {
+        sizeof(QttestHlaReceiveInfoV7), QTTEST_HLA_TIMESTAMP_ORDER, 1,
+        time.getTime()};
+    this->emitObjectRemoval(objectHandle, tag, receiveInfo);
   }
 
   void removeObjectInstance(
@@ -345,19 +374,11 @@ public:
         objectHandle, tag, sentOrder, logicalTime, receivedOrder, removeInfo);
   }
 
-  void receiveInteraction(
+  void emitInteraction(
       rti1516e::InteractionClassHandle interactionHandle,
       const rti1516e::ParameterHandleValueMap& parameterValues,
       const rti1516e::VariableLengthData& tag,
-      rti1516e::OrderType,
-      rti1516e::TransportationType,
-      rti1516e::SupplementalReceiveInfo)
-#ifdef QTTEST_HLA_OPENRTI_BACKEND
-      RTI_THROW ((rti1516e::FederateInternalError))
-#elif __cplusplus < 201703L
-      RTI_THROW (rti1516e::FederateInternalError)
-#endif
-      override {
+      const QttestHlaReceiveInfoV7& receiveInfo) {
     const auto interactionIterator = subscribedInteractions.find(interactionHandle);
     if (interactionIterator == subscribedInteractions.end() ||
         !callbacks.interactionReceived) {
@@ -390,7 +411,27 @@ public:
         callbacks.context,
         interactionIterator->second.first.c_str(),
         &array,
-        &tagSpan);
+        &tagSpan,
+        &receiveInfo);
+  }
+
+  void receiveInteraction(
+      rti1516e::InteractionClassHandle interactionHandle,
+      const rti1516e::ParameterHandleValueMap& parameterValues,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType,
+      rti1516e::TransportationType,
+      rti1516e::SupplementalReceiveInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    const QttestHlaReceiveInfoV7 receiveInfo = {
+        sizeof(QttestHlaReceiveInfoV7), QTTEST_HLA_RECEIVE_ORDER, 0, 0.0};
+    this->emitInteraction(
+        interactionHandle, parameterValues, tag, receiveInfo);
   }
 
   void receiveInteraction(
@@ -399,7 +440,7 @@ public:
       const rti1516e::VariableLengthData& tag,
       rti1516e::OrderType sentOrder,
       rti1516e::TransportationType transportation,
-      const rti1516e::LogicalTime&,
+      const rti1516e::LogicalTime& logicalTime,
       rti1516e::OrderType,
       rti1516e::SupplementalReceiveInfo receiveInfo)
 #ifdef QTTEST_HLA_OPENRTI_BACKEND
@@ -408,9 +449,12 @@ public:
       RTI_THROW (rti1516e::FederateInternalError)
 #endif
       override {
-    this->receiveInteraction(
-        interactionHandle, parameterValues, tag, sentOrder, transportation,
-        receiveInfo);
+    const rti1516e::HLAfloat64Time time(logicalTime);
+    const QttestHlaReceiveInfoV7 metadata = {
+        sizeof(QttestHlaReceiveInfoV7), QTTEST_HLA_TIMESTAMP_ORDER, 1,
+        time.getTime()};
+    this->emitInteraction(
+        interactionHandle, parameterValues, tag, metadata);
   }
 
   void receiveInteraction(
@@ -436,7 +480,7 @@ public:
 
   std::set<std::wstring> reservedNames;
   std::set<std::wstring> failedNames;
-  QttestHlaCallbacksV6 callbacks = {};
+  QttestHlaCallbacksV7 callbacks = {};
   uint64_t nextRemoteObjectId = 1;
   std::map<rti1516e::ObjectClassHandle, SubscribedObjectClass>
       subscribedObjectClasses;
@@ -1033,10 +1077,10 @@ int requestTimeAdvance(
 
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV6* callbacks) {
+    const QttestHlaCallbacksV7* callbacks) {
   PitchSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV6)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV7)) {
     return fail(value, "Invalid HLA callback configuration", QTTEST_HLA_STATE_ERROR);
   }
   value->federateAmbassador.callbacks = *callbacks;
@@ -1209,8 +1253,8 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "HLA backend session is unavailable";
 }
 
-const QttestHlaBackendApiV6 api = {
-    sizeof(QttestHlaBackendApiV6),
+const QttestHlaBackendApiV7 api = {
+    sizeof(QttestHlaBackendApiV7),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     QTTEST_HLA_1516E_BACKEND_ID,
     QTTEST_HLA_1516E_BACKEND_NAME,
@@ -1245,7 +1289,7 @@ const QttestHlaBackendApiV6 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV6*
-qttest_hla_backend_api_v6(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV7*
+qttest_hla_backend_api_v7(void) {
   return &api;
 }

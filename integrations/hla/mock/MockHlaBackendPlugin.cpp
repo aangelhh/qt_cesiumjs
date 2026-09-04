@@ -10,7 +10,7 @@ struct MockSession {
   std::string error;
   uint64_t nextObjectId = 1;
   std::set<uint64_t> objects;
-  QttestHlaCallbacksV6 callbacks = {};
+  QttestHlaCallbacksV7 callbacks = {};
   bool timeRegulating = false;
   bool timeConstrained = false;
   double logicalTimeSeconds = 0.0;
@@ -293,10 +293,10 @@ int requestTimeAdvance(
 
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV6* callbacks) {
+    const QttestHlaCallbacksV7* callbacks) {
   MockSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV6)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV7)) {
     return fail(value, "Invalid mock callback configuration");
   }
   value->callbacks = *callbacks;
@@ -346,8 +346,8 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "Mock plugin session is unavailable";
 }
 
-const QttestHlaBackendApiV6 api = {
-    sizeof(QttestHlaBackendApiV6),
+const QttestHlaBackendApiV7 api = {
+    sizeof(QttestHlaBackendApiV7),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     "mock-plugin",
     "1.0",
@@ -382,7 +382,7 @@ const QttestHlaBackendApiV6 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV6*
-qttest_hla_backend_api_v6(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV7*
+qttest_hla_backend_api_v7(void) {
   return &api;
 }

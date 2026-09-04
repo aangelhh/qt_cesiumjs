@@ -98,6 +98,59 @@ TEST(HlaInboundAdapter, ConvertsRemotePlatformLifecycleToEntityChanges) {
   EXPECT_EQ(changes.front().state.stableId, "hla:remote-fighter-01");
 }
 
+TEST(HlaInboundAdapter, IgnoresRegressiveTimestampedPlatformState) {
+  tactical::hla::HlaInboundAdapter adapter;
+  tactical::hla::RprEntityState source;
+  source.name = "ordered-fighter";
+  source.domain = "Air";
+  source.latitudeDegrees = 41.0;
+  source.longitudeDegrees = -3.0;
+  source.altitudeMeters = 5000.0;
+
+  adapter.onObjectDiscovered({
+      13,
+      "HLAobjectRoot.BaseEntity.PhysicalEntity.Platform.Aircraft",
+      "ordered-fighter-01"});
+  adapter.onObjectReflected({
+      13,
+      tactical::hla::RprFomEncoding::encodeAttributes(source, 2, 3, 5),
+      {},
+      {tactical::hla::DeliveryOrder::Timestamp, 2.0}});
+
+  source.latitudeDegrees = 39.0;
+  adapter.onObjectReflected({
+      13,
+      tactical::hla::RprFomEncoding::encodeAttributes(source, 2, 3, 5),
+      {},
+      {tactical::hla::DeliveryOrder::Timestamp, 1.0}});
+  auto changes = adapter.takeEntityChanges();
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_NEAR(changes.front().state.latitudeDegrees, 41.0, 1.0e-6);
+
+  source.latitudeDegrees = 42.0;
+  adapter.onObjectReflected({
+      13,
+      tactical::hla::RprFomEncoding::encodeAttributes(source, 2, 3, 5),
+      {},
+      {tactical::hla::DeliveryOrder::Timestamp, 3.0}});
+  adapter.onObjectRemoved({
+      13,
+      {},
+      {tactical::hla::DeliveryOrder::Timestamp, 2.5}});
+  changes = adapter.takeEntityChanges();
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_FALSE(changes.front().removed);
+  EXPECT_NEAR(changes.front().state.latitudeDegrees, 42.0, 1.0e-6);
+
+  adapter.onObjectRemoved({
+      13,
+      {},
+      {tactical::hla::DeliveryOrder::Timestamp, 4.0}});
+  changes = adapter.takeEntityChanges();
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_TRUE(changes.front().removed);
+}
+
 TEST(HlaInboundAdapter, ConvertsRemoteMunitionLifecycleWithoutCreatingEntity) {
   tactical::hla::HlaInboundAdapter adapter;
   tactical::hla::RprEntityState source;

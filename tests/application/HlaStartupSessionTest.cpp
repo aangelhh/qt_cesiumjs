@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <future>
+#include <optional>
 
 TEST(HlaStartupSession, RejectsUnavailableBackend) {
   application::HlaStartupConfiguration configuration;
@@ -149,6 +150,8 @@ TEST(HlaStartupSession, OpenRtiDeliversTimestampedEntityBetweenFederates) {
   ASSERT_TRUE(subscriber.requestTimeAdvance(0.033).success);
 
   bool received = false;
+  std::optional<double> receivedLogicalTime;
+  bool receivedTimestamp = false;
   bool publisherGranted = false;
   bool subscriberGranted = false;
   for (int attempt = 0;
@@ -168,6 +171,12 @@ TEST(HlaStartupSession, OpenRtiDeliversTimestampedEntityBetweenFederates) {
     for (const auto& change : subscriber.takeRemoteEntityChanges()) {
       if (!change.removed && change.instanceId != 0) {
         received = true;
+        receivedLogicalTime = change.receiveMetadata.logicalTimeSeconds;
+        receivedTimestamp =
+            change.receiveMetadata.order ==
+                tactical::hla::DeliveryOrder::Timestamp &&
+            change.receiveMetadata.logicalTimeSeconds.has_value() &&
+            std::abs(*change.receiveMetadata.logicalTimeSeconds - 0.01) < 1.0e-9;
       }
     }
     if (!(received && publisherGranted && subscriberGranted)) {
@@ -178,6 +187,9 @@ TEST(HlaStartupSession, OpenRtiDeliversTimestampedEntityBetweenFederates) {
   EXPECT_TRUE(publisherGranted);
   EXPECT_TRUE(subscriberGranted);
   EXPECT_TRUE(received);
+  ASSERT_TRUE(receivedLogicalTime.has_value());
+  EXPECT_DOUBLE_EQ(*receivedLogicalTime, 0.01);
+  EXPECT_TRUE(receivedTimestamp);
   EXPECT_TRUE(subscriber.stop().success);
   EXPECT_TRUE(publisher.stop().success);
 }

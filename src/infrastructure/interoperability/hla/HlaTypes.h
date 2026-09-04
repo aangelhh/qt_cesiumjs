@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -42,6 +43,16 @@ struct NamedValue {
   ByteBuffer value;
 };
 
+enum class DeliveryOrder {
+  Receive,
+  Timestamp
+};
+
+struct ReceiveMetadata {
+  DeliveryOrder order = DeliveryOrder::Receive;
+  std::optional<double> logicalTimeSeconds;
+};
+
 struct RemoteObjectDiscovery {
   ObjectInstanceId instanceId = 0;
   std::string objectClassName;
@@ -52,17 +63,51 @@ struct RemoteObjectReflection {
   ObjectInstanceId instanceId = 0;
   std::vector<NamedValue> attributes;
   ByteBuffer tag;
+  ReceiveMetadata receiveMetadata;
+
+  RemoteObjectReflection() = default;
+  RemoteObjectReflection(
+      ObjectInstanceId instanceIdValue,
+      std::vector<NamedValue> attributeValues,
+      ByteBuffer tagValue,
+      ReceiveMetadata metadata = {})
+      : instanceId(instanceIdValue),
+        attributes(std::move(attributeValues)),
+        tag(std::move(tagValue)),
+        receiveMetadata(std::move(metadata)) {}
 };
 
 struct RemoteObjectRemoval {
   ObjectInstanceId instanceId = 0;
   ByteBuffer tag;
+  ReceiveMetadata receiveMetadata;
+
+  RemoteObjectRemoval() = default;
+  RemoteObjectRemoval(
+      ObjectInstanceId instanceIdValue,
+      ByteBuffer tagValue,
+      ReceiveMetadata metadata = {})
+      : instanceId(instanceIdValue),
+        tag(std::move(tagValue)),
+        receiveMetadata(std::move(metadata)) {}
 };
 
 struct RemoteInteraction {
   std::string interactionClassName;
   std::vector<NamedValue> parameters;
   ByteBuffer tag;
+  ReceiveMetadata receiveMetadata;
+
+  RemoteInteraction() = default;
+  RemoteInteraction(
+      std::string className,
+      std::vector<NamedValue> parameterValues,
+      ByteBuffer tagValue,
+      ReceiveMetadata metadata = {})
+      : interactionClassName(std::move(className)),
+        parameters(std::move(parameterValues)),
+        tag(std::move(tagValue)),
+        receiveMetadata(std::move(metadata)) {}
 };
 
 struct SynchronizationPointAnnouncement {

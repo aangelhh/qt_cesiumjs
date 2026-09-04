@@ -115,7 +115,7 @@ Implemented lifecycle, publication, and reception:
 19. Poll callbacks.
 20. Remove owned objects, resign, and disconnect with rollback on failure.
 
-The plugin ABI v6 keeps RTI handles private to each plugin and exposes opaque
+The plugin ABI v7 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
 classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 `DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
@@ -195,10 +195,14 @@ receive-order API remains available for unmanaged sessions and immediate
 control interactions. Both IEEE 1516e plugins handle the timestamped callback
 overloads for object discovery, attribute reflection, object removal, and
 interaction reception; the neutral inbound path therefore receives TSO events
-instead of silently discarding them. A two-federate OpenRTI integration test
-verifies timestamped entity delivery and logical-time grants. Exposing the
-received logical timestamp in diagnostics, next-event requests, asynchronous
-delivery, and coordinated fast-time policy remain future work.
+instead of silently discarding them. Delivery order and logical timestamp are
+preserved through the C ABI and neutral event model. The inbound adapter rejects
+regressive timestamped object updates and removals, preventing stale network
+traffic from rolling a remote entity back to an older state. A two-federate
+OpenRTI integration test verifies timestamped entity delivery, timestamp
+metadata, and logical-time grants. Operator-facing time diagnostics, next-event
+requests, asynchronous delivery, and coordinated fast-time policy remain
+future work.
 
 Ownership Management, DDM, save/restore, and NETN-ETR task exchange remain
 subsequent Feature 19 tasks.
@@ -229,7 +233,7 @@ needed, publishes one synthetic Aircraft, updates and removes it, then exits.
 ## Adding another RTI
 
 1. Add `integrations/hla/<backend>/<Backend>Plugin.cpp`.
-2. Implement every function in `QttestHlaBackendApiV6`, including callback
+2. Implement every function in `QttestHlaBackendApiV7`, including callback
    registration and object/interaction subscriptions.
 3. Keep vendor headers and libraries private to that plugin target.
 4. Return backend identity, version, capabilities, and diagnostic errors.
