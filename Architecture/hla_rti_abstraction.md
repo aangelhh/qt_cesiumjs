@@ -192,9 +192,13 @@ remains the default. When Time Management is active, local entity, munition,
 radar/emitter, `WeaponFire`, and `MunitionDetonation` publications use
 timestamp order at `granted logical time + configured lookahead`. The
 receive-order API remains available for unmanaged sessions and immediate
-control interactions. Timestamp-aware inbound diagnostics, next-event
-requests, asynchronous delivery, and coordinated fast-time policy remain
-future work.
+control interactions. Both IEEE 1516e plugins handle the timestamped callback
+overloads for object discovery, attribute reflection, object removal, and
+interaction reception; the neutral inbound path therefore receives TSO events
+instead of silently discarding them. A two-federate OpenRTI integration test
+verifies timestamped entity delivery and logical-time grants. Exposing the
+received logical timestamp in diagnostics, next-event requests, asynchronous
+delivery, and coordinated fast-time policy remain future work.
 
 Ownership Management, DDM, save/restore, and NETN-ETR task exchange remain
 subsequent Feature 19 tasks.

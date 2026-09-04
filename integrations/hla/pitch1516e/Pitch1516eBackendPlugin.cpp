@@ -185,6 +185,21 @@ public:
     }
   }
 
+  void discoverObjectInstance(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      rti1516e::ObjectClassHandle classHandle,
+      const std::wstring& objectInstanceName,
+      rti1516e::FederateHandle)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    this->discoverObjectInstance(
+        objectHandle, classHandle, objectInstanceName);
+  }
+
   void reflectAttributeValues(
       rti1516e::ObjectInstanceHandle objectHandle,
       const rti1516e::AttributeHandleValueMap& attributeValues,
@@ -231,6 +246,47 @@ public:
         callbacks.context, objectIterator->second.id, &array, &tagSpan);
   }
 
+  void reflectAttributeValues(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::AttributeHandleValueMap& attributeValues,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType sentOrder,
+      rti1516e::TransportationType transportation,
+      const rti1516e::LogicalTime&,
+      rti1516e::OrderType,
+      rti1516e::SupplementalReflectInfo reflectInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    this->reflectAttributeValues(
+        objectHandle, attributeValues, tag, sentOrder, transportation,
+        reflectInfo);
+  }
+
+  void reflectAttributeValues(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::AttributeHandleValueMap& attributeValues,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType sentOrder,
+      rti1516e::TransportationType transportation,
+      const rti1516e::LogicalTime& logicalTime,
+      rti1516e::OrderType receivedOrder,
+      rti1516e::MessageRetractionHandle,
+      rti1516e::SupplementalReflectInfo reflectInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    this->reflectAttributeValues(
+        objectHandle, attributeValues, tag, sentOrder, transportation,
+        logicalTime, receivedOrder, reflectInfo);
+  }
+
   void removeObjectInstance(
       rti1516e::ObjectInstanceHandle objectHandle,
       const rti1516e::VariableLengthData& tag,
@@ -253,6 +309,40 @@ public:
           tag.size()};
       callbacks.objectRemoved(callbacks.context, remoteId, &tagSpan);
     }
+  }
+
+  void removeObjectInstance(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType sentOrder,
+      const rti1516e::LogicalTime&,
+      rti1516e::OrderType,
+      rti1516e::SupplementalRemoveInfo removeInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    this->removeObjectInstance(objectHandle, tag, sentOrder, removeInfo);
+  }
+
+  void removeObjectInstance(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType sentOrder,
+      const rti1516e::LogicalTime& logicalTime,
+      rti1516e::OrderType receivedOrder,
+      rti1516e::MessageRetractionHandle,
+      rti1516e::SupplementalRemoveInfo removeInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    this->removeObjectInstance(
+        objectHandle, tag, sentOrder, logicalTime, receivedOrder, removeInfo);
   }
 
   void receiveInteraction(
@@ -301,6 +391,47 @@ public:
         interactionIterator->second.first.c_str(),
         &array,
         &tagSpan);
+  }
+
+  void receiveInteraction(
+      rti1516e::InteractionClassHandle interactionHandle,
+      const rti1516e::ParameterHandleValueMap& parameterValues,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType sentOrder,
+      rti1516e::TransportationType transportation,
+      const rti1516e::LogicalTime&,
+      rti1516e::OrderType,
+      rti1516e::SupplementalReceiveInfo receiveInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    this->receiveInteraction(
+        interactionHandle, parameterValues, tag, sentOrder, transportation,
+        receiveInfo);
+  }
+
+  void receiveInteraction(
+      rti1516e::InteractionClassHandle interactionHandle,
+      const rti1516e::ParameterHandleValueMap& parameterValues,
+      const rti1516e::VariableLengthData& tag,
+      rti1516e::OrderType sentOrder,
+      rti1516e::TransportationType transportation,
+      const rti1516e::LogicalTime& logicalTime,
+      rti1516e::OrderType receivedOrder,
+      rti1516e::MessageRetractionHandle,
+      rti1516e::SupplementalReceiveInfo receiveInfo)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    this->receiveInteraction(
+        interactionHandle, parameterValues, tag, sentOrder, transportation,
+        logicalTime, receivedOrder, receiveInfo);
   }
 
   std::set<std::wstring> reservedNames;

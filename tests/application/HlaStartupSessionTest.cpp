@@ -6,6 +6,9 @@
 #include <QFileInfo>
 #include <QThread>
 
+#include <chrono>
+#include <future>
+
 TEST(HlaStartupSession, RejectsUnavailableBackend) {
   application::HlaStartupConfiguration configuration;
   configuration.backendId = QStringLiteral("missing");
@@ -93,5 +96,89 @@ TEST(HlaStartupSession, AdvancesOnlyAfterOpenRtiLogicalTimeGrant) {
   entity.longitude = 0.001;
   EXPECT_TRUE(session.publishEntities({entity}).success);
   EXPECT_TRUE(session.stop().success);
+}
+
+TEST(HlaStartupSession, OpenRtiDeliversTimestampedEntityBetweenFederates) {
+  application::StartupConfiguration startupConfiguration;
+  startupConfiguration.addMissingHlaFomModules(
+      QStringLiteral(QTTEST_SOURCE_DIR "/src/infrastructure/hla/FOM"));
+  auto configuration = startupConfiguration.hla;
+  configuration.backendId = QStringLiteral("openrti1516e");
+  configuration.backendLibraryPath =
+      QStringLiteral(QTTEST_HLA_OPENRTI_PLUGIN_PATH);
+  configuration.localSettingsDesignator = QStringLiteral("thread://");
+  configuration.federationName =
+      QStringLiteral("qttest-timestamp-roundtrip-test");
+  configuration.federateType = QStringLiteral("qttest-test");
+  configuration.timeManagementEnabled = true;
+  configuration.timeLookaheadSeconds = 0.01;
+
+  application::HlaStartupSession publisher;
+  configuration.federateName = QStringLiteral("timestamp-publisher");
+  configuration.timeManagementEnabled = true;
+  const tactical::hla::Result publisherStart = publisher.start(configuration);
+  ASSERT_TRUE(publisherStart.success) << publisherStart.message;
+  application::HlaStartupSession subscriber;
+  configuration.federateName = QStringLiteral("timestamp-subscriber");
+  configuration.timeManagementEnabled = true;
+  auto subscriberStartFuture = std::async(
+      std::launch::async,
+      [&subscriber, configuration]() {
+        return subscriber.start(configuration);
+      });
+  while (subscriberStartFuture.wait_for(std::chrono::milliseconds(5)) !=
+         std::future_status::ready) {
+    ASSERT_TRUE(publisher.poll(0.01).success);
+  }
+  const tactical::hla::Result subscriberStart = subscriberStartFuture.get();
+  ASSERT_TRUE(subscriberStart.success) << subscriberStart.message;
+  for (int attempt = 0; attempt < 20; ++attempt) {
+    ASSERT_TRUE(publisher.poll(0.01).success);
+    ASSERT_TRUE(subscriber.poll(0.01).success);
+  }
+
+  Entity entity;
+  entity.entityId = QStringLiteral("timestamp-aircraft");
+  entity.name = QStringLiteral("Timestamp Aircraft");
+  entity.domain = QStringLiteral("Air");
+  entity.latitude = 40.0;
+  entity.longitude = -4.0;
+  entity.altitude = 2500;
+  ASSERT_TRUE(publisher.publishEntities({entity}).success);
+  ASSERT_TRUE(publisher.requestTimeAdvance(0.033).success);
+  ASSERT_TRUE(subscriber.requestTimeAdvance(0.033).success);
+
+  bool received = false;
+  bool publisherGranted = false;
+  bool subscriberGranted = false;
+  for (int attempt = 0;
+       attempt < 300 &&
+       !(received && publisherGranted && subscriberGranted);
+       ++attempt) {
+    ASSERT_TRUE(publisher.poll(0.01).success);
+    ASSERT_TRUE(subscriber.poll(0.01).success);
+    for (const auto& event : publisher.takeRemoteTimeManagementEvents()) {
+      publisherGranted = publisherGranted ||
+          event.kind == tactical::hla::RemoteTimeManagementEventKind::AdvanceGranted;
+    }
+    for (const auto& event : subscriber.takeRemoteTimeManagementEvents()) {
+      subscriberGranted = subscriberGranted ||
+          event.kind == tactical::hla::RemoteTimeManagementEventKind::AdvanceGranted;
+    }
+    for (const auto& change : subscriber.takeRemoteEntityChanges()) {
+      if (!change.removed && change.instanceId != 0) {
+        received = true;
+      }
+    }
+    if (!(received && publisherGranted && subscriberGranted)) {
+      QThread::msleep(5);
+    }
+  }
+
+  EXPECT_TRUE(publisherGranted);
+  EXPECT_TRUE(subscriberGranted);
+  EXPECT_TRUE(received);
+  EXPECT_TRUE(subscriber.stop().success);
+  EXPECT_TRUE(publisher.stop().success);
 }
 #endif
