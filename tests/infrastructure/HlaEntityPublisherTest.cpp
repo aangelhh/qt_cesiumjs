@@ -79,3 +79,21 @@ TEST(HlaEntityPublisher, RejectsEntityWithoutStableId) {
   EXPECT_FALSE(result.success);
   EXPECT_NE(result.message.find("stable id"), std::string::npos);
 }
+
+TEST(HlaEntityPublisher, UsesTimestampOnlyWhenProvided) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::MockHlaBackend* backendView = backend.get();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  ASSERT_TRUE(runtime.start(configuration()).success);
+  tactical::hla::HlaEntityPublisher publisher(runtime);
+
+  ASSERT_TRUE(publisher.synchronize({entity("entity-a", "fighter")}).success);
+  ASSERT_TRUE(publisher.synchronize(
+      {entity("entity-a", "fighter")}, 2.5).success);
+
+  ASSERT_EQ(backendView->attributeUpdates().size(), 2U);
+  EXPECT_FALSE(backendView->attributeUpdates().at(0).logicalTimeSeconds);
+  ASSERT_TRUE(backendView->attributeUpdates().at(1).logicalTimeSeconds);
+  EXPECT_DOUBLE_EQ(
+      *backendView->attributeUpdates().at(1).logicalTimeSeconds, 2.5);
+}

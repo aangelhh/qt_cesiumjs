@@ -11,6 +11,7 @@
 #include "domain/Munition.h"
 
 #include <memory>
+#include <optional>
 #include <QVector>
 
 namespace application {
@@ -53,6 +54,8 @@ public:
   QString backendId() const;
 
 private:
+  std::optional<double> publicationLogicalTimeSeconds() const;
+
   std::unique_ptr<tactical::hla::HlaRuntime> _runtime;
   std::unique_ptr<tactical::hla::HlaEntityPublisher> _entityPublisher;
   std::unique_ptr<tactical::hla::HlaWarfarePublisher> _warfarePublisher;
@@ -64,6 +67,7 @@ private:
   bool _timeManagementActive = false;
   bool _timeAdvancePending = false;
   double _grantedLogicalTimeSeconds = 0.0;
+  double _timeLookaheadSeconds = 0.0;
 };
 
 } // namespace application

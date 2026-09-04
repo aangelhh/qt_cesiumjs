@@ -153,3 +153,41 @@ TEST(HlaRuntime, RejectsInvalidTimeManagementRequests) {
   EXPECT_FALSE(runtime.enableTimeRegulation(0.0).success);
   EXPECT_FALSE(runtime.requestTimeAdvance(-1.0).success);
 }
+
+TEST(HlaRuntime, ForwardsTimestampedObjectAndInteractionOperations) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::MockHlaBackend* backendView = backend.get();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  ASSERT_TRUE(runtime.start(validConfiguration()).success);
+  ASSERT_TRUE(runtime.publishObjectClass("Object", {"Position"}).success);
+  tactical::hla::ObjectInstanceId instanceId = 0;
+  ASSERT_TRUE(runtime.registerObjectInstance(
+      "Object", "object-01", instanceId).success);
+  ASSERT_TRUE(runtime.publishInteractionClass("Interaction").success);
+
+  ASSERT_TRUE(runtime.updateObjectAttributesAtTime(
+      instanceId, {{"Position", {1}}}, 1.25).success);
+  ASSERT_TRUE(runtime.sendInteractionAtTime(
+      "Interaction", {{"Value", {2}}}, 1.25).success);
+  ASSERT_EQ(backendView->attributeUpdates().size(), 1U);
+  ASSERT_TRUE(backendView->attributeUpdates().front().logicalTimeSeconds);
+  EXPECT_DOUBLE_EQ(
+      *backendView->attributeUpdates().front().logicalTimeSeconds, 1.25);
+  ASSERT_EQ(backendView->sentInteractions().size(), 1U);
+  ASSERT_TRUE(backendView->sentInteractions().front().logicalTimeSeconds);
+  EXPECT_DOUBLE_EQ(
+      *backendView->sentInteractions().front().logicalTimeSeconds, 1.25);
+  EXPECT_TRUE(runtime.deleteObjectInstanceAtTime(instanceId, 1.25).success);
+}
+
+TEST(HlaRuntime, RejectsInvalidTimestampedOperations) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  ASSERT_TRUE(runtime.start(validConfiguration()).success);
+
+  EXPECT_FALSE(runtime.updateObjectAttributesAtTime(
+      1, {{"Position", {1}}}, -1.0).success);
+  EXPECT_FALSE(runtime.deleteObjectInstanceAtTime(1, -1.0).success);
+  EXPECT_FALSE(runtime.sendInteractionAtTime(
+      "Interaction", {}, -1.0).success);
+}

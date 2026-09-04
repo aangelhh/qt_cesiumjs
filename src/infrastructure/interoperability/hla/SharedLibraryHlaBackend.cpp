@@ -90,7 +90,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   const auto apiFactory = reinterpret_cast<QttestHlaBackendApiFn>(
-      _library.resolve("qttest_hla_backend_api_v5"));
+      _library.resolve("qttest_hla_backend_api_v6"));
   if (!apiFactory) {
     _loadError = "Required HLA backend API symbol is missing";
     _library.unload();
@@ -98,7 +98,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   _api = apiFactory();
-  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV5) ||
+  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV6) ||
       _api->abiVersion != QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION) {
     _loadError = "Unsupported HLA backend plugin ABI";
     _api = nullptr;
@@ -109,9 +109,11 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
       !_api->connect || !_api->createFederation || !_api->joinFederation ||
       !_api->publishObjectClass || !_api->subscribeObjectClass ||
       !_api->registerObjectInstance ||
-      !_api->updateObjectAttributes || !_api->deleteObjectInstance ||
+      !_api->updateObjectAttributes || !_api->updateObjectAttributesAtTime ||
+      !_api->deleteObjectInstance || !_api->deleteObjectInstanceAtTime ||
       !_api->publishInteractionClass || !_api->subscribeInteractionClass ||
-      !_api->sendInteraction || !_api->registerSynchronizationPoint ||
+      !_api->sendInteraction || !_api->sendInteractionAtTime ||
+      !_api->registerSynchronizationPoint ||
       !_api->achieveSynchronizationPoint || !_api->enableTimeRegulation ||
       !_api->enableTimeConstrained || !_api->requestTimeAdvance ||
       !_api->setCallbacks ||
@@ -130,8 +132,8 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
     _library.unload();
     return;
   }
-  const QttestHlaCallbacksV5 callbacks = {
-      sizeof(QttestHlaCallbacksV5),
+  const QttestHlaCallbacksV6 callbacks = {
+      sizeof(QttestHlaCallbacksV6),
       this,
       &SharedLibraryHlaBackend::objectDiscoveredCallback,
       &SharedLibraryHlaBackend::objectReflectedCallback,
@@ -276,6 +278,20 @@ Result SharedLibraryHlaBackend::updateObjectAttributes(
       _handle, instanceId, &valueArray, &tagSpan));
 }
 
+Result SharedLibraryHlaBackend::updateObjectAttributesAtTime(
+    ObjectInstanceId instanceId,
+    const std::vector<NamedValue>& attributes,
+    double logicalTimeSeconds,
+    const ByteBuffer& tag) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  std::vector<QttestHlaNamedValueV2> values;
+  const QttestHlaNamedValueArrayV2 valueArray =
+      makeNamedValueArray(attributes, values);
+  const QttestHlaByteSpanV2 tagSpan = makeByteSpan(tag);
+  return this->pluginResult(_api->updateObjectAttributesAtTime(
+      _handle, instanceId, &valueArray, logicalTimeSeconds, &tagSpan));
+}
+
 Result SharedLibraryHlaBackend::deleteObjectInstance(
     ObjectInstanceId instanceId,
     const ByteBuffer& tag) {
@@ -285,6 +301,16 @@ Result SharedLibraryHlaBackend::deleteObjectInstance(
   const QttestHlaByteSpanV2 tagSpan = makeByteSpan(tag);
   return this->pluginResult(
       _api->deleteObjectInstance(_handle, instanceId, &tagSpan));
+}
+
+Result SharedLibraryHlaBackend::deleteObjectInstanceAtTime(
+    ObjectInstanceId instanceId,
+    double logicalTimeSeconds,
+    const ByteBuffer& tag) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  const QttestHlaByteSpanV2 tagSpan = makeByteSpan(tag);
+  return this->pluginResult(_api->deleteObjectInstanceAtTime(
+      _handle, instanceId, logicalTimeSeconds, &tagSpan));
 }
 
 Result SharedLibraryHlaBackend::publishInteractionClass(
@@ -320,6 +346,24 @@ Result SharedLibraryHlaBackend::sendInteraction(
   const QttestHlaByteSpanV2 tagSpan = makeByteSpan(tag);
   return this->pluginResult(_api->sendInteraction(
       _handle, interactionClassName.c_str(), &valueArray, &tagSpan));
+}
+
+Result SharedLibraryHlaBackend::sendInteractionAtTime(
+    const std::string& interactionClassName,
+    const std::vector<NamedValue>& parameters,
+    double logicalTimeSeconds,
+    const ByteBuffer& tag) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  std::vector<QttestHlaNamedValueV2> values;
+  const QttestHlaNamedValueArrayV2 valueArray =
+      makeNamedValueArray(parameters, values);
+  const QttestHlaByteSpanV2 tagSpan = makeByteSpan(tag);
+  return this->pluginResult(_api->sendInteractionAtTime(
+      _handle,
+      interactionClassName.c_str(),
+      &valueArray,
+      logicalTimeSeconds,
+      &tagSpan));
 }
 
 Result SharedLibraryHlaBackend::registerSynchronizationPoint(

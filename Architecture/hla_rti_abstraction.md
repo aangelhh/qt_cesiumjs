@@ -115,7 +115,7 @@ Implemented lifecycle, publication, and reception:
 19. Poll callbacks.
 20. Remove owned objects, resign, and disconnect with rollback on failure.
 
-The plugin ABI v5 keeps RTI handles private to each plugin and exposes opaque
+The plugin ABI v6 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
 classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 `DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
@@ -188,7 +188,11 @@ time regulation first, waits for its callback, then enables time constrained
 execution. The Qt simulation timer requests one logical step at a time and
 `ScenarioState` advances only after `timeAdvanceGrant`; duplicate outstanding
 requests and regressive logical times are rejected. Receive-order execution
-remains the default. Timestamp-ordered object updates/interactions, next-event
+remains the default. When Time Management is active, local entity, munition,
+radar/emitter, `WeaponFire`, and `MunitionDetonation` publications use
+timestamp order at `granted logical time + configured lookahead`. The
+receive-order API remains available for unmanaged sessions and immediate
+control interactions. Timestamp-aware inbound diagnostics, next-event
 requests, asynchronous delivery, and coordinated fast-time policy remain
 future work.
 
@@ -221,7 +225,7 @@ needed, publishes one synthetic Aircraft, updates and removes it, then exits.
 ## Adding another RTI
 
 1. Add `integrations/hla/<backend>/<Backend>Plugin.cpp`.
-2. Implement every function in `QttestHlaBackendApiV5`, including callback
+2. Implement every function in `QttestHlaBackendApiV6`, including callback
    registration and object/interaction subscriptions.
 3. Keep vendor headers and libraries private to that plugin target.
 4. Return backend identity, version, capabilities, and diagnostic errors.

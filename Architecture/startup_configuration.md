@@ -32,6 +32,9 @@ time-constrained path. qttest negotiates both services sequentially before the
 main window opens. The configured lookahead defaults to `0.01 s`. While the
 simulation is running, qttest keeps at most one time advance request pending;
 the local scenario advances only to the logical time granted by the RTI.
+Entity, munition, radar/emitter, fire, and detonation publications are sent at
+the latest grant plus that lookahead. Simulation-control interactions remain
+receive-order so an operator can pause or stop immediately.
 Leaving this option disabled retains the existing receive-order local clock.
 
 After joining, local entity objects are registered and updated every 100 ms.

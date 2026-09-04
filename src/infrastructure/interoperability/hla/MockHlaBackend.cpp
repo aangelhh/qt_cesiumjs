@@ -112,7 +112,25 @@ Result MockHlaBackend::updateObjectAttributes(
           _objectInstances.end()) {
     return this->fail("Mock object update is invalid");
   }
-  _attributeUpdates.push_back({instanceId, attributes});
+  _attributeUpdates.push_back({instanceId, attributes, std::nullopt});
+  return Result::ok();
+}
+
+Result MockHlaBackend::updateObjectAttributesAtTime(
+    ObjectInstanceId instanceId,
+    const std::vector<NamedValue>& attributes,
+    double logicalTimeSeconds,
+    const ByteBuffer&) {
+  const Result beginResult = this->begin(Operation::UpdateObjectAttributes);
+  if (!beginResult.success) return beginResult;
+  const bool registered = std::find(
+      _objectInstances.begin(), _objectInstances.end(), instanceId) !=
+      _objectInstances.end();
+  if (_state != BackendState::Joined || !registered || attributes.empty() ||
+      logicalTimeSeconds < 0.0) {
+    return this->fail("Mock timestamped attribute update is invalid");
+  }
+  _attributeUpdates.push_back({instanceId, attributes, logicalTimeSeconds});
   return Result::ok();
 }
 
@@ -128,6 +146,16 @@ Result MockHlaBackend::deleteObjectInstance(
   }
   _objectInstances.erase(iterator);
   return Result::ok();
+}
+
+Result MockHlaBackend::deleteObjectInstanceAtTime(
+    ObjectInstanceId instanceId,
+    double logicalTimeSeconds,
+    const ByteBuffer& tag) {
+  if (logicalTimeSeconds < 0.0) {
+    return this->fail("Mock timestamped object deletion is invalid");
+  }
+  return this->deleteObjectInstance(instanceId, tag);
 }
 
 Result MockHlaBackend::publishInteractionClass(
@@ -161,7 +189,24 @@ Result MockHlaBackend::sendInteraction(
     return this->fail("Mock interaction is invalid");
   }
   _sentInteractionClasses.push_back(interactionClassName);
-  _sentInteractions.push_back({interactionClassName, parameters});
+  _sentInteractions.push_back({interactionClassName, parameters, std::nullopt});
+  return Result::ok();
+}
+
+Result MockHlaBackend::sendInteractionAtTime(
+    const std::string& interactionClassName,
+    const std::vector<NamedValue>& parameters,
+    double logicalTimeSeconds,
+    const ByteBuffer&) {
+  const Result beginResult = this->begin(Operation::SendInteraction);
+  if (!beginResult.success) return beginResult;
+  if (_state != BackendState::Joined || interactionClassName.empty() ||
+      logicalTimeSeconds < 0.0) {
+    return this->fail("Mock timestamped interaction is invalid");
+  }
+  _sentInteractionClasses.push_back(interactionClassName);
+  _sentInteractions.push_back(
+      {interactionClassName, parameters, logicalTimeSeconds});
   return Result::ok();
 }
 

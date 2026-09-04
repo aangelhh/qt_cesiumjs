@@ -193,6 +193,7 @@ tactical::hla::Result HlaStartupSession::start(
       this->stop();
       return timeResult;
     }
+    _timeLookaheadSeconds = configuration.timeLookaheadSeconds;
     _timeManagementActive = true;
   }
   return tactical::hla::Result::ok();
@@ -344,7 +345,8 @@ tactical::hla::Result HlaStartupSession::publishEntities(
     state.destroyed = entity.destroyed;
     states.push_back(std::move(state));
   }
-  return _entityPublisher->synchronize(states);
+  return _entityPublisher->synchronize(
+      states, this->publicationLogicalTimeSeconds());
 }
 
 tactical::hla::Result HlaStartupSession::publishMunitions(
@@ -377,7 +379,8 @@ tactical::hla::Result HlaStartupSession::publishMunitions(
     state.speedMetersPerSecond = munition.speedMetersPerSecond;
     states.push_back(std::move(state));
   }
-  return _warfarePublisher->synchronize(states);
+  return _warfarePublisher->synchronize(
+      states, this->publicationLogicalTimeSeconds());
 }
 
 tactical::hla::Result HlaStartupSession::publishDetonations(
@@ -403,7 +406,8 @@ tactical::hla::Result HlaStartupSession::publishDetonations(
     state.altitudeMeters = effect.altitudeMeters;
     states.push_back(std::move(state));
   }
-  return _warfarePublisher->synchronizeDetonations(states);
+  return _warfarePublisher->synchronizeDetonations(
+      states, this->publicationLogicalTimeSeconds());
 }
 
 tactical::hla::Result HlaStartupSession::publishSensors(
@@ -459,13 +463,20 @@ tactical::hla::Result HlaStartupSession::publishSensors(
       states.push_back(std::move(state));
     }
   }
-  return _sensorPublisher->synchronize(states);
+  return _sensorPublisher->synchronize(
+      states, this->publicationLogicalTimeSeconds());
+}
+
+std::optional<double> HlaStartupSession::publicationLogicalTimeSeconds() const {
+  if (!_timeManagementActive) return std::nullopt;
+  return _grantedLogicalTimeSeconds + _timeLookaheadSeconds;
 }
 
 tactical::hla::Result HlaStartupSession::stop() {
   _timeManagementActive = false;
   _timeAdvancePending = false;
   _grantedLogicalTimeSeconds = 0.0;
+  _timeLookaheadSeconds = 0.0;
   if (!_runtime) {
     return tactical::hla::Result::ok();
   }

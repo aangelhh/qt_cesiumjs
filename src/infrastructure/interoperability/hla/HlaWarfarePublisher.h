@@ -3,6 +3,7 @@
 #include "infrastructure/interoperability/hla/HlaRuntime.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -36,9 +37,12 @@ class HlaWarfarePublisher {
 public:
   explicit HlaWarfarePublisher(HlaRuntime& runtime);
 
-  Result synchronize(const std::vector<RprWeaponFireState>& activeMunitions);
+  Result synchronize(
+      const std::vector<RprWeaponFireState>& activeMunitions,
+      std::optional<double> logicalTimeSeconds = std::nullopt);
   Result synchronizeDetonations(
-      const std::vector<RprMunitionDetonationState>& detonations);
+      const std::vector<RprMunitionDetonationState>& detonations,
+      std::optional<double> logicalTimeSeconds = std::nullopt);
   Result removeAll();
   std::size_t sentWeaponFireCount() const;
   std::size_t sentDetonationCount() const;

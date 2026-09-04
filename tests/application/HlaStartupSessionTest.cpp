@@ -68,6 +68,11 @@ TEST(HlaStartupSession, AdvancesOnlyAfterOpenRtiLogicalTimeGrant) {
   ASSERT_TRUE(startResult.success) << startResult.message;
   ASSERT_TRUE(session.isTimeManagementActive());
   EXPECT_DOUBLE_EQ(session.grantedLogicalTimeSeconds(), 0.0);
+  Entity entity;
+  entity.entityId = QStringLiteral("time-managed-aircraft");
+  entity.name = QStringLiteral("Time Managed Aircraft");
+  entity.domain = QStringLiteral("Air");
+  ASSERT_TRUE(session.publishEntities({entity}).success);
   ASSERT_TRUE(session.requestTimeAdvance(0.033).success);
   EXPECT_FALSE(session.requestTimeAdvance(0.066).success);
 
@@ -85,6 +90,8 @@ TEST(HlaStartupSession, AdvancesOnlyAfterOpenRtiLogicalTimeGrant) {
   }
   EXPECT_TRUE(granted);
   EXPECT_DOUBLE_EQ(session.grantedLogicalTimeSeconds(), 0.033);
+  entity.longitude = 0.001;
+  EXPECT_TRUE(session.publishEntities({entity}).success);
   EXPECT_TRUE(session.stop().success);
 }
 #endif

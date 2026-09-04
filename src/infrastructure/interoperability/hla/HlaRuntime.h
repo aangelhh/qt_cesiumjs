@@ -29,8 +29,17 @@ public:
       ObjectInstanceId instanceId,
       const std::vector<NamedValue>& attributes,
       const ByteBuffer& tag = {});
+  Result updateObjectAttributesAtTime(
+      ObjectInstanceId instanceId,
+      const std::vector<NamedValue>& attributes,
+      double logicalTimeSeconds,
+      const ByteBuffer& tag = {});
   Result deleteObjectInstance(
       ObjectInstanceId instanceId,
+      const ByteBuffer& tag = {});
+  Result deleteObjectInstanceAtTime(
+      ObjectInstanceId instanceId,
+      double logicalTimeSeconds,
       const ByteBuffer& tag = {});
   Result publishInteractionClass(const std::string& interactionClassName);
   Result subscribeInteractionClass(
@@ -39,6 +48,11 @@ public:
   Result sendInteraction(
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
+      const ByteBuffer& tag = {});
+  Result sendInteractionAtTime(
+      const std::string& interactionClassName,
+      const std::vector<NamedValue>& parameters,
+      double logicalTimeSeconds,
       const ByteBuffer& tag = {});
   Result registerSynchronizationPoint(
       const std::string& label,

@@ -305,7 +305,7 @@ public:
 
   std::set<std::wstring> reservedNames;
   std::set<std::wstring> failedNames;
-  QttestHlaCallbacksV5 callbacks = {};
+  QttestHlaCallbacksV6 callbacks = {};
   uint64_t nextRemoteObjectId = 1;
   std::map<rti1516e::ObjectClassHandle, SubscribedObjectClass>
       subscribedObjectClasses;
@@ -643,6 +643,52 @@ int updateObjectAttributes(
   }
 }
 
+int updateObjectAttributesAtTime(
+    QttestHlaBackendHandle handle,
+    uint64_t instanceId,
+    const QttestHlaNamedValueArrayV2* attributes,
+    double logicalTimeSeconds,
+    const QttestHlaByteSpanV2* tag) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED || !attributes ||
+      attributes->structSize < sizeof(QttestHlaNamedValueArrayV2) ||
+      !attributes->values || attributes->count == 0 ||
+      logicalTimeSeconds < 0.0) {
+    return fail(
+        value, "Invalid timestamped HLA attribute update",
+        QTTEST_HLA_STATE_ERROR);
+  }
+  const auto objectIterator = value->objects.find(instanceId);
+  if (objectIterator == value->objects.end()) {
+    return fail(value, "Unknown HLA object instance", QTTEST_HLA_STATE_JOINED);
+  }
+  try {
+    rti1516e::AttributeHandleValueMap attributeValues;
+    for (size_t index = 0; index < attributes->count; ++index) {
+      const QttestHlaNamedValueV2& attribute = attributes->values[index];
+      if (attribute.structSize < sizeof(QttestHlaNamedValueV2) ||
+          !attribute.name || !*attribute.name) {
+        return fail(value, "Invalid HLA attribute value", QTTEST_HLA_STATE_JOINED);
+      }
+      const rti1516e::AttributeHandle attributeHandle =
+          value->rtiAmbassador->getAttributeHandle(
+              objectIterator->second.classHandle, fromUtf8(attribute.name));
+      attributeValues[attributeHandle] = variableLengthData(&attribute.value);
+    }
+    value->rtiAmbassador->updateAttributeValues(
+        objectIterator->second.handle,
+        attributeValues,
+        variableLengthData(tag),
+        rti1516e::HLAfloat64Time(logicalTimeSeconds));
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
 int deleteObjectInstance(
     QttestHlaBackendHandle handle,
     uint64_t instanceId,
@@ -658,6 +704,37 @@ int deleteObjectInstance(
   try {
     value->rtiAmbassador->deleteObjectInstance(
         objectIterator->second.handle, variableLengthData(tag));
+    value->objects.erase(objectIterator);
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
+int deleteObjectInstanceAtTime(
+    QttestHlaBackendHandle handle,
+    uint64_t instanceId,
+    double logicalTimeSeconds,
+    const QttestHlaByteSpanV2* tag) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      logicalTimeSeconds < 0.0) {
+    return fail(
+        value, "Invalid timestamped HLA object deletion",
+        QTTEST_HLA_STATE_ERROR);
+  }
+  const auto objectIterator = value->objects.find(instanceId);
+  if (objectIterator == value->objects.end()) {
+    return fail(value, "Unknown HLA object instance", QTTEST_HLA_STATE_JOINED);
+  }
+  try {
+    value->rtiAmbassador->deleteObjectInstance(
+        objectIterator->second.handle,
+        variableLengthData(tag),
+        rti1516e::HLAfloat64Time(logicalTimeSeconds));
     value->objects.erase(objectIterator);
     value->error.clear();
     return 0;
@@ -825,10 +902,10 @@ int requestTimeAdvance(
 
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV5* callbacks) {
+    const QttestHlaCallbacksV6* callbacks) {
   PitchSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV5)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV6)) {
     return fail(value, "Invalid HLA callback configuration", QTTEST_HLA_STATE_ERROR);
   }
   value->federateAmbassador.callbacks = *callbacks;
@@ -870,6 +947,56 @@ int sendInteraction(
     }
     value->rtiAmbassador->sendInteraction(
         interactionIterator->second, parameterValues, variableLengthData(tag));
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
+int sendInteractionAtTime(
+    QttestHlaBackendHandle handle,
+    const char* interactionClassName,
+    const QttestHlaNamedValueArrayV2* parameters,
+    double logicalTimeSeconds,
+    const QttestHlaByteSpanV2* tag) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      !interactionClassName || !*interactionClassName || !parameters ||
+      parameters->structSize < sizeof(QttestHlaNamedValueArrayV2) ||
+      logicalTimeSeconds < 0.0) {
+    return fail(
+        value, "Invalid timestamped HLA interaction",
+        QTTEST_HLA_STATE_ERROR);
+  }
+  try {
+    const std::wstring className = fromUtf8(interactionClassName);
+    const auto interactionIterator = value->interactions.find(className);
+    if (interactionIterator == value->interactions.end()) {
+      return fail(
+          value,
+          "HLA interaction class has not been published",
+          QTTEST_HLA_STATE_JOINED);
+    }
+    rti1516e::ParameterHandleValueMap parameterValues;
+    for (size_t index = 0; index < parameters->count; ++index) {
+      const QttestHlaNamedValueV2& parameter = parameters->values[index];
+      if (parameter.structSize < sizeof(QttestHlaNamedValueV2) ||
+          !parameter.name || !*parameter.name) {
+        return fail(value, "Invalid HLA parameter value", QTTEST_HLA_STATE_JOINED);
+      }
+      const rti1516e::ParameterHandle parameterHandle =
+          value->rtiAmbassador->getParameterHandle(
+              interactionIterator->second, fromUtf8(parameter.name));
+      parameterValues[parameterHandle] = variableLengthData(&parameter.value);
+    }
+    value->rtiAmbassador->sendInteraction(
+        interactionIterator->second,
+        parameterValues,
+        variableLengthData(tag),
+        rti1516e::HLAfloat64Time(logicalTimeSeconds));
     value->error.clear();
     return 0;
   } catch (const rti1516e::Exception& exception) {
@@ -951,12 +1078,12 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "HLA backend session is unavailable";
 }
 
-const QttestHlaBackendApiV5 api = {
-    sizeof(QttestHlaBackendApiV5),
+const QttestHlaBackendApiV6 api = {
+    sizeof(QttestHlaBackendApiV6),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     QTTEST_HLA_1516E_BACKEND_ID,
     QTTEST_HLA_1516E_BACKEND_NAME,
-    "federation-management,object-management,interactions,synchronization-points,time-management,evoked-callbacks,ieee1516e",
+    "federation-management,object-management,interactions,synchronization-points,time-management,timestamp-order,evoked-callbacks,ieee1516e",
     &createBackend,
     &destroyBackend,
     &connectBackend,
@@ -966,10 +1093,13 @@ const QttestHlaBackendApiV5 api = {
     &subscribeObjectClass,
     &registerObjectInstance,
     &updateObjectAttributes,
+    &updateObjectAttributesAtTime,
     &deleteObjectInstance,
+    &deleteObjectInstanceAtTime,
     &publishInteractionClass,
     &subscribeInteractionClass,
     &sendInteraction,
+    &sendInteractionAtTime,
     &registerSynchronizationPoint,
     &achieveSynchronizationPoint,
     &enableTimeRegulation,
@@ -984,7 +1114,7 @@ const QttestHlaBackendApiV5 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV5*
-qttest_hla_backend_api_v5(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV6*
+qttest_hla_backend_api_v6(void) {
   return &api;
 }

@@ -52,8 +52,21 @@ public:
       const tactical::hla::ByteBuffer&) override {
     return tactical::hla::Result::ok();
   }
+  tactical::hla::Result updateObjectAttributesAtTime(
+      tactical::hla::ObjectInstanceId,
+      const std::vector<tactical::hla::NamedValue>&,
+      double,
+      const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
   tactical::hla::Result deleteObjectInstance(
       tactical::hla::ObjectInstanceId,
+      const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result deleteObjectInstanceAtTime(
+      tactical::hla::ObjectInstanceId,
+      double,
       const tactical::hla::ByteBuffer&) override {
     return tactical::hla::Result::ok();
   }
@@ -69,6 +82,13 @@ public:
   tactical::hla::Result sendInteraction(
       const std::string&,
       const std::vector<tactical::hla::NamedValue>&,
+      const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result sendInteractionAtTime(
+      const std::string&,
+      const std::vector<tactical::hla::NamedValue>&,
+      double,
       const tactical::hla::ByteBuffer&) override {
     return tactical::hla::Result::ok();
   }

@@ -10,7 +10,7 @@ struct MockSession {
   std::string error;
   uint64_t nextObjectId = 1;
   std::set<uint64_t> objects;
-  QttestHlaCallbacksV5 callbacks = {};
+  QttestHlaCallbacksV6 callbacks = {};
   bool timeRegulating = false;
   bool timeConstrained = false;
   double logicalTimeSeconds = 0.0;
@@ -131,6 +131,18 @@ int updateObjectAttributes(
   return 0;
 }
 
+int updateObjectAttributesAtTime(
+    QttestHlaBackendHandle handle,
+    uint64_t instanceId,
+    const QttestHlaNamedValueArrayV2* attributes,
+    double logicalTimeSeconds,
+    const QttestHlaByteSpanV2* tag) {
+  if (logicalTimeSeconds < 0.0) {
+    return fail(session(handle), "Invalid mock timestamped object update");
+  }
+  return updateObjectAttributes(handle, instanceId, attributes, tag);
+}
+
 int deleteObjectInstance(
     QttestHlaBackendHandle handle,
     uint64_t instanceId,
@@ -142,6 +154,17 @@ int deleteObjectInstance(
   }
   value->error.clear();
   return 0;
+}
+
+int deleteObjectInstanceAtTime(
+    QttestHlaBackendHandle handle,
+    uint64_t instanceId,
+    double logicalTimeSeconds,
+    const QttestHlaByteSpanV2* tag) {
+  if (logicalTimeSeconds < 0.0) {
+    return fail(session(handle), "Invalid mock timestamped object deletion");
+  }
+  return deleteObjectInstance(handle, instanceId, tag);
 }
 
 int publishInteractionClass(
@@ -175,6 +198,18 @@ int sendInteraction(
   }
   value->error.clear();
   return 0;
+}
+
+int sendInteractionAtTime(
+    QttestHlaBackendHandle handle,
+    const char* className,
+    const QttestHlaNamedValueArrayV2* parameters,
+    double logicalTimeSeconds,
+    const QttestHlaByteSpanV2* tag) {
+  if (logicalTimeSeconds < 0.0) {
+    return fail(session(handle), "Invalid mock timestamped interaction");
+  }
+  return sendInteraction(handle, className, parameters, tag);
 }
 
 int registerSynchronizationPoint(
@@ -258,10 +293,10 @@ int requestTimeAdvance(
 
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV5* callbacks) {
+    const QttestHlaCallbacksV6* callbacks) {
   MockSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV5)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV6)) {
     return fail(value, "Invalid mock callback configuration");
   }
   value->callbacks = *callbacks;
@@ -311,12 +346,12 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "Mock plugin session is unavailable";
 }
 
-const QttestHlaBackendApiV5 api = {
-    sizeof(QttestHlaBackendApiV5),
+const QttestHlaBackendApiV6 api = {
+    sizeof(QttestHlaBackendApiV6),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     "mock-plugin",
     "1.0",
-    "federation-management,object-management,interactions,evoked-callbacks,test-backend",
+    "federation-management,object-management,interactions,time-management,timestamp-order,evoked-callbacks,test-backend",
     &createBackend,
     &destroyBackend,
     &connectBackend,
@@ -326,10 +361,13 @@ const QttestHlaBackendApiV5 api = {
     &subscribeObjectClass,
     &registerObjectInstance,
     &updateObjectAttributes,
+    &updateObjectAttributesAtTime,
     &deleteObjectInstance,
+    &deleteObjectInstanceAtTime,
     &publishInteractionClass,
     &subscribeInteractionClass,
     &sendInteraction,
+    &sendInteractionAtTime,
     &registerSynchronizationPoint,
     &achieveSynchronizationPoint,
     &enableTimeRegulation,
@@ -344,7 +382,7 @@ const QttestHlaBackendApiV5 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV5*
-qttest_hla_backend_api_v5(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV6*
+qttest_hla_backend_api_v6(void) {
   return &api;
 }

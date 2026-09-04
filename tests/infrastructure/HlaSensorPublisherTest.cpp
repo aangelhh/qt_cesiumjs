@@ -75,3 +75,26 @@ TEST(HlaSensorPublisher, PublishesEmitterAndActiveRadarBeamLifecycle) {
       backendView->operations().begin(), backendView->operations().end(),
       tactical::hla::MockHlaBackend::Operation::DeleteObjectInstance), 2);
 }
+
+TEST(HlaSensorPublisher, TimestampsEmitterAndBeamUpdatesTogether) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::MockHlaBackend* backendView = backend.get();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  tactical::hla::SessionConfiguration configuration;
+  configuration.federationName = "timestamped-sensor-test";
+  configuration.federateName = "sensor-01";
+  configuration.federateType = "qttest";
+  ASSERT_TRUE(runtime.start(configuration).success);
+  tactical::hla::HlaSensorPublisher publisher(runtime);
+  tactical::hla::RprSensorState sensor;
+  sensor.entityStableId = "fighter-01";
+  sensor.sensorId = "radar-01";
+
+  ASSERT_TRUE(publisher.synchronize({sensor}, 3.5).success);
+
+  ASSERT_EQ(backendView->attributeUpdates().size(), 2U);
+  for (const auto& update : backendView->attributeUpdates()) {
+    ASSERT_TRUE(update.logicalTimeSeconds);
+    EXPECT_DOUBLE_EQ(*update.logicalTimeSeconds, 3.5);
+  }
+}

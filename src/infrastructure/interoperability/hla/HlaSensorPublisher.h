@@ -3,6 +3,7 @@
 #include "infrastructure/interoperability/hla/HlaRuntime.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -29,7 +30,9 @@ class HlaSensorPublisher {
 public:
   explicit HlaSensorPublisher(HlaRuntime& runtime);
 
-  Result synchronize(const std::vector<RprSensorState>& sensors);
+  Result synchronize(
+      const std::vector<RprSensorState>& sensors,
+      std::optional<double> logicalTimeSeconds = std::nullopt);
   Result removeAll();
   std::size_t registeredSensorCount() const;
 

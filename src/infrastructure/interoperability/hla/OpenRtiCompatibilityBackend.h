@@ -37,8 +37,17 @@ public:
       ObjectInstanceId instanceId,
       const std::vector<NamedValue>& attributes,
       const ByteBuffer& tag) override;
+  Result updateObjectAttributesAtTime(
+      ObjectInstanceId instanceId,
+      const std::vector<NamedValue>& attributes,
+      double logicalTimeSeconds,
+      const ByteBuffer& tag) override;
   Result deleteObjectInstance(
       ObjectInstanceId instanceId,
+      const ByteBuffer& tag) override;
+  Result deleteObjectInstanceAtTime(
+      ObjectInstanceId instanceId,
+      double logicalTimeSeconds,
       const ByteBuffer& tag) override;
   Result publishInteractionClass(
       const std::string& interactionClassName) override;
@@ -48,6 +57,11 @@ public:
   Result sendInteraction(
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
+      const ByteBuffer& tag) override;
+  Result sendInteractionAtTime(
+      const std::string& interactionClassName,
+      const std::vector<NamedValue>& parameters,
+      double logicalTimeSeconds,
       const ByteBuffer& tag) override;
   Result registerSynchronizationPoint(
       const std::string& label,
