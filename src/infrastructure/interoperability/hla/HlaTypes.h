@@ -65,6 +65,11 @@ struct RemoteInteraction {
   ByteBuffer tag;
 };
 
+struct SynchronizationPointAnnouncement {
+  std::string label;
+  ByteBuffer tag;
+};
+
 class IHlaEventSink {
 public:
   virtual ~IHlaEventSink() = default;
@@ -72,6 +77,9 @@ public:
   virtual void onObjectReflected(const RemoteObjectReflection& event) = 0;
   virtual void onObjectRemoved(const RemoteObjectRemoval& event) = 0;
   virtual void onInteractionReceived(const RemoteInteraction& event) = 0;
+  virtual void onSynchronizationPointAnnounced(
+      const SynchronizationPointAnnouncement& event) = 0;
+  virtual void onFederationSynchronized(const std::string& label) = 0;
 };
 
 } // namespace tactical::hla

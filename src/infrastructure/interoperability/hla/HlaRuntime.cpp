@@ -143,6 +143,28 @@ Result HlaRuntime::sendInteraction(
   return _backend->sendInteraction(interactionClassName, parameters, tag);
 }
 
+Result HlaRuntime::registerSynchronizationPoint(
+    const std::string& label,
+    const ByteBuffer& tag) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (label.empty()) {
+    return Result::failure("HLA synchronization point label is required");
+  }
+  return _backend->registerSynchronizationPoint(label, tag);
+}
+
+Result HlaRuntime::achieveSynchronizationPoint(const std::string& label) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (label.empty()) {
+    return Result::failure("HLA synchronization point label is required");
+  }
+  return _backend->achieveSynchronizationPoint(label);
+}
+
 void HlaRuntime::setEventSink(IHlaEventSink* eventSink) {
   if (_backend) {
     _backend->setEventSink(eventSink);

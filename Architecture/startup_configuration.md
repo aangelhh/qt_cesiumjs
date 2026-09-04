@@ -11,7 +11,7 @@ Exactly one mode can be selected:
 - `Standalone`: local simulation without a federation transport.
 - `DIS`: multicast/unicast endpoint, port, site ID, and application ID.
 - `HLA`: RTI backend, local settings designator, federation identity, federate
-  identity, and ordered FOM modules.
+  identity, optional synchronization point, and ordered FOM modules.
 
 HLA mode is operational at application startup. Before `MainWindow` opens,
 qttest loads the selected backend, connects to the RTI, optionally creates the
@@ -19,6 +19,12 @@ federation, loads the configured FOM modules, and joins the federate. Callback
 polling then runs from the Qt event loop until application shutdown. A startup
 failure returns the operator to this dialog with the RTI error. The DIS
 transport adapter remains a separate follow-up integration.
+
+When `Synchronization point` is configured, qttest requests registration after
+joining, waits for the RTI announcement, and automatically reports the point as
+achieved. The operational log shows registration, announcement, achievement,
+and final federation synchronization. Leaving the field empty preserves the
+normal immediate startup flow.
 
 After joining, local entity objects are registered and updated every 100 ms.
 Each active munition owns an RPR `PhysicalEntity.Munition` object and emits one

@@ -66,6 +66,39 @@ public:
     rti1516e::ObjectClassHandle classHandle;
   };
 
+  void announceSynchronizationPoint(
+      const std::wstring& label,
+      const rti1516e::VariableLengthData& tag)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    if (!callbacks.synchronizationPointAnnounced) return;
+    const std::string utf8Label = toUtf8(label);
+    const QttestHlaByteSpanV2 tagSpan = {
+        sizeof(QttestHlaByteSpanV2),
+        static_cast<const uint8_t*>(tag.data()),
+        tag.size()};
+    callbacks.synchronizationPointAnnounced(
+        callbacks.context, utf8Label.c_str(), &tagSpan);
+  }
+
+  void federationSynchronized(
+      const std::wstring& label,
+      const rti1516e::FederateHandleSet&)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    if (!callbacks.federationSynchronized) return;
+    const std::string utf8Label = toUtf8(label);
+    callbacks.federationSynchronized(callbacks.context, utf8Label.c_str());
+  }
+
   void objectInstanceNameReservationSucceeded(
       const std::wstring& objectInstanceName)
 #ifdef QTTEST_HLA_OPENRTI_BACKEND
@@ -234,7 +267,7 @@ public:
 
   std::set<std::wstring> reservedNames;
   std::set<std::wstring> failedNames;
-  QttestHlaCallbacksV3 callbacks = {};
+  QttestHlaCallbacksV4 callbacks = {};
   uint64_t nextRemoteObjectId = 1;
   std::map<rti1516e::ObjectClassHandle, SubscribedObjectClass>
       subscribedObjectClasses;
@@ -654,12 +687,54 @@ int subscribeInteractionClass(
   }
 }
 
+int registerSynchronizationPoint(
+    QttestHlaBackendHandle handle,
+    const char* label,
+    const QttestHlaByteSpanV2* tag) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED || !label || !*label) {
+    return fail(
+        value, "Invalid HLA synchronization point", QTTEST_HLA_STATE_ERROR);
+  }
+  try {
+    value->rtiAmbassador->registerFederationSynchronizationPoint(
+        fromUtf8(label), variableLengthData(tag));
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
+int achieveSynchronizationPoint(
+    QttestHlaBackendHandle handle,
+    const char* label) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED || !label || !*label) {
+    return fail(
+        value,
+        "Invalid HLA synchronization achievement",
+        QTTEST_HLA_STATE_ERROR);
+  }
+  try {
+    value->rtiAmbassador->synchronizationPointAchieved(fromUtf8(label), true);
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV3* callbacks) {
+    const QttestHlaCallbacksV4* callbacks) {
   PitchSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV3)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV4)) {
     return fail(value, "Invalid HLA callback configuration", QTTEST_HLA_STATE_ERROR);
   }
   value->federateAmbassador.callbacks = *callbacks;
@@ -782,12 +857,12 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "HLA backend session is unavailable";
 }
 
-const QttestHlaBackendApiV3 api = {
-    sizeof(QttestHlaBackendApiV3),
+const QttestHlaBackendApiV4 api = {
+    sizeof(QttestHlaBackendApiV4),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     QTTEST_HLA_1516E_BACKEND_ID,
     QTTEST_HLA_1516E_BACKEND_NAME,
-    "federation-management,object-management,interactions,evoked-callbacks,ieee1516e",
+    "federation-management,object-management,interactions,synchronization-points,evoked-callbacks,ieee1516e",
     &createBackend,
     &destroyBackend,
     &connectBackend,
@@ -801,6 +876,8 @@ const QttestHlaBackendApiV3 api = {
     &publishInteractionClass,
     &subscribeInteractionClass,
     &sendInteraction,
+    &registerSynchronizationPoint,
+    &achieveSynchronizationPoint,
     &setCallbacks,
     &pollBackend,
     &resignBackend,
@@ -810,7 +887,7 @@ const QttestHlaBackendApiV3 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV3*
-qttest_hla_backend_api_v3(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV4*
+qttest_hla_backend_api_v4(void) {
   return &api;
 }

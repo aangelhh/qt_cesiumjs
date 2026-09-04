@@ -40,6 +40,10 @@ public:
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag = {});
+  Result registerSynchronizationPoint(
+      const std::string& label,
+      const ByteBuffer& tag = {});
+  Result achieveSynchronizationPoint(const std::string& label);
   Result poll(double maximumSeconds);
   void setEventSink(IHlaEventSink* eventSink);
   Result stop();

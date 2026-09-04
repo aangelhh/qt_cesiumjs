@@ -5,6 +5,7 @@
 #include "infrastructure/interoperability/hla/HlaBackendFactory.h"
 #include "infrastructure/interoperability/hla/HlaRuntime.h"
 #include "infrastructure/interoperability/hla/HlaEntityPublisher.h"
+#include "infrastructure/interoperability/hla/HlaInboundAdapter.h"
 #include "infrastructure/interoperability/hla/HlaWarfarePublisher.h"
 #include "infrastructure/interoperability/hla/HlaSensorPublisher.h"
 #include "infrastructure/interoperability/hla/HlaSimulationControlPublisher.h"
@@ -86,6 +87,36 @@ TEST(HlaBackendPlugin, LoadsMockPluginAndExecutesFederationLifecycle) {
   EXPECT_EQ(runtime.state(), tactical::hla::BackendState::Disconnected);
 }
 
+TEST(HlaBackendPlugin, MockPluginExchangesSynchronizationPointCallbacks) {
+  auto backend = std::make_unique<tactical::hla::SharedLibraryHlaBackend>(
+      mockPluginPath());
+  ASSERT_TRUE(backend->isAvailable()) << backend->loadError();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  tactical::hla::HlaInboundAdapter inbound;
+  runtime.setEventSink(&inbound);
+
+  tactical::hla::SessionConfiguration configuration;
+  configuration.federationName = "SynchronizationTestFederation";
+  configuration.federateName = "synchronization-test-01";
+  configuration.federateType = "test";
+  ASSERT_TRUE(runtime.start(configuration).success);
+
+  ASSERT_TRUE(runtime.registerSynchronizationPoint(
+      "ReadyToRun", {1, 2, 3}).success);
+  auto changes = inbound.takeSynchronizationChanges();
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_EQ(changes.front().label, "ReadyToRun");
+  EXPECT_EQ(changes.front().tag, (tactical::hla::ByteBuffer{1, 2, 3}));
+  EXPECT_FALSE(changes.front().federationSynchronized);
+
+  ASSERT_TRUE(runtime.achieveSynchronizationPoint("ReadyToRun").success);
+  changes = inbound.takeSynchronizationChanges();
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_EQ(changes.front().label, "ReadyToRun");
+  EXPECT_TRUE(changes.front().federationSynchronized);
+  EXPECT_TRUE(runtime.stop().success);
+}
+
 #ifdef QTTEST_HLA_PITCH_PLUGIN_PATH
 TEST(HlaBackendPlugin, LoadsInstalledPitchBackendWhenBuilt) {
   const std::string pluginPath = QTTEST_HLA_PITCH_PLUGIN_PATH;
@@ -125,6 +156,27 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
   application::HlaStartupSession session;
   const tactical::hla::Result startResult = session.start(configuration);
   ASSERT_TRUE(startResult.success) << startResult.message;
+
+  const std::string synchronizationLabel =
+      QStringLiteral("qttest-pitch-ready-%1")
+          .arg(QCoreApplication::applicationPid())
+          .toStdString();
+  ASSERT_TRUE(session.registerSynchronizationPoint(
+      synchronizationLabel, {0x71, 0x74, 0x74, 0x65, 0x73, 0x74}).success);
+  bool synchronizationAnnounced = false;
+  for (int attempt = 0; attempt < 200 && !synchronizationAnnounced; ++attempt) {
+    ASSERT_TRUE(session.poll(0.05).success);
+    for (const auto& change : session.takeRemoteSynchronizationChanges()) {
+      if (change.label == synchronizationLabel &&
+          !change.federationSynchronized) {
+        synchronizationAnnounced = true;
+      }
+    }
+    if (!synchronizationAnnounced) QThread::msleep(5);
+  }
+  ASSERT_TRUE(synchronizationAnnounced);
+  ASSERT_TRUE(session.achieveSynchronizationPoint(
+      synchronizationLabel).success);
 
   Entity aircraft;
   aircraft.entityId = QStringLiteral("pitch-aircraft-%1")
@@ -274,9 +326,40 @@ TEST(HlaBackendPlugin, OpenRtiLoadsRepositoryNetnModules) {
       tactical::hla::HlaBackendFactory::create(backendConfiguration);
   ASSERT_TRUE(backendResult) << backendResult.error;
   tactical::hla::HlaRuntime runtime(std::move(backendResult.backend));
+  tactical::hla::HlaInboundAdapter inbound;
+  runtime.setEventSink(&inbound);
 
   const tactical::hla::Result startResult = runtime.start(configuration);
   ASSERT_TRUE(startResult.success) << startResult.message;
+
+  ASSERT_TRUE(runtime.registerSynchronizationPoint(
+      "ReadyToRun", {0x71, 0x74, 0x74, 0x65, 0x73, 0x74}).success);
+  bool announced = false;
+  for (int attempt = 0; attempt < 200 && !announced; ++attempt) {
+    ASSERT_TRUE(runtime.poll(0.05).success);
+    for (const auto& change : inbound.takeSynchronizationChanges()) {
+      if (change.label == "ReadyToRun" &&
+          !change.federationSynchronized) {
+        announced = true;
+      }
+    }
+    if (!announced) QThread::msleep(5);
+  }
+  ASSERT_TRUE(announced);
+  ASSERT_TRUE(runtime.achieveSynchronizationPoint("ReadyToRun").success);
+  bool synchronized = false;
+  for (int attempt = 0; attempt < 200 && !synchronized; ++attempt) {
+    ASSERT_TRUE(runtime.poll(0.05).success);
+    for (const auto& change : inbound.takeSynchronizationChanges()) {
+      if (change.label == "ReadyToRun" &&
+          change.federationSynchronized) {
+        synchronized = true;
+      }
+    }
+    if (!synchronized) QThread::msleep(5);
+  }
+  EXPECT_TRUE(synchronized);
+
   tactical::hla::HlaEntityPublisher publisher(runtime);
   tactical::hla::RprEntityState entity;
   entity.stableId = "openrti-aircraft-01";

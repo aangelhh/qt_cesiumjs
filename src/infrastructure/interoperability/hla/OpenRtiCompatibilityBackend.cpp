@@ -272,6 +272,17 @@ Result OpenRtiCompatibilityBackend::sendInteraction(
   return _backend->sendInteraction(interactionClassName, parameters, tag);
 }
 
+Result OpenRtiCompatibilityBackend::registerSynchronizationPoint(
+    const std::string& label,
+    const ByteBuffer& tag) {
+  return _backend->registerSynchronizationPoint(label, tag);
+}
+
+Result OpenRtiCompatibilityBackend::achieveSynchronizationPoint(
+    const std::string& label) {
+  return _backend->achieveSynchronizationPoint(label);
+}
+
 Result OpenRtiCompatibilityBackend::poll(double maximumSeconds) {
   return _backend->poll(maximumSeconds);
 }

@@ -27,6 +27,7 @@ struct HlaStartupConfiguration {
   QString federationName = QStringLiteral("qttest-federation");
   QString federateName = QStringLiteral("qttest-01");
   QString federateType = QStringLiteral("qttest");
+  QString synchronizationPointLabel;
   QStringList fomModules;
   bool createFederationIfMissing = true;
 };

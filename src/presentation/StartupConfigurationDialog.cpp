@@ -52,6 +52,7 @@ StartupConfigurationDialog::StartupConfigurationDialog(
       _hlaFederationEdit(new QLineEdit(this)),
       _hlaFederateEdit(new QLineEdit(this)),
       _hlaFederateTypeEdit(new QLineEdit(this)),
+      _hlaSynchronizationPointEdit(new QLineEdit(this)),
       _hlaCreateCheck(new QCheckBox(
           QStringLiteral("Create federation when missing"), this)),
       _hlaFomList(new QListWidget(this)),
@@ -150,12 +151,19 @@ StartupConfigurationDialog::StartupConfigurationDialog(
   _hlaFederationEdit->setText(configuration.hla.federationName);
   _hlaFederateEdit->setText(configuration.hla.federateName);
   _hlaFederateTypeEdit->setText(configuration.hla.federateType);
+  _hlaSynchronizationPointEdit->setText(
+      configuration.hla.synchronizationPointLabel);
+  _hlaSynchronizationPointEdit->setPlaceholderText(
+      QStringLiteral("Optional, for example ReadyToRun"));
   _hlaCreateCheck->setChecked(configuration.hla.createFederationIfMissing);
   hlaForm->addRow(QStringLiteral("Backend"), _hlaBackendCombo);
   hlaForm->addRow(QStringLiteral("Local settings"), _hlaLocalSettingsEdit);
   hlaForm->addRow(QStringLiteral("Federation"), _hlaFederationEdit);
   hlaForm->addRow(QStringLiteral("Federate name"), _hlaFederateEdit);
   hlaForm->addRow(QStringLiteral("Federate type"), _hlaFederateTypeEdit);
+  hlaForm->addRow(
+      QStringLiteral("Synchronization point"),
+      _hlaSynchronizationPointEdit);
   hlaForm->addRow(QString(), _hlaCreateCheck);
   auto* hlaStatus = new QLabel(
       QStringLiteral(
@@ -289,6 +297,8 @@ StartupConfigurationDialog::configuration() const {
   result.hla.federationName = _hlaFederationEdit->text().trimmed();
   result.hla.federateName = _hlaFederateEdit->text().trimmed();
   result.hla.federateType = _hlaFederateTypeEdit->text().trimmed();
+  result.hla.synchronizationPointLabel =
+      _hlaSynchronizationPointEdit->text().trimmed();
   result.hla.createFederationIfMissing = _hlaCreateCheck->isChecked();
   for (int index = 0; index < _hlaFomList->count(); ++index) {
     result.hla.fomModules.push_back(_hlaFomList->item(index)->text());

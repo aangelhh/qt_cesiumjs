@@ -96,6 +96,7 @@ public:
       const std::vector<tactical::hla::RemoteWarfareEvent>& events);
   void applyHlaRemoteSimulationControl(
       tactical::hla::RemoteSimulationControl control);
+  void reportHlaSynchronizationStatus(const QString& message);
 
 signals:
   void hlaSimulationControlRequested(

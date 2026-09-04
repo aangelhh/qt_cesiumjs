@@ -92,3 +92,33 @@ TEST(HlaRuntime, CanJoinAnExistingFederationWithoutCreatingIt) {
           tactical::hla::MockHlaBackend::Operation::Connect,
           tactical::hla::MockHlaBackend::Operation::JoinFederation}));
 }
+
+TEST(HlaRuntime, ForwardsSynchronizationPointLifecycleWhenJoined) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::MockHlaBackend* backendView = backend.get();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  ASSERT_TRUE(runtime.start(validConfiguration()).success);
+
+  EXPECT_TRUE(runtime.registerSynchronizationPoint(
+      "ReadyToRun", {1, 2, 3}).success);
+  EXPECT_TRUE(runtime.achieveSynchronizationPoint("ReadyToRun").success);
+  EXPECT_EQ(
+      backendView->operations(),
+      (std::vector<tactical::hla::MockHlaBackend::Operation>{
+          tactical::hla::MockHlaBackend::Operation::Connect,
+          tactical::hla::MockHlaBackend::Operation::CreateFederation,
+          tactical::hla::MockHlaBackend::Operation::JoinFederation,
+          tactical::hla::MockHlaBackend::Operation::RegisterSynchronizationPoint,
+          tactical::hla::MockHlaBackend::Operation::AchieveSynchronizationPoint}));
+}
+
+TEST(HlaRuntime, RejectsSynchronizationPointWithoutJoinedFederateOrLabel) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+
+  EXPECT_FALSE(runtime.registerSynchronizationPoint("ReadyToRun").success);
+  EXPECT_FALSE(runtime.achieveSynchronizationPoint("ReadyToRun").success);
+  ASSERT_TRUE(runtime.start(validConfiguration()).success);
+  EXPECT_FALSE(runtime.registerSynchronizationPoint("").success);
+  EXPECT_FALSE(runtime.achieveSynchronizationPoint("").success);
+}

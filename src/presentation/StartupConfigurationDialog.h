@@ -53,6 +53,7 @@ private:
   QLineEdit* _hlaFederationEdit;
   QLineEdit* _hlaFederateEdit;
   QLineEdit* _hlaFederateTypeEdit;
+  QLineEdit* _hlaSynchronizationPointEdit;
   QCheckBox* _hlaCreateCheck;
   QListWidget* _hlaFomList;
   QPushButton* _removeFomButton;

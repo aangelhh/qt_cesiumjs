@@ -109,10 +109,11 @@ Implemented lifecycle, publication, and reception:
     directional radar state to the externally controlled host platform.
 15. Receive and deduplicate remote `WeaponFire` / `MunitionDetonation` events.
 16. Publish and receive the object identifiers tracked by each radar beam.
-17. Poll callbacks.
-18. Remove owned objects, resign, and disconnect with rollback on failure.
+17. Register, announce, achieve, and complete federation synchronization points.
+18. Poll callbacks.
+19. Remove owned objects, resign, and disconnect with rollback on failure.
 
-The plugin ABI v3 keeps RTI handles private to each plugin and exposes opaque
+The plugin ABI v4 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
 classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 `DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
@@ -172,9 +173,16 @@ before remote detonations may mutate local entities.
 | Pause | `HLAinteractionRoot.StopFreeze`, non-terminal reason | Pauses without clearing the scenario |
 | Stop | `HLAinteractionRoot.StopFreeze`, terminal reason | Stops the exercise using the normal lifecycle |
 
-Ownership Management, HLA Time Management, synchronization points, DDM,
-save/restore, RPR munition object lifecycle, and NETN-ETR task exchange remain
-subsequent Feature 19 tasks.
+Synchronization points are exposed by the neutral runtime and both IEEE 1516e
+plugins. At startup, an operator may optionally configure a point such as
+`ReadyToRun`. qttest requests its registration, automatically achieves it when
+the RTI announces it, and records announcement, achievement, and federation
+completion in the operational log. An empty setting leaves startup
+unsynchronized. Registration success/failure callbacks, synchronization-set
+selection, and multi-phase exercise orchestration remain future hardening.
+
+Ownership Management, HLA Time Management, DDM, save/restore, and NETN-ETR
+task exchange remain subsequent Feature 19 tasks.
 
 ### Graphical combat demo
 
@@ -202,7 +210,7 @@ needed, publishes one synthetic Aircraft, updates and removes it, then exits.
 ## Adding another RTI
 
 1. Add `integrations/hla/<backend>/<Backend>Plugin.cpp`.
-2. Implement every function in `QttestHlaBackendApiV3`, including callback
+2. Implement every function in `QttestHlaBackendApiV4`, including callback
    registration and object/interaction subscriptions.
 3. Keep vendor headers and libraries private to that plugin target.
 4. Return backend identity, version, capabilities, and diagnostic errors.

@@ -144,6 +144,8 @@ StartupConfiguration StartupConfiguration::load(QSettings& settings) {
   configuration.hla.federateType = settings.value(
       QStringLiteral("hla/federateType"), configuration.hla.federateType)
           .toString();
+  configuration.hla.synchronizationPointLabel = settings.value(
+      QStringLiteral("hla/synchronizationPointLabel")).toString();
   configuration.hla.fomModules = settings.value(
       QStringLiteral("hla/fomModules")).toStringList();
   configuration.hla.createFederationIfMissing = settings.value(
@@ -183,6 +185,9 @@ void StartupConfiguration::save(QSettings& settings) const {
   settings.setValue(QStringLiteral("hla/federationName"), hla.federationName);
   settings.setValue(QStringLiteral("hla/federateName"), hla.federateName);
   settings.setValue(QStringLiteral("hla/federateType"), hla.federateType);
+  settings.setValue(
+      QStringLiteral("hla/synchronizationPointLabel"),
+      hla.synchronizationPointLabel);
   settings.setValue(QStringLiteral("hla/fomModules"), hla.fomModules);
   settings.setValue(
       QStringLiteral("hla/createFederationIfMissing"),

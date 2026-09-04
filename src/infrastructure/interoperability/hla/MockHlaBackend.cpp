@@ -165,6 +165,27 @@ Result MockHlaBackend::sendInteraction(
   return Result::ok();
 }
 
+Result MockHlaBackend::registerSynchronizationPoint(
+    const std::string& label,
+    const ByteBuffer&) {
+  const Result beginResult = this->begin(Operation::RegisterSynchronizationPoint);
+  if (!beginResult.success) return beginResult;
+  if (_state != BackendState::Joined || label.empty()) {
+    return this->fail("Mock synchronization point registration is invalid");
+  }
+  return Result::ok();
+}
+
+Result MockHlaBackend::achieveSynchronizationPoint(
+    const std::string& label) {
+  const Result beginResult = this->begin(Operation::AchieveSynchronizationPoint);
+  if (!beginResult.success) return beginResult;
+  if (_state != BackendState::Joined || label.empty()) {
+    return this->fail("Mock synchronization point achievement is invalid");
+  }
+  return Result::ok();
+}
+
 Result MockHlaBackend::poll(double maximumSeconds) {
   const Result beginResult = this->begin(Operation::Poll);
   if (!beginResult.success) {
@@ -199,6 +220,15 @@ void MockHlaBackend::emitObjectRemoved(const RemoteObjectRemoval& event) {
 
 void MockHlaBackend::emitInteraction(const RemoteInteraction& event) {
   if (_eventSink) _eventSink->onInteractionReceived(event);
+}
+
+void MockHlaBackend::emitSynchronizationPointAnnounced(
+    const SynchronizationPointAnnouncement& event) {
+  if (_eventSink) _eventSink->onSynchronizationPointAnnounced(event);
+}
+
+void MockHlaBackend::emitFederationSynchronized(const std::string& label) {
+  if (_eventSink) _eventSink->onFederationSynchronized(label);
 }
 
 Result MockHlaBackend::resign() {

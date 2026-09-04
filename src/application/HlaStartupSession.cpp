@@ -174,6 +174,13 @@ HlaStartupSession::takeRemoteWarfareEvents() {
                          : std::vector<tactical::hla::RemoteWarfareEvent>{};
 }
 
+std::vector<tactical::hla::RemoteSynchronizationChange>
+HlaStartupSession::takeRemoteSynchronizationChanges() {
+  return _inboundAdapter
+      ? _inboundAdapter->takeSynchronizationChanges()
+      : std::vector<tactical::hla::RemoteSynchronizationChange>{};
+}
+
 std::vector<tactical::hla::RemoteSimulationControl>
 HlaStartupSession::takeRemoteSimulationControls() {
   return _inboundAdapter ? _inboundAdapter->takeSimulationControls()
@@ -188,6 +195,21 @@ tactical::hla::Result HlaStartupSession::publishSimulationControl(
         "HLA simulation control publisher is not active");
   }
   return _simulationControlPublisher->publish(control, simulationTimeSeconds);
+}
+
+tactical::hla::Result HlaStartupSession::registerSynchronizationPoint(
+    const std::string& label,
+    const tactical::hla::ByteBuffer& tag) {
+  return _runtime
+      ? _runtime->registerSynchronizationPoint(label, tag)
+      : tactical::hla::Result::failure("HLA session is not active");
+}
+
+tactical::hla::Result HlaStartupSession::achieveSynchronizationPoint(
+    const std::string& label) {
+  return _runtime
+      ? _runtime->achieveSynchronizationPoint(label)
+      : tactical::hla::Result::failure("HLA session is not active");
 }
 
 tactical::hla::Result HlaStartupSession::poll(double maximumSeconds) {

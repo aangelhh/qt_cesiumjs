@@ -50,6 +50,11 @@ public:
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag = {}) = 0;
+  virtual Result registerSynchronizationPoint(
+      const std::string& label,
+      const ByteBuffer& tag = {}) = 0;
+  virtual Result achieveSynchronizationPoint(
+      const std::string& label) = 0;
   virtual Result poll(double maximumSeconds) = 0;
   virtual void setEventSink(IHlaEventSink* eventSink) = 0;
   virtual Result resign() = 0;

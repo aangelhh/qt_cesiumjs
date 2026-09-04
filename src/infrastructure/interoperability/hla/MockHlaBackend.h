@@ -30,6 +30,8 @@ public:
     PublishInteractionClass,
     SubscribeInteractionClass,
     SendInteraction,
+    RegisterSynchronizationPoint,
+    AchieveSynchronizationPoint,
     Poll,
     Resign,
     Disconnect
@@ -73,6 +75,10 @@ public:
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag) override;
+  Result registerSynchronizationPoint(
+      const std::string& label,
+      const ByteBuffer& tag) override;
+  Result achieveSynchronizationPoint(const std::string& label) override;
   Result poll(double maximumSeconds) override;
   void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;
@@ -91,6 +97,9 @@ public:
   void emitObjectReflected(const RemoteObjectReflection& event);
   void emitObjectRemoved(const RemoteObjectRemoval& event);
   void emitInteraction(const RemoteInteraction& event);
+  void emitSynchronizationPointAnnounced(
+      const SynchronizationPointAnnouncement& event);
+  void emitFederationSynchronized(const std::string& label);
 
 private:
   Result begin(Operation operation);

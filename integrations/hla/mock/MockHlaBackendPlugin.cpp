@@ -10,7 +10,7 @@ struct MockSession {
   std::string error;
   uint64_t nextObjectId = 1;
   std::set<uint64_t> objects;
-  QttestHlaCallbacksV3 callbacks = {};
+  QttestHlaCallbacksV4 callbacks = {};
 };
 
 MockSession* session(QttestHlaBackendHandle handle) {
@@ -174,12 +174,42 @@ int sendInteraction(
   return 0;
 }
 
+int registerSynchronizationPoint(
+    QttestHlaBackendHandle handle,
+    const char* label,
+    const QttestHlaByteSpanV2* tag) {
+  MockSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED || !label || !*label) {
+    return fail(value, "Invalid mock synchronization point");
+  }
+  if (value->callbacks.synchronizationPointAnnounced) {
+    value->callbacks.synchronizationPointAnnounced(
+        value->callbacks.context, label, tag);
+  }
+  value->error.clear();
+  return 0;
+}
+
+int achieveSynchronizationPoint(
+    QttestHlaBackendHandle handle,
+    const char* label) {
+  MockSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED || !label || !*label) {
+    return fail(value, "Invalid mock synchronization achievement");
+  }
+  if (value->callbacks.federationSynchronized) {
+    value->callbacks.federationSynchronized(value->callbacks.context, label);
+  }
+  value->error.clear();
+  return 0;
+}
+
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV3* callbacks) {
+    const QttestHlaCallbacksV4* callbacks) {
   MockSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV3)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV4)) {
     return fail(value, "Invalid mock callback configuration");
   }
   value->callbacks = *callbacks;
@@ -229,8 +259,8 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "Mock plugin session is unavailable";
 }
 
-const QttestHlaBackendApiV3 api = {
-    sizeof(QttestHlaBackendApiV3),
+const QttestHlaBackendApiV4 api = {
+    sizeof(QttestHlaBackendApiV4),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     "mock-plugin",
     "1.0",
@@ -248,6 +278,8 @@ const QttestHlaBackendApiV3 api = {
     &publishInteractionClass,
     &subscribeInteractionClass,
     &sendInteraction,
+    &registerSynchronizationPoint,
+    &achieveSynchronizationPoint,
     &setCallbacks,
     &pollBackend,
     &resignBackend,
@@ -257,7 +289,7 @@ const QttestHlaBackendApiV3 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV3*
-qttest_hla_backend_api_v3(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV4*
+qttest_hla_backend_api_v4(void) {
   return &api;
 }

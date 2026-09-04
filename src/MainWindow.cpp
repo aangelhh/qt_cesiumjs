@@ -1100,6 +1100,10 @@ void MainWindow::applyHlaRemoteSimulationControl(
   _applyingHlaSimulationControl = false;
 }
 
+void MainWindow::reportHlaSynchronizationStatus(const QString& message) {
+  this->appendLogMessage(QStringLiteral("HLA synchronization: %1").arg(message));
+}
+
 void MainWindow::initializeKinematicsCockpit() {
   this->_kinematicsCockpitDock = new QDockWidget(
       QStringLiteral("Modern PFD"),

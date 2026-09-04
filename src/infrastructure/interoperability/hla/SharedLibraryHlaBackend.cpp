@@ -90,7 +90,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   const auto apiFactory = reinterpret_cast<QttestHlaBackendApiFn>(
-      _library.resolve("qttest_hla_backend_api_v3"));
+      _library.resolve("qttest_hla_backend_api_v4"));
   if (!apiFactory) {
     _loadError = "Required HLA backend API symbol is missing";
     _library.unload();
@@ -98,7 +98,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   _api = apiFactory();
-  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV3) ||
+  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV4) ||
       _api->abiVersion != QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION) {
     _loadError = "Unsupported HLA backend plugin ABI";
     _api = nullptr;
@@ -111,7 +111,8 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
       !_api->registerObjectInstance ||
       !_api->updateObjectAttributes || !_api->deleteObjectInstance ||
       !_api->publishInteractionClass || !_api->subscribeInteractionClass ||
-      !_api->sendInteraction || !_api->setCallbacks ||
+      !_api->sendInteraction || !_api->registerSynchronizationPoint ||
+      !_api->achieveSynchronizationPoint || !_api->setCallbacks ||
       !_api->poll || !_api->resign || !_api->disconnect || !_api->state ||
       !_api->lastError) {
     _loadError = "HLA backend plugin API is incomplete";
@@ -127,13 +128,15 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
     _library.unload();
     return;
   }
-  const QttestHlaCallbacksV3 callbacks = {
-      sizeof(QttestHlaCallbacksV3),
+  const QttestHlaCallbacksV4 callbacks = {
+      sizeof(QttestHlaCallbacksV4),
       this,
       &SharedLibraryHlaBackend::objectDiscoveredCallback,
       &SharedLibraryHlaBackend::objectReflectedCallback,
       &SharedLibraryHlaBackend::objectRemovedCallback,
-      &SharedLibraryHlaBackend::interactionReceivedCallback};
+      &SharedLibraryHlaBackend::interactionReceivedCallback,
+      &SharedLibraryHlaBackend::synchronizationPointAnnouncedCallback,
+      &SharedLibraryHlaBackend::federationSynchronizedCallback};
   if (_api->setCallbacks(_handle, &callbacks) != 0) {
     _loadError = safeString(_api->lastError(_handle));
     _api->destroy(_handle);
@@ -314,6 +317,22 @@ Result SharedLibraryHlaBackend::sendInteraction(
       _handle, interactionClassName.c_str(), &valueArray, &tagSpan));
 }
 
+Result SharedLibraryHlaBackend::registerSynchronizationPoint(
+    const std::string& label,
+    const ByteBuffer& tag) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  const QttestHlaByteSpanV2 tagSpan = makeByteSpan(tag);
+  return this->pluginResult(_api->registerSynchronizationPoint(
+      _handle, label.c_str(), &tagSpan));
+}
+
+Result SharedLibraryHlaBackend::achieveSynchronizationPoint(
+    const std::string& label) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  return this->pluginResult(
+      _api->achieveSynchronizationPoint(_handle, label.c_str()));
+}
+
 Result SharedLibraryHlaBackend::poll(double maximumSeconds) {
   if (!_api || !_handle) {
     return Result::failure(_loadError);
@@ -367,6 +386,24 @@ void SharedLibraryHlaBackend::interactionReceivedCallback(
       safeString(interactionClassName),
       copyNamedValues(parameters),
       copyBytes(tag)});
+}
+
+void SharedLibraryHlaBackend::synchronizationPointAnnouncedCallback(
+    void* context,
+    const char* label,
+    const QttestHlaByteSpanV2* tag) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onSynchronizationPointAnnounced(
+      {safeString(label), copyBytes(tag)});
+}
+
+void SharedLibraryHlaBackend::federationSynchronizedCallback(
+    void* context,
+    const char* label) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onFederationSynchronized(safeString(label));
 }
 
 Result SharedLibraryHlaBackend::resign() {

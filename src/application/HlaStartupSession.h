@@ -30,11 +30,18 @@ public:
       takeRemoteMunitionChanges();
   std::vector<tactical::hla::RemoteSensorChange> takeRemoteSensorChanges();
   std::vector<tactical::hla::RemoteWarfareEvent> takeRemoteWarfareEvents();
+  std::vector<tactical::hla::RemoteSynchronizationChange>
+      takeRemoteSynchronizationChanges();
   std::vector<tactical::hla::RemoteSimulationControl>
       takeRemoteSimulationControls();
   tactical::hla::Result publishSimulationControl(
       tactical::hla::RemoteSimulationControl control,
       double simulationTimeSeconds);
+  tactical::hla::Result registerSynchronizationPoint(
+      const std::string& label,
+      const tactical::hla::ByteBuffer& tag = {});
+  tactical::hla::Result achieveSynchronizationPoint(
+      const std::string& label);
   tactical::hla::Result stop();
 
   bool isActive() const;

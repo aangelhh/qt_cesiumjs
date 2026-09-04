@@ -355,6 +355,18 @@ void HlaInboundAdapter::onInteractionReceived(
                : RemoteSimulationControl::Pause);
 }
 
+void HlaInboundAdapter::onSynchronizationPointAnnounced(
+    const SynchronizationPointAnnouncement& event) {
+  if (event.label.empty()) return;
+  _synchronizationChanges.push_back(
+      {event.label, event.tag, false});
+}
+
+void HlaInboundAdapter::onFederationSynchronized(const std::string& label) {
+  if (label.empty()) return;
+  _synchronizationChanges.push_back({label, {}, true});
+}
+
 std::vector<RemoteSensorChange> HlaInboundAdapter::takeSensorChanges() {
   std::vector<RemoteSensorChange> result = std::move(_sensorChanges);
   _sensorChanges.clear();
@@ -364,6 +376,14 @@ std::vector<RemoteSensorChange> HlaInboundAdapter::takeSensorChanges() {
 std::vector<RemoteWarfareEvent> HlaInboundAdapter::takeWarfareEvents() {
   std::vector<RemoteWarfareEvent> result = std::move(_warfareEvents);
   _warfareEvents.clear();
+  return result;
+}
+
+std::vector<RemoteSynchronizationChange>
+HlaInboundAdapter::takeSynchronizationChanges() {
+  std::vector<RemoteSynchronizationChange> result =
+      std::move(_synchronizationChanges);
+  _synchronizationChanges.clear();
   return result;
 }
 

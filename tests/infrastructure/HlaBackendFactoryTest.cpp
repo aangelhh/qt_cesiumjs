@@ -72,6 +72,15 @@ public:
       const tactical::hla::ByteBuffer&) override {
     return tactical::hla::Result::ok();
   }
+  tactical::hla::Result registerSynchronizationPoint(
+      const std::string&,
+      const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result achieveSynchronizationPoint(
+      const std::string&) override {
+    return tactical::hla::Result::ok();
+  }
   tactical::hla::Result poll(double) override {
     return tactical::hla::Result::ok();
   }

@@ -61,6 +61,12 @@ struct RemoteWarfareEvent {
   double altitudeMeters = 0.0;
 };
 
+struct RemoteSynchronizationChange {
+  std::string label;
+  ByteBuffer tag;
+  bool federationSynchronized = false;
+};
+
 class HlaInboundAdapter final : public IHlaEventSink {
 public:
   enum class RemoteObjectKind {
@@ -75,11 +81,15 @@ public:
   void onObjectReflected(const RemoteObjectReflection& event) override;
   void onObjectRemoved(const RemoteObjectRemoval& event) override;
   void onInteractionReceived(const RemoteInteraction& event) override;
+  void onSynchronizationPointAnnounced(
+      const SynchronizationPointAnnouncement& event) override;
+  void onFederationSynchronized(const std::string& label) override;
 
   std::vector<RemoteEntityChange> takeEntityChanges();
   std::vector<RemoteMunitionChange> takeMunitionChanges();
   std::vector<RemoteSensorChange> takeSensorChanges();
   std::vector<RemoteWarfareEvent> takeWarfareEvents();
+  std::vector<RemoteSynchronizationChange> takeSynchronizationChanges();
   std::vector<RemoteSimulationControl> takeSimulationControls();
 
 private:
@@ -108,6 +118,7 @@ private:
   std::vector<RemoteMunitionChange> _removedMunitions;
   std::vector<RemoteSensorChange> _sensorChanges;
   std::vector<RemoteWarfareEvent> _warfareEvents;
+  std::vector<RemoteSynchronizationChange> _synchronizationChanges;
   std::vector<RemoteSimulationControl> _simulationControls;
   std::unordered_set<std::string> _seenWarfareEvents;
 };

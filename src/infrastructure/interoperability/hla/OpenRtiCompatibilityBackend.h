@@ -49,6 +49,10 @@ public:
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag) override;
+  Result registerSynchronizationPoint(
+      const std::string& label,
+      const ByteBuffer& tag) override;
+  Result achieveSynchronizationPoint(const std::string& label) override;
   Result poll(double maximumSeconds) override;
   void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;

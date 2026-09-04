@@ -53,6 +53,10 @@ public:
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag) override;
+  Result registerSynchronizationPoint(
+      const std::string& label,
+      const ByteBuffer& tag) override;
+  Result achieveSynchronizationPoint(const std::string& label) override;
   Result poll(double maximumSeconds) override;
   void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;
@@ -86,10 +90,17 @@ private:
       const char* interactionClassName,
       const QttestHlaNamedValueArrayV2* parameters,
       const QttestHlaByteSpanV2* tag);
+  static void synchronizationPointAnnouncedCallback(
+      void* context,
+      const char* label,
+      const QttestHlaByteSpanV2* tag);
+  static void federationSynchronizedCallback(
+      void* context,
+      const char* label);
 
   std::string _libraryPath;
   mutable QLibrary _library;
-  const QttestHlaBackendApiV3* _api = nullptr;
+  const QttestHlaBackendApiV4* _api = nullptr;
   QttestHlaBackendHandle _handle = nullptr;
   std::string _loadError;
   IHlaEventSink* _eventSink = nullptr;

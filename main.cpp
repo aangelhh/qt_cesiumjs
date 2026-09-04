@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QSettings>
+#include <QSet>
 #include <QTimer>
 
 #include <algorithm>
@@ -160,6 +161,25 @@ int main(int argc, char *argv[])
     QTimer hlaPublishTimer;
     qsizetype lastPublishedEntityCount = -1;
     if (hlaSession.isActive()) {
+      const QString synchronizationPointLabel =
+          startupConfiguration.hla.synchronizationPointLabel.trimmed();
+      QSet<QString> achievedSynchronizationPoints;
+      if (!synchronizationPointLabel.isEmpty()) {
+        const tactical::hla::Result synchronizationResult =
+            hlaSession.registerSynchronizationPoint(
+                synchronizationPointLabel.toStdString());
+        if (synchronizationResult.success) {
+          window.reportHlaSynchronizationStatus(
+              QStringLiteral("registration requested for %1")
+                  .arg(synchronizationPointLabel));
+        } else {
+          window.reportHlaSynchronizationStatus(
+              QStringLiteral("registration failed for %1: %2")
+                  .arg(
+                      synchronizationPointLabel,
+                      QString::fromStdString(synchronizationResult.message)));
+        }
+      }
       QObject::connect(
           &window,
           &MainWindow::hlaSimulationControlRequested,
@@ -195,6 +215,32 @@ int main(int argc, char *argv[])
             hlaSession.takeRemoteSensorChanges());
         window.applyHlaRemoteWarfareEvents(
             hlaSession.takeRemoteWarfareEvents());
+        for (const tactical::hla::RemoteSynchronizationChange& change :
+             hlaSession.takeRemoteSynchronizationChanges()) {
+          const QString label = QString::fromStdString(change.label);
+          if (change.federationSynchronized) {
+            window.reportHlaSynchronizationStatus(
+                QStringLiteral("federation synchronized at %1").arg(label));
+            continue;
+          }
+          window.reportHlaSynchronizationStatus(
+              QStringLiteral("point announced: %1").arg(label));
+          if (label != synchronizationPointLabel ||
+              achievedSynchronizationPoints.contains(label)) {
+            continue;
+          }
+          const tactical::hla::Result achieveResult =
+              hlaSession.achieveSynchronizationPoint(change.label);
+          if (achieveResult.success) {
+            achievedSynchronizationPoints.insert(label);
+            window.reportHlaSynchronizationStatus(
+                QStringLiteral("achieved %1").arg(label));
+          } else {
+            window.reportHlaSynchronizationStatus(
+                QStringLiteral("failed to achieve %1: %2")
+                    .arg(label, QString::fromStdString(achieveResult.message)));
+          }
+        }
         for (const tactical::hla::RemoteSimulationControl control :
              hlaSession.takeRemoteSimulationControls()) {
           window.applyHlaRemoteSimulationControl(control);
