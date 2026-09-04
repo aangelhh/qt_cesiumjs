@@ -524,12 +524,16 @@ MainWindow::MainWindow(QWidget* parent)
   this->syncDetectedContactsToUi();
   _simulationTimer->setInterval(33);
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
-    this->_scenarioState->advanceSimulation(0.033);
-    this->advanceEntityPlans();
-    this->processAttackTasks(0.033);
-    this->processAutoBombingBehaviors(0.033);
-    this->processPendingBombRelease();
-    this->syncScenarioStateToUi();
+    constexpr double deltaSeconds = 0.033;
+    if (_hlaTimeManagementActive) {
+      if (!_hlaTimeAdvancePending) {
+        _hlaTimeAdvancePending = true;
+        emit hlaTimeAdvanceRequested(
+            _scenarioState->simulationTimeSeconds() + deltaSeconds);
+      }
+      return;
+    }
+    this->advanceSimulationTick(deltaSeconds);
   });
 
   QObject::connect(this->_ui->actionQuit, &QAction::triggered, this, &QWidget::close);
@@ -1102,6 +1106,22 @@ void MainWindow::applyHlaRemoteSimulationControl(
 
 void MainWindow::reportHlaSynchronizationStatus(const QString& message) {
   this->appendLogMessage(QStringLiteral("HLA synchronization: %1").arg(message));
+}
+
+void MainWindow::setHlaTimeManagementActive(bool active) {
+  _hlaTimeManagementActive = active;
+  _hlaTimeAdvancePending = false;
+  this->appendLogMessage(
+      active
+          ? QStringLiteral("HLA time management active: simulation ticks require RTI grants.")
+          : QStringLiteral("HLA time management disabled: using local simulation clock."));
+}
+
+void MainWindow::applyHlaTimeAdvanceGrant(double logicalTimeSeconds) {
+  _hlaTimeAdvancePending = false;
+  const double currentTime = _scenarioState->simulationTimeSeconds();
+  if (logicalTimeSeconds <= currentTime) return;
+  this->advanceSimulationTick(logicalTimeSeconds - currentTime);
 }
 
 void MainWindow::initializeKinematicsCockpit() {
@@ -3388,6 +3408,15 @@ void MainWindow::processAttackTasks(double deltaSeconds) {
 
 void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
   _attackTaskProcessor->processAutoBombing(deltaSeconds, _simulationRunning);
+}
+
+void MainWindow::advanceSimulationTick(double deltaSeconds) {
+  this->_scenarioState->advanceSimulation(deltaSeconds);
+  this->advanceEntityPlans();
+  this->processAttackTasks(deltaSeconds);
+  this->processAutoBombingBehaviors(deltaSeconds);
+  this->processPendingBombRelease();
+  this->syncScenarioStateToUi();
 }
 
 void MainWindow::processPendingBombRelease() {

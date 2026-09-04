@@ -53,6 +53,9 @@ public:
       const std::string& label,
       const ByteBuffer& tag) override;
   Result achieveSynchronizationPoint(const std::string& label) override;
+  Result enableTimeRegulation(double lookaheadSeconds) override;
+  Result enableTimeConstrained() override;
+  Result requestTimeAdvance(double logicalTimeSeconds) override;
   Result poll(double maximumSeconds) override;
   void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;

@@ -11,7 +11,8 @@ Exactly one mode can be selected:
 - `Standalone`: local simulation without a federation transport.
 - `DIS`: multicast/unicast endpoint, port, site ID, and application ID.
 - `HLA`: RTI backend, local settings designator, federation identity, federate
-  identity, optional synchronization point, and ordered FOM modules.
+  identity, optional synchronization point, optional time management, and
+  ordered FOM modules.
 
 HLA mode is operational at application startup. Before `MainWindow` opens,
 qttest loads the selected backend, connects to the RTI, optionally creates the
@@ -25,6 +26,13 @@ joining, waits for the RTI announcement, and automatically reports the point as
 achieved. The operational log shows registration, announcement, achievement,
 and final federation synchronization. Leaving the field empty preserves the
 normal immediate startup flow.
+
+`Enable HLA time management` activates the conservative time-regulating and
+time-constrained path. qttest negotiates both services sequentially before the
+main window opens. The configured lookahead defaults to `0.01 s`. While the
+simulation is running, qttest keeps at most one time advance request pending;
+the local scenario advances only to the logical time granted by the RTI.
+Leaving this option disabled retains the existing receive-order local clock.
 
 After joining, local entity objects are registered and updated every 100 ms.
 Each active munition owns an RPR `PhysicalEntity.Munition` object and emits one

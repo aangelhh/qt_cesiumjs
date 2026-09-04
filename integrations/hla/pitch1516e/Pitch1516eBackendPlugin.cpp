@@ -4,6 +4,8 @@
 #include <RTI/NullFederateAmbassador.h>
 #include <RTI/RTIambassador.h>
 #include <RTI/RTIambassadorFactory.h>
+#include <RTI/time/HLAfloat64Interval.h>
+#include <RTI/time/HLAfloat64Time.h>
 
 #include <codecvt>
 #include <chrono>
@@ -97,6 +99,42 @@ public:
     if (!callbacks.federationSynchronized) return;
     const std::string utf8Label = toUtf8(label);
     callbacks.federationSynchronized(callbacks.context, utf8Label.c_str());
+  }
+
+  void timeRegulationEnabled(const rti1516e::LogicalTime& logicalTime)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    if (!callbacks.timeRegulationEnabled) return;
+    const rti1516e::HLAfloat64Time time(logicalTime);
+    callbacks.timeRegulationEnabled(callbacks.context, time.getTime());
+  }
+
+  void timeConstrainedEnabled(const rti1516e::LogicalTime& logicalTime)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    if (!callbacks.timeConstrainedEnabled) return;
+    const rti1516e::HLAfloat64Time time(logicalTime);
+    callbacks.timeConstrainedEnabled(callbacks.context, time.getTime());
+  }
+
+  void timeAdvanceGrant(const rti1516e::LogicalTime& logicalTime)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    if (!callbacks.timeAdvanceGranted) return;
+    const rti1516e::HLAfloat64Time time(logicalTime);
+    callbacks.timeAdvanceGranted(callbacks.context, time.getTime());
   }
 
   void objectInstanceNameReservationSucceeded(
@@ -267,7 +305,7 @@ public:
 
   std::set<std::wstring> reservedNames;
   std::set<std::wstring> failedNames;
-  QttestHlaCallbacksV4 callbacks = {};
+  QttestHlaCallbacksV5 callbacks = {};
   uint64_t nextRemoteObjectId = 1;
   std::map<rti1516e::ObjectClassHandle, SubscribedObjectClass>
       subscribedObjectClasses;
@@ -729,12 +767,68 @@ int achieveSynchronizationPoint(
   }
 }
 
+int enableTimeRegulation(
+    QttestHlaBackendHandle handle,
+    double lookaheadSeconds) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      lookaheadSeconds <= 0.0) {
+    return fail(value, "Invalid HLA time regulation request", QTTEST_HLA_STATE_ERROR);
+  }
+  try {
+    value->rtiAmbassador->enableTimeRegulation(
+        rti1516e::HLAfloat64Interval(lookaheadSeconds));
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
+int enableTimeConstrained(QttestHlaBackendHandle handle) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED) {
+    return fail(value, "Invalid HLA time constrained request", QTTEST_HLA_STATE_ERROR);
+  }
+  try {
+    value->rtiAmbassador->enableTimeConstrained();
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
+int requestTimeAdvance(
+    QttestHlaBackendHandle handle,
+    double logicalTimeSeconds) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      logicalTimeSeconds < 0.0) {
+    return fail(value, "Invalid HLA time advance request", QTTEST_HLA_STATE_ERROR);
+  }
+  try {
+    value->rtiAmbassador->timeAdvanceRequest(
+        rti1516e::HLAfloat64Time(logicalTimeSeconds));
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV4* callbacks) {
+    const QttestHlaCallbacksV5* callbacks) {
   PitchSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV4)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV5)) {
     return fail(value, "Invalid HLA callback configuration", QTTEST_HLA_STATE_ERROR);
   }
   value->federateAmbassador.callbacks = *callbacks;
@@ -857,12 +951,12 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "HLA backend session is unavailable";
 }
 
-const QttestHlaBackendApiV4 api = {
-    sizeof(QttestHlaBackendApiV4),
+const QttestHlaBackendApiV5 api = {
+    sizeof(QttestHlaBackendApiV5),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     QTTEST_HLA_1516E_BACKEND_ID,
     QTTEST_HLA_1516E_BACKEND_NAME,
-    "federation-management,object-management,interactions,synchronization-points,evoked-callbacks,ieee1516e",
+    "federation-management,object-management,interactions,synchronization-points,time-management,evoked-callbacks,ieee1516e",
     &createBackend,
     &destroyBackend,
     &connectBackend,
@@ -878,6 +972,9 @@ const QttestHlaBackendApiV4 api = {
     &sendInteraction,
     &registerSynchronizationPoint,
     &achieveSynchronizationPoint,
+    &enableTimeRegulation,
+    &enableTimeConstrained,
+    &requestTimeAdvance,
     &setCallbacks,
     &pollBackend,
     &resignBackend,
@@ -887,7 +984,7 @@ const QttestHlaBackendApiV4 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV4*
-qttest_hla_backend_api_v4(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV5*
+qttest_hla_backend_api_v5(void) {
   return &api;
 }

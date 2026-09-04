@@ -367,6 +367,24 @@ void HlaInboundAdapter::onFederationSynchronized(const std::string& label) {
   _synchronizationChanges.push_back({label, {}, true});
 }
 
+void HlaInboundAdapter::onTimeRegulationEnabled(double logicalTimeSeconds) {
+  _timeManagementEvents.push_back({
+      RemoteTimeManagementEventKind::RegulationEnabled,
+      logicalTimeSeconds});
+}
+
+void HlaInboundAdapter::onTimeConstrainedEnabled(double logicalTimeSeconds) {
+  _timeManagementEvents.push_back({
+      RemoteTimeManagementEventKind::ConstrainedEnabled,
+      logicalTimeSeconds});
+}
+
+void HlaInboundAdapter::onTimeAdvanceGranted(double logicalTimeSeconds) {
+  _timeManagementEvents.push_back({
+      RemoteTimeManagementEventKind::AdvanceGranted,
+      logicalTimeSeconds});
+}
+
 std::vector<RemoteSensorChange> HlaInboundAdapter::takeSensorChanges() {
   std::vector<RemoteSensorChange> result = std::move(_sensorChanges);
   _sensorChanges.clear();
@@ -384,6 +402,14 @@ HlaInboundAdapter::takeSynchronizationChanges() {
   std::vector<RemoteSynchronizationChange> result =
       std::move(_synchronizationChanges);
   _synchronizationChanges.clear();
+  return result;
+}
+
+std::vector<RemoteTimeManagementEvent>
+HlaInboundAdapter::takeTimeManagementEvents() {
+  std::vector<RemoteTimeManagementEvent> result =
+      std::move(_timeManagementEvents);
+  _timeManagementEvents.clear();
   return result;
 }
 

@@ -7,6 +7,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -54,6 +55,8 @@ private:
   QLineEdit* _hlaFederateEdit;
   QLineEdit* _hlaFederateTypeEdit;
   QLineEdit* _hlaSynchronizationPointEdit;
+  QCheckBox* _hlaTimeManagementCheck;
+  QDoubleSpinBox* _hlaLookaheadSpin;
   QCheckBox* _hlaCreateCheck;
   QListWidget* _hlaFomList;
   QPushButton* _removeFomButton;

@@ -97,11 +97,14 @@ public:
   void applyHlaRemoteSimulationControl(
       tactical::hla::RemoteSimulationControl control);
   void reportHlaSynchronizationStatus(const QString& message);
+  void setHlaTimeManagementActive(bool active);
+  void applyHlaTimeAdvanceGrant(double logicalTimeSeconds);
 
 signals:
   void hlaSimulationControlRequested(
       tactical::hla::RemoteSimulationControl control,
       double simulationTimeSeconds);
+  void hlaTimeAdvanceRequested(double logicalTimeSeconds);
 
 protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -228,6 +231,7 @@ private:
   void validatePendingBombRelease();
   void processAttackTasks(double deltaSeconds);
   void processAutoBombingBehaviors(double deltaSeconds);
+  void advanceSimulationTick(double deltaSeconds);
   void processPendingBombRelease();
   void openAssignTaskDialog(const QString& initialTaskType);
   void populateTaskCommands();
@@ -327,6 +331,8 @@ private:
   bool _simulationRunning;
   bool _simulationStopped = true;
   bool _applyingHlaSimulationControl = false;
+  bool _hlaTimeManagementActive = false;
+  bool _hlaTimeAdvancePending = false;
   QList<QToolButton*> _taskQuickButtons;
   QSet<QString> _activeMunitionTrackNames;
   QSet<QString> _activeEffectTrackNames;

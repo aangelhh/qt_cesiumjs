@@ -4,6 +4,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QThread>
 
 TEST(HlaStartupSession, RejectsUnavailableBackend) {
   application::HlaStartupConfiguration configuration;
@@ -45,5 +46,45 @@ TEST(HlaStartupSession, StartsAndStopsOpenRtiWithRepositoryFoms) {
   EXPECT_TRUE(session.poll(0.0).success);
   EXPECT_TRUE(session.stop().success);
   EXPECT_FALSE(session.isActive());
+}
+
+TEST(HlaStartupSession, AdvancesOnlyAfterOpenRtiLogicalTimeGrant) {
+  application::StartupConfiguration startupConfiguration;
+  startupConfiguration.addMissingHlaFomModules(
+      QStringLiteral(QTTEST_SOURCE_DIR "/src/infrastructure/hla/FOM"));
+  auto& configuration = startupConfiguration.hla;
+  configuration.backendId = QStringLiteral("openrti1516e");
+  configuration.backendLibraryPath =
+      QStringLiteral(QTTEST_HLA_OPENRTI_PLUGIN_PATH);
+  configuration.localSettingsDesignator = QStringLiteral("thread://");
+  configuration.federationName = QStringLiteral("qttest-time-session-test");
+  configuration.federateName = QStringLiteral("qttest-time-test-01");
+  configuration.federateType = QStringLiteral("qttest-test");
+  configuration.timeManagementEnabled = true;
+  configuration.timeLookaheadSeconds = 0.01;
+
+  application::HlaStartupSession session;
+  const tactical::hla::Result startResult = session.start(configuration);
+  ASSERT_TRUE(startResult.success) << startResult.message;
+  ASSERT_TRUE(session.isTimeManagementActive());
+  EXPECT_DOUBLE_EQ(session.grantedLogicalTimeSeconds(), 0.0);
+  ASSERT_TRUE(session.requestTimeAdvance(0.033).success);
+  EXPECT_FALSE(session.requestTimeAdvance(0.066).success);
+
+  bool granted = false;
+  for (int attempt = 0; attempt < 200 && !granted; ++attempt) {
+    ASSERT_TRUE(session.poll(0.05).success);
+    for (const auto& event : session.takeRemoteTimeManagementEvents()) {
+      if (event.kind ==
+              tactical::hla::RemoteTimeManagementEventKind::AdvanceGranted &&
+          event.logicalTimeSeconds >= 0.033) {
+        granted = true;
+      }
+    }
+    if (!granted) QThread::msleep(5);
+  }
+  EXPECT_TRUE(granted);
+  EXPECT_DOUBLE_EQ(session.grantedLogicalTimeSeconds(), 0.033);
+  EXPECT_TRUE(session.stop().success);
 }
 #endif

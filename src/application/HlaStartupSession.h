@@ -32,6 +32,8 @@ public:
   std::vector<tactical::hla::RemoteWarfareEvent> takeRemoteWarfareEvents();
   std::vector<tactical::hla::RemoteSynchronizationChange>
       takeRemoteSynchronizationChanges();
+  std::vector<tactical::hla::RemoteTimeManagementEvent>
+      takeRemoteTimeManagementEvents();
   std::vector<tactical::hla::RemoteSimulationControl>
       takeRemoteSimulationControls();
   tactical::hla::Result publishSimulationControl(
@@ -42,9 +44,12 @@ public:
       const tactical::hla::ByteBuffer& tag = {});
   tactical::hla::Result achieveSynchronizationPoint(
       const std::string& label);
+  tactical::hla::Result requestTimeAdvance(double logicalTimeSeconds);
   tactical::hla::Result stop();
 
   bool isActive() const;
+  bool isTimeManagementActive() const;
+  double grantedLogicalTimeSeconds() const;
   QString backendId() const;
 
 private:
@@ -56,6 +61,9 @@ private:
       _simulationControlPublisher;
   std::unique_ptr<tactical::hla::HlaSensorPublisher> _sensorPublisher;
   QString _backendId;
+  bool _timeManagementActive = false;
+  bool _timeAdvancePending = false;
+  double _grantedLogicalTimeSeconds = 0.0;
 };
 
 } // namespace application

@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION 4U
+#define QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION 5U
 
 #ifdef _WIN32
 #define QTTEST_HLA_PLUGIN_EXPORT __declspec(dllexport)
@@ -49,7 +49,7 @@ typedef struct QttestHlaNamedValueArrayV2 {
   size_t count;
 } QttestHlaNamedValueArrayV2;
 
-typedef struct QttestHlaCallbacksV4 {
+typedef struct QttestHlaCallbacksV5 {
   uint32_t structSize;
   void* context;
   void (*objectDiscovered)(
@@ -76,9 +76,12 @@ typedef struct QttestHlaCallbacksV4 {
       const char* label,
       const QttestHlaByteSpanV2* tag);
   void (*federationSynchronized)(void* context, const char* label);
-} QttestHlaCallbacksV4;
+  void (*timeRegulationEnabled)(void* context, double logicalTimeSeconds);
+  void (*timeConstrainedEnabled)(void* context, double logicalTimeSeconds);
+  void (*timeAdvanceGranted)(void* context, double logicalTimeSeconds);
+} QttestHlaCallbacksV5;
 
-typedef struct QttestHlaBackendApiV4 {
+typedef struct QttestHlaBackendApiV5 {
   uint32_t structSize;
   uint32_t abiVersion;
   const char* backendId;
@@ -139,20 +142,27 @@ typedef struct QttestHlaBackendApiV4 {
   int (*achieveSynchronizationPoint)(
       QttestHlaBackendHandle,
       const char* label);
+  int (*enableTimeRegulation)(
+      QttestHlaBackendHandle,
+      double lookaheadSeconds);
+  int (*enableTimeConstrained)(QttestHlaBackendHandle);
+  int (*requestTimeAdvance)(
+      QttestHlaBackendHandle,
+      double logicalTimeSeconds);
   int (*setCallbacks)(
       QttestHlaBackendHandle,
-      const QttestHlaCallbacksV4* callbacks);
+      const QttestHlaCallbacksV5* callbacks);
   int (*poll)(QttestHlaBackendHandle, double maximumSeconds);
   int (*resign)(QttestHlaBackendHandle);
   int (*disconnect)(QttestHlaBackendHandle);
   QttestHlaBackendStateV1 (*state)(QttestHlaBackendHandle);
   const char* (*lastError)(QttestHlaBackendHandle);
-} QttestHlaBackendApiV4;
+} QttestHlaBackendApiV5;
 
-typedef const QttestHlaBackendApiV4* (*QttestHlaBackendApiFn)(void);
+typedef const QttestHlaBackendApiV5* (*QttestHlaBackendApiFn)(void);
 
-QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV4*
-qttest_hla_backend_api_v4(void);
+QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV5*
+qttest_hla_backend_api_v5(void);
 
 #ifdef __cplusplus
 } // extern "C"

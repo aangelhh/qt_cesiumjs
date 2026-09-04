@@ -153,6 +153,9 @@ int main(int argc, char *argv[])
         QStringLiteral("%1 [%2]")
             .arg(window.windowTitle(), startupConfiguration.modeDisplayName()));
     window.show();
+    if (hlaSession.isTimeManagementActive()) {
+      window.setHlaTimeManagementActive(true);
+    }
     if (hlaCombatDemo) {
       QTimer::singleShot(0, &window, &MainWindow::startHlaCombatDemo);
     }
@@ -193,6 +196,21 @@ int main(int argc, char *argv[])
               qCritical().noquote()
                   << "HLA simulation control publication failed:"
                   << QString::fromStdString(result.message);
+            }
+          });
+      QObject::connect(
+          &window,
+          &MainWindow::hlaTimeAdvanceRequested,
+          &window,
+          [&](double logicalTimeSeconds) {
+            const tactical::hla::Result result =
+                hlaSession.requestTimeAdvance(logicalTimeSeconds);
+            if (!result.success) {
+              window.reportHlaSynchronizationStatus(
+                  QStringLiteral("time advance request failed: %1")
+                      .arg(QString::fromStdString(result.message)));
+              window.applyHlaTimeAdvanceGrant(
+                  hlaSession.grantedLogicalTimeSeconds());
             }
           });
       hlaPollTimer.setInterval(20);
@@ -239,6 +257,24 @@ int main(int argc, char *argv[])
             window.reportHlaSynchronizationStatus(
                 QStringLiteral("failed to achieve %1: %2")
                     .arg(label, QString::fromStdString(achieveResult.message)));
+          }
+        }
+        for (const tactical::hla::RemoteTimeManagementEvent& event :
+             hlaSession.takeRemoteTimeManagementEvents()) {
+          switch (event.kind) {
+            case tactical::hla::RemoteTimeManagementEventKind::RegulationEnabled:
+              window.reportHlaSynchronizationStatus(
+                  QStringLiteral("time regulation enabled at %1 s")
+                      .arg(event.logicalTimeSeconds, 0, 'f', 3));
+              break;
+            case tactical::hla::RemoteTimeManagementEventKind::ConstrainedEnabled:
+              window.reportHlaSynchronizationStatus(
+                  QStringLiteral("time constrained enabled at %1 s")
+                      .arg(event.logicalTimeSeconds, 0, 'f', 3));
+              break;
+            case tactical::hla::RemoteTimeManagementEventKind::AdvanceGranted:
+              window.applyHlaTimeAdvanceGrant(event.logicalTimeSeconds);
+              break;
           }
         }
         for (const tactical::hla::RemoteSimulationControl control :

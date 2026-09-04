@@ -159,6 +159,27 @@ TEST(HlaInboundAdapter, ConvertsRprSimulationControlInteractions) {
   EXPECT_TRUE(adapter.takeSimulationControls().empty());
 }
 
+TEST(HlaInboundAdapter, QueuesTimeManagementCallbacksInOrder) {
+  tactical::hla::HlaInboundAdapter adapter;
+  adapter.onTimeRegulationEnabled(0.0);
+  adapter.onTimeConstrainedEnabled(0.0);
+  adapter.onTimeAdvanceGranted(0.033);
+
+  const auto events = adapter.takeTimeManagementEvents();
+  ASSERT_EQ(events.size(), 3U);
+  EXPECT_EQ(
+      events[0].kind,
+      tactical::hla::RemoteTimeManagementEventKind::RegulationEnabled);
+  EXPECT_EQ(
+      events[1].kind,
+      tactical::hla::RemoteTimeManagementEventKind::ConstrainedEnabled);
+  EXPECT_EQ(
+      events[2].kind,
+      tactical::hla::RemoteTimeManagementEventKind::AdvanceGranted);
+  EXPECT_DOUBLE_EQ(events[2].logicalTimeSeconds, 0.033);
+  EXPECT_TRUE(adapter.takeTimeManagementEvents().empty());
+}
+
 TEST(HlaInboundAdapter, ConvertsEmitterAndRadarBeamWithoutCreatingEntity) {
   tactical::hla::HlaInboundAdapter adapter;
   adapter.onObjectDiscovered({

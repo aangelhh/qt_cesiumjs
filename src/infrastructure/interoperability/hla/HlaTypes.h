@@ -80,6 +80,9 @@ public:
   virtual void onSynchronizationPointAnnounced(
       const SynchronizationPointAnnouncement& event) = 0;
   virtual void onFederationSynchronized(const std::string& label) = 0;
+  virtual void onTimeRegulationEnabled(double logicalTimeSeconds) = 0;
+  virtual void onTimeConstrainedEnabled(double logicalTimeSeconds) = 0;
+  virtual void onTimeAdvanceGranted(double logicalTimeSeconds) = 0;
 };
 
 } // namespace tactical::hla

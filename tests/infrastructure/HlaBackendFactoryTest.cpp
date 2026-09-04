@@ -81,6 +81,15 @@ public:
       const std::string&) override {
     return tactical::hla::Result::ok();
   }
+  tactical::hla::Result enableTimeRegulation(double) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result enableTimeConstrained() override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result requestTimeAdvance(double) override {
+    return tactical::hla::Result::ok();
+  }
   tactical::hla::Result poll(double) override {
     return tactical::hla::Result::ok();
   }

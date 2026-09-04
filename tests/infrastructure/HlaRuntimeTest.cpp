@@ -122,3 +122,34 @@ TEST(HlaRuntime, RejectsSynchronizationPointWithoutJoinedFederateOrLabel) {
   EXPECT_FALSE(runtime.registerSynchronizationPoint("").success);
   EXPECT_FALSE(runtime.achieveSynchronizationPoint("").success);
 }
+
+TEST(HlaRuntime, ForwardsTimeManagementRequestsWhenJoined) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::MockHlaBackend* backendView = backend.get();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  ASSERT_TRUE(runtime.start(validConfiguration()).success);
+
+  EXPECT_TRUE(runtime.enableTimeRegulation(0.01).success);
+  EXPECT_TRUE(runtime.enableTimeConstrained().success);
+  EXPECT_TRUE(runtime.requestTimeAdvance(0.033).success);
+  EXPECT_EQ(
+      backendView->operations(),
+      (std::vector<tactical::hla::MockHlaBackend::Operation>{
+          tactical::hla::MockHlaBackend::Operation::Connect,
+          tactical::hla::MockHlaBackend::Operation::CreateFederation,
+          tactical::hla::MockHlaBackend::Operation::JoinFederation,
+          tactical::hla::MockHlaBackend::Operation::EnableTimeRegulation,
+          tactical::hla::MockHlaBackend::Operation::EnableTimeConstrained,
+          tactical::hla::MockHlaBackend::Operation::RequestTimeAdvance}));
+}
+
+TEST(HlaRuntime, RejectsInvalidTimeManagementRequests) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  EXPECT_FALSE(runtime.enableTimeRegulation(0.01).success);
+  EXPECT_FALSE(runtime.enableTimeConstrained().success);
+  EXPECT_FALSE(runtime.requestTimeAdvance(1.0).success);
+  ASSERT_TRUE(runtime.start(validConfiguration()).success);
+  EXPECT_FALSE(runtime.enableTimeRegulation(0.0).success);
+  EXPECT_FALSE(runtime.requestTimeAdvance(-1.0).success);
+}

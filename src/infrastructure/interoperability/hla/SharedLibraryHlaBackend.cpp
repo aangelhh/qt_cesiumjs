@@ -90,7 +90,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   const auto apiFactory = reinterpret_cast<QttestHlaBackendApiFn>(
-      _library.resolve("qttest_hla_backend_api_v4"));
+      _library.resolve("qttest_hla_backend_api_v5"));
   if (!apiFactory) {
     _loadError = "Required HLA backend API symbol is missing";
     _library.unload();
@@ -98,7 +98,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   _api = apiFactory();
-  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV4) ||
+  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV5) ||
       _api->abiVersion != QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION) {
     _loadError = "Unsupported HLA backend plugin ABI";
     _api = nullptr;
@@ -112,7 +112,9 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
       !_api->updateObjectAttributes || !_api->deleteObjectInstance ||
       !_api->publishInteractionClass || !_api->subscribeInteractionClass ||
       !_api->sendInteraction || !_api->registerSynchronizationPoint ||
-      !_api->achieveSynchronizationPoint || !_api->setCallbacks ||
+      !_api->achieveSynchronizationPoint || !_api->enableTimeRegulation ||
+      !_api->enableTimeConstrained || !_api->requestTimeAdvance ||
+      !_api->setCallbacks ||
       !_api->poll || !_api->resign || !_api->disconnect || !_api->state ||
       !_api->lastError) {
     _loadError = "HLA backend plugin API is incomplete";
@@ -128,15 +130,18 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
     _library.unload();
     return;
   }
-  const QttestHlaCallbacksV4 callbacks = {
-      sizeof(QttestHlaCallbacksV4),
+  const QttestHlaCallbacksV5 callbacks = {
+      sizeof(QttestHlaCallbacksV5),
       this,
       &SharedLibraryHlaBackend::objectDiscoveredCallback,
       &SharedLibraryHlaBackend::objectReflectedCallback,
       &SharedLibraryHlaBackend::objectRemovedCallback,
       &SharedLibraryHlaBackend::interactionReceivedCallback,
       &SharedLibraryHlaBackend::synchronizationPointAnnouncedCallback,
-      &SharedLibraryHlaBackend::federationSynchronizedCallback};
+      &SharedLibraryHlaBackend::federationSynchronizedCallback,
+      &SharedLibraryHlaBackend::timeRegulationEnabledCallback,
+      &SharedLibraryHlaBackend::timeConstrainedEnabledCallback,
+      &SharedLibraryHlaBackend::timeAdvanceGrantedCallback};
   if (_api->setCallbacks(_handle, &callbacks) != 0) {
     _loadError = safeString(_api->lastError(_handle));
     _api->destroy(_handle);
@@ -333,6 +338,25 @@ Result SharedLibraryHlaBackend::achieveSynchronizationPoint(
       _api->achieveSynchronizationPoint(_handle, label.c_str()));
 }
 
+Result SharedLibraryHlaBackend::enableTimeRegulation(
+    double lookaheadSeconds) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  return this->pluginResult(
+      _api->enableTimeRegulation(_handle, lookaheadSeconds));
+}
+
+Result SharedLibraryHlaBackend::enableTimeConstrained() {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  return this->pluginResult(_api->enableTimeConstrained(_handle));
+}
+
+Result SharedLibraryHlaBackend::requestTimeAdvance(
+    double logicalTimeSeconds) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  return this->pluginResult(
+      _api->requestTimeAdvance(_handle, logicalTimeSeconds));
+}
+
 Result SharedLibraryHlaBackend::poll(double maximumSeconds) {
   if (!_api || !_handle) {
     return Result::failure(_loadError);
@@ -404,6 +428,30 @@ void SharedLibraryHlaBackend::federationSynchronizedCallback(
   auto* self = static_cast<SharedLibraryHlaBackend*>(context);
   if (!self || !self->_eventSink) return;
   self->_eventSink->onFederationSynchronized(safeString(label));
+}
+
+void SharedLibraryHlaBackend::timeRegulationEnabledCallback(
+    void* context,
+    double logicalTimeSeconds) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onTimeRegulationEnabled(logicalTimeSeconds);
+}
+
+void SharedLibraryHlaBackend::timeConstrainedEnabledCallback(
+    void* context,
+    double logicalTimeSeconds) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onTimeConstrainedEnabled(logicalTimeSeconds);
+}
+
+void SharedLibraryHlaBackend::timeAdvanceGrantedCallback(
+    void* context,
+    double logicalTimeSeconds) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onTimeAdvanceGranted(logicalTimeSeconds);
 }
 
 Result SharedLibraryHlaBackend::resign() {

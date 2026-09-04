@@ -1,5 +1,6 @@
 #include "infrastructure/interoperability/hla/HlaRuntime.h"
 
+#include <cmath>
 #include <utility>
 
 namespace tactical::hla {
@@ -163,6 +164,33 @@ Result HlaRuntime::achieveSynchronizationPoint(const std::string& label) {
     return Result::failure("HLA synchronization point label is required");
   }
   return _backend->achieveSynchronizationPoint(label);
+}
+
+Result HlaRuntime::enableTimeRegulation(double lookaheadSeconds) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (!std::isfinite(lookaheadSeconds) || lookaheadSeconds <= 0.0) {
+    return Result::failure("HLA time lookahead must be positive and finite");
+  }
+  return _backend->enableTimeRegulation(lookaheadSeconds);
+}
+
+Result HlaRuntime::enableTimeConstrained() {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  return _backend->enableTimeConstrained();
+}
+
+Result HlaRuntime::requestTimeAdvance(double logicalTimeSeconds) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (!std::isfinite(logicalTimeSeconds) || logicalTimeSeconds < 0.0) {
+    return Result::failure("HLA requested logical time must be finite and non-negative");
+  }
+  return _backend->requestTimeAdvance(logicalTimeSeconds);
 }
 
 void HlaRuntime::setEventSink(IHlaEventSink* eventSink) {

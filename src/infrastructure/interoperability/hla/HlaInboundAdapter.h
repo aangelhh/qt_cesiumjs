@@ -67,6 +67,18 @@ struct RemoteSynchronizationChange {
   bool federationSynchronized = false;
 };
 
+enum class RemoteTimeManagementEventKind {
+  RegulationEnabled,
+  ConstrainedEnabled,
+  AdvanceGranted
+};
+
+struct RemoteTimeManagementEvent {
+  RemoteTimeManagementEventKind kind =
+      RemoteTimeManagementEventKind::AdvanceGranted;
+  double logicalTimeSeconds = 0.0;
+};
+
 class HlaInboundAdapter final : public IHlaEventSink {
 public:
   enum class RemoteObjectKind {
@@ -84,12 +96,16 @@ public:
   void onSynchronizationPointAnnounced(
       const SynchronizationPointAnnouncement& event) override;
   void onFederationSynchronized(const std::string& label) override;
+  void onTimeRegulationEnabled(double logicalTimeSeconds) override;
+  void onTimeConstrainedEnabled(double logicalTimeSeconds) override;
+  void onTimeAdvanceGranted(double logicalTimeSeconds) override;
 
   std::vector<RemoteEntityChange> takeEntityChanges();
   std::vector<RemoteMunitionChange> takeMunitionChanges();
   std::vector<RemoteSensorChange> takeSensorChanges();
   std::vector<RemoteWarfareEvent> takeWarfareEvents();
   std::vector<RemoteSynchronizationChange> takeSynchronizationChanges();
+  std::vector<RemoteTimeManagementEvent> takeTimeManagementEvents();
   std::vector<RemoteSimulationControl> takeSimulationControls();
 
 private:
@@ -119,6 +135,7 @@ private:
   std::vector<RemoteSensorChange> _sensorChanges;
   std::vector<RemoteWarfareEvent> _warfareEvents;
   std::vector<RemoteSynchronizationChange> _synchronizationChanges;
+  std::vector<RemoteTimeManagementEvent> _timeManagementEvents;
   std::vector<RemoteSimulationControl> _simulationControls;
   std::unordered_set<std::string> _seenWarfareEvents;
 };

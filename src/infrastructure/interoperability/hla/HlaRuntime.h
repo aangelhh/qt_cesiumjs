@@ -44,6 +44,9 @@ public:
       const std::string& label,
       const ByteBuffer& tag = {});
   Result achieveSynchronizationPoint(const std::string& label);
+  Result enableTimeRegulation(double lookaheadSeconds);
+  Result enableTimeConstrained();
+  Result requestTimeAdvance(double logicalTimeSeconds);
   Result poll(double maximumSeconds);
   void setEventSink(IHlaEventSink* eventSink);
   Result stop();

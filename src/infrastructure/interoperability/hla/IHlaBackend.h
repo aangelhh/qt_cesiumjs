@@ -55,6 +55,9 @@ public:
       const ByteBuffer& tag = {}) = 0;
   virtual Result achieveSynchronizationPoint(
       const std::string& label) = 0;
+  virtual Result enableTimeRegulation(double lookaheadSeconds) = 0;
+  virtual Result enableTimeConstrained() = 0;
+  virtual Result requestTimeAdvance(double logicalTimeSeconds) = 0;
   virtual Result poll(double maximumSeconds) = 0;
   virtual void setEventSink(IHlaEventSink* eventSink) = 0;
   virtual Result resign() = 0;

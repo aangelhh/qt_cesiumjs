@@ -32,6 +32,9 @@ public:
     SendInteraction,
     RegisterSynchronizationPoint,
     AchieveSynchronizationPoint,
+    EnableTimeRegulation,
+    EnableTimeConstrained,
+    RequestTimeAdvance,
     Poll,
     Resign,
     Disconnect
@@ -79,6 +82,9 @@ public:
       const std::string& label,
       const ByteBuffer& tag) override;
   Result achieveSynchronizationPoint(const std::string& label) override;
+  Result enableTimeRegulation(double lookaheadSeconds) override;
+  Result enableTimeConstrained() override;
+  Result requestTimeAdvance(double logicalTimeSeconds) override;
   Result poll(double maximumSeconds) override;
   void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;
@@ -100,6 +106,9 @@ public:
   void emitSynchronizationPointAnnounced(
       const SynchronizationPointAnnouncement& event);
   void emitFederationSynchronized(const std::string& label);
+  void emitTimeRegulationEnabled(double logicalTimeSeconds);
+  void emitTimeConstrainedEnabled(double logicalTimeSeconds);
+  void emitTimeAdvanceGranted(double logicalTimeSeconds);
 
 private:
   Result begin(Operation operation);

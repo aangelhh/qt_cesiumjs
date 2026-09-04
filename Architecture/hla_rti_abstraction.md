@@ -110,10 +110,12 @@ Implemented lifecycle, publication, and reception:
 15. Receive and deduplicate remote `WeaponFire` / `MunitionDetonation` events.
 16. Publish and receive the object identifiers tracked by each radar beam.
 17. Register, announce, achieve, and complete federation synchronization points.
-18. Poll callbacks.
-19. Remove owned objects, resign, and disconnect with rollback on failure.
+18. Optionally enable time regulation and time constrained execution using
+    `HLAfloat64Time`, then advance only after RTI grants.
+19. Poll callbacks.
+20. Remove owned objects, resign, and disconnect with rollback on failure.
 
-The plugin ABI v4 keeps RTI handles private to each plugin and exposes opaque
+The plugin ABI v5 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
 classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 `DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
@@ -181,8 +183,17 @@ completion in the operational log. An empty setting leaves startup
 unsynchronized. Registration success/failure callbacks, synchronization-set
 selection, and multi-phase exercise orchestration remain future hardening.
 
-Ownership Management, HLA Time Management, DDM, save/restore, and NETN-ETR
-task exchange remain subsequent Feature 19 tasks.
+HLA Time Management is available as an opt-in conservative MVP. qttest enables
+time regulation first, waits for its callback, then enables time constrained
+execution. The Qt simulation timer requests one logical step at a time and
+`ScenarioState` advances only after `timeAdvanceGrant`; duplicate outstanding
+requests and regressive logical times are rejected. Receive-order execution
+remains the default. Timestamp-ordered object updates/interactions, next-event
+requests, asynchronous delivery, and coordinated fast-time policy remain
+future work.
+
+Ownership Management, DDM, save/restore, and NETN-ETR task exchange remain
+subsequent Feature 19 tasks.
 
 ### Graphical combat demo
 
@@ -210,7 +221,7 @@ needed, publishes one synthetic Aircraft, updates and removes it, then exits.
 ## Adding another RTI
 
 1. Add `integrations/hla/<backend>/<Backend>Plugin.cpp`.
-2. Implement every function in `QttestHlaBackendApiV4`, including callback
+2. Implement every function in `QttestHlaBackendApiV5`, including callback
    registration and object/interaction subscriptions.
 3. Keep vendor headers and libraries private to that plugin target.
 4. Return backend identity, version, capabilities, and diagnostic errors.

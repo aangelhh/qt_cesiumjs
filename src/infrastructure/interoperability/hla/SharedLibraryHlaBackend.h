@@ -57,6 +57,9 @@ public:
       const std::string& label,
       const ByteBuffer& tag) override;
   Result achieveSynchronizationPoint(const std::string& label) override;
+  Result enableTimeRegulation(double lookaheadSeconds) override;
+  Result enableTimeConstrained() override;
+  Result requestTimeAdvance(double logicalTimeSeconds) override;
   Result poll(double maximumSeconds) override;
   void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;
@@ -97,10 +100,19 @@ private:
   static void federationSynchronizedCallback(
       void* context,
       const char* label);
+  static void timeRegulationEnabledCallback(
+      void* context,
+      double logicalTimeSeconds);
+  static void timeConstrainedEnabledCallback(
+      void* context,
+      double logicalTimeSeconds);
+  static void timeAdvanceGrantedCallback(
+      void* context,
+      double logicalTimeSeconds);
 
   std::string _libraryPath;
   mutable QLibrary _library;
-  const QttestHlaBackendApiV4* _api = nullptr;
+  const QttestHlaBackendApiV5* _api = nullptr;
   QttestHlaBackendHandle _handle = nullptr;
   std::string _loadError;
   IHlaEventSink* _eventSink = nullptr;

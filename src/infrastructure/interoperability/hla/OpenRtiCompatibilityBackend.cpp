@@ -283,6 +283,20 @@ Result OpenRtiCompatibilityBackend::achieveSynchronizationPoint(
   return _backend->achieveSynchronizationPoint(label);
 }
 
+Result OpenRtiCompatibilityBackend::enableTimeRegulation(
+    double lookaheadSeconds) {
+  return _backend->enableTimeRegulation(lookaheadSeconds);
+}
+
+Result OpenRtiCompatibilityBackend::enableTimeConstrained() {
+  return _backend->enableTimeConstrained();
+}
+
+Result OpenRtiCompatibilityBackend::requestTimeAdvance(
+    double logicalTimeSeconds) {
+  return _backend->requestTimeAdvance(logicalTimeSeconds);
+}
+
 Result OpenRtiCompatibilityBackend::poll(double maximumSeconds) {
   return _backend->poll(maximumSeconds);
 }

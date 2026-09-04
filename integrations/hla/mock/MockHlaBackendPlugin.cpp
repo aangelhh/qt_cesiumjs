@@ -10,7 +10,10 @@ struct MockSession {
   std::string error;
   uint64_t nextObjectId = 1;
   std::set<uint64_t> objects;
-  QttestHlaCallbacksV4 callbacks = {};
+  QttestHlaCallbacksV5 callbacks = {};
+  bool timeRegulating = false;
+  bool timeConstrained = false;
+  double logicalTimeSeconds = 0.0;
 };
 
 MockSession* session(QttestHlaBackendHandle handle) {
@@ -204,12 +207,61 @@ int achieveSynchronizationPoint(
   return 0;
 }
 
+int enableTimeRegulation(
+    QttestHlaBackendHandle handle,
+    double lookaheadSeconds) {
+  MockSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      lookaheadSeconds <= 0.0) {
+    return fail(value, "Invalid mock time regulation request");
+  }
+  value->timeRegulating = true;
+  if (value->callbacks.timeRegulationEnabled) {
+    value->callbacks.timeRegulationEnabled(
+        value->callbacks.context, value->logicalTimeSeconds);
+  }
+  value->error.clear();
+  return 0;
+}
+
+int enableTimeConstrained(QttestHlaBackendHandle handle) {
+  MockSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED) {
+    return fail(value, "Invalid mock time constrained request");
+  }
+  value->timeConstrained = true;
+  if (value->callbacks.timeConstrainedEnabled) {
+    value->callbacks.timeConstrainedEnabled(
+        value->callbacks.context, value->logicalTimeSeconds);
+  }
+  value->error.clear();
+  return 0;
+}
+
+int requestTimeAdvance(
+    QttestHlaBackendHandle handle,
+    double logicalTimeSeconds) {
+  MockSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      !value->timeRegulating || !value->timeConstrained ||
+      logicalTimeSeconds < value->logicalTimeSeconds) {
+    return fail(value, "Invalid mock time advance request");
+  }
+  value->logicalTimeSeconds = logicalTimeSeconds;
+  if (value->callbacks.timeAdvanceGranted) {
+    value->callbacks.timeAdvanceGranted(
+        value->callbacks.context, logicalTimeSeconds);
+  }
+  value->error.clear();
+  return 0;
+}
+
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV4* callbacks) {
+    const QttestHlaCallbacksV5* callbacks) {
   MockSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV4)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV5)) {
     return fail(value, "Invalid mock callback configuration");
   }
   value->callbacks = *callbacks;
@@ -259,8 +311,8 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "Mock plugin session is unavailable";
 }
 
-const QttestHlaBackendApiV4 api = {
-    sizeof(QttestHlaBackendApiV4),
+const QttestHlaBackendApiV5 api = {
+    sizeof(QttestHlaBackendApiV5),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     "mock-plugin",
     "1.0",
@@ -280,6 +332,9 @@ const QttestHlaBackendApiV4 api = {
     &sendInteraction,
     &registerSynchronizationPoint,
     &achieveSynchronizationPoint,
+    &enableTimeRegulation,
+    &enableTimeConstrained,
+    &requestTimeAdvance,
     &setCallbacks,
     &pollBackend,
     &resignBackend,
@@ -289,7 +344,7 @@ const QttestHlaBackendApiV4 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV4*
-qttest_hla_backend_api_v4(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV5*
+qttest_hla_backend_api_v5(void) {
   return &api;
 }

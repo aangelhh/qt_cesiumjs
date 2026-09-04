@@ -117,6 +117,38 @@ TEST(HlaBackendPlugin, MockPluginExchangesSynchronizationPointCallbacks) {
   EXPECT_TRUE(runtime.stop().success);
 }
 
+TEST(HlaBackendPlugin, MockPluginExchangesTimeManagementCallbacks) {
+  auto backend = std::make_unique<tactical::hla::SharedLibraryHlaBackend>(
+      mockPluginPath());
+  ASSERT_TRUE(backend->isAvailable()) << backend->loadError();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  tactical::hla::HlaInboundAdapter inbound;
+  runtime.setEventSink(&inbound);
+
+  tactical::hla::SessionConfiguration configuration;
+  configuration.federationName = "TimeManagementTestFederation";
+  configuration.federateName = "time-management-test-01";
+  configuration.federateType = "test";
+  ASSERT_TRUE(runtime.start(configuration).success);
+  ASSERT_TRUE(runtime.enableTimeRegulation(0.01).success);
+  ASSERT_TRUE(runtime.enableTimeConstrained().success);
+  ASSERT_TRUE(runtime.requestTimeAdvance(0.033).success);
+
+  const auto events = inbound.takeTimeManagementEvents();
+  ASSERT_EQ(events.size(), 3U);
+  EXPECT_EQ(
+      events[0].kind,
+      tactical::hla::RemoteTimeManagementEventKind::RegulationEnabled);
+  EXPECT_EQ(
+      events[1].kind,
+      tactical::hla::RemoteTimeManagementEventKind::ConstrainedEnabled);
+  EXPECT_EQ(
+      events[2].kind,
+      tactical::hla::RemoteTimeManagementEventKind::AdvanceGranted);
+  EXPECT_DOUBLE_EQ(events[2].logicalTimeSeconds, 0.033);
+  EXPECT_TRUE(runtime.stop().success);
+}
+
 #ifdef QTTEST_HLA_PITCH_PLUGIN_PATH
 TEST(HlaBackendPlugin, LoadsInstalledPitchBackendWhenBuilt) {
   const std::string pluginPath = QTTEST_HLA_PITCH_PLUGIN_PATH;
@@ -152,6 +184,8 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
       .arg(QCoreApplication::applicationPid());
   configuration.federateType = QStringLiteral("qttest-integration-test");
   configuration.createFederationIfMissing = true;
+  configuration.timeManagementEnabled = true;
+  configuration.timeLookaheadSeconds = 0.01;
 
   application::HlaStartupSession session;
   const tactical::hla::Result startResult = session.start(configuration);
@@ -177,6 +211,21 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
   ASSERT_TRUE(synchronizationAnnounced);
   ASSERT_TRUE(session.achieveSynchronizationPoint(
       synchronizationLabel).success);
+  ASSERT_TRUE(session.isTimeManagementActive());
+  ASSERT_TRUE(session.requestTimeAdvance(0.033).success);
+  bool timeGranted = false;
+  for (int attempt = 0; attempt < 200 && !timeGranted; ++attempt) {
+    ASSERT_TRUE(session.poll(0.05).success);
+    for (const auto& event : session.takeRemoteTimeManagementEvents()) {
+      if (event.kind ==
+              tactical::hla::RemoteTimeManagementEventKind::AdvanceGranted &&
+          event.logicalTimeSeconds >= 0.033) {
+        timeGranted = true;
+      }
+    }
+    if (!timeGranted) QThread::msleep(5);
+  }
+  ASSERT_TRUE(timeGranted);
 
   Entity aircraft;
   aircraft.entityId = QStringLiteral("pitch-aircraft-%1")

@@ -186,6 +186,33 @@ Result MockHlaBackend::achieveSynchronizationPoint(
   return Result::ok();
 }
 
+Result MockHlaBackend::enableTimeRegulation(double lookaheadSeconds) {
+  const Result beginResult = this->begin(Operation::EnableTimeRegulation);
+  if (!beginResult.success) return beginResult;
+  if (_state != BackendState::Joined || lookaheadSeconds <= 0.0) {
+    return this->fail("Mock time regulation request is invalid");
+  }
+  return Result::ok();
+}
+
+Result MockHlaBackend::enableTimeConstrained() {
+  const Result beginResult = this->begin(Operation::EnableTimeConstrained);
+  if (!beginResult.success) return beginResult;
+  if (_state != BackendState::Joined) {
+    return this->fail("Mock time constrained request is invalid");
+  }
+  return Result::ok();
+}
+
+Result MockHlaBackend::requestTimeAdvance(double logicalTimeSeconds) {
+  const Result beginResult = this->begin(Operation::RequestTimeAdvance);
+  if (!beginResult.success) return beginResult;
+  if (_state != BackendState::Joined || logicalTimeSeconds < 0.0) {
+    return this->fail("Mock time advance request is invalid");
+  }
+  return Result::ok();
+}
+
 Result MockHlaBackend::poll(double maximumSeconds) {
   const Result beginResult = this->begin(Operation::Poll);
   if (!beginResult.success) {
@@ -229,6 +256,18 @@ void MockHlaBackend::emitSynchronizationPointAnnounced(
 
 void MockHlaBackend::emitFederationSynchronized(const std::string& label) {
   if (_eventSink) _eventSink->onFederationSynchronized(label);
+}
+
+void MockHlaBackend::emitTimeRegulationEnabled(double logicalTimeSeconds) {
+  if (_eventSink) _eventSink->onTimeRegulationEnabled(logicalTimeSeconds);
+}
+
+void MockHlaBackend::emitTimeConstrainedEnabled(double logicalTimeSeconds) {
+  if (_eventSink) _eventSink->onTimeConstrainedEnabled(logicalTimeSeconds);
+}
+
+void MockHlaBackend::emitTimeAdvanceGranted(double logicalTimeSeconds) {
+  if (_eventSink) _eventSink->onTimeAdvanceGranted(logicalTimeSeconds);
 }
 
 Result MockHlaBackend::resign() {
