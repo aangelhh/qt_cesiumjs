@@ -217,10 +217,12 @@ attribute, and verifies acquisition and publication by the new owner.
 Local and discovered object IDs occupy separate namespaces. Updates and
 ownership services resolve both kinds of objects; the RTI enforces ownership.
 
-The bundled OpenRTI currently returns RTIinternalError: Not implemented for
-acquisition. Its capability list therefore does not advertise
-ownership-management. Its integration test checks that this limitation is
-reported and that both sessions can shut down cleanly.
+The maintained OpenRTI submodule implements the same MVP lifecycle for IEEE
+1516e and advertises ownership-management. Its two-federate integration test
+uses the in-process thread transport and verifies transfer, publication by the
+new owner, rejection of updates by the previous owner, and final divestiture.
+The implementation remains transport-neutral and uses OpenRTI's generated
+message protocol and existing per-attribute owner routing.
 
 This is a transport/runtime API, not automatic entity control transfer.
 The caller must suspend publication of attributes before divesting them.

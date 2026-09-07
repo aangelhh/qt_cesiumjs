@@ -25,8 +25,7 @@ namespace {
 
 void verifyOwnershipTransfer(
     const std::string& pluginPath,
-    const std::string& localSettings,
-    bool allowUnsupported);
+    const std::string& localSettings);
 
 std::string mockPluginPath() {
   return QTTEST_HLA_MOCK_PLUGIN_PATH;
@@ -352,8 +351,7 @@ TEST(HlaBackendPlugin, PitchTransfersSpatialOwnershipWhenIntegrationEnabled) {
   verifyOwnershipTransfer(
       QTTEST_HLA_PITCH_PLUGIN_PATH,
       qEnvironmentVariable("QTTEST_PITCH_LOCAL_SETTINGS",
-                           "crcAddress=localhost:8989").toStdString(),
-      false);
+                           "crcAddress=localhost:8989").toStdString());
 }
 #endif
 
@@ -490,16 +488,15 @@ TEST(HlaBackendPlugin, OpenRtiLoadsRepositoryNetnModules) {
   EXPECT_TRUE(runtime.stop().success);
 }
 
-TEST(HlaBackendPlugin, OpenRtiHandlesOwnershipAccordingToBackendSupport) {
-  verifyOwnershipTransfer(QTTEST_HLA_OPENRTI_PLUGIN_PATH, "thread://", true);
+TEST(HlaBackendPlugin, OpenRtiTransfersSpatialOwnership) {
+  verifyOwnershipTransfer(QTTEST_HLA_OPENRTI_PLUGIN_PATH, "thread://");
 }
 #endif
 
 namespace {
 void verifyOwnershipTransfer(
     const std::string& pluginPath,
-    const std::string& localSettings,
-    bool allowUnsupported) {
+    const std::string& localSettings) {
   const std::string federationName =
       "qttest-ownership-" +
       std::to_string(QCoreApplication::applicationPid());
@@ -569,19 +566,13 @@ void verifyOwnershipTransfer(
   const tactical::hla::Result acquisitionRequest =
       acquirer.requestAttributeOwnershipAcquisition(
           remoteInstanceId, {"Spatial"}, {0x6f, 0x77, 0x6e});
-  if (!acquisitionRequest.success) {
-    ASSERT_TRUE(allowUnsupported) << acquisitionRequest.message;
-    EXPECT_NE(
-        acquisitionRequest.message.find("Not implemented"),
-        std::string::npos) << acquisitionRequest.message;
-    EXPECT_TRUE(acquirer.stop().success);
-    EXPECT_TRUE(owner.stop().success);
-    return;
-  }
+  ASSERT_TRUE(acquisitionRequest.success) << acquisitionRequest.message;
   bool releaseRequested = false;
   for (int attempt = 0; attempt < 200 && !releaseRequested; ++attempt) {
-    ASSERT_TRUE(owner.poll(0.01).success);
-    ASSERT_TRUE(acquirer.poll(0.01).success);
+    const tactical::hla::Result ownerPoll = owner.poll(0.01);
+    ASSERT_TRUE(ownerPoll.success) << ownerPoll.message;
+    const tactical::hla::Result acquirerPoll = acquirer.poll(0.01);
+    ASSERT_TRUE(acquirerPoll.success) << acquirerPoll.message;
     for (const auto& event : ownerInbound.takeOwnershipEvents()) {
       if (event.kind == tactical::hla::OwnershipEventKind::ReleaseRequested &&
           event.instanceId == localInstanceId &&

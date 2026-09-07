@@ -1478,7 +1478,7 @@ const char* lastError(QttestHlaBackendHandle handle) {
 
 #ifdef QTTEST_HLA_OPENRTI_BACKEND
 constexpr const char* backendCapabilities =
-    "federation-management,object-management,interactions,synchronization-points,time-management,timestamp-order,evoked-callbacks,ieee1516e";
+    "federation-management,object-management,ownership-management,interactions,synchronization-points,time-management,timestamp-order,evoked-callbacks,ieee1516e";
 #else
 constexpr const char* backendCapabilities =
     "federation-management,object-management,ownership-management,interactions,synchronization-points,time-management,timestamp-order,evoked-callbacks,ieee1516e";
