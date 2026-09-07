@@ -3,6 +3,7 @@
 #include "infrastructure/interoperability/hla/RprFomEncoding.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace {
 
@@ -58,11 +59,19 @@ TEST(RprFomEncoding, EncodesCoreRprAttributesWithStandardSizes) {
   ASSERT_EQ(attributes.size(), 7U);
   ASSERT_NE(findAttribute(attributes, "EntityType"), nullptr);
   EXPECT_EQ(findAttribute(attributes, "EntityType")->value.size(), 8U);
+  EXPECT_EQ(
+      findAttribute(attributes, "EntityType")->value,
+      (tactical::hla::ByteBuffer{1, 2, 0, 71, 1, 0, 0, 0}));
   EXPECT_EQ(findAttribute(attributes, "EntityIdentifier")->value.size(), 6U);
-  EXPECT_EQ(findAttribute(attributes, "Spatial")->value.size(), 48U);
+  EXPECT_EQ(findAttribute(attributes, "Spatial")->value.size(), 60U);
+  EXPECT_EQ(findAttribute(attributes, "Spatial")->value.front(), 2U);
   EXPECT_EQ(findAttribute(attributes, "DamageState")->value.size(), 4U);
   EXPECT_EQ(findAttribute(attributes, "ForceIdentifier")->value.size(), 1U);
-  EXPECT_EQ(findAttribute(attributes, "LiveEntityMeasuredSpeed")->value.size(), 4U);
+  const auto* measuredSpeed = findAttribute(
+      attributes, "LiveEntityMeasuredSpeed");
+  ASSERT_NE(measuredSpeed, nullptr);
+  ASSERT_EQ(measuredSpeed->value.size(), 2U);
+  EXPECT_EQ(measuredSpeed->value, (tactical::hla::ByteBuffer{0x06, 0x6e}));
   EXPECT_EQ(findAttribute(attributes, "Marking")->value.size(), 12U);
   EXPECT_EQ(findAttribute(attributes, "Marking")->value.front(), 1U);
 }
@@ -83,6 +92,7 @@ TEST(RprFomEncoding, DecodesPublishedStateBackToLocalCoordinates) {
   source.pitchDegrees = 8.0;
   source.rollDegrees = -20.0;
   source.speedKnots = 370.0;
+  source.verticalSpeedMetersPerSecond = 12.5;
 
   const auto encoded = tactical::hla::RprFomEncoding::encodeAttributes(
       source, 1, 1, 7);
@@ -100,7 +110,81 @@ TEST(RprFomEncoding, DecodesPublishedStateBackToLocalCoordinates) {
   EXPECT_NEAR(decoded.headingDegrees, source.headingDegrees, 0.05);
   EXPECT_NEAR(decoded.pitchDegrees, source.pitchDegrees, 0.05);
   EXPECT_NEAR(decoded.rollDegrees, source.rollDegrees, 0.05);
+  EXPECT_NEAR(decoded.speedKnots, source.speedKnots, 0.1);
+  EXPECT_NEAR(
+      decoded.verticalSpeedMetersPerSecond,
+      source.verticalSpeedMetersPerSecond,
+      0.01);
+  EXPECT_EQ(decoded.deadReckoningAlgorithm, 2U);
+}
+
+TEST(RprFomEncoding, DecodesVelocityDirectlyFromFpwSpatialVariant) {
+  tactical::hla::RprEntityState source;
+  source.latitudeDegrees = 52.0;
+  source.longitudeDegrees = 4.0;
+  source.altitudeMeters = 5000.0;
+  source.headingDegrees = 37.0;
+  source.speedKnots = 420.0;
+  source.verticalSpeedMetersPerSecond = -18.0;
+  auto attributes = tactical::hla::RprFomEncoding::encodeAttributes(
+      source, 1, 1, 9);
+  attributes.erase(std::remove_if(
+      attributes.begin(), attributes.end(), [](const auto& attribute) {
+        return attribute.name == "LiveEntityMeasuredSpeed";
+      }), attributes.end());
+
+  tactical::hla::RprEntityState decoded;
+  const auto result = tactical::hla::RprFomEncoding::decodeAttributes(
+      attributes, decoded);
+
+  ASSERT_TRUE(result.success) << result.message;
+  EXPECT_EQ(decoded.deadReckoningAlgorithm, 2U);
   EXPECT_NEAR(decoded.speedKnots, source.speedKnots, 0.01);
+  EXPECT_NEAR(
+      decoded.verticalSpeedMetersPerSecond,
+      source.verticalSpeedMetersPerSecond,
+      0.01);
+}
+
+TEST(RprFomEncoding, UsesStaticSpatialVariantForStationaryEntity) {
+  tactical::hla::RprEntityState entity;
+  entity.latitudeDegrees = 40.0;
+  entity.longitudeDegrees = -4.0;
+  entity.altitudeMeters = 3000.0;
+
+  const auto attributes = tactical::hla::RprFomEncoding::encodeAttributes(
+      entity, 1, 2, 3);
+  const auto* spatial = findAttribute(attributes, "Spatial");
+
+  ASSERT_NE(spatial, nullptr);
+  ASSERT_FALSE(spatial->value.empty());
+  EXPECT_EQ(spatial->value.front(), 1U);
+  EXPECT_EQ(spatial->value.size(), 48U);
+}
+
+TEST(RprFomEncoding, ClampsMeasuredSpeedToRprInteger16Range) {
+  tactical::hla::RprEntityState entity;
+  entity.speedKnots = -20.0;
+  auto attributes = tactical::hla::RprFomEncoding::encodeAttributes(
+      entity, 1, 2, 3);
+  ASSERT_NE(findAttribute(attributes, "LiveEntityMeasuredSpeed"), nullptr);
+  EXPECT_EQ(
+      findAttribute(attributes, "LiveEntityMeasuredSpeed")->value,
+      (tactical::hla::ByteBuffer{0x00, 0x00}));
+
+  entity.speedKnots = 100000.0;
+  attributes = tactical::hla::RprFomEncoding::encodeAttributes(
+      entity, 1, 2, 3);
+  EXPECT_EQ(
+      findAttribute(attributes, "LiveEntityMeasuredSpeed")->value,
+      (tactical::hla::ByteBuffer{0xff, 0xff}));
+
+  entity.speedKnots = std::numeric_limits<double>::quiet_NaN();
+  attributes = tactical::hla::RprFomEncoding::encodeAttributes(
+      entity, 1, 2, 3);
+  EXPECT_EQ(
+      findAttribute(attributes, "LiveEntityMeasuredSpeed")->value,
+      (tactical::hla::ByteBuffer{0x00, 0x00}));
 }
 
 TEST(RprFomEncoding, RejectsMalformedSpatialPayload) {
@@ -108,4 +192,10 @@ TEST(RprFomEncoding, RejectsMalformedSpatialPayload) {
   const auto result = tactical::hla::RprFomEncoding::decodeAttributes(
       {{"Spatial", {1, 2, 3}}}, decoded);
   EXPECT_FALSE(result.success);
+
+  tactical::hla::ByteBuffer rvw(60, 0);
+  rvw.front() = 4;
+  const auto truncatedRvw = tactical::hla::RprFomEncoding::decodeAttributes(
+      {{"Spatial", rvw}}, decoded);
+  EXPECT_FALSE(truncatedRvw.success);
 }

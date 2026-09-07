@@ -120,7 +120,13 @@ object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
 classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 `DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
 10 Hz. Instance names use stable entity UUIDs, so display names may repeat.
-WGS84 positions and local NED attitude are converted to ECEF for `Spatial`.
+`LiveEntityMeasuredSpeed` uses the RPR-defined unsigned 16-bit decimeters-per-
+second representation rather than a non-standard floating-point payload.
+WGS84 positions, local NED attitude, and velocity are converted to ECEF for
+`Spatial`. Stationary entities use the RPR `Static` variant; moving entities
+use `DRM_FPW`, allowing another federate to apply constant-velocity dead
+reckoning between updates. The receiver accepts all standard RPR spatial
+discriminants and converts world/body velocity vectors back to local motion.
 
 `HlaWarfarePublisher` owns the outbound RPR `Munition` object lifecycle and
 sends `HLAinteractionRoot.WeaponFire` with event ID,

@@ -186,7 +186,7 @@ TEST(HlaInboundAdapter, ConvertsRemoteMunitionLifecycleWithoutCreatingEntity) {
   EXPECT_NEAR(changes.front().state.altitudeMeters, 4200.0, 0.01);
   EXPECT_NEAR(changes.front().state.headingDegrees, 135.0, 0.01);
   EXPECT_NEAR(changes.front().state.pitchDegrees, -4.0, 0.01);
-  EXPECT_NEAR(changes.front().state.speedKnots, 950.0, 0.01);
+  EXPECT_NEAR(changes.front().state.speedKnots, 950.0, 0.1);
   EXPECT_TRUE(adapter.takeMunitionChanges().empty());
 
   adapter.onObjectRemoved({40, {}});

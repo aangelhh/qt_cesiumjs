@@ -27,6 +27,8 @@ struct RprEntityState {
   double pitchDegrees = 0.0;
   double rollDegrees = 0.0;
   double speedKnots = 0.0;
+  double verticalSpeedMetersPerSecond = 0.0;
+  std::uint8_t deadReckoningAlgorithm = 1;
   double damagePercent = 0.0;
   bool destroyed = false;
 };

@@ -928,6 +928,8 @@ void MainWindow::applyHlaRemoteEntityChanges(
     entity.pitchDegrees = state.pitchDegrees;
     entity.rollDegrees = state.rollDegrees;
     entity.speedKnots = state.speedKnots;
+    entity.verticalSpeedMetersPerSecond =
+        state.verticalSpeedMetersPerSecond;
     entity.damagePercent = state.damagePercent;
     entity.destroyed = state.destroyed;
     entity.externallyControlled = true;

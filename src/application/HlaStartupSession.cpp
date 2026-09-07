@@ -368,6 +368,8 @@ tactical::hla::Result HlaStartupSession::publishEntities(
     state.pitchDegrees = entity.pitchDegrees;
     state.rollDegrees = entity.rollDegrees;
     state.speedKnots = entity.speedKnots;
+    state.verticalSpeedMetersPerSecond =
+        entity.verticalSpeedMetersPerSecond;
     state.damagePercent = entity.damagePercent;
     state.destroyed = entity.destroyed;
     states.push_back(std::move(state));
