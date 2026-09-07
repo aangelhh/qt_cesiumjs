@@ -117,6 +117,11 @@ private:
       const QttestHlaNamedValueArrayV2* parameters,
       const QttestHlaByteSpanV2* tag,
       const QttestHlaReceiveInfoV7* receiveInfo);
+  static void synchronizationPointRegistrationResultCallback(
+      void* context,
+      const char* label,
+      int succeeded,
+      const char* reason);
   static void synchronizationPointAnnouncedCallback(
       void* context,
       const char* label,
@@ -150,7 +155,7 @@ private:
 
   std::string _libraryPath;
   mutable QLibrary _library;
-  const QttestHlaBackendApiV8* _api = nullptr;
+  const QttestHlaBackendApiV9* _api = nullptr;
   QttestHlaBackendHandle _handle = nullptr;
   std::string _loadError;
   IHlaEventSink* _eventSink = nullptr;

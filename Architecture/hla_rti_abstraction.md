@@ -115,7 +115,7 @@ Implemented lifecycle, publication, and reception:
 19. Poll callbacks.
 20. Remove owned objects, resign, and disconnect with rollback on failure.
 
-The plugin ABI v8 keeps RTI handles private to each plugin and exposes opaque
+The plugin ABI v9 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
 classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 `DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
@@ -180,8 +180,9 @@ plugins. At startup, an operator may optionally configure a point such as
 `ReadyToRun`. qttest requests its registration, automatically achieves it when
 the RTI announces it, and records announcement, achievement, and federation
 completion in the operational log. An empty setting leaves startup
-unsynchronized. Registration success/failure callbacks, synchronization-set
-selection, and multi-phase exercise orchestration remain future hardening.
+unsynchronized. Registration success and failure callbacks are preserved by
+the neutral adapter and reported in the operational log. Synchronization-set
+selection and multi-phase exercise orchestration remain future hardening.
 
 HLA Time Management is available as an opt-in conservative MVP. qttest enables
 time regulation first, waits for its callback, then enables time constrained
@@ -209,7 +210,7 @@ future work.
 The neutral runtime and startup session expose explicit attribute acquisition
 and unconditional divestiture. The inbound adapter queues Acquired,
 Unavailable, and ReleaseRequested events, preserving object IDs, attribute
-names, and user tags. ABI v8 requires rebuilding the backend plugins.
+names, and user tags. ABI v9 requires rebuilding the backend plugins.
 
 Pitch supports this lifecycle. The opt-in two-federate integration test
 requests Spatial, verifies the owner's release callback, divests the

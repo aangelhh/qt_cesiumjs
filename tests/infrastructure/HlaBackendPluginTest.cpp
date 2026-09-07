@@ -109,10 +109,14 @@ TEST(HlaBackendPlugin, MockPluginExchangesSynchronizationPointCallbacks) {
   ASSERT_TRUE(runtime.registerSynchronizationPoint(
       "ReadyToRun", {1, 2, 3}).success);
   auto changes = inbound.takeSynchronizationChanges();
-  ASSERT_EQ(changes.size(), 1U);
-  EXPECT_EQ(changes.front().label, "ReadyToRun");
-  EXPECT_EQ(changes.front().tag, (tactical::hla::ByteBuffer{1, 2, 3}));
-  EXPECT_FALSE(changes.front().federationSynchronized);
+  ASSERT_EQ(changes.size(), 2U);
+  EXPECT_TRUE(changes[0].registrationCompleted);
+  EXPECT_TRUE(changes[0].registrationSucceeded);
+  EXPECT_EQ(changes[0].label, "ReadyToRun");
+  EXPECT_FALSE(changes[1].registrationCompleted);
+  EXPECT_EQ(changes[1].label, "ReadyToRun");
+  EXPECT_EQ(changes[1].tag, (tactical::hla::ByteBuffer{1, 2, 3}));
+  EXPECT_FALSE(changes[1].federationSynchronized);
 
   ASSERT_TRUE(runtime.achieveSynchronizationPoint("ReadyToRun").success);
   changes = inbound.takeSynchronizationChanges();
@@ -207,6 +211,7 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
     ASSERT_TRUE(session.poll(0.05).success);
     for (const auto& change : session.takeRemoteSynchronizationChanges()) {
       if (change.label == synchronizationLabel &&
+          !change.registrationCompleted &&
           !change.federationSynchronized) {
         synchronizationAnnounced = true;
       }
@@ -404,6 +409,7 @@ TEST(HlaBackendPlugin, OpenRtiLoadsRepositoryNetnModules) {
     ASSERT_TRUE(runtime.poll(0.05).success);
     for (const auto& change : inbound.takeSynchronizationChanges()) {
       if (change.label == "ReadyToRun" &&
+          !change.registrationCompleted &&
           !change.federationSynchronized) {
         announced = true;
       }

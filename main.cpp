@@ -236,6 +236,17 @@ int main(int argc, char *argv[])
         for (const tactical::hla::RemoteSynchronizationChange& change :
              hlaSession.takeRemoteSynchronizationChanges()) {
           const QString label = QString::fromStdString(change.label);
+          if (change.registrationCompleted) {
+            if (change.registrationSucceeded) {
+              window.reportHlaSynchronizationStatus(
+                  QStringLiteral("registration accepted for %1").arg(label));
+            } else {
+              window.reportHlaSynchronizationStatus(
+                  QStringLiteral("registration rejected for %1: %2")
+                      .arg(label, QString::fromStdString(change.reason)));
+            }
+            continue;
+          }
           if (change.federationSynchronized) {
             window.reportHlaSynchronizationStatus(
                 QStringLiteral("federation synchronized at %1").arg(label));

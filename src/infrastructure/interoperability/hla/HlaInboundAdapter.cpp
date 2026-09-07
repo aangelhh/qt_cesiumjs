@@ -387,6 +387,17 @@ void HlaInboundAdapter::onSynchronizationPointAnnounced(
       {event.label, event.tag, false});
 }
 
+void HlaInboundAdapter::onSynchronizationPointRegistrationResult(
+    const SynchronizationPointRegistrationResult& event) {
+  if (event.label.empty()) return;
+  RemoteSynchronizationChange change;
+  change.label = event.label;
+  change.registrationCompleted = true;
+  change.registrationSucceeded = event.succeeded;
+  change.reason = event.reason;
+  _synchronizationChanges.push_back(std::move(change));
+}
+
 void HlaInboundAdapter::onFederationSynchronized(const std::string& label) {
   if (label.empty()) return;
   _synchronizationChanges.push_back({label, {}, true});

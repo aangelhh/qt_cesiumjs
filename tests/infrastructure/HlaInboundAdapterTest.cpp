@@ -233,6 +233,29 @@ TEST(HlaInboundAdapter, QueuesTimeManagementCallbacksInOrder) {
   EXPECT_TRUE(adapter.takeTimeManagementEvents().empty());
 }
 
+TEST(HlaInboundAdapter, PreservesSynchronizationPointRegistrationResults) {
+  tactical::hla::HlaInboundAdapter adapter;
+  adapter.onSynchronizationPointRegistrationResult(
+      {"ReadyToRun", true, {}});
+  adapter.onSynchronizationPointRegistrationResult({
+      "ReadyToRun",
+      false,
+      "Synchronization point label is not unique"});
+
+  const auto changes = adapter.takeSynchronizationChanges();
+  ASSERT_EQ(changes.size(), 2U);
+  EXPECT_TRUE(changes[0].registrationCompleted);
+  EXPECT_TRUE(changes[0].registrationSucceeded);
+  EXPECT_EQ(changes[0].label, "ReadyToRun");
+  EXPECT_TRUE(changes[0].reason.empty());
+  EXPECT_TRUE(changes[1].registrationCompleted);
+  EXPECT_FALSE(changes[1].registrationSucceeded);
+  EXPECT_EQ(
+      changes[1].reason,
+      "Synchronization point label is not unique");
+  EXPECT_TRUE(adapter.takeSynchronizationChanges().empty());
+}
+
 TEST(HlaInboundAdapter, QueuesAttributeOwnershipEventsInOrder) {
   tactical::hla::HlaInboundAdapter adapter;
   adapter.onAttributeOwnershipChanged({

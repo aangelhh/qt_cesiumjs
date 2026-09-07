@@ -119,7 +119,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   const auto apiFactory = reinterpret_cast<QttestHlaBackendApiFn>(
-      _library.resolve("qttest_hla_backend_api_v8"));
+      _library.resolve("qttest_hla_backend_api_v9"));
   if (!apiFactory) {
     _loadError = "Required HLA backend API symbol is missing";
     _library.unload();
@@ -127,7 +127,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   _api = apiFactory();
-  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV8) ||
+  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV9) ||
       _api->abiVersion != QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION) {
     _loadError = "Unsupported HLA backend plugin ABI";
     _api = nullptr;
@@ -163,13 +163,14 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
     _library.unload();
     return;
   }
-  const QttestHlaCallbacksV8 callbacks = {
-      sizeof(QttestHlaCallbacksV8),
+  const QttestHlaCallbacksV9 callbacks = {
+      sizeof(QttestHlaCallbacksV9),
       this,
       &SharedLibraryHlaBackend::objectDiscoveredCallback,
       &SharedLibraryHlaBackend::objectReflectedCallback,
       &SharedLibraryHlaBackend::objectRemovedCallback,
       &SharedLibraryHlaBackend::interactionReceivedCallback,
+      &SharedLibraryHlaBackend::synchronizationPointRegistrationResultCallback,
       &SharedLibraryHlaBackend::synchronizationPointAnnouncedCallback,
       &SharedLibraryHlaBackend::federationSynchronizedCallback,
       &SharedLibraryHlaBackend::timeRegulationEnabledCallback,
@@ -529,6 +530,17 @@ void SharedLibraryHlaBackend::synchronizationPointAnnouncedCallback(
   if (!self || !self->_eventSink) return;
   self->_eventSink->onSynchronizationPointAnnounced(
       {safeString(label), copyBytes(tag)});
+}
+
+void SharedLibraryHlaBackend::synchronizationPointRegistrationResultCallback(
+    void* context,
+    const char* label,
+    int succeeded,
+    const char* reason) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onSynchronizationPointRegistrationResult(
+      {safeString(label), succeeded != 0, safeString(reason)});
 }
 
 void SharedLibraryHlaBackend::federationSynchronizedCallback(

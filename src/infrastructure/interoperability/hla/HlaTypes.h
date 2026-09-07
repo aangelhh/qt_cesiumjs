@@ -115,6 +115,12 @@ struct SynchronizationPointAnnouncement {
   ByteBuffer tag;
 };
 
+struct SynchronizationPointRegistrationResult {
+  std::string label;
+  bool succeeded = false;
+  std::string reason;
+};
+
 enum class OwnershipEventKind {
   Acquired,
   Unavailable,
@@ -135,6 +141,8 @@ public:
   virtual void onObjectReflected(const RemoteObjectReflection& event) = 0;
   virtual void onObjectRemoved(const RemoteObjectRemoval& event) = 0;
   virtual void onInteractionReceived(const RemoteInteraction& event) = 0;
+  virtual void onSynchronizationPointRegistrationResult(
+      const SynchronizationPointRegistrationResult& event) = 0;
   virtual void onSynchronizationPointAnnounced(
       const SynchronizationPointAnnouncement& event) = 0;
   virtual void onFederationSynchronized(const std::string& label) = 0;

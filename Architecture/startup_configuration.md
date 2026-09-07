@@ -24,8 +24,9 @@ transport adapter remains a separate follow-up integration.
 When `Synchronization point` is configured, qttest requests registration after
 joining, waits for the RTI announcement, and automatically reports the point as
 achieved. The operational log shows registration, announcement, achievement,
-and final federation synchronization. Leaving the field empty preserves the
-normal immediate startup flow.
+and final federation synchronization. Registration rejection and its RTI
+reason are also reported instead of leaving startup diagnostics ambiguous.
+Leaving the field empty preserves the normal immediate startup flow.
 
 `Enable HLA time management` activates the conservative time-regulating and
 time-constrained path. qttest negotiates both services sequentially before the

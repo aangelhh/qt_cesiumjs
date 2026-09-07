@@ -67,6 +67,9 @@ struct RemoteSynchronizationChange {
   std::string label;
   ByteBuffer tag;
   bool federationSynchronized = false;
+  bool registrationCompleted = false;
+  bool registrationSucceeded = false;
+  std::string reason;
 };
 
 enum class RemoteTimeManagementEventKind {
@@ -95,6 +98,8 @@ public:
   void onObjectReflected(const RemoteObjectReflection& event) override;
   void onObjectRemoved(const RemoteObjectRemoval& event) override;
   void onInteractionReceived(const RemoteInteraction& event) override;
+  void onSynchronizationPointRegistrationResult(
+      const SynchronizationPointRegistrationResult& event) override;
   void onSynchronizationPointAnnounced(
       const SynchronizationPointAnnouncement& event) override;
   void onFederationSynchronized(const std::string& label) override;
