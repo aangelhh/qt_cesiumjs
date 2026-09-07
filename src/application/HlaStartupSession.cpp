@@ -246,6 +246,13 @@ HlaStartupSession::takeRemoteTimeManagementEvents() {
   return events;
 }
 
+std::vector<tactical::hla::AttributeOwnershipEvent>
+HlaStartupSession::takeOwnershipEvents() {
+  return _inboundAdapter
+      ? _inboundAdapter->takeOwnershipEvents()
+      : std::vector<tactical::hla::AttributeOwnershipEvent>{};
+}
+
 std::vector<tactical::hla::RemoteSimulationControl>
 HlaStartupSession::takeRemoteSimulationControls() {
   return _inboundAdapter ? _inboundAdapter->takeSimulationControls()
@@ -295,6 +302,26 @@ tactical::hla::Result HlaStartupSession::requestTimeAdvance(
       _runtime->requestTimeAdvance(logicalTimeSeconds);
   if (result.success) _timeAdvancePending = true;
   return result;
+}
+
+tactical::hla::Result HlaStartupSession::requestAttributeOwnershipAcquisition(
+    tactical::hla::ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames,
+    const tactical::hla::ByteBuffer& tag) {
+  return _runtime
+      ? _runtime->requestAttributeOwnershipAcquisition(
+            instanceId, attributeNames, tag)
+      : tactical::hla::Result::failure("HLA session is not active");
+}
+
+tactical::hla::Result
+HlaStartupSession::unconditionalAttributeOwnershipDivestiture(
+    tactical::hla::ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames) {
+  return _runtime
+      ? _runtime->unconditionalAttributeOwnershipDivestiture(
+            instanceId, attributeNames)
+      : tactical::hla::Result::failure("HLA session is not active");
 }
 
 tactical::hla::Result HlaStartupSession::poll(double maximumSeconds) {

@@ -35,6 +35,8 @@ public:
       takeRemoteSynchronizationChanges();
   std::vector<tactical::hla::RemoteTimeManagementEvent>
       takeRemoteTimeManagementEvents();
+  std::vector<tactical::hla::AttributeOwnershipEvent>
+      takeOwnershipEvents();
   std::vector<tactical::hla::RemoteSimulationControl>
       takeRemoteSimulationControls();
   tactical::hla::Result publishSimulationControl(
@@ -46,6 +48,13 @@ public:
   tactical::hla::Result achieveSynchronizationPoint(
       const std::string& label);
   tactical::hla::Result requestTimeAdvance(double logicalTimeSeconds);
+  tactical::hla::Result requestAttributeOwnershipAcquisition(
+      tactical::hla::ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames,
+      const tactical::hla::ByteBuffer& tag = {});
+  tactical::hla::Result unconditionalAttributeOwnershipDivestiture(
+      tactical::hla::ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames);
   tactical::hla::Result stop();
 
   bool isActive() const;

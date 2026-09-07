@@ -272,6 +272,37 @@ Result MockHlaBackend::poll(double maximumSeconds) {
   return Result::ok();
 }
 
+Result MockHlaBackend::requestAttributeOwnershipAcquisition(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames,
+    const ByteBuffer& tag) {
+  const Result beginResult =
+      this->begin(Operation::RequestAttributeOwnershipAcquisition);
+  if (!beginResult.success) return beginResult;
+  if (_state != BackendState::Joined || instanceId == 0 ||
+      attributeNames.empty()) {
+    return this->fail("Invalid mock ownership acquisition");
+  }
+  if (_eventSink) {
+    _eventSink->onAttributeOwnershipChanged({
+        OwnershipEventKind::Acquired, instanceId, attributeNames, tag});
+  }
+  return Result::ok();
+}
+
+Result MockHlaBackend::unconditionalAttributeOwnershipDivestiture(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames) {
+  const Result beginResult =
+      this->begin(Operation::UnconditionalAttributeOwnershipDivestiture);
+  if (!beginResult.success) return beginResult;
+  if (_state != BackendState::Joined || instanceId == 0 ||
+      attributeNames.empty()) {
+    return this->fail("Invalid mock ownership divestiture");
+  }
+  return Result::ok();
+}
+
 void MockHlaBackend::setEventSink(IHlaEventSink* eventSink) {
   _eventSink = eventSink;
 }
@@ -313,6 +344,11 @@ void MockHlaBackend::emitTimeConstrainedEnabled(double logicalTimeSeconds) {
 
 void MockHlaBackend::emitTimeAdvanceGranted(double logicalTimeSeconds) {
   if (_eventSink) _eventSink->onTimeAdvanceGranted(logicalTimeSeconds);
+}
+
+void MockHlaBackend::emitAttributeOwnershipChanged(
+    const AttributeOwnershipEvent& event) {
+  if (_eventSink) _eventSink->onAttributeOwnershipChanged(event);
 }
 
 Result MockHlaBackend::resign() {

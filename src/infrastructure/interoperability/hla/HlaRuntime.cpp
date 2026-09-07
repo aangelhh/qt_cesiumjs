@@ -1,5 +1,6 @@
 #include "infrastructure/interoperability/hla/HlaRuntime.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -186,6 +187,39 @@ Result HlaRuntime::sendInteractionAtTime(
   }
   return _backend->sendInteractionAtTime(
       interactionClassName, parameters, logicalTimeSeconds, tag);
+}
+
+Result HlaRuntime::requestAttributeOwnershipAcquisition(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames,
+    const ByteBuffer& tag) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (instanceId == 0 || attributeNames.empty() ||
+      std::any_of(attributeNames.begin(), attributeNames.end(),
+                  [](const std::string& name) { return name.empty(); })) {
+    return Result::failure(
+        "HLA ownership acquisition requires an object and attributes");
+  }
+  return _backend->requestAttributeOwnershipAcquisition(
+      instanceId, attributeNames, tag);
+}
+
+Result HlaRuntime::unconditionalAttributeOwnershipDivestiture(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (instanceId == 0 || attributeNames.empty() ||
+      std::any_of(attributeNames.begin(), attributeNames.end(),
+                  [](const std::string& name) { return name.empty(); })) {
+    return Result::failure(
+        "HLA ownership divestiture requires an object and attributes");
+  }
+  return _backend->unconditionalAttributeOwnershipDivestiture(
+      instanceId, attributeNames);
 }
 
 Result HlaRuntime::registerSynchronizationPoint(

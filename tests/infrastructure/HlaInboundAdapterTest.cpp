@@ -233,6 +233,34 @@ TEST(HlaInboundAdapter, QueuesTimeManagementCallbacksInOrder) {
   EXPECT_TRUE(adapter.takeTimeManagementEvents().empty());
 }
 
+TEST(HlaInboundAdapter, QueuesAttributeOwnershipEventsInOrder) {
+  tactical::hla::HlaInboundAdapter adapter;
+  adapter.onAttributeOwnershipChanged({
+      tactical::hla::OwnershipEventKind::ReleaseRequested,
+      7,
+      {"Spatial", "VelocityVector"},
+      {1, 2}});
+  adapter.onAttributeOwnershipChanged({
+      tactical::hla::OwnershipEventKind::Acquired,
+      9,
+      {"Spatial"},
+      {3}});
+
+  const auto events = adapter.takeOwnershipEvents();
+  ASSERT_EQ(events.size(), 2U);
+  EXPECT_EQ(
+      events[0].kind,
+      tactical::hla::OwnershipEventKind::ReleaseRequested);
+  EXPECT_EQ(events[0].instanceId, 7U);
+  EXPECT_EQ(
+      events[0].attributeNames,
+      (std::vector<std::string>{"Spatial", "VelocityVector"}));
+  EXPECT_EQ(events[0].tag, (tactical::hla::ByteBuffer{1, 2}));
+  EXPECT_EQ(events[1].kind, tactical::hla::OwnershipEventKind::Acquired);
+  EXPECT_EQ(events[1].instanceId, 9U);
+  EXPECT_TRUE(adapter.takeOwnershipEvents().empty());
+}
+
 TEST(HlaInboundAdapter, ConvertsEmitterAndRadarBeamWithoutCreatingEntity) {
   tactical::hla::HlaInboundAdapter adapter;
   adapter.onObjectDiscovered({

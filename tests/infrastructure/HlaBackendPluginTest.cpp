@@ -16,11 +16,17 @@
 #include <QCoreApplication>
 #include <QThread>
 
+#include <algorithm>
 #include <memory>
 #include <cmath>
 #include <vector>
 
 namespace {
+
+void verifyOwnershipTransfer(
+    const std::string& pluginPath,
+    const std::string& localSettings,
+    bool allowUnsupported);
 
 std::string mockPluginPath() {
   return QTTEST_HLA_MOCK_PLUGIN_PATH;
@@ -337,6 +343,18 @@ TEST(HlaBackendPlugin, PitchPublishesAndUpdatesAircraftWhenIntegrationEnabled) {
   ASSERT_TRUE(result.success) << result.message;
   EXPECT_TRUE(session.stop().success);
 }
+
+TEST(HlaBackendPlugin, PitchTransfersSpatialOwnershipWhenIntegrationEnabled) {
+  if (!qEnvironmentVariableIsSet("QTTEST_RUN_PITCH_INTEGRATION")) {
+    GTEST_SKIP() << "Set QTTEST_RUN_PITCH_INTEGRATION=1 to use a running Pitch CRC";
+  }
+
+  verifyOwnershipTransfer(
+      QTTEST_HLA_PITCH_PLUGIN_PATH,
+      qEnvironmentVariable("QTTEST_PITCH_LOCAL_SETTINGS",
+                           "crcAddress=localhost:8989").toStdString(),
+      false);
+}
 #endif
 
 #ifdef QTTEST_HLA_OPENRTI_PLUGIN_PATH
@@ -471,4 +489,144 @@ TEST(HlaBackendPlugin, OpenRtiLoadsRepositoryNetnModules) {
   EXPECT_TRUE(publisher.removeAll().success);
   EXPECT_TRUE(runtime.stop().success);
 }
+
+TEST(HlaBackendPlugin, OpenRtiHandlesOwnershipAccordingToBackendSupport) {
+  verifyOwnershipTransfer(QTTEST_HLA_OPENRTI_PLUGIN_PATH, "thread://", true);
+}
 #endif
+
+namespace {
+void verifyOwnershipTransfer(
+    const std::string& pluginPath,
+    const std::string& localSettings,
+    bool allowUnsupported) {
+  const std::string federationName =
+      "qttest-ownership-" +
+      std::to_string(QCoreApplication::applicationPid());
+  const std::string aircraftClass =
+      tactical::hla::RprFomEncoding::objectClassName("Air");
+  const std::vector<std::string> attributes =
+      tactical::hla::RprFomEncoding::publishedAttributeNames();
+
+  auto ownerBackend =
+      std::make_unique<tactical::hla::SharedLibraryHlaBackend>(pluginPath);
+  auto acquirerBackend =
+      std::make_unique<tactical::hla::SharedLibraryHlaBackend>(pluginPath);
+  ASSERT_TRUE(ownerBackend->isAvailable()) << ownerBackend->loadError();
+  ASSERT_TRUE(acquirerBackend->isAvailable()) << acquirerBackend->loadError();
+  tactical::hla::HlaRuntime owner(std::move(ownerBackend));
+  tactical::hla::HlaRuntime acquirer(std::move(acquirerBackend));
+  tactical::hla::HlaInboundAdapter ownerInbound;
+  tactical::hla::HlaInboundAdapter acquirerInbound;
+  owner.setEventSink(&ownerInbound);
+  acquirer.setEventSink(&acquirerInbound);
+
+  tactical::hla::SessionConfiguration ownerConfiguration;
+  ownerConfiguration.localSettingsDesignator = localSettings;
+  ownerConfiguration.federationName = federationName;
+  ownerConfiguration.federateName = "ownership-owner";
+  ownerConfiguration.federateType = "qttest-test";
+  ownerConfiguration.fomModules = {netnFomModules().front()};
+  tactical::hla::SessionConfiguration acquirerConfiguration =
+      ownerConfiguration;
+  acquirerConfiguration.federateName = "ownership-acquirer";
+
+  const tactical::hla::Result ownerStart = owner.start(ownerConfiguration);
+  ASSERT_TRUE(ownerStart.success) << ownerStart.message;
+  const tactical::hla::Result acquirerStart =
+      acquirer.start(acquirerConfiguration);
+  ASSERT_TRUE(acquirerStart.success) << acquirerStart.message;
+  ASSERT_TRUE(owner.publishObjectClass(aircraftClass, attributes).success);
+  ASSERT_TRUE(owner.subscribeObjectClass(aircraftClass, attributes).success);
+  ASSERT_TRUE(acquirer.publishObjectClass(aircraftClass, attributes).success);
+  ASSERT_TRUE(acquirer.subscribeObjectClass(aircraftClass, attributes).success);
+
+  tactical::hla::ObjectInstanceId localInstanceId = 0;
+  ASSERT_TRUE(owner.registerObjectInstance(
+      aircraftClass, "qttest.ownership-aircraft", localInstanceId).success);
+  tactical::hla::RprEntityState entity;
+  entity.name = "ownership-aircraft";
+  entity.domain = "Air";
+  entity.latitudeDegrees = 40.0;
+  entity.longitudeDegrees = -4.0;
+  entity.altitudeMeters = 3000.0;
+  ASSERT_TRUE(owner.updateObjectAttributes(
+      localInstanceId,
+      tactical::hla::RprFomEncoding::encodeAttributes(entity, 1, 1, 1)).success);
+
+  tactical::hla::ObjectInstanceId remoteInstanceId = 0;
+  for (int attempt = 0; attempt < 200 && remoteInstanceId == 0; ++attempt) {
+    ASSERT_TRUE(owner.poll(0.01).success);
+    ASSERT_TRUE(acquirer.poll(0.01).success);
+    for (const auto& change : acquirerInbound.takeEntityChanges()) {
+      if (!change.removed) remoteInstanceId = change.instanceId;
+    }
+    if (remoteInstanceId == 0) QThread::msleep(2);
+  }
+  ASSERT_NE(remoteInstanceId, 0U);
+  EXPECT_NE(remoteInstanceId, localInstanceId);
+
+  const tactical::hla::Result acquisitionRequest =
+      acquirer.requestAttributeOwnershipAcquisition(
+          remoteInstanceId, {"Spatial"}, {0x6f, 0x77, 0x6e});
+  if (!acquisitionRequest.success) {
+    ASSERT_TRUE(allowUnsupported) << acquisitionRequest.message;
+    EXPECT_NE(
+        acquisitionRequest.message.find("Not implemented"),
+        std::string::npos) << acquisitionRequest.message;
+    EXPECT_TRUE(acquirer.stop().success);
+    EXPECT_TRUE(owner.stop().success);
+    return;
+  }
+  bool releaseRequested = false;
+  for (int attempt = 0; attempt < 200 && !releaseRequested; ++attempt) {
+    ASSERT_TRUE(owner.poll(0.01).success);
+    ASSERT_TRUE(acquirer.poll(0.01).success);
+    for (const auto& event : ownerInbound.takeOwnershipEvents()) {
+      if (event.kind == tactical::hla::OwnershipEventKind::ReleaseRequested &&
+          event.instanceId == localInstanceId &&
+          event.attributeNames == std::vector<std::string>{"Spatial"}) {
+        releaseRequested = true;
+      }
+    }
+    if (!releaseRequested) QThread::msleep(2);
+  }
+  ASSERT_TRUE(releaseRequested);
+  ASSERT_TRUE(owner.unconditionalAttributeOwnershipDivestiture(
+      localInstanceId, {"Spatial"}).success);
+
+  bool acquired = false;
+  for (int attempt = 0; attempt < 200 && !acquired; ++attempt) {
+    ASSERT_TRUE(owner.poll(0.01).success);
+    ASSERT_TRUE(acquirer.poll(0.01).success);
+    for (const auto& event : acquirerInbound.takeOwnershipEvents()) {
+      if (event.kind == tactical::hla::OwnershipEventKind::Acquired &&
+          event.instanceId == remoteInstanceId &&
+          event.attributeNames == std::vector<std::string>{"Spatial"}) {
+        acquired = true;
+      }
+    }
+    if (!acquired) QThread::msleep(2);
+  }
+  ASSERT_TRUE(acquired);
+
+  entity.latitudeDegrees = 40.1;
+  const auto updatedAttributes =
+      tactical::hla::RprFomEncoding::encodeAttributes(entity, 1, 1, 1);
+  const auto spatial = std::find_if(
+      updatedAttributes.begin(), updatedAttributes.end(),
+      [](const tactical::hla::NamedValue& value) {
+        return value.name == "Spatial";
+      });
+  ASSERT_NE(spatial, updatedAttributes.end());
+  EXPECT_TRUE(acquirer.updateObjectAttributes(
+      remoteInstanceId, {*spatial}).success);
+  EXPECT_FALSE(owner.updateObjectAttributes(
+      localInstanceId, {*spatial}).success);
+  EXPECT_TRUE(acquirer.unconditionalAttributeOwnershipDivestiture(
+      remoteInstanceId, {"Spatial"}).success);
+
+  EXPECT_TRUE(acquirer.stop().success);
+  EXPECT_TRUE(owner.stop().success);
+}
+} // namespace

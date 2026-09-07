@@ -72,6 +72,13 @@ public:
   virtual Result enableTimeRegulation(double lookaheadSeconds) = 0;
   virtual Result enableTimeConstrained() = 0;
   virtual Result requestTimeAdvance(double logicalTimeSeconds) = 0;
+  virtual Result requestAttributeOwnershipAcquisition(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames,
+      const ByteBuffer& tag = {}) = 0;
+  virtual Result unconditionalAttributeOwnershipDivestiture(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames) = 0;
   virtual Result poll(double maximumSeconds) = 0;
   virtual void setEventSink(IHlaEventSink* eventSink) = 0;
   virtual Result resign() = 0;

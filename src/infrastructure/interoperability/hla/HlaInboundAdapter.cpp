@@ -410,6 +410,12 @@ void HlaInboundAdapter::onTimeAdvanceGranted(double logicalTimeSeconds) {
       logicalTimeSeconds});
 }
 
+void HlaInboundAdapter::onAttributeOwnershipChanged(
+    const AttributeOwnershipEvent& event) {
+  if (event.instanceId == 0 || event.attributeNames.empty()) return;
+  _ownershipEvents.push_back(event);
+}
+
 std::vector<RemoteSensorChange> HlaInboundAdapter::takeSensorChanges() {
   std::vector<RemoteSensorChange> result = std::move(_sensorChanges);
   _sensorChanges.clear();
@@ -435,6 +441,14 @@ HlaInboundAdapter::takeTimeManagementEvents() {
   std::vector<RemoteTimeManagementEvent> result =
       std::move(_timeManagementEvents);
   _timeManagementEvents.clear();
+  return result;
+}
+
+std::vector<AttributeOwnershipEvent>
+HlaInboundAdapter::takeOwnershipEvents() {
+  std::vector<AttributeOwnershipEvent> result =
+      std::move(_ownershipEvents);
+  _ownershipEvents.clear();
   return result;
 }
 

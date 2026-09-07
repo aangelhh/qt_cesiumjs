@@ -74,6 +74,13 @@ public:
   Result enableTimeRegulation(double lookaheadSeconds) override;
   Result enableTimeConstrained() override;
   Result requestTimeAdvance(double logicalTimeSeconds) override;
+  Result requestAttributeOwnershipAcquisition(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames,
+      const ByteBuffer& tag) override;
+  Result unconditionalAttributeOwnershipDivestiture(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames) override;
   Result poll(double maximumSeconds) override;
   void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;
@@ -126,10 +133,24 @@ private:
   static void timeAdvanceGrantedCallback(
       void* context,
       double logicalTimeSeconds);
+  static void attributeOwnershipAcquiredCallback(
+      void* context,
+      uint64_t instanceId,
+      const QttestHlaStringArrayV1* attributeNames,
+      const QttestHlaByteSpanV2* tag);
+  static void attributeOwnershipUnavailableCallback(
+      void* context,
+      uint64_t instanceId,
+      const QttestHlaStringArrayV1* attributeNames);
+  static void attributeOwnershipReleaseRequestedCallback(
+      void* context,
+      uint64_t instanceId,
+      const QttestHlaStringArrayV1* attributeNames,
+      const QttestHlaByteSpanV2* tag);
 
   std::string _libraryPath;
   mutable QLibrary _library;
-  const QttestHlaBackendApiV7* _api = nullptr;
+  const QttestHlaBackendApiV8* _api = nullptr;
   QttestHlaBackendHandle _handle = nullptr;
   std::string _loadError;
   IHlaEventSink* _eventSink = nullptr;

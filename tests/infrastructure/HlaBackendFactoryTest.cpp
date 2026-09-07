@@ -110,6 +110,17 @@ public:
   tactical::hla::Result requestTimeAdvance(double) override {
     return tactical::hla::Result::ok();
   }
+  tactical::hla::Result requestAttributeOwnershipAcquisition(
+      tactical::hla::ObjectInstanceId,
+      const std::vector<std::string>&,
+      const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result unconditionalAttributeOwnershipDivestiture(
+      tactical::hla::ObjectInstanceId,
+      const std::vector<std::string>&) override {
+    return tactical::hla::Result::ok();
+  }
   tactical::hla::Result poll(double) override {
     return tactical::hla::Result::ok();
   }

@@ -115,6 +115,19 @@ struct SynchronizationPointAnnouncement {
   ByteBuffer tag;
 };
 
+enum class OwnershipEventKind {
+  Acquired,
+  Unavailable,
+  ReleaseRequested
+};
+
+struct AttributeOwnershipEvent {
+  OwnershipEventKind kind = OwnershipEventKind::Unavailable;
+  ObjectInstanceId instanceId = 0;
+  std::vector<std::string> attributeNames;
+  ByteBuffer tag;
+};
+
 class IHlaEventSink {
 public:
   virtual ~IHlaEventSink() = default;
@@ -128,6 +141,8 @@ public:
   virtual void onTimeRegulationEnabled(double logicalTimeSeconds) = 0;
   virtual void onTimeConstrainedEnabled(double logicalTimeSeconds) = 0;
   virtual void onTimeAdvanceGranted(double logicalTimeSeconds) = 0;
+  virtual void onAttributeOwnershipChanged(
+      const AttributeOwnershipEvent& event) = 0;
 };
 
 } // namespace tactical::hla

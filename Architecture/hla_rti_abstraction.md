@@ -115,7 +115,7 @@ Implemented lifecycle, publication, and reception:
 19. Poll callbacks.
 20. Remove owned objects, resign, and disconnect with rollback on failure.
 
-The plugin ABI v7 keeps RTI handles private to each plugin and exposes opaque
+The plugin ABI v8 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
 classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 `DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
@@ -204,7 +204,31 @@ metadata, and logical-time grants. Operator-facing time diagnostics, next-event
 requests, asynchronous delivery, and coordinated fast-time policy remain
 future work.
 
-Ownership Management, DDM, save/restore, and NETN-ETR task exchange remain
+### Attribute ownership MVP
+
+The neutral runtime and startup session expose explicit attribute acquisition
+and unconditional divestiture. The inbound adapter queues Acquired,
+Unavailable, and ReleaseRequested events, preserving object IDs, attribute
+names, and user tags. ABI v8 requires rebuilding the backend plugins.
+
+Pitch supports this lifecycle. The opt-in two-federate integration test
+requests Spatial, verifies the owner's release callback, divests the
+attribute, and verifies acquisition and publication by the new owner.
+Local and discovered object IDs occupy separate namespaces. Updates and
+ownership services resolve both kinds of objects; the RTI enforces ownership.
+
+The bundled OpenRTI currently returns RTIinternalError: Not implemented for
+acquisition. Its capability list therefore does not advertise
+ownership-management. Its integration test checks that this limitation is
+reported and that both sessions can shut down cleanly.
+
+This is a transport/runtime API, not automatic entity control transfer.
+The caller must suspend publication of attributes before divesting them.
+Existing entity publishers do not automatically filter divested attributes.
+Operator controls, authority handover policy, acquisition cancellation,
+negotiated divestiture, and ownership queries remain future work.
+
+DDM, save/restore, and NETN-ETR task exchange remain
 subsequent Feature 19 tasks.
 
 ### Graphical combat demo

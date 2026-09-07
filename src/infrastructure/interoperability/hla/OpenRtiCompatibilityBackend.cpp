@@ -323,6 +323,21 @@ Result OpenRtiCompatibilityBackend::requestTimeAdvance(
   return _backend->requestTimeAdvance(logicalTimeSeconds);
 }
 
+Result OpenRtiCompatibilityBackend::requestAttributeOwnershipAcquisition(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames,
+    const ByteBuffer& tag) {
+  return _backend->requestAttributeOwnershipAcquisition(
+      instanceId, attributeNames, tag);
+}
+
+Result OpenRtiCompatibilityBackend::unconditionalAttributeOwnershipDivestiture(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames) {
+  return _backend->unconditionalAttributeOwnershipDivestiture(
+      instanceId, attributeNames);
+}
+
 Result OpenRtiCompatibilityBackend::poll(double maximumSeconds) {
   return _backend->poll(maximumSeconds);
 }

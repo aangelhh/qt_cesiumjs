@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "infrastructure/interoperability/hla/HlaRuntime.h"
+#include "infrastructure/interoperability/hla/HlaInboundAdapter.h"
 #include "infrastructure/interoperability/hla/MockHlaBackend.h"
 
 #include <memory>
@@ -190,4 +191,54 @@ TEST(HlaRuntime, RejectsInvalidTimestampedOperations) {
   EXPECT_FALSE(runtime.deleteObjectInstanceAtTime(1, -1.0).success);
   EXPECT_FALSE(runtime.sendInteractionAtTime(
       "Interaction", {}, -1.0).success);
+}
+
+TEST(HlaRuntime, ForwardsAttributeOwnershipLifecycleWhenJoined) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::MockHlaBackend* backendView = backend.get();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  tactical::hla::HlaInboundAdapter inbound;
+  runtime.setEventSink(&inbound);
+  ASSERT_TRUE(runtime.start(validConfiguration()).success);
+
+  ASSERT_TRUE(runtime.requestAttributeOwnershipAcquisition(
+      42, {"Spatial"}, {4, 2}).success);
+  ASSERT_TRUE(runtime.unconditionalAttributeOwnershipDivestiture(
+      42, {"Spatial"}).success);
+
+  const auto events = inbound.takeOwnershipEvents();
+  ASSERT_EQ(events.size(), 1U);
+  EXPECT_EQ(events.front().kind, tactical::hla::OwnershipEventKind::Acquired);
+  EXPECT_EQ(events.front().instanceId, 42U);
+  EXPECT_EQ(events.front().attributeNames,
+            (std::vector<std::string>{"Spatial"}));
+  EXPECT_EQ(
+      backendView->operations(),
+      (std::vector<tactical::hla::MockHlaBackend::Operation>{
+          tactical::hla::MockHlaBackend::Operation::Connect,
+          tactical::hla::MockHlaBackend::Operation::CreateFederation,
+          tactical::hla::MockHlaBackend::Operation::JoinFederation,
+          tactical::hla::MockHlaBackend::Operation::RequestAttributeOwnershipAcquisition,
+          tactical::hla::MockHlaBackend::Operation::UnconditionalAttributeOwnershipDivestiture}));
+}
+
+TEST(HlaRuntime, RejectsInvalidAttributeOwnershipRequests) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+
+  EXPECT_FALSE(runtime.requestAttributeOwnershipAcquisition(
+      1, {"Spatial"}).success);
+  EXPECT_FALSE(runtime.unconditionalAttributeOwnershipDivestiture(
+      1, {"Spatial"}).success);
+  ASSERT_TRUE(runtime.start(validConfiguration()).success);
+  EXPECT_FALSE(runtime.requestAttributeOwnershipAcquisition(
+      0, {"Spatial"}).success);
+  EXPECT_FALSE(runtime.requestAttributeOwnershipAcquisition(1, {}).success);
+  EXPECT_FALSE(runtime.requestAttributeOwnershipAcquisition(1, {""}).success);
+  EXPECT_FALSE(runtime.unconditionalAttributeOwnershipDivestiture(
+      1, {""}).success);
+  EXPECT_FALSE(runtime.unconditionalAttributeOwnershipDivestiture(
+      0, {"Spatial"}).success);
+  EXPECT_FALSE(runtime.unconditionalAttributeOwnershipDivestiture(
+      1, {}).success);
 }

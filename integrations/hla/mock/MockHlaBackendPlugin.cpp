@@ -10,7 +10,7 @@ struct MockSession {
   std::string error;
   uint64_t nextObjectId = 1;
   std::set<uint64_t> objects;
-  QttestHlaCallbacksV7 callbacks = {};
+  QttestHlaCallbacksV8 callbacks = {};
   bool timeRegulating = false;
   bool timeConstrained = false;
   double logicalTimeSeconds = 0.0;
@@ -291,12 +291,43 @@ int requestTimeAdvance(
   return 0;
 }
 
+int requestAttributeOwnershipAcquisition(
+    QttestHlaBackendHandle handle,
+    uint64_t instanceId,
+    const QttestHlaStringArrayV1* attributeNames,
+    const QttestHlaByteSpanV2* tag) {
+  MockSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      instanceId == 0 || !attributeNames || attributeNames->count == 0) {
+    return fail(value, "Invalid mock ownership acquisition");
+  }
+  if (value->callbacks.attributeOwnershipAcquired) {
+    value->callbacks.attributeOwnershipAcquired(
+        value->callbacks.context, instanceId, attributeNames, tag);
+  }
+  value->error.clear();
+  return 0;
+}
+
+int unconditionalAttributeOwnershipDivestiture(
+    QttestHlaBackendHandle handle,
+    uint64_t instanceId,
+    const QttestHlaStringArrayV1* attributeNames) {
+  MockSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      instanceId == 0 || !attributeNames || attributeNames->count == 0) {
+    return fail(value, "Invalid mock ownership divestiture");
+  }
+  value->error.clear();
+  return 0;
+}
+
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV7* callbacks) {
+    const QttestHlaCallbacksV8* callbacks) {
   MockSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV7)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV8)) {
     return fail(value, "Invalid mock callback configuration");
   }
   value->callbacks = *callbacks;
@@ -346,8 +377,8 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "Mock plugin session is unavailable";
 }
 
-const QttestHlaBackendApiV7 api = {
-    sizeof(QttestHlaBackendApiV7),
+const QttestHlaBackendApiV8 api = {
+    sizeof(QttestHlaBackendApiV8),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     "mock-plugin",
     "1.0",
@@ -373,6 +404,8 @@ const QttestHlaBackendApiV7 api = {
     &enableTimeRegulation,
     &enableTimeConstrained,
     &requestTimeAdvance,
+    &requestAttributeOwnershipAcquisition,
+    &unconditionalAttributeOwnershipDivestiture,
     &setCallbacks,
     &pollBackend,
     &resignBackend,
@@ -382,7 +415,7 @@ const QttestHlaBackendApiV7 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV7*
-qttest_hla_backend_api_v7(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV8*
+qttest_hla_backend_api_v8(void) {
   return &api;
 }

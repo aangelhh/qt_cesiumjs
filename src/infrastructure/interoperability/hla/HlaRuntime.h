@@ -61,6 +61,13 @@ public:
   Result enableTimeRegulation(double lookaheadSeconds);
   Result enableTimeConstrained();
   Result requestTimeAdvance(double logicalTimeSeconds);
+  Result requestAttributeOwnershipAcquisition(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames,
+      const ByteBuffer& tag = {});
+  Result unconditionalAttributeOwnershipDivestiture(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames);
   Result poll(double maximumSeconds);
   void setEventSink(IHlaEventSink* eventSink);
   Result stop();

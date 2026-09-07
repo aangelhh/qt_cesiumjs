@@ -70,6 +70,13 @@ public:
   Result enableTimeRegulation(double lookaheadSeconds) override;
   Result enableTimeConstrained() override;
   Result requestTimeAdvance(double logicalTimeSeconds) override;
+  Result requestAttributeOwnershipAcquisition(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames,
+      const ByteBuffer& tag) override;
+  Result unconditionalAttributeOwnershipDivestiture(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames) override;
   Result poll(double maximumSeconds) override;
   void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;

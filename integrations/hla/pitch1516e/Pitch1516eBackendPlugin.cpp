@@ -68,6 +68,47 @@ public:
     rti1516e::ObjectClassHandle classHandle;
   };
 
+  uint64_t objectId(rti1516e::ObjectInstanceHandle objectHandle) const {
+    const auto remote = remoteObjects.find(objectHandle);
+    if (remote != remoteObjects.end()) return remote->second.id;
+    const auto local = localObjectIds.find(objectHandle);
+    return local == localObjectIds.end() ? 0 : local->second;
+  }
+
+  rti1516e::ObjectClassHandle objectClass(
+      rti1516e::ObjectInstanceHandle objectHandle) const {
+    const auto remote = remoteObjects.find(objectHandle);
+    if (remote != remoteObjects.end()) return remote->second.classHandle;
+    const auto local = localObjectClasses.find(objectHandle);
+    return local == localObjectClasses.end()
+        ? rti1516e::ObjectClassHandle()
+        : local->second;
+  }
+
+  std::vector<std::string> ownershipAttributeNames(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::AttributeHandleSet& attributes) const {
+    std::vector<std::string> result;
+    const auto names = attributeNames.find(this->objectClass(objectHandle));
+    if (names == attributeNames.end()) return result;
+    for (const rti1516e::AttributeHandle attribute : attributes) {
+      const auto name = names->second.find(attribute);
+      if (name != names->second.end()) result.push_back(name->second);
+    }
+    return result;
+  }
+
+  QttestHlaStringArrayV1 ownershipAttributeArray(
+      const std::vector<std::string>& names,
+      std::vector<const char*>& values) const {
+    values.reserve(names.size());
+    for (const std::string& name : names) values.push_back(name.c_str());
+    return {
+        sizeof(QttestHlaStringArrayV1),
+        values.empty() ? nullptr : values.data(),
+        values.size()};
+  }
+
   void announceSynchronizationPoint(
       const std::wstring& label,
       const rti1516e::VariableLengthData& tag)
@@ -434,6 +475,73 @@ public:
         interactionHandle, parameterValues, tag, receiveInfo);
   }
 
+  void attributeOwnershipAcquisitionNotification(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::AttributeHandleSet& attributes,
+      const rti1516e::VariableLengthData& tag)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    if (!callbacks.attributeOwnershipAcquired) return;
+    const std::vector<std::string> names =
+        this->ownershipAttributeNames(objectHandle, attributes);
+    std::vector<const char*> values;
+    const QttestHlaStringArrayV1 array =
+        this->ownershipAttributeArray(names, values);
+    const QttestHlaByteSpanV2 tagSpan = {
+        sizeof(QttestHlaByteSpanV2),
+        static_cast<const uint8_t*>(tag.data()),
+        tag.size()};
+    callbacks.attributeOwnershipAcquired(
+        callbacks.context, this->objectId(objectHandle), &array, &tagSpan);
+  }
+
+  void attributeOwnershipUnavailable(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::AttributeHandleSet& attributes)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    if (!callbacks.attributeOwnershipUnavailable) return;
+    const std::vector<std::string> names =
+        this->ownershipAttributeNames(objectHandle, attributes);
+    std::vector<const char*> values;
+    const QttestHlaStringArrayV1 array =
+        this->ownershipAttributeArray(names, values);
+    callbacks.attributeOwnershipUnavailable(
+        callbacks.context, this->objectId(objectHandle), &array);
+  }
+
+  void requestAttributeOwnershipRelease(
+      rti1516e::ObjectInstanceHandle objectHandle,
+      const rti1516e::AttributeHandleSet& attributes,
+      const rti1516e::VariableLengthData& tag)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    if (!callbacks.attributeOwnershipReleaseRequested) return;
+    const std::vector<std::string> names =
+        this->ownershipAttributeNames(objectHandle, attributes);
+    std::vector<const char*> values;
+    const QttestHlaStringArrayV1 array =
+        this->ownershipAttributeArray(names, values);
+    const QttestHlaByteSpanV2 tagSpan = {
+        sizeof(QttestHlaByteSpanV2),
+        static_cast<const uint8_t*>(tag.data()),
+        tag.size()};
+    callbacks.attributeOwnershipReleaseRequested(
+        callbacks.context, this->objectId(objectHandle), &array, &tagSpan);
+  }
+
   void receiveInteraction(
       rti1516e::InteractionClassHandle interactionHandle,
       const rti1516e::ParameterHandleValueMap& parameterValues,
@@ -480,11 +588,17 @@ public:
 
   std::set<std::wstring> reservedNames;
   std::set<std::wstring> failedNames;
-  QttestHlaCallbacksV7 callbacks = {};
-  uint64_t nextRemoteObjectId = 1;
+  QttestHlaCallbacksV8 callbacks = {};
+  uint64_t nextRemoteObjectId = (uint64_t{1} << 63U);
   std::map<rti1516e::ObjectClassHandle, SubscribedObjectClass>
       subscribedObjectClasses;
   std::map<rti1516e::ObjectInstanceHandle, RemoteObject> remoteObjects;
+  std::map<rti1516e::ObjectInstanceHandle, uint64_t> localObjectIds;
+  std::map<rti1516e::ObjectInstanceHandle, rti1516e::ObjectClassHandle>
+      localObjectClasses;
+  std::map<
+      rti1516e::ObjectClassHandle,
+      std::map<rti1516e::AttributeHandle, std::string>> attributeNames;
   std::map<
       rti1516e::InteractionClassHandle,
       std::pair<std::string, std::map<rti1516e::ParameterHandle, std::string>>>
@@ -508,6 +622,26 @@ struct PitchSession {
 
 PitchSession* session(QttestHlaBackendHandle handle) {
   return static_cast<PitchSession*>(handle);
+}
+
+bool resolveObject(
+    PitchSession* value,
+    uint64_t instanceId,
+    rti1516e::ObjectInstanceHandle& objectHandle,
+    rti1516e::ObjectClassHandle& classHandle) {
+  const auto local = value->objects.find(instanceId);
+  if (local != value->objects.end()) {
+    objectHandle = local->second.handle;
+    classHandle = local->second.classHandle;
+    return true;
+  }
+  for (const auto& remote : value->federateAmbassador.remoteObjects) {
+    if (remote.second.id != instanceId) continue;
+    objectHandle = remote.first;
+    classHandle = remote.second.classHandle;
+    return true;
+  }
+  return false;
 }
 
 int fail(
@@ -663,8 +797,12 @@ int publishObjectClass(
         value->rtiAmbassador->getObjectClassHandle(className);
     rti1516e::AttributeHandleSet attributes;
     for (size_t index = 0; index < attributeNames->count; ++index) {
-      attributes.insert(value->rtiAmbassador->getAttributeHandle(
-          classHandle, fromUtf8(attributeNames->values[index])));
+      const rti1516e::AttributeHandle attributeHandle =
+          value->rtiAmbassador->getAttributeHandle(
+              classHandle, fromUtf8(attributeNames->values[index]));
+      attributes.insert(attributeHandle);
+      value->federateAmbassador.attributeNames[classHandle][attributeHandle] =
+          attributeNames->values[index];
     }
     value->rtiAmbassador->publishObjectClassAttributes(classHandle, attributes);
     value->objectClasses[className] = classHandle;
@@ -702,6 +840,8 @@ int subscribeObjectClass(
               classHandle, fromUtf8(attributeNames->values[index]));
       attributes.insert(attributeHandle);
       subscription.attributes.emplace(attributeHandle, attributeName);
+      value->federateAmbassador.attributeNames[classHandle][attributeHandle] =
+          attributeName;
     }
     value->rtiAmbassador->subscribeObjectClassAttributes(classHandle, attributes);
     value->federateAmbassador.subscribedObjectClasses[classHandle] =
@@ -769,6 +909,9 @@ int registerObjectInstance(
     value->objects.emplace(
         localId,
         PitchSession::RegisteredObject{objectHandle, classIterator->second});
+    value->federateAmbassador.localObjectIds[objectHandle] = localId;
+    value->federateAmbassador.localObjectClasses[objectHandle] =
+        classIterator->second;
     *instanceId = localId;
     value->error.clear();
     return 0;
@@ -790,8 +933,9 @@ int updateObjectAttributes(
       !attributes->values || attributes->count == 0) {
     return fail(value, "Invalid HLA attribute update", QTTEST_HLA_STATE_ERROR);
   }
-  const auto objectIterator = value->objects.find(instanceId);
-  if (objectIterator == value->objects.end()) {
+  rti1516e::ObjectInstanceHandle objectHandle;
+  rti1516e::ObjectClassHandle classHandle;
+  if (!resolveObject(value, instanceId, objectHandle, classHandle)) {
     return fail(value, "Unknown HLA object instance", QTTEST_HLA_STATE_JOINED);
   }
   try {
@@ -804,11 +948,11 @@ int updateObjectAttributes(
       }
       const rti1516e::AttributeHandle attributeHandle =
           value->rtiAmbassador->getAttributeHandle(
-              objectIterator->second.classHandle, fromUtf8(attribute.name));
+              classHandle, fromUtf8(attribute.name));
       attributeValues[attributeHandle] = variableLengthData(&attribute.value);
     }
     value->rtiAmbassador->updateAttributeValues(
-        objectIterator->second.handle, attributeValues, variableLengthData(tag));
+        objectHandle, attributeValues, variableLengthData(tag));
     value->error.clear();
     return 0;
   } catch (const rti1516e::Exception& exception) {
@@ -833,8 +977,9 @@ int updateObjectAttributesAtTime(
         value, "Invalid timestamped HLA attribute update",
         QTTEST_HLA_STATE_ERROR);
   }
-  const auto objectIterator = value->objects.find(instanceId);
-  if (objectIterator == value->objects.end()) {
+  rti1516e::ObjectInstanceHandle objectHandle;
+  rti1516e::ObjectClassHandle classHandle;
+  if (!resolveObject(value, instanceId, objectHandle, classHandle)) {
     return fail(value, "Unknown HLA object instance", QTTEST_HLA_STATE_JOINED);
   }
   try {
@@ -847,11 +992,11 @@ int updateObjectAttributesAtTime(
       }
       const rti1516e::AttributeHandle attributeHandle =
           value->rtiAmbassador->getAttributeHandle(
-              objectIterator->second.classHandle, fromUtf8(attribute.name));
+              classHandle, fromUtf8(attribute.name));
       attributeValues[attributeHandle] = variableLengthData(&attribute.value);
     }
     value->rtiAmbassador->updateAttributeValues(
-        objectIterator->second.handle,
+        objectHandle,
         attributeValues,
         variableLengthData(tag),
         rti1516e::HLAfloat64Time(logicalTimeSeconds));
@@ -879,6 +1024,10 @@ int deleteObjectInstance(
   try {
     value->rtiAmbassador->deleteObjectInstance(
         objectIterator->second.handle, variableLengthData(tag));
+    value->federateAmbassador.localObjectIds.erase(
+        objectIterator->second.handle);
+    value->federateAmbassador.localObjectClasses.erase(
+        objectIterator->second.handle);
     value->objects.erase(objectIterator);
     value->error.clear();
     return 0;
@@ -910,6 +1059,10 @@ int deleteObjectInstanceAtTime(
         objectIterator->second.handle,
         variableLengthData(tag),
         rti1516e::HLAfloat64Time(logicalTimeSeconds));
+    value->federateAmbassador.localObjectIds.erase(
+        objectIterator->second.handle);
+    value->federateAmbassador.localObjectClasses.erase(
+        objectIterator->second.handle);
     value->objects.erase(objectIterator);
     value->error.clear();
     return 0;
@@ -1075,12 +1228,82 @@ int requestTimeAdvance(
   }
 }
 
+int requestAttributeOwnershipAcquisition(
+    QttestHlaBackendHandle handle,
+    uint64_t instanceId,
+    const QttestHlaStringArrayV1* attributeNames,
+    const QttestHlaByteSpanV2* tag) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      instanceId == 0 || !attributeNames || !attributeNames->values ||
+      attributeNames->count == 0) {
+    return fail(value, "Invalid HLA ownership acquisition", QTTEST_HLA_STATE_ERROR);
+  }
+  try {
+    rti1516e::ObjectInstanceHandle objectHandle;
+    rti1516e::ObjectClassHandle classHandle;
+    if (!resolveObject(value, instanceId, objectHandle, classHandle)) {
+      return fail(
+          value, "Unknown HLA object instance",
+          QTTEST_HLA_STATE_JOINED);
+    }
+    rti1516e::AttributeHandleSet attributes;
+    for (size_t index = 0; index < attributeNames->count; ++index) {
+      attributes.insert(value->rtiAmbassador->getAttributeHandle(
+          classHandle, fromUtf8(attributeNames->values[index])));
+    }
+    value->rtiAmbassador->attributeOwnershipAcquisition(
+        objectHandle, attributes, variableLengthData(tag));
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
+int unconditionalAttributeOwnershipDivestiture(
+    QttestHlaBackendHandle handle,
+    uint64_t instanceId,
+    const QttestHlaStringArrayV1* attributeNames) {
+  PitchSession* value = session(handle);
+  if (!value || value->state != QTTEST_HLA_STATE_JOINED ||
+      instanceId == 0 || !attributeNames || !attributeNames->values ||
+      attributeNames->count == 0) {
+    return fail(value, "Invalid HLA ownership divestiture", QTTEST_HLA_STATE_ERROR);
+  }
+  rti1516e::ObjectInstanceHandle objectHandle;
+  rti1516e::ObjectClassHandle classHandle;
+  if (!resolveObject(value, instanceId, objectHandle, classHandle)) {
+    return fail(
+        value, "Unknown HLA object instance",
+        QTTEST_HLA_STATE_JOINED);
+  }
+  try {
+    rti1516e::AttributeHandleSet attributes;
+    for (size_t index = 0; index < attributeNames->count; ++index) {
+      attributes.insert(value->rtiAmbassador->getAttributeHandle(
+          classHandle,
+          fromUtf8(attributeNames->values[index])));
+    }
+    value->rtiAmbassador->unconditionalAttributeOwnershipDivestiture(
+        objectHandle, attributes);
+    value->error.clear();
+    return 0;
+  } catch (const rti1516e::Exception& exception) {
+    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+  } catch (const std::exception& exception) {
+    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+  }
+}
+
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV7* callbacks) {
+    const QttestHlaCallbacksV8* callbacks) {
   PitchSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV7)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV8)) {
     return fail(value, "Invalid HLA callback configuration", QTTEST_HLA_STATE_ERROR);
   }
   value->federateAmbassador.callbacks = *callbacks;
@@ -1253,12 +1476,20 @@ const char* lastError(QttestHlaBackendHandle handle) {
   return value ? value->error.c_str() : "HLA backend session is unavailable";
 }
 
-const QttestHlaBackendApiV7 api = {
-    sizeof(QttestHlaBackendApiV7),
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+constexpr const char* backendCapabilities =
+    "federation-management,object-management,interactions,synchronization-points,time-management,timestamp-order,evoked-callbacks,ieee1516e";
+#else
+constexpr const char* backendCapabilities =
+    "federation-management,object-management,ownership-management,interactions,synchronization-points,time-management,timestamp-order,evoked-callbacks,ieee1516e";
+#endif
+
+const QttestHlaBackendApiV8 api = {
+    sizeof(QttestHlaBackendApiV8),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     QTTEST_HLA_1516E_BACKEND_ID,
     QTTEST_HLA_1516E_BACKEND_NAME,
-    "federation-management,object-management,interactions,synchronization-points,time-management,timestamp-order,evoked-callbacks,ieee1516e",
+    backendCapabilities,
     &createBackend,
     &destroyBackend,
     &connectBackend,
@@ -1280,6 +1511,8 @@ const QttestHlaBackendApiV7 api = {
     &enableTimeRegulation,
     &enableTimeConstrained,
     &requestTimeAdvance,
+    &requestAttributeOwnershipAcquisition,
+    &unconditionalAttributeOwnershipDivestiture,
     &setCallbacks,
     &pollBackend,
     &resignBackend,
@@ -1289,7 +1522,7 @@ const QttestHlaBackendApiV7 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV7*
-qttest_hla_backend_api_v7(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV8*
+qttest_hla_backend_api_v8(void) {
   return &api;
 }

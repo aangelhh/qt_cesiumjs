@@ -73,6 +73,20 @@ std::vector<tactical::hla::NamedValue> copyNamedValues(
   return result;
 }
 
+std::vector<std::string> copyStrings(
+    const QttestHlaStringArrayV1* source) {
+  std::vector<std::string> result;
+  if (!source || source->structSize < sizeof(QttestHlaStringArrayV1) ||
+      !source->values) {
+    return result;
+  }
+  result.reserve(source->count);
+  for (size_t index = 0; index < source->count; ++index) {
+    result.push_back(safeString(source->values[index]));
+  }
+  return result;
+}
+
 tactical::hla::ReceiveMetadata copyReceiveMetadata(
     const QttestHlaReceiveInfoV7* source) {
   tactical::hla::ReceiveMetadata result;
@@ -105,7 +119,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   const auto apiFactory = reinterpret_cast<QttestHlaBackendApiFn>(
-      _library.resolve("qttest_hla_backend_api_v7"));
+      _library.resolve("qttest_hla_backend_api_v8"));
   if (!apiFactory) {
     _loadError = "Required HLA backend API symbol is missing";
     _library.unload();
@@ -113,7 +127,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   _api = apiFactory();
-  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV7) ||
+  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV8) ||
       _api->abiVersion != QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION) {
     _loadError = "Unsupported HLA backend plugin ABI";
     _api = nullptr;
@@ -131,6 +145,8 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
       !_api->registerSynchronizationPoint ||
       !_api->achieveSynchronizationPoint || !_api->enableTimeRegulation ||
       !_api->enableTimeConstrained || !_api->requestTimeAdvance ||
+      !_api->requestAttributeOwnershipAcquisition ||
+      !_api->unconditionalAttributeOwnershipDivestiture ||
       !_api->setCallbacks ||
       !_api->poll || !_api->resign || !_api->disconnect || !_api->state ||
       !_api->lastError) {
@@ -147,8 +163,8 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
     _library.unload();
     return;
   }
-  const QttestHlaCallbacksV7 callbacks = {
-      sizeof(QttestHlaCallbacksV7),
+  const QttestHlaCallbacksV8 callbacks = {
+      sizeof(QttestHlaCallbacksV8),
       this,
       &SharedLibraryHlaBackend::objectDiscoveredCallback,
       &SharedLibraryHlaBackend::objectReflectedCallback,
@@ -158,7 +174,10 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
       &SharedLibraryHlaBackend::federationSynchronizedCallback,
       &SharedLibraryHlaBackend::timeRegulationEnabledCallback,
       &SharedLibraryHlaBackend::timeConstrainedEnabledCallback,
-      &SharedLibraryHlaBackend::timeAdvanceGrantedCallback};
+      &SharedLibraryHlaBackend::timeAdvanceGrantedCallback,
+      &SharedLibraryHlaBackend::attributeOwnershipAcquiredCallback,
+      &SharedLibraryHlaBackend::attributeOwnershipUnavailableCallback,
+      &SharedLibraryHlaBackend::attributeOwnershipReleaseRequestedCallback};
   if (_api->setCallbacks(_handle, &callbacks) != 0) {
     _loadError = safeString(_api->lastError(_handle));
     _api->destroy(_handle);
@@ -416,6 +435,31 @@ Result SharedLibraryHlaBackend::requestTimeAdvance(
       _api->requestTimeAdvance(_handle, logicalTimeSeconds));
 }
 
+Result SharedLibraryHlaBackend::requestAttributeOwnershipAcquisition(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames,
+    const ByteBuffer& tag) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  std::vector<const char*> values;
+  const QttestHlaStringArrayV1 names =
+      makeStringArray(attributeNames, values);
+  const QttestHlaByteSpanV2 tagSpan = makeByteSpan(tag);
+  return this->pluginResult(_api->requestAttributeOwnershipAcquisition(
+      _handle, instanceId, &names, &tagSpan));
+}
+
+Result SharedLibraryHlaBackend::unconditionalAttributeOwnershipDivestiture(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames) {
+  if (!_api || !_handle) return Result::failure(_loadError);
+  std::vector<const char*> values;
+  const QttestHlaStringArrayV1 names =
+      makeStringArray(attributeNames, values);
+  return this->pluginResult(
+      _api->unconditionalAttributeOwnershipDivestiture(
+          _handle, instanceId, &names));
+}
+
 Result SharedLibraryHlaBackend::poll(double maximumSeconds) {
   if (!_api || !_handle) {
     return Result::failure(_loadError);
@@ -517,6 +561,47 @@ void SharedLibraryHlaBackend::timeAdvanceGrantedCallback(
   auto* self = static_cast<SharedLibraryHlaBackend*>(context);
   if (!self || !self->_eventSink) return;
   self->_eventSink->onTimeAdvanceGranted(logicalTimeSeconds);
+}
+
+void SharedLibraryHlaBackend::attributeOwnershipAcquiredCallback(
+    void* context,
+    uint64_t instanceId,
+    const QttestHlaStringArrayV1* attributeNames,
+    const QttestHlaByteSpanV2* tag) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onAttributeOwnershipChanged({
+      OwnershipEventKind::Acquired,
+      instanceId,
+      copyStrings(attributeNames),
+      copyBytes(tag)});
+}
+
+void SharedLibraryHlaBackend::attributeOwnershipUnavailableCallback(
+    void* context,
+    uint64_t instanceId,
+    const QttestHlaStringArrayV1* attributeNames) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onAttributeOwnershipChanged({
+      OwnershipEventKind::Unavailable,
+      instanceId,
+      copyStrings(attributeNames),
+      {}});
+}
+
+void SharedLibraryHlaBackend::attributeOwnershipReleaseRequestedCallback(
+    void* context,
+    uint64_t instanceId,
+    const QttestHlaStringArrayV1* attributeNames,
+    const QttestHlaByteSpanV2* tag) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onAttributeOwnershipChanged({
+      OwnershipEventKind::ReleaseRequested,
+      instanceId,
+      copyStrings(attributeNames),
+      copyBytes(tag)});
 }
 
 Result SharedLibraryHlaBackend::resign() {
