@@ -552,6 +552,8 @@ qt_add_executable(qttest
     src/presentation/WeaponActionsController.h
     src/presentation/GraphicPickCoordinator.cpp
     src/presentation/GraphicPickCoordinator.h
+    src/presentation/HlaConnectionPanel.cpp
+    src/presentation/HlaConnectionPanel.h
     src/presentation/PlanStepConfigurator.cpp
     src/presentation/PlanStepConfigurator.h
     src/presentation/Ros2TelemetryDialog.cpp

@@ -253,6 +253,13 @@ HlaStartupSession::takeOwnershipEvents() {
       : std::vector<tactical::hla::AttributeOwnershipEvent>{};
 }
 
+std::vector<tactical::hla::ConnectionLostEvent>
+HlaStartupSession::takeConnectionLostEvents() {
+  return _inboundAdapter
+      ? _inboundAdapter->takeConnectionLostEvents()
+      : std::vector<tactical::hla::ConnectionLostEvent>{};
+}
+
 std::vector<tactical::hla::RemoteSimulationControl>
 HlaStartupSession::takeRemoteSimulationControls() {
   return _inboundAdapter ? _inboundAdapter->takeSimulationControls()

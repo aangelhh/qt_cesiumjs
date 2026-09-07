@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION 9U
+#define QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION 10U
 
 #ifdef _WIN32
 #define QTTEST_HLA_PLUGIN_EXPORT __declspec(dllexport)
@@ -61,7 +61,7 @@ typedef struct QttestHlaReceiveInfoV7 {
   double logicalTimeSeconds;
 } QttestHlaReceiveInfoV7;
 
-typedef struct QttestHlaCallbacksV9 {
+typedef struct QttestHlaCallbacksV10 {
   uint32_t structSize;
   void* context;
   void (*objectDiscovered)(
@@ -113,9 +113,10 @@ typedef struct QttestHlaCallbacksV9 {
       uint64_t instanceId,
       const QttestHlaStringArrayV1* attributeNames,
       const QttestHlaByteSpanV2* tag);
-} QttestHlaCallbacksV9;
+  void (*connectionLost)(void* context, const char* faultDescription);
+} QttestHlaCallbacksV10;
 
-typedef struct QttestHlaBackendApiV9 {
+typedef struct QttestHlaBackendApiV10 {
   uint32_t structSize;
   uint32_t abiVersion;
   const char* backendId;
@@ -211,18 +212,18 @@ typedef struct QttestHlaBackendApiV9 {
       const QttestHlaStringArrayV1* attributeNames);
   int (*setCallbacks)(
       QttestHlaBackendHandle,
-      const QttestHlaCallbacksV9* callbacks);
+      const QttestHlaCallbacksV10* callbacks);
   int (*poll)(QttestHlaBackendHandle, double maximumSeconds);
   int (*resign)(QttestHlaBackendHandle);
   int (*disconnect)(QttestHlaBackendHandle);
   QttestHlaBackendStateV1 (*state)(QttestHlaBackendHandle);
   const char* (*lastError)(QttestHlaBackendHandle);
-} QttestHlaBackendApiV9;
+} QttestHlaBackendApiV10;
 
-typedef const QttestHlaBackendApiV9* (*QttestHlaBackendApiFn)(void);
+typedef const QttestHlaBackendApiV10* (*QttestHlaBackendApiFn)(void);
 
-QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV9*
-qttest_hla_backend_api_v9(void);
+QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV10*
+qttest_hla_backend_api_v10(void);
 
 #ifdef __cplusplus
 } // extern "C"

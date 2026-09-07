@@ -115,7 +115,7 @@ Implemented lifecycle, publication, and reception:
 19. Poll callbacks.
 20. Remove owned objects, resign, and disconnect with rollback on failure.
 
-The plugin ABI v9 keeps RTI handles private to each plugin and exposes opaque
+The plugin ABI v10 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
 classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 `DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
@@ -216,7 +216,7 @@ future work.
 The neutral runtime and startup session expose explicit attribute acquisition
 and unconditional divestiture. The inbound adapter queues Acquired,
 Unavailable, and ReleaseRequested events, preserving object IDs, attribute
-names, and user tags. ABI v9 requires rebuilding the backend plugins.
+names, and user tags. ABI v10 requires rebuilding the backend plugins.
 
 Pitch supports this lifecycle. The opt-in two-federate integration test
 requests Spatial, verifies the owner's release callback, divests the
@@ -239,6 +239,52 @@ negotiated divestiture, and ownership queries remain future work.
 
 DDM, save/restore, and NETN-ETR task exchange remain
 subsequent Feature 19 tasks.
+
+### In-application connection control
+
+The main status bar contains a persistent HLA indicator with Disconnected,
+Connecting, Federated, and Error states. Selecting it opens the floatable
+`HLA Connection` panel, which is also available from the View menu. The panel
+shows the configured backend, RTI endpoint, federate type, FOM module count,
+Time Management/lookahead, and synchronization point. It allows the operator
+to edit the federation and federate names while disconnected.
+
+Connect starts the existing `HlaStartupSession`, including subscriptions,
+publishers, optional synchronization-point registration, and Time Management.
+Disconnect removes locally published objects, resigns, disconnects, and stops
+the HLA polling/publication timers without closing qttest or clearing the local
+scenario. The selected names are persisted for the next launch. Backend and
+endpoint selection remain startup configuration because changing an RTI SDK
+inside an active process is not part of this MVP.
+
+IEEE 1516e `connectionLost` callbacks are propagated through plugin ABI v10.
+Pitch and OpenRTI mark the backend unhealthy as soon as the RTI reports the
+loss; qttest then stops HLA publication/polling, disables Time Management, and
+changes the panel and status-bar indicator to Error with the RTI fault text.
+The operator may reconnect from the same panel after the RTI is available.
+
+### Callback scope at MVP closure
+
+The session/runtime MVP handles the callbacks required by its enabled
+services: connection loss; synchronization-point registration, announcement,
+and federation synchronization; object discovery, reflection, and removal;
+time-regulation, constrained, and advance grants; and the ownership
+acquisition/release subset exposed by the current API.
+
+The remaining IEEE 1516e callbacks are intentionally deferred rather than
+implemented as no-ops:
+
+- Save/Restore callbacks require a versioned `ScenarioState` snapshot policy.
+- DDM and attribute scope/advisory callbacks require region and update-demand
+  policies.
+- `requestRetraction` requires retractable timestamped-event semantics.
+- Federation execution reports require a federation-browser use case.
+- Ownership cancellation, queries, and negotiated divestiture belong to the
+  complete authority-transfer feature.
+
+Automatic reconnection is also deferred. Rejoining implicitly can duplicate
+object names or violate ownership, synchronization, and logical-time policy;
+the current recovery mechanism is an explicit operator reconnect.
 
 ### Graphical combat demo
 
@@ -266,7 +312,7 @@ needed, publishes one synthetic Aircraft, updates and removes it, then exits.
 ## Adding another RTI
 
 1. Add `integrations/hla/<backend>/<Backend>Plugin.cpp`.
-2. Implement every function in `QttestHlaBackendApiV7`, including callback
+2. Implement every function in `QttestHlaBackendApiV10`, including callback
    registration and object/interaction subscriptions.
 3. Keep vendor headers and libraries private to that plugin target.
 4. Return backend identity, version, capabilities, and diagnostic errors.

@@ -134,6 +134,10 @@ struct AttributeOwnershipEvent {
   ByteBuffer tag;
 };
 
+struct ConnectionLostEvent {
+  std::string reason;
+};
+
 class IHlaEventSink {
 public:
   virtual ~IHlaEventSink() = default;
@@ -151,6 +155,7 @@ public:
   virtual void onTimeAdvanceGranted(double logicalTimeSeconds) = 0;
   virtual void onAttributeOwnershipChanged(
       const AttributeOwnershipEvent& event) = 0;
+  virtual void onConnectionLost(const ConnectionLostEvent& event) = 0;
 };
 
 } // namespace tactical::hla

@@ -119,7 +119,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   const auto apiFactory = reinterpret_cast<QttestHlaBackendApiFn>(
-      _library.resolve("qttest_hla_backend_api_v9"));
+      _library.resolve("qttest_hla_backend_api_v10"));
   if (!apiFactory) {
     _loadError = "Required HLA backend API symbol is missing";
     _library.unload();
@@ -127,7 +127,7 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
   }
 
   _api = apiFactory();
-  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV9) ||
+  if (!_api || _api->structSize < sizeof(QttestHlaBackendApiV10) ||
       _api->abiVersion != QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION) {
     _loadError = "Unsupported HLA backend plugin ABI";
     _api = nullptr;
@@ -163,8 +163,8 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
     _library.unload();
     return;
   }
-  const QttestHlaCallbacksV9 callbacks = {
-      sizeof(QttestHlaCallbacksV9),
+  const QttestHlaCallbacksV10 callbacks = {
+      sizeof(QttestHlaCallbacksV10),
       this,
       &SharedLibraryHlaBackend::objectDiscoveredCallback,
       &SharedLibraryHlaBackend::objectReflectedCallback,
@@ -178,7 +178,8 @@ SharedLibraryHlaBackend::SharedLibraryHlaBackend(std::string libraryPath)
       &SharedLibraryHlaBackend::timeAdvanceGrantedCallback,
       &SharedLibraryHlaBackend::attributeOwnershipAcquiredCallback,
       &SharedLibraryHlaBackend::attributeOwnershipUnavailableCallback,
-      &SharedLibraryHlaBackend::attributeOwnershipReleaseRequestedCallback};
+      &SharedLibraryHlaBackend::attributeOwnershipReleaseRequestedCallback,
+      &SharedLibraryHlaBackend::connectionLostCallback};
   if (_api->setCallbacks(_handle, &callbacks) != 0) {
     _loadError = safeString(_api->lastError(_handle));
     _api->destroy(_handle);
@@ -614,6 +615,14 @@ void SharedLibraryHlaBackend::attributeOwnershipReleaseRequestedCallback(
       instanceId,
       copyStrings(attributeNames),
       copyBytes(tag)});
+}
+
+void SharedLibraryHlaBackend::connectionLostCallback(
+    void* context,
+    const char* faultDescription) {
+  auto* self = static_cast<SharedLibraryHlaBackend*>(context);
+  if (!self || !self->_eventSink) return;
+  self->_eventSink->onConnectionLost({safeString(faultDescription)});
 }
 
 Result SharedLibraryHlaBackend::resign() {

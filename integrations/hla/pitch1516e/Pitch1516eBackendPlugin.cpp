@@ -68,6 +68,21 @@ public:
     rti1516e::ObjectClassHandle classHandle;
   };
 
+  void connectionLost(const std::wstring& faultDescription)
+#ifdef QTTEST_HLA_OPENRTI_BACKEND
+      RTI_THROW ((rti1516e::FederateInternalError))
+#elif __cplusplus < 201703L
+      RTI_THROW (rti1516e::FederateInternalError)
+#endif
+      override {
+    const std::string reason = toUtf8(faultDescription);
+    if (sessionError) *sessionError = reason;
+    if (sessionState) *sessionState = QTTEST_HLA_STATE_ERROR;
+    if (callbacks.connectionLost) {
+      callbacks.connectionLost(callbacks.context, reason.c_str());
+    }
+  }
+
   uint64_t objectId(rti1516e::ObjectInstanceHandle objectHandle) const {
     const auto remote = remoteObjects.find(objectHandle);
     if (remote != remoteObjects.end()) return remote->second.id;
@@ -622,7 +637,9 @@ public:
 
   std::set<std::wstring> reservedNames;
   std::set<std::wstring> failedNames;
-  QttestHlaCallbacksV9 callbacks = {};
+  QttestHlaCallbacksV10 callbacks = {};
+  QttestHlaBackendStateV1* sessionState = nullptr;
+  std::string* sessionError = nullptr;
   uint64_t nextRemoteObjectId = (uint64_t{1} << 63U);
   std::map<rti1516e::ObjectClassHandle, SubscribedObjectClass>
       subscribedObjectClasses;
@@ -699,6 +716,8 @@ int fail(
 QttestHlaBackendHandle createBackend() {
   try {
     std::unique_ptr<PitchSession> value(new PitchSession());
+    value->federateAmbassador.sessionState = &value->state;
+    value->federateAmbassador.sessionError = &value->error;
     rti1516e::RTIambassadorFactory factory;
     value->rtiAmbassador = factory.createRTIambassador();
     return value.release();
@@ -1334,10 +1353,10 @@ int unconditionalAttributeOwnershipDivestiture(
 
 int setCallbacks(
     QttestHlaBackendHandle handle,
-    const QttestHlaCallbacksV9* callbacks) {
+    const QttestHlaCallbacksV10* callbacks) {
   PitchSession* value = session(handle);
   if (!value || !callbacks ||
-      callbacks->structSize < sizeof(QttestHlaCallbacksV9)) {
+      callbacks->structSize < sizeof(QttestHlaCallbacksV10)) {
     return fail(value, "Invalid HLA callback configuration", QTTEST_HLA_STATE_ERROR);
   }
   value->federateAmbassador.callbacks = *callbacks;
@@ -1445,12 +1464,13 @@ int pollBackend(QttestHlaBackendHandle handle, double maximumSeconds) {
   }
   try {
     value->rtiAmbassador->evokeMultipleCallbacks(0.0, maximumSeconds);
+    if (value->state != QTTEST_HLA_STATE_JOINED) return 0;
     value->error.clear();
     return 0;
   } catch (const rti1516e::Exception& exception) {
-    return fail(value, exception, QTTEST_HLA_STATE_JOINED);
+    return fail(value, exception, QTTEST_HLA_STATE_ERROR);
   } catch (const std::exception& exception) {
-    return fail(value, exception.what(), QTTEST_HLA_STATE_JOINED);
+    return fail(value, exception.what(), QTTEST_HLA_STATE_ERROR);
   }
 }
 
@@ -1518,8 +1538,8 @@ constexpr const char* backendCapabilities =
     "federation-management,object-management,ownership-management,interactions,synchronization-points,time-management,timestamp-order,evoked-callbacks,ieee1516e";
 #endif
 
-const QttestHlaBackendApiV9 api = {
-    sizeof(QttestHlaBackendApiV9),
+const QttestHlaBackendApiV10 api = {
+    sizeof(QttestHlaBackendApiV10),
     QTTEST_HLA_BACKEND_PLUGIN_ABI_VERSION,
     QTTEST_HLA_1516E_BACKEND_ID,
     QTTEST_HLA_1516E_BACKEND_NAME,
@@ -1556,7 +1576,7 @@ const QttestHlaBackendApiV9 api = {
 
 } // namespace
 
-extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV9*
-qttest_hla_backend_api_v9(void) {
+extern "C" QTTEST_HLA_PLUGIN_EXPORT const QttestHlaBackendApiV10*
+qttest_hla_backend_api_v10(void) {
   return &api;
 }

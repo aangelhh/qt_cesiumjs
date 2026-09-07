@@ -152,10 +152,13 @@ private:
       uint64_t instanceId,
       const QttestHlaStringArrayV1* attributeNames,
       const QttestHlaByteSpanV2* tag);
+  static void connectionLostCallback(
+      void* context,
+      const char* faultDescription);
 
   std::string _libraryPath;
   mutable QLibrary _library;
-  const QttestHlaBackendApiV9* _api = nullptr;
+  const QttestHlaBackendApiV10* _api = nullptr;
   QttestHlaBackendHandle _handle = nullptr;
   std::string _loadError;
   IHlaEventSink* _eventSink = nullptr;

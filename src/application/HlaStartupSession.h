@@ -37,6 +37,8 @@ public:
       takeRemoteTimeManagementEvents();
   std::vector<tactical::hla::AttributeOwnershipEvent>
       takeOwnershipEvents();
+  std::vector<tactical::hla::ConnectionLostEvent>
+      takeConnectionLostEvents();
   std::vector<tactical::hla::RemoteSimulationControl>
       takeRemoteSimulationControls();
   tactical::hla::Result publishSimulationControl(

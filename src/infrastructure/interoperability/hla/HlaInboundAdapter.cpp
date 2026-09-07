@@ -427,6 +427,10 @@ void HlaInboundAdapter::onAttributeOwnershipChanged(
   _ownershipEvents.push_back(event);
 }
 
+void HlaInboundAdapter::onConnectionLost(const ConnectionLostEvent& event) {
+  _connectionLostEvents.push_back(event);
+}
+
 std::vector<RemoteSensorChange> HlaInboundAdapter::takeSensorChanges() {
   std::vector<RemoteSensorChange> result = std::move(_sensorChanges);
   _sensorChanges.clear();
@@ -460,6 +464,14 @@ HlaInboundAdapter::takeOwnershipEvents() {
   std::vector<AttributeOwnershipEvent> result =
       std::move(_ownershipEvents);
   _ownershipEvents.clear();
+  return result;
+}
+
+std::vector<ConnectionLostEvent>
+HlaInboundAdapter::takeConnectionLostEvents() {
+  std::vector<ConnectionLostEvent> result =
+      std::move(_connectionLostEvents);
+  _connectionLostEvents.clear();
   return result;
 }
 

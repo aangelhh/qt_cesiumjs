@@ -284,6 +284,17 @@ TEST(HlaInboundAdapter, QueuesAttributeOwnershipEventsInOrder) {
   EXPECT_TRUE(adapter.takeOwnershipEvents().empty());
 }
 
+TEST(HlaInboundAdapter, QueuesConnectionLostCallback) {
+  tactical::hla::HlaInboundAdapter adapter;
+
+  adapter.onConnectionLost({"CRC transport closed"});
+
+  const auto events = adapter.takeConnectionLostEvents();
+  ASSERT_EQ(events.size(), 1U);
+  EXPECT_EQ(events.front().reason, "CRC transport closed");
+  EXPECT_TRUE(adapter.takeConnectionLostEvents().empty());
+}
+
 TEST(HlaInboundAdapter, ConvertsEmitterAndRadarBeamWithoutCreatingEntity) {
   tactical::hla::HlaInboundAdapter adapter;
   adapter.onObjectDiscovered({

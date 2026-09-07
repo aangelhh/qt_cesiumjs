@@ -163,11 +163,11 @@ int main(int argc, char *argv[])
     QTimer hlaPollTimer;
     QTimer hlaPublishTimer;
     qsizetype lastPublishedEntityCount = -1;
-    if (hlaSession.isActive()) {
-      const QString synchronizationPointLabel =
+    {
+      QString synchronizationPointLabel =
           startupConfiguration.hla.synchronizationPointLabel.trimmed();
       QSet<QString> achievedSynchronizationPoints;
-      if (!synchronizationPointLabel.isEmpty()) {
+      if (hlaSession.isActive() && !synchronizationPointLabel.isEmpty()) {
         const tactical::hla::Result synchronizationResult =
             hlaSession.registerSynchronizationPoint(
                 synchronizationPointLabel.toStdString());
@@ -189,6 +189,7 @@ int main(int argc, char *argv[])
           &window,
           [&](tactical::hla::RemoteSimulationControl control,
               double simulationTimeSeconds) {
+            if (!hlaSession.isActive()) return;
             const tactical::hla::Result result =
                 hlaSession.publishSimulationControl(
                     control, simulationTimeSeconds);
@@ -203,6 +204,7 @@ int main(int argc, char *argv[])
           &MainWindow::hlaTimeAdvanceRequested,
           &window,
           [&](double logicalTimeSeconds) {
+            if (!hlaSession.isActive()) return;
             const tactical::hla::Result result =
                 hlaSession.requestTimeAdvance(logicalTimeSeconds);
             if (!result.success) {
@@ -215,14 +217,38 @@ int main(int argc, char *argv[])
           });
       hlaPollTimer.setInterval(20);
       QObject::connect(&hlaPollTimer, &QTimer::timeout, &window, [&]() {
+        if (!hlaSession.isActive()) return;
         const tactical::hla::Result result = hlaSession.poll(0.0);
         if (!result.success) {
+          const QString detail = QString::fromStdString(result.message);
           qCritical().noquote()
               << "HLA callback polling failed:"
-              << QString::fromStdString(result.message);
+              << detail;
           hlaPollTimer.stop();
+          hlaPublishTimer.stop();
+          hlaSession.stop();
+          window.setHlaTimeManagementActive(false);
+          window.setHlaConnectionState(false, false, detail);
           window.setWindowTitle(
               window.windowTitle() + QStringLiteral(" [HLA callback error]"));
+          return;
+        }
+        const std::vector<tactical::hla::ConnectionLostEvent>
+            connectionLosses = hlaSession.takeConnectionLostEvents();
+        if (!connectionLosses.empty()) {
+          const QString reason = QString::fromStdString(
+              connectionLosses.back().reason).trimmed();
+          const QString detail = QStringLiteral("RTI connection lost: %1")
+              .arg(reason.isEmpty()
+                       ? QStringLiteral("no fault description provided")
+                       : reason);
+          qCritical().noquote() << detail;
+          hlaPollTimer.stop();
+          hlaPublishTimer.stop();
+          hlaSession.stop();
+          window.setHlaTimeManagementActive(false);
+          window.setHlaConnectionState(false, false, detail);
+          window.reportHlaSynchronizationStatus(detail);
           return;
         }
         window.applyHlaRemoteEntityChanges(
@@ -293,10 +319,11 @@ int main(int argc, char *argv[])
           window.applyHlaRemoteSimulationControl(control);
         }
       });
-      hlaPollTimer.start();
+      if (hlaSession.isActive()) hlaPollTimer.start();
 
       hlaPublishTimer.setInterval(100);
       QObject::connect(&hlaPublishTimer, &QTimer::timeout, &window, [&]() {
+        if (!hlaSession.isActive()) return;
         const QVector<Entity> entities = window.entitySnapshot();
         const qsizetype localEntityCount = std::count_if(
             entities.cbegin(), entities.cend(), [](const Entity& entity) {
@@ -305,10 +332,15 @@ int main(int argc, char *argv[])
         const tactical::hla::Result result =
             hlaSession.publishEntities(entities);
         if (!result.success) {
+          const QString detail = QString::fromStdString(result.message);
           qCritical().noquote()
               << "HLA entity publication failed:"
-              << QString::fromStdString(result.message);
+              << detail;
           hlaPublishTimer.stop();
+          hlaPollTimer.stop();
+          hlaSession.stop();
+          window.setHlaTimeManagementActive(false);
+          window.setHlaConnectionState(false, false, detail);
           window.setWindowTitle(
               window.windowTitle() + QStringLiteral(" [HLA publish error]"));
           return;
@@ -324,10 +356,16 @@ int main(int argc, char *argv[])
         const tactical::hla::Result detonationResult =
             hlaSession.publishDetonations(window.transientEffectSnapshot());
         if (!detonationResult.success) {
+          const QString detail =
+              QString::fromStdString(detonationResult.message);
           qCritical().noquote()
               << "HLA detonation publication failed:"
-              << QString::fromStdString(detonationResult.message);
+              << detail;
           hlaPublishTimer.stop();
+          hlaPollTimer.stop();
+          hlaSession.stop();
+          window.setHlaTimeManagementActive(false);
+          window.setHlaConnectionState(false, false, detail);
           window.setWindowTitle(
               window.windowTitle() + QStringLiteral(" [HLA detonation error]"));
           return;
@@ -335,10 +373,16 @@ int main(int argc, char *argv[])
         const tactical::hla::Result warfareResult =
             hlaSession.publishMunitions(window.activeMunitionSnapshot());
         if (!warfareResult.success) {
+          const QString detail =
+              QString::fromStdString(warfareResult.message);
           qCritical().noquote()
               << "HLA interaction publication failed:"
-              << QString::fromStdString(warfareResult.message);
+              << detail;
           hlaPublishTimer.stop();
+          hlaPollTimer.stop();
+          hlaSession.stop();
+          window.setHlaTimeManagementActive(false);
+          window.setHlaConnectionState(false, false, detail);
           window.setWindowTitle(
               window.windowTitle() + QStringLiteral(" [HLA interaction error]"));
           return;
@@ -346,15 +390,116 @@ int main(int argc, char *argv[])
         const tactical::hla::Result sensorResult =
             hlaSession.publishSensors(entities);
         if (!sensorResult.success) {
+          const QString detail = QString::fromStdString(sensorResult.message);
           qCritical().noquote()
               << "HLA sensor publication failed:"
-              << QString::fromStdString(sensorResult.message);
+              << detail;
           hlaPublishTimer.stop();
+          hlaPollTimer.stop();
+          hlaSession.stop();
+          window.setHlaTimeManagementActive(false);
+          window.setHlaConnectionState(false, false, detail);
           window.setWindowTitle(
               window.windowTitle() + QStringLiteral(" [HLA sensor error]"));
         }
       });
-      hlaPublishTimer.start();
+      if (hlaSession.isActive()) hlaPublishTimer.start();
+
+      const bool hlaBackendAvailable =
+          !startupConfiguration.hla.backendId.trimmed().isEmpty() &&
+          !startupConfiguration.hla.backendLibraryPath.trimmed().isEmpty() &&
+          QFileInfo::exists(startupConfiguration.hla.backendLibraryPath);
+      window.configureHlaConnection(
+          startupConfiguration.hla,
+          hlaBackendAvailable,
+          hlaSession.isActive());
+
+      QObject::connect(
+          &window,
+          &MainWindow::hlaConnectRequested,
+          &window,
+          [&](const QString& federationName, const QString& federateName) {
+            hlaPollTimer.stop();
+            hlaPublishTimer.stop();
+            lastPublishedEntityCount = -1;
+            achievedSynchronizationPoints.clear();
+            window.setHlaConnectionState(
+                false,
+                true,
+                QStringLiteral("Joining %1 as %2...")
+                    .arg(federationName, federateName));
+
+            startupConfiguration.federationMode =
+                application::FederationMode::Hla;
+            startupConfiguration.hla.federationName = federationName;
+            startupConfiguration.hla.federateName = federateName;
+            startupConfiguration.save(settings);
+            synchronizationPointLabel =
+                startupConfiguration.hla.synchronizationPointLabel.trimmed();
+
+            const tactical::hla::Result result =
+                hlaSession.start(startupConfiguration.hla);
+            if (!result.success) {
+              const QString detail = QString::fromStdString(result.message);
+              window.setHlaConnectionState(false, false, detail);
+              window.reportHlaSynchronizationStatus(
+                  QStringLiteral("connection failed: %1").arg(detail));
+              return;
+            }
+
+            if (!synchronizationPointLabel.isEmpty()) {
+              const tactical::hla::Result synchronizationResult =
+                  hlaSession.registerSynchronizationPoint(
+                      synchronizationPointLabel.toStdString());
+              window.reportHlaSynchronizationStatus(
+                  synchronizationResult.success
+                      ? QStringLiteral("registration requested for %1")
+                            .arg(synchronizationPointLabel)
+                      : QStringLiteral("registration failed for %1: %2")
+                            .arg(
+                                synchronizationPointLabel,
+                                QString::fromStdString(
+                                    synchronizationResult.message)));
+            }
+
+            window.setHlaTimeManagementActive(
+                hlaSession.isTimeManagementActive());
+            window.configureHlaConnection(
+                startupConfiguration.hla, true, true);
+            hlaPollTimer.start();
+            hlaPublishTimer.start();
+            qInfo().noquote()
+                << "HLA joined from connection panel:"
+                << startupConfiguration.hla.federateName
+                << "backend=" << startupConfiguration.hla.backendId
+                << "federation=" << startupConfiguration.hla.federationName;
+          });
+
+      QObject::connect(
+          &window,
+          &MainWindow::hlaDisconnectRequested,
+          &window,
+          [&]() {
+            hlaPollTimer.stop();
+            hlaPublishTimer.stop();
+            lastPublishedEntityCount = -1;
+            achievedSynchronizationPoints.clear();
+            const tactical::hla::Result result = hlaSession.stop();
+            window.setHlaTimeManagementActive(false);
+            if (!result.success) {
+              window.setHlaConnectionState(
+                  false,
+                  false,
+                  QString::fromStdString(result.message));
+              return;
+            }
+            window.setHlaConnectionState(
+                false,
+                false,
+                QString());
+            window.reportHlaSynchronizationStatus(
+                QStringLiteral("disconnected from federation"));
+          });
     }
 
     const int result = app.exec();

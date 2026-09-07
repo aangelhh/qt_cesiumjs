@@ -108,6 +108,7 @@ public:
   void onTimeAdvanceGranted(double logicalTimeSeconds) override;
   void onAttributeOwnershipChanged(
       const AttributeOwnershipEvent& event) override;
+  void onConnectionLost(const ConnectionLostEvent& event) override;
 
   std::vector<RemoteEntityChange> takeEntityChanges();
   std::vector<RemoteMunitionChange> takeMunitionChanges();
@@ -116,6 +117,7 @@ public:
   std::vector<RemoteSynchronizationChange> takeSynchronizationChanges();
   std::vector<RemoteTimeManagementEvent> takeTimeManagementEvents();
   std::vector<AttributeOwnershipEvent> takeOwnershipEvents();
+  std::vector<ConnectionLostEvent> takeConnectionLostEvents();
   std::vector<RemoteSimulationControl> takeSimulationControls();
 
 private:
@@ -153,6 +155,7 @@ private:
   std::vector<RemoteSynchronizationChange> _synchronizationChanges;
   std::vector<RemoteTimeManagementEvent> _timeManagementEvents;
   std::vector<AttributeOwnershipEvent> _ownershipEvents;
+  std::vector<ConnectionLostEvent> _connectionLostEvents;
   std::vector<RemoteSimulationControl> _simulationControls;
   std::unordered_set<std::string> _seenWarfareEvents;
 };
