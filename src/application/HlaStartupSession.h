@@ -11,6 +11,7 @@
 #include "domain/Munition.h"
 
 #include <memory>
+#include <optional>
 #include <QVector>
 
 namespace application {
@@ -30,17 +31,42 @@ public:
       takeRemoteMunitionChanges();
   std::vector<tactical::hla::RemoteSensorChange> takeRemoteSensorChanges();
   std::vector<tactical::hla::RemoteWarfareEvent> takeRemoteWarfareEvents();
+  std::vector<tactical::hla::RemoteSynchronizationChange>
+      takeRemoteSynchronizationChanges();
+  std::vector<tactical::hla::RemoteTimeManagementEvent>
+      takeRemoteTimeManagementEvents();
+  std::vector<tactical::hla::AttributeOwnershipEvent>
+      takeOwnershipEvents();
+  std::vector<tactical::hla::ConnectionLostEvent>
+      takeConnectionLostEvents();
   std::vector<tactical::hla::RemoteSimulationControl>
       takeRemoteSimulationControls();
   tactical::hla::Result publishSimulationControl(
       tactical::hla::RemoteSimulationControl control,
       double simulationTimeSeconds);
+  tactical::hla::Result registerSynchronizationPoint(
+      const std::string& label,
+      const tactical::hla::ByteBuffer& tag = {});
+  tactical::hla::Result achieveSynchronizationPoint(
+      const std::string& label);
+  tactical::hla::Result requestTimeAdvance(double logicalTimeSeconds);
+  tactical::hla::Result requestAttributeOwnershipAcquisition(
+      tactical::hla::ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames,
+      const tactical::hla::ByteBuffer& tag = {});
+  tactical::hla::Result unconditionalAttributeOwnershipDivestiture(
+      tactical::hla::ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames);
   tactical::hla::Result stop();
 
   bool isActive() const;
+  bool isTimeManagementActive() const;
+  double grantedLogicalTimeSeconds() const;
   QString backendId() const;
 
 private:
+  std::optional<double> publicationLogicalTimeSeconds() const;
+
   std::unique_ptr<tactical::hla::HlaRuntime> _runtime;
   std::unique_ptr<tactical::hla::HlaEntityPublisher> _entityPublisher;
   std::unique_ptr<tactical::hla::HlaWarfarePublisher> _warfarePublisher;
@@ -49,6 +75,10 @@ private:
       _simulationControlPublisher;
   std::unique_ptr<tactical::hla::HlaSensorPublisher> _sensorPublisher;
   QString _backendId;
+  bool _timeManagementActive = false;
+  bool _timeAdvancePending = false;
+  double _grantedLogicalTimeSeconds = 0.0;
+  double _timeLookaheadSeconds = 0.0;
 };
 
 } // namespace application

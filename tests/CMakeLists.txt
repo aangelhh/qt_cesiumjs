@@ -289,6 +289,23 @@ if(TARGET qflightinstruments OR QTTEST_HAS_MODERN_PFD)
     )
 endif()
 
+add_executable(qttest_hla_connection_panel_smoke
+    presentation/HlaConnectionPanelSmoke.cpp
+    ${CMAKE_SOURCE_DIR}/src/presentation/HlaConnectionPanel.cpp
+)
+target_include_directories(qttest_hla_connection_panel_smoke PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(qttest_hla_connection_panel_smoke PRIVATE Qt6::Widgets)
+add_test(
+    NAME HlaConnectionPanel.ManagesFederationControls
+    COMMAND qttest_hla_connection_panel_smoke
+)
+set_tests_properties(
+    HlaConnectionPanel.ManagesFederationControls
+    PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 if(TARGET libJSBSim)
     add_executable(qttest_jsbsim_control_smoke
         application/JsbsimFlightControlSmoke.cpp

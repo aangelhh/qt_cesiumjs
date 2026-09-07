@@ -38,8 +38,17 @@ public:
       ObjectInstanceId instanceId,
       const std::vector<NamedValue>& attributes,
       const ByteBuffer& tag = {}) = 0;
+  virtual Result updateObjectAttributesAtTime(
+      ObjectInstanceId instanceId,
+      const std::vector<NamedValue>& attributes,
+      double logicalTimeSeconds,
+      const ByteBuffer& tag = {}) = 0;
   virtual Result deleteObjectInstance(
       ObjectInstanceId instanceId,
+      const ByteBuffer& tag = {}) = 0;
+  virtual Result deleteObjectInstanceAtTime(
+      ObjectInstanceId instanceId,
+      double logicalTimeSeconds,
       const ByteBuffer& tag = {}) = 0;
   virtual Result publishInteractionClass(
       const std::string& interactionClassName) = 0;
@@ -50,6 +59,26 @@ public:
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag = {}) = 0;
+  virtual Result sendInteractionAtTime(
+      const std::string& interactionClassName,
+      const std::vector<NamedValue>& parameters,
+      double logicalTimeSeconds,
+      const ByteBuffer& tag = {}) = 0;
+  virtual Result registerSynchronizationPoint(
+      const std::string& label,
+      const ByteBuffer& tag = {}) = 0;
+  virtual Result achieveSynchronizationPoint(
+      const std::string& label) = 0;
+  virtual Result enableTimeRegulation(double lookaheadSeconds) = 0;
+  virtual Result enableTimeConstrained() = 0;
+  virtual Result requestTimeAdvance(double logicalTimeSeconds) = 0;
+  virtual Result requestAttributeOwnershipAcquisition(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames,
+      const ByteBuffer& tag = {}) = 0;
+  virtual Result unconditionalAttributeOwnershipDivestiture(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames) = 0;
   virtual Result poll(double maximumSeconds) = 0;
   virtual void setEventSink(IHlaEventSink* eventSink) = 0;
   virtual Result resign() = 0;

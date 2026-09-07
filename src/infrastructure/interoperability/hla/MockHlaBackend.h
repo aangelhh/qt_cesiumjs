@@ -11,11 +11,13 @@ public:
   struct AttributeUpdate {
     ObjectInstanceId instanceId = 0;
     std::vector<NamedValue> attributes;
+    std::optional<double> logicalTimeSeconds;
   };
 
   struct SentInteraction {
     std::string interactionClassName;
     std::vector<NamedValue> parameters;
+    std::optional<double> logicalTimeSeconds;
   };
 
   enum class Operation {
@@ -30,6 +32,13 @@ public:
     PublishInteractionClass,
     SubscribeInteractionClass,
     SendInteraction,
+    RegisterSynchronizationPoint,
+    AchieveSynchronizationPoint,
+    EnableTimeRegulation,
+    EnableTimeConstrained,
+    RequestTimeAdvance,
+    RequestAttributeOwnershipAcquisition,
+    UnconditionalAttributeOwnershipDivestiture,
     Poll,
     Resign,
     Disconnect
@@ -61,8 +70,17 @@ public:
       ObjectInstanceId instanceId,
       const std::vector<NamedValue>& attributes,
       const ByteBuffer& tag) override;
+  Result updateObjectAttributesAtTime(
+      ObjectInstanceId instanceId,
+      const std::vector<NamedValue>& attributes,
+      double logicalTimeSeconds,
+      const ByteBuffer& tag) override;
   Result deleteObjectInstance(
       ObjectInstanceId instanceId,
+      const ByteBuffer& tag) override;
+  Result deleteObjectInstanceAtTime(
+      ObjectInstanceId instanceId,
+      double logicalTimeSeconds,
       const ByteBuffer& tag) override;
   Result publishInteractionClass(
       const std::string& interactionClassName) override;
@@ -73,6 +91,25 @@ public:
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag) override;
+  Result sendInteractionAtTime(
+      const std::string& interactionClassName,
+      const std::vector<NamedValue>& parameters,
+      double logicalTimeSeconds,
+      const ByteBuffer& tag) override;
+  Result registerSynchronizationPoint(
+      const std::string& label,
+      const ByteBuffer& tag) override;
+  Result achieveSynchronizationPoint(const std::string& label) override;
+  Result enableTimeRegulation(double lookaheadSeconds) override;
+  Result enableTimeConstrained() override;
+  Result requestTimeAdvance(double logicalTimeSeconds) override;
+  Result requestAttributeOwnershipAcquisition(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames,
+      const ByteBuffer& tag) override;
+  Result unconditionalAttributeOwnershipDivestiture(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames) override;
   Result poll(double maximumSeconds) override;
   void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;
@@ -91,6 +128,13 @@ public:
   void emitObjectReflected(const RemoteObjectReflection& event);
   void emitObjectRemoved(const RemoteObjectRemoval& event);
   void emitInteraction(const RemoteInteraction& event);
+  void emitSynchronizationPointAnnounced(
+      const SynchronizationPointAnnouncement& event);
+  void emitFederationSynchronized(const std::string& label);
+  void emitTimeRegulationEnabled(double logicalTimeSeconds);
+  void emitTimeConstrainedEnabled(double logicalTimeSeconds);
+  void emitTimeAdvanceGranted(double logicalTimeSeconds);
+  void emitAttributeOwnershipChanged(const AttributeOwnershipEvent& event);
 
 private:
   Result begin(Operation operation);

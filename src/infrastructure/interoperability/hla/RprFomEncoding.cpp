@@ -6,11 +6,15 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace tactical::hla {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
+constexpr std::uint8_t kSpatialStatic = 1;
+constexpr std::uint8_t kSpatialFpw = 2;
+constexpr std::uint8_t kSpatialFpb = 6;
 
 void appendUnsigned16(ByteBuffer& output, std::uint16_t value) {
   output.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xffU));
@@ -185,6 +189,112 @@ std::array<float, 3> ecefEulerAngles(const RprEntityState& entity) {
       static_cast<float>(phi)};
 }
 
+std::array<float, 3> ecefVelocity(const RprEntityState& entity) {
+  const double latitude = entity.latitudeDegrees * kPi / 180.0;
+  const double longitude = entity.longitudeDegrees * kPi / 180.0;
+  const double heading = entity.headingDegrees * kPi / 180.0;
+  const double horizontalSpeed = std::max(0.0, entity.speedKnots) * 0.514444;
+  const double north = horizontalSpeed * std::cos(heading);
+  const double east = horizontalSpeed * std::sin(heading);
+  const double down = -entity.verticalSpeedMetersPerSecond;
+  const double sinLat = std::sin(latitude);
+  const double cosLat = std::cos(latitude);
+  const double sinLon = std::sin(longitude);
+  const double cosLon = std::cos(longitude);
+  return {
+      static_cast<float>(
+          -sinLat * cosLon * north - sinLon * east - cosLat * cosLon * down),
+      static_cast<float>(
+          -sinLat * sinLon * north + cosLon * east - cosLat * sinLon * down),
+      static_cast<float>(cosLat * north - sinLat * down)};
+}
+
+std::array<double, 3> ecefVelocityFromBody(
+    float psi,
+    float theta,
+    float phi,
+    const std::array<float, 3>& bodyVelocity) {
+  const double sinPsi = std::sin(psi);
+  const double cosPsi = std::cos(psi);
+  const double sinTheta = std::sin(theta);
+  const double cosTheta = std::cos(theta);
+  const double sinPhi = std::sin(phi);
+  const double cosPhi = std::cos(phi);
+  const double ecefFromBody[3][3] = {
+      {cosPsi * cosTheta,
+       cosPsi * sinTheta * sinPhi - sinPsi * cosPhi,
+       cosPsi * sinTheta * cosPhi + sinPsi * sinPhi},
+      {sinPsi * cosTheta,
+       sinPsi * sinTheta * sinPhi + cosPsi * cosPhi,
+       sinPsi * sinTheta * cosPhi - cosPsi * sinPhi},
+      {-sinTheta, cosTheta * sinPhi, cosTheta * cosPhi}};
+  std::array<double, 3> result = {};
+  for (int row = 0; row < 3; ++row) {
+    for (int column = 0; column < 3; ++column) {
+      result[row] += ecefFromBody[row][column] * bodyVelocity[column];
+    }
+  }
+  return result;
+}
+
+void decodeVelocity(
+    const ByteBuffer& value,
+    std::uint8_t algorithm,
+    double latitudeDegrees,
+    double longitudeDegrees,
+    float psi,
+    float theta,
+    float phi,
+    RprEntityState& entity) {
+  std::array<float, 3> encodedVelocity = {};
+  if (!readFloat32(value, 48, encodedVelocity[0]) ||
+      !readFloat32(value, 52, encodedVelocity[1]) ||
+      !readFloat32(value, 56, encodedVelocity[2])) {
+    return;
+  }
+  std::array<double, 3> worldVelocity = {
+      encodedVelocity[0], encodedVelocity[1], encodedVelocity[2]};
+  if (algorithm >= kSpatialFpb) {
+    worldVelocity = ecefVelocityFromBody(
+        psi, theta, phi, encodedVelocity);
+  }
+  const double latitude = latitudeDegrees * kPi / 180.0;
+  const double longitude = longitudeDegrees * kPi / 180.0;
+  const double cosLat = std::cos(latitude);
+  const double sinLat = std::sin(latitude);
+  const double cosLon = std::cos(longitude);
+  const double sinLon = std::sin(longitude);
+  const double north =
+      -sinLat * cosLon * worldVelocity[0] -
+      sinLat * sinLon * worldVelocity[1] + cosLat * worldVelocity[2];
+  const double east =
+      -sinLon * worldVelocity[0] + cosLon * worldVelocity[1];
+  const double up =
+      cosLat * cosLon * worldVelocity[0] +
+      cosLat * sinLon * worldVelocity[1] + sinLat * worldVelocity[2];
+  entity.speedKnots = std::hypot(north, east) / 0.514444;
+  entity.verticalSpeedMetersPerSecond = up;
+}
+
+std::size_t spatialVariantMinimumSize(std::uint8_t algorithm) {
+  switch (algorithm) {
+    case 1: return 48; // Static
+    case 2: // FPW
+    case 6: // FPB
+      return 60;
+    case 3: // RPW
+    case 5: // FVW
+    case 7: // RPB
+    case 9: // FVB
+      return 72;
+    case 4: // RVW
+    case 8: // RVB
+      return 84;
+    default:
+      return 0;
+  }
+}
+
 ByteBuffer encodeEntityType(const RprEntityState& entity) {
   ByteBuffer output;
   output.reserve(8);
@@ -217,11 +327,13 @@ ByteBuffer encodeSpatial(const RprEntityState& entity) {
       entity.longitudeDegrees,
       entity.altitudeMeters});
   const std::array<float, 3> orientation = ecefEulerAngles(entity);
+  const bool moving = entity.speedKnots > 0.001 ||
+      std::abs(entity.verticalSpeedMetersPerSecond) > 0.001;
 
   ByteBuffer output;
-  output.reserve(48);
-  output.push_back(1); // DeadReckoningAlgorithmEnum8::Static
-  output.insert(output.end(), 7, 0); // Align SpatialStaticStruct to Float64.
+  output.reserve(moving ? 60 : 48);
+  output.push_back(moving ? kSpatialFpw : kSpatialStatic);
+  output.insert(output.end(), 7, 0); // Align the variant payload to Float64.
   appendFloat64(output, ecef.xMeters);
   appendFloat64(output, ecef.yMeters);
   appendFloat64(output, ecef.zMeters);
@@ -230,6 +342,12 @@ ByteBuffer encodeSpatial(const RprEntityState& entity) {
   appendFloat32(output, orientation[0]);
   appendFloat32(output, orientation[1]);
   appendFloat32(output, orientation[2]);
+  if (moving) {
+    const std::array<float, 3> velocity = ecefVelocity(entity);
+    appendFloat32(output, velocity[0]);
+    appendFloat32(output, velocity[1]);
+    appendFloat32(output, velocity[2]);
+  }
   return output;
 }
 
@@ -253,7 +371,14 @@ ByteBuffer encodeDamage(const RprEntityState& entity) {
 
 ByteBuffer encodeMeasuredSpeed(double speedKnots) {
   ByteBuffer output;
-  appendFloat32(output, static_cast<float>(speedKnots * 0.514444));
+  const double safeSpeedKnots =
+      std::isfinite(speedKnots) ? std::max(0.0, speedKnots) : 0.0;
+  const double decimetersPerSecond = safeSpeedKnots * 0.514444 * 10.0;
+  const auto encoded = static_cast<std::uint16_t>(std::lround(std::clamp(
+      decimetersPerSecond,
+      0.0,
+      static_cast<double>(std::numeric_limits<std::uint16_t>::max()))));
+  appendUnsigned16(output, encoded);
   return output;
 }
 
@@ -355,9 +480,12 @@ Result RprFomEncoding::decodeAttributes(
     entity.extra = (*value)[7];
   }
   if (const ByteBuffer* value = findValue(attributes, "Spatial")) {
-    if (value->size() < 48 || (*value)[0] != 1) {
+    const std::uint8_t algorithm = value->empty() ? 0 : (*value)[0];
+    const std::size_t minimumSize = spatialVariantMinimumSize(algorithm);
+    if (minimumSize == 0 || value->size() < minimumSize) {
       return Result::failure("Unsupported RPR Spatial representation");
     }
+    entity.deadReckoningAlgorithm = algorithm;
     double x = 0.0;
     double y = 0.0;
     double z = 0.0;
@@ -376,6 +504,20 @@ Result RprFomEncoding::decodeAttributes(
     entity.altitudeMeters = position.altitudeMeters;
     decodeLocalAttitude(
         position.latitude, position.longitude, psi, theta, phi, entity);
+    if (algorithm != kSpatialStatic) {
+      decodeVelocity(
+          *value,
+          algorithm,
+          position.latitude,
+          position.longitude,
+          psi,
+          theta,
+          phi,
+          entity);
+    } else {
+      entity.speedKnots = 0.0;
+      entity.verticalSpeedMetersPerSecond = 0.0;
+    }
   }
   if (const ByteBuffer* value = findValue(attributes, "DamageState")) {
     std::uint32_t damage = 0;
@@ -391,11 +533,11 @@ Result RprFomEncoding::decodeAttributes(
     entity.forceIdentifier = value->front();
   }
   if (const ByteBuffer* value = findValue(attributes, "LiveEntityMeasuredSpeed")) {
-    float metersPerSecond = 0.0F;
-    if (!readFloat32(*value, 0, metersPerSecond)) {
+    std::uint16_t decimetersPerSecond = 0;
+    if (!readUnsigned16(*value, 0, decimetersPerSecond)) {
       return Result::failure("Invalid RPR LiveEntityMeasuredSpeed");
     }
-    entity.speedKnots = metersPerSecond / 0.514444;
+    entity.speedKnots = decimetersPerSecond / 10.0 / 0.514444;
   }
   if (const ByteBuffer* value = findValue(attributes, "Marking")) {
     if (value->size() < 2) return Result::failure("Invalid RPR Marking");

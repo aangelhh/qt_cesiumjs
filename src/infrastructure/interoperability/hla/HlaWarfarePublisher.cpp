@@ -154,7 +154,8 @@ HlaWarfarePublisher::HlaWarfarePublisher(HlaRuntime& runtime)
     : _runtime(runtime) {}
 
 Result HlaWarfarePublisher::synchronize(
-    const std::vector<RprWeaponFireState>& activeMunitions) {
+    const std::vector<RprWeaponFireState>& activeMunitions,
+    std::optional<double> logicalTimeSeconds) {
   std::unordered_set<std::string> activeIds;
   for (const RprWeaponFireState& munition : activeMunitions) {
     if (munition.stableId.empty()) continue;
@@ -174,18 +175,29 @@ Result HlaWarfarePublisher::synchronize(
       registered = _registeredMunitions.emplace(
           munition.stableId, value).first;
     }
-    result = _runtime.updateObjectAttributes(
-        registered->second.instanceId,
-        RprFomEncoding::encodeAttributes(
-            munitionEntityState(munition),
-            1,
-            1,
-            registered->second.entityNumber));
+    const std::vector<NamedValue> attributes = RprFomEncoding::encodeAttributes(
+        munitionEntityState(munition),
+        1,
+        1,
+        registered->second.entityNumber);
+    result = logicalTimeSeconds
+        ? _runtime.updateObjectAttributesAtTime(
+              registered->second.instanceId,
+              attributes,
+              *logicalTimeSeconds)
+        : _runtime.updateObjectAttributes(
+              registered->second.instanceId, attributes);
     if (!result.success) return result;
     if (_sentMunitionIds.count(munition.stableId) == 0) {
-      result = _runtime.sendInteraction(
-          "HLAinteractionRoot.WeaponFire",
-          this->encodeWeaponFire(munition, _nextEventNumber));
+      const std::vector<NamedValue> parameters =
+          this->encodeWeaponFire(munition, _nextEventNumber);
+      result = logicalTimeSeconds
+          ? _runtime.sendInteractionAtTime(
+                "HLAinteractionRoot.WeaponFire",
+                parameters,
+                *logicalTimeSeconds)
+          : _runtime.sendInteraction(
+                "HLAinteractionRoot.WeaponFire", parameters);
       if (!result.success) return result;
       _fireCorrelations[munition.stableId] = {
           _nextEventNumber,
@@ -201,8 +213,10 @@ Result HlaWarfarePublisher::synchronize(
       ++iterator;
       continue;
     }
-    const Result result = _runtime.deleteObjectInstance(
-        iterator->second.instanceId);
+    const Result result = logicalTimeSeconds
+        ? _runtime.deleteObjectInstanceAtTime(
+              iterator->second.instanceId, *logicalTimeSeconds)
+        : _runtime.deleteObjectInstance(iterator->second.instanceId);
     if (!result.success) return result;
     iterator = _registeredMunitions.erase(iterator);
   }
@@ -210,7 +224,8 @@ Result HlaWarfarePublisher::synchronize(
 }
 
 Result HlaWarfarePublisher::synchronizeDetonations(
-    const std::vector<RprMunitionDetonationState>& detonations) {
+    const std::vector<RprMunitionDetonationState>& detonations,
+    std::optional<double> logicalTimeSeconds) {
   for (const RprMunitionDetonationState& detonation : detonations) {
     if (detonation.effectId.empty() ||
         _sentDetonationIds.count(detonation.effectId) != 0) {
@@ -228,9 +243,15 @@ Result HlaWarfarePublisher::synchronizeDetonations(
     if (correlation != _fireCorrelations.end()) {
       eventNumber = correlation->second.eventNumber;
     }
-    const Result result = _runtime.sendInteraction(
-        "HLAinteractionRoot.MunitionDetonation",
-        this->encodeDetonation(detonation, eventNumber));
+    const std::vector<NamedValue> parameters =
+        this->encodeDetonation(detonation, eventNumber);
+    const Result result = logicalTimeSeconds
+        ? _runtime.sendInteractionAtTime(
+              "HLAinteractionRoot.MunitionDetonation",
+              parameters,
+              *logicalTimeSeconds)
+        : _runtime.sendInteraction(
+              "HLAinteractionRoot.MunitionDetonation", parameters);
     if (!result.success) return result;
     _sentDetonationIds.insert(detonation.effectId);
     const bool standaloneDetonation = correlation == _fireCorrelations.end();

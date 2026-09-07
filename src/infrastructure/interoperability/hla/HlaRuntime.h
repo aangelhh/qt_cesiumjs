@@ -29,8 +29,17 @@ public:
       ObjectInstanceId instanceId,
       const std::vector<NamedValue>& attributes,
       const ByteBuffer& tag = {});
+  Result updateObjectAttributesAtTime(
+      ObjectInstanceId instanceId,
+      const std::vector<NamedValue>& attributes,
+      double logicalTimeSeconds,
+      const ByteBuffer& tag = {});
   Result deleteObjectInstance(
       ObjectInstanceId instanceId,
+      const ByteBuffer& tag = {});
+  Result deleteObjectInstanceAtTime(
+      ObjectInstanceId instanceId,
+      double logicalTimeSeconds,
       const ByteBuffer& tag = {});
   Result publishInteractionClass(const std::string& interactionClassName);
   Result subscribeInteractionClass(
@@ -40,6 +49,25 @@ public:
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag = {});
+  Result sendInteractionAtTime(
+      const std::string& interactionClassName,
+      const std::vector<NamedValue>& parameters,
+      double logicalTimeSeconds,
+      const ByteBuffer& tag = {});
+  Result registerSynchronizationPoint(
+      const std::string& label,
+      const ByteBuffer& tag = {});
+  Result achieveSynchronizationPoint(const std::string& label);
+  Result enableTimeRegulation(double lookaheadSeconds);
+  Result enableTimeConstrained();
+  Result requestTimeAdvance(double logicalTimeSeconds);
+  Result requestAttributeOwnershipAcquisition(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames,
+      const ByteBuffer& tag = {});
+  Result unconditionalAttributeOwnershipDivestiture(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames);
   Result poll(double maximumSeconds);
   void setEventSink(IHlaEventSink* eventSink);
   Result stop();

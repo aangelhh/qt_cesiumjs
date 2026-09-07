@@ -5,6 +5,8 @@
 
 #include <utility>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 
 namespace application {
 
@@ -147,6 +149,53 @@ tactical::hla::Result HlaStartupSession::start(
       std::make_unique<tactical::hla::HlaSimulationControlPublisher>(*_runtime);
   _sensorPublisher =
       std::make_unique<tactical::hla::HlaSensorPublisher>(*_runtime);
+  if (configuration.timeManagementEnabled) {
+    const auto awaitTimeEvent =
+        [this](tactical::hla::RemoteTimeManagementEventKind expectedKind) {
+          const auto deadline = std::chrono::steady_clock::now() +
+                                std::chrono::seconds(3);
+          while (std::chrono::steady_clock::now() < deadline) {
+            const tactical::hla::Result pollResult = _runtime->poll(0.05);
+            if (!pollResult.success) return pollResult;
+            for (const tactical::hla::RemoteTimeManagementEvent& event :
+                 _inboundAdapter->takeTimeManagementEvents()) {
+              _grantedLogicalTimeSeconds = event.logicalTimeSeconds;
+              if (event.kind == expectedKind) {
+                return tactical::hla::Result::ok();
+              }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+          }
+          return tactical::hla::Result::failure(
+              "Timed out enabling HLA time management");
+        };
+
+    tactical::hla::Result timeResult = _runtime->enableTimeRegulation(
+        configuration.timeLookaheadSeconds);
+    if (!timeResult.success) {
+      this->stop();
+      return timeResult;
+    }
+    timeResult = awaitTimeEvent(
+        tactical::hla::RemoteTimeManagementEventKind::RegulationEnabled);
+    if (!timeResult.success) {
+      this->stop();
+      return timeResult;
+    }
+    timeResult = _runtime->enableTimeConstrained();
+    if (!timeResult.success) {
+      this->stop();
+      return timeResult;
+    }
+    timeResult = awaitTimeEvent(
+        tactical::hla::RemoteTimeManagementEventKind::ConstrainedEnabled);
+    if (!timeResult.success) {
+      this->stop();
+      return timeResult;
+    }
+    _timeLookaheadSeconds = configuration.timeLookaheadSeconds;
+    _timeManagementActive = true;
+  }
   return tactical::hla::Result::ok();
 }
 
@@ -174,6 +223,43 @@ HlaStartupSession::takeRemoteWarfareEvents() {
                          : std::vector<tactical::hla::RemoteWarfareEvent>{};
 }
 
+std::vector<tactical::hla::RemoteSynchronizationChange>
+HlaStartupSession::takeRemoteSynchronizationChanges() {
+  return _inboundAdapter
+      ? _inboundAdapter->takeSynchronizationChanges()
+      : std::vector<tactical::hla::RemoteSynchronizationChange>{};
+}
+
+std::vector<tactical::hla::RemoteTimeManagementEvent>
+HlaStartupSession::takeRemoteTimeManagementEvents() {
+  std::vector<tactical::hla::RemoteTimeManagementEvent> events =
+      _inboundAdapter
+          ? _inboundAdapter->takeTimeManagementEvents()
+          : std::vector<tactical::hla::RemoteTimeManagementEvent>{};
+  for (const tactical::hla::RemoteTimeManagementEvent& event : events) {
+    if (event.kind ==
+        tactical::hla::RemoteTimeManagementEventKind::AdvanceGranted) {
+      _grantedLogicalTimeSeconds = event.logicalTimeSeconds;
+      _timeAdvancePending = false;
+    }
+  }
+  return events;
+}
+
+std::vector<tactical::hla::AttributeOwnershipEvent>
+HlaStartupSession::takeOwnershipEvents() {
+  return _inboundAdapter
+      ? _inboundAdapter->takeOwnershipEvents()
+      : std::vector<tactical::hla::AttributeOwnershipEvent>{};
+}
+
+std::vector<tactical::hla::ConnectionLostEvent>
+HlaStartupSession::takeConnectionLostEvents() {
+  return _inboundAdapter
+      ? _inboundAdapter->takeConnectionLostEvents()
+      : std::vector<tactical::hla::ConnectionLostEvent>{};
+}
+
 std::vector<tactical::hla::RemoteSimulationControl>
 HlaStartupSession::takeRemoteSimulationControls() {
   return _inboundAdapter ? _inboundAdapter->takeSimulationControls()
@@ -188,6 +274,61 @@ tactical::hla::Result HlaStartupSession::publishSimulationControl(
         "HLA simulation control publisher is not active");
   }
   return _simulationControlPublisher->publish(control, simulationTimeSeconds);
+}
+
+tactical::hla::Result HlaStartupSession::registerSynchronizationPoint(
+    const std::string& label,
+    const tactical::hla::ByteBuffer& tag) {
+  return _runtime
+      ? _runtime->registerSynchronizationPoint(label, tag)
+      : tactical::hla::Result::failure("HLA session is not active");
+}
+
+tactical::hla::Result HlaStartupSession::achieveSynchronizationPoint(
+    const std::string& label) {
+  return _runtime
+      ? _runtime->achieveSynchronizationPoint(label)
+      : tactical::hla::Result::failure("HLA session is not active");
+}
+
+tactical::hla::Result HlaStartupSession::requestTimeAdvance(
+    double logicalTimeSeconds) {
+  if (!_runtime || !_timeManagementActive) {
+    return tactical::hla::Result::failure(
+        "HLA time management is not active");
+  }
+  if (_timeAdvancePending) {
+    return tactical::hla::Result::failure(
+        "An HLA time advance request is already pending");
+  }
+  if (logicalTimeSeconds <= _grantedLogicalTimeSeconds) {
+    return tactical::hla::Result::failure(
+        "HLA requested time must be greater than granted time");
+  }
+  const tactical::hla::Result result =
+      _runtime->requestTimeAdvance(logicalTimeSeconds);
+  if (result.success) _timeAdvancePending = true;
+  return result;
+}
+
+tactical::hla::Result HlaStartupSession::requestAttributeOwnershipAcquisition(
+    tactical::hla::ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames,
+    const tactical::hla::ByteBuffer& tag) {
+  return _runtime
+      ? _runtime->requestAttributeOwnershipAcquisition(
+            instanceId, attributeNames, tag)
+      : tactical::hla::Result::failure("HLA session is not active");
+}
+
+tactical::hla::Result
+HlaStartupSession::unconditionalAttributeOwnershipDivestiture(
+    tactical::hla::ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames) {
+  return _runtime
+      ? _runtime->unconditionalAttributeOwnershipDivestiture(
+            instanceId, attributeNames)
+      : tactical::hla::Result::failure("HLA session is not active");
 }
 
 tactical::hla::Result HlaStartupSession::poll(double maximumSeconds) {
@@ -234,11 +375,14 @@ tactical::hla::Result HlaStartupSession::publishEntities(
     state.pitchDegrees = entity.pitchDegrees;
     state.rollDegrees = entity.rollDegrees;
     state.speedKnots = entity.speedKnots;
+    state.verticalSpeedMetersPerSecond =
+        entity.verticalSpeedMetersPerSecond;
     state.damagePercent = entity.damagePercent;
     state.destroyed = entity.destroyed;
     states.push_back(std::move(state));
   }
-  return _entityPublisher->synchronize(states);
+  return _entityPublisher->synchronize(
+      states, this->publicationLogicalTimeSeconds());
 }
 
 tactical::hla::Result HlaStartupSession::publishMunitions(
@@ -271,7 +415,8 @@ tactical::hla::Result HlaStartupSession::publishMunitions(
     state.speedMetersPerSecond = munition.speedMetersPerSecond;
     states.push_back(std::move(state));
   }
-  return _warfarePublisher->synchronize(states);
+  return _warfarePublisher->synchronize(
+      states, this->publicationLogicalTimeSeconds());
 }
 
 tactical::hla::Result HlaStartupSession::publishDetonations(
@@ -297,7 +442,8 @@ tactical::hla::Result HlaStartupSession::publishDetonations(
     state.altitudeMeters = effect.altitudeMeters;
     states.push_back(std::move(state));
   }
-  return _warfarePublisher->synchronizeDetonations(states);
+  return _warfarePublisher->synchronizeDetonations(
+      states, this->publicationLogicalTimeSeconds());
 }
 
 tactical::hla::Result HlaStartupSession::publishSensors(
@@ -353,10 +499,20 @@ tactical::hla::Result HlaStartupSession::publishSensors(
       states.push_back(std::move(state));
     }
   }
-  return _sensorPublisher->synchronize(states);
+  return _sensorPublisher->synchronize(
+      states, this->publicationLogicalTimeSeconds());
+}
+
+std::optional<double> HlaStartupSession::publicationLogicalTimeSeconds() const {
+  if (!_timeManagementActive) return std::nullopt;
+  return _grantedLogicalTimeSeconds + _timeLookaheadSeconds;
 }
 
 tactical::hla::Result HlaStartupSession::stop() {
+  _timeManagementActive = false;
+  _timeAdvancePending = false;
+  _grantedLogicalTimeSeconds = 0.0;
+  _timeLookaheadSeconds = 0.0;
   if (!_runtime) {
     return tactical::hla::Result::ok();
   }
@@ -384,6 +540,14 @@ tactical::hla::Result HlaStartupSession::stop() {
 bool HlaStartupSession::isActive() const {
   return _runtime &&
       _runtime->state() == tactical::hla::BackendState::Joined;
+}
+
+bool HlaStartupSession::isTimeManagementActive() const {
+  return _timeManagementActive;
+}
+
+double HlaStartupSession::grantedLogicalTimeSeconds() const {
+  return _grantedLogicalTimeSeconds;
 }
 
 QString HlaStartupSession::backendId() const {

@@ -19,12 +19,14 @@ struct RemoteEntityChange {
   ObjectInstanceId instanceId = 0;
   RprEntityState state;
   bool removed = false;
+  ReceiveMetadata receiveMetadata;
 };
 
 struct RemoteMunitionChange {
   ObjectInstanceId instanceId = 0;
   RprEntityState state;
   bool removed = false;
+  ReceiveMetadata receiveMetadata;
 };
 
 struct RemoteSensorChange {
@@ -61,6 +63,27 @@ struct RemoteWarfareEvent {
   double altitudeMeters = 0.0;
 };
 
+struct RemoteSynchronizationChange {
+  std::string label;
+  ByteBuffer tag;
+  bool federationSynchronized = false;
+  bool registrationCompleted = false;
+  bool registrationSucceeded = false;
+  std::string reason;
+};
+
+enum class RemoteTimeManagementEventKind {
+  RegulationEnabled,
+  ConstrainedEnabled,
+  AdvanceGranted
+};
+
+struct RemoteTimeManagementEvent {
+  RemoteTimeManagementEventKind kind =
+      RemoteTimeManagementEventKind::AdvanceGranted;
+  double logicalTimeSeconds = 0.0;
+};
+
 class HlaInboundAdapter final : public IHlaEventSink {
 public:
   enum class RemoteObjectKind {
@@ -75,14 +98,33 @@ public:
   void onObjectReflected(const RemoteObjectReflection& event) override;
   void onObjectRemoved(const RemoteObjectRemoval& event) override;
   void onInteractionReceived(const RemoteInteraction& event) override;
+  void onSynchronizationPointRegistrationResult(
+      const SynchronizationPointRegistrationResult& event) override;
+  void onSynchronizationPointAnnounced(
+      const SynchronizationPointAnnouncement& event) override;
+  void onFederationSynchronized(const std::string& label) override;
+  void onTimeRegulationEnabled(double logicalTimeSeconds) override;
+  void onTimeConstrainedEnabled(double logicalTimeSeconds) override;
+  void onTimeAdvanceGranted(double logicalTimeSeconds) override;
+  void onAttributeOwnershipChanged(
+      const AttributeOwnershipEvent& event) override;
+  void onConnectionLost(const ConnectionLostEvent& event) override;
 
   std::vector<RemoteEntityChange> takeEntityChanges();
   std::vector<RemoteMunitionChange> takeMunitionChanges();
   std::vector<RemoteSensorChange> takeSensorChanges();
   std::vector<RemoteWarfareEvent> takeWarfareEvents();
+  std::vector<RemoteSynchronizationChange> takeSynchronizationChanges();
+  std::vector<RemoteTimeManagementEvent> takeTimeManagementEvents();
+  std::vector<AttributeOwnershipEvent> takeOwnershipEvents();
+  std::vector<ConnectionLostEvent> takeConnectionLostEvents();
   std::vector<RemoteSimulationControl> takeSimulationControls();
 
 private:
+  bool shouldApply(
+      ObjectInstanceId instanceId,
+      const ReceiveMetadata& metadata);
+
   struct RemoteObject {
     RemoteObjectKind kind = RemoteObjectKind::Unsupported;
     std::string instanceName;
@@ -91,6 +133,7 @@ private:
   struct RemoteEntity {
     RprEntityState state;
     bool dirty = false;
+    ReceiveMetadata receiveMetadata;
   };
 
   struct RemoteEmitter {
@@ -104,10 +147,15 @@ private:
   std::unordered_map<ObjectInstanceId, RemoteEmitter> _emitters;
   std::unordered_map<std::string, ObjectInstanceId> _emitterIdsByName;
   std::unordered_map<ObjectInstanceId, ObjectInstanceId> _beamEmitterIds;
+  std::unordered_map<ObjectInstanceId, double> _lastLogicalTimes;
   std::vector<RemoteEntityChange> _removedEntities;
   std::vector<RemoteMunitionChange> _removedMunitions;
   std::vector<RemoteSensorChange> _sensorChanges;
   std::vector<RemoteWarfareEvent> _warfareEvents;
+  std::vector<RemoteSynchronizationChange> _synchronizationChanges;
+  std::vector<RemoteTimeManagementEvent> _timeManagementEvents;
+  std::vector<AttributeOwnershipEvent> _ownershipEvents;
+  std::vector<ConnectionLostEvent> _connectionLostEvents;
   std::vector<RemoteSimulationControl> _simulationControls;
   std::unordered_set<std::string> _seenWarfareEvents;
 };

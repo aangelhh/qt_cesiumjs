@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -42,6 +43,16 @@ struct NamedValue {
   ByteBuffer value;
 };
 
+enum class DeliveryOrder {
+  Receive,
+  Timestamp
+};
+
+struct ReceiveMetadata {
+  DeliveryOrder order = DeliveryOrder::Receive;
+  std::optional<double> logicalTimeSeconds;
+};
+
 struct RemoteObjectDiscovery {
   ObjectInstanceId instanceId = 0;
   std::string objectClassName;
@@ -52,17 +63,79 @@ struct RemoteObjectReflection {
   ObjectInstanceId instanceId = 0;
   std::vector<NamedValue> attributes;
   ByteBuffer tag;
+  ReceiveMetadata receiveMetadata;
+
+  RemoteObjectReflection() = default;
+  RemoteObjectReflection(
+      ObjectInstanceId instanceIdValue,
+      std::vector<NamedValue> attributeValues,
+      ByteBuffer tagValue,
+      ReceiveMetadata metadata = {})
+      : instanceId(instanceIdValue),
+        attributes(std::move(attributeValues)),
+        tag(std::move(tagValue)),
+        receiveMetadata(std::move(metadata)) {}
 };
 
 struct RemoteObjectRemoval {
   ObjectInstanceId instanceId = 0;
   ByteBuffer tag;
+  ReceiveMetadata receiveMetadata;
+
+  RemoteObjectRemoval() = default;
+  RemoteObjectRemoval(
+      ObjectInstanceId instanceIdValue,
+      ByteBuffer tagValue,
+      ReceiveMetadata metadata = {})
+      : instanceId(instanceIdValue),
+        tag(std::move(tagValue)),
+        receiveMetadata(std::move(metadata)) {}
 };
 
 struct RemoteInteraction {
   std::string interactionClassName;
   std::vector<NamedValue> parameters;
   ByteBuffer tag;
+  ReceiveMetadata receiveMetadata;
+
+  RemoteInteraction() = default;
+  RemoteInteraction(
+      std::string className,
+      std::vector<NamedValue> parameterValues,
+      ByteBuffer tagValue,
+      ReceiveMetadata metadata = {})
+      : interactionClassName(std::move(className)),
+        parameters(std::move(parameterValues)),
+        tag(std::move(tagValue)),
+        receiveMetadata(std::move(metadata)) {}
+};
+
+struct SynchronizationPointAnnouncement {
+  std::string label;
+  ByteBuffer tag;
+};
+
+struct SynchronizationPointRegistrationResult {
+  std::string label;
+  bool succeeded = false;
+  std::string reason;
+};
+
+enum class OwnershipEventKind {
+  Acquired,
+  Unavailable,
+  ReleaseRequested
+};
+
+struct AttributeOwnershipEvent {
+  OwnershipEventKind kind = OwnershipEventKind::Unavailable;
+  ObjectInstanceId instanceId = 0;
+  std::vector<std::string> attributeNames;
+  ByteBuffer tag;
+};
+
+struct ConnectionLostEvent {
+  std::string reason;
 };
 
 class IHlaEventSink {
@@ -72,6 +145,17 @@ public:
   virtual void onObjectReflected(const RemoteObjectReflection& event) = 0;
   virtual void onObjectRemoved(const RemoteObjectRemoval& event) = 0;
   virtual void onInteractionReceived(const RemoteInteraction& event) = 0;
+  virtual void onSynchronizationPointRegistrationResult(
+      const SynchronizationPointRegistrationResult& event) = 0;
+  virtual void onSynchronizationPointAnnounced(
+      const SynchronizationPointAnnouncement& event) = 0;
+  virtual void onFederationSynchronized(const std::string& label) = 0;
+  virtual void onTimeRegulationEnabled(double logicalTimeSeconds) = 0;
+  virtual void onTimeConstrainedEnabled(double logicalTimeSeconds) = 0;
+  virtual void onTimeAdvanceGranted(double logicalTimeSeconds) = 0;
+  virtual void onAttributeOwnershipChanged(
+      const AttributeOwnershipEvent& event) = 0;
+  virtual void onConnectionLost(const ConnectionLostEvent& event) = 0;
 };
 
 } // namespace tactical::hla

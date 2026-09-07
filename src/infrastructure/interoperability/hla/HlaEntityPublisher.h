@@ -4,6 +4,7 @@
 #include "infrastructure/interoperability/hla/RprFomEncoding.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -15,7 +16,9 @@ class HlaEntityPublisher {
 public:
   explicit HlaEntityPublisher(HlaRuntime& runtime);
 
-  Result synchronize(const std::vector<RprEntityState>& entities);
+  Result synchronize(
+      const std::vector<RprEntityState>& entities,
+      std::optional<double> logicalTimeSeconds = std::nullopt);
   Result removeAll();
   std::size_t registeredObjectCount() const;
 

@@ -1,5 +1,7 @@
 #include "infrastructure/interoperability/hla/HlaRuntime.h"
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace tactical::hla {
@@ -106,6 +108,21 @@ Result HlaRuntime::updateObjectAttributes(
   return _backend->updateObjectAttributes(instanceId, attributes, tag);
 }
 
+Result HlaRuntime::updateObjectAttributesAtTime(
+    ObjectInstanceId instanceId,
+    const std::vector<NamedValue>& attributes,
+    double logicalTimeSeconds,
+    const ByteBuffer& tag) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (!std::isfinite(logicalTimeSeconds) || logicalTimeSeconds < 0.0) {
+    return Result::failure("HLA update time must be finite and non-negative");
+  }
+  return _backend->updateObjectAttributesAtTime(
+      instanceId, attributes, logicalTimeSeconds, tag);
+}
+
 Result HlaRuntime::deleteObjectInstance(
     ObjectInstanceId instanceId,
     const ByteBuffer& tag) {
@@ -113,6 +130,20 @@ Result HlaRuntime::deleteObjectInstance(
     return Result::failure("HLA federate is not joined");
   }
   return _backend->deleteObjectInstance(instanceId, tag);
+}
+
+Result HlaRuntime::deleteObjectInstanceAtTime(
+    ObjectInstanceId instanceId,
+    double logicalTimeSeconds,
+    const ByteBuffer& tag) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (!std::isfinite(logicalTimeSeconds) || logicalTimeSeconds < 0.0) {
+    return Result::failure("HLA deletion time must be finite and non-negative");
+  }
+  return _backend->deleteObjectInstanceAtTime(
+      instanceId, logicalTimeSeconds, tag);
 }
 
 Result HlaRuntime::publishInteractionClass(
@@ -141,6 +172,103 @@ Result HlaRuntime::sendInteraction(
     return Result::failure("HLA federate is not joined");
   }
   return _backend->sendInteraction(interactionClassName, parameters, tag);
+}
+
+Result HlaRuntime::sendInteractionAtTime(
+    const std::string& interactionClassName,
+    const std::vector<NamedValue>& parameters,
+    double logicalTimeSeconds,
+    const ByteBuffer& tag) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (!std::isfinite(logicalTimeSeconds) || logicalTimeSeconds < 0.0) {
+    return Result::failure("HLA interaction time must be finite and non-negative");
+  }
+  return _backend->sendInteractionAtTime(
+      interactionClassName, parameters, logicalTimeSeconds, tag);
+}
+
+Result HlaRuntime::requestAttributeOwnershipAcquisition(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames,
+    const ByteBuffer& tag) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (instanceId == 0 || attributeNames.empty() ||
+      std::any_of(attributeNames.begin(), attributeNames.end(),
+                  [](const std::string& name) { return name.empty(); })) {
+    return Result::failure(
+        "HLA ownership acquisition requires an object and attributes");
+  }
+  return _backend->requestAttributeOwnershipAcquisition(
+      instanceId, attributeNames, tag);
+}
+
+Result HlaRuntime::unconditionalAttributeOwnershipDivestiture(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (instanceId == 0 || attributeNames.empty() ||
+      std::any_of(attributeNames.begin(), attributeNames.end(),
+                  [](const std::string& name) { return name.empty(); })) {
+    return Result::failure(
+        "HLA ownership divestiture requires an object and attributes");
+  }
+  return _backend->unconditionalAttributeOwnershipDivestiture(
+      instanceId, attributeNames);
+}
+
+Result HlaRuntime::registerSynchronizationPoint(
+    const std::string& label,
+    const ByteBuffer& tag) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (label.empty()) {
+    return Result::failure("HLA synchronization point label is required");
+  }
+  return _backend->registerSynchronizationPoint(label, tag);
+}
+
+Result HlaRuntime::achieveSynchronizationPoint(const std::string& label) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (label.empty()) {
+    return Result::failure("HLA synchronization point label is required");
+  }
+  return _backend->achieveSynchronizationPoint(label);
+}
+
+Result HlaRuntime::enableTimeRegulation(double lookaheadSeconds) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (!std::isfinite(lookaheadSeconds) || lookaheadSeconds <= 0.0) {
+    return Result::failure("HLA time lookahead must be positive and finite");
+  }
+  return _backend->enableTimeRegulation(lookaheadSeconds);
+}
+
+Result HlaRuntime::enableTimeConstrained() {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  return _backend->enableTimeConstrained();
+}
+
+Result HlaRuntime::requestTimeAdvance(double logicalTimeSeconds) {
+  if (!_backend || _backend->state() != BackendState::Joined) {
+    return Result::failure("HLA federate is not joined");
+  }
+  if (!std::isfinite(logicalTimeSeconds) || logicalTimeSeconds < 0.0) {
+    return Result::failure("HLA requested logical time must be finite and non-negative");
+  }
+  return _backend->requestTimeAdvance(logicalTimeSeconds);
 }
 
 void HlaRuntime::setEventSink(IHlaEventSink* eventSink) {

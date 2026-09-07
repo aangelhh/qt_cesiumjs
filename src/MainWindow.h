@@ -19,6 +19,7 @@
 #include "application/AttackTaskProcessor.h"
 #include "application/CockpitControlService.h"
 #include "application/SimulationEngine.h"
+#include "application/StartupConfiguration.h"
 #include "presentation/BombReleaseController.h"
 #include "presentation/EntityPlanExecutor.h"
 #include "presentation/GraphicPickCoordinator.h"
@@ -64,6 +65,7 @@ class EntityPlanDialog;
 class EntityPlanExecutor;
 class EntityVisualStateManager;
 class GraphicPickCoordinator;
+class HlaConnectionPanel;
 class KinematicsCockpitWidget;
 class PlanStepConfigurator;
 }
@@ -96,11 +98,27 @@ public:
       const std::vector<tactical::hla::RemoteWarfareEvent>& events);
   void applyHlaRemoteSimulationControl(
       tactical::hla::RemoteSimulationControl control);
+  void reportHlaSynchronizationStatus(const QString& message);
+  void setHlaTimeManagementActive(bool active);
+  void applyHlaTimeAdvanceGrant(double logicalTimeSeconds);
+  void configureHlaConnection(
+      const application::HlaStartupConfiguration& configuration,
+      bool backendAvailable,
+      bool connected);
+  void setHlaConnectionState(
+      bool connected,
+      bool connecting,
+      const QString& detail = QString());
 
 signals:
   void hlaSimulationControlRequested(
       tactical::hla::RemoteSimulationControl control,
       double simulationTimeSeconds);
+  void hlaTimeAdvanceRequested(double logicalTimeSeconds);
+  void hlaConnectRequested(
+      const QString& federationName,
+      const QString& federateName);
+  void hlaDisconnectRequested();
 
 protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -227,6 +245,7 @@ private:
   void validatePendingBombRelease();
   void processAttackTasks(double deltaSeconds);
   void processAutoBombingBehaviors(double deltaSeconds);
+  void advanceSimulationTick(double deltaSeconds);
   void processPendingBombRelease();
   void openAssignTaskDialog(const QString& initialTaskType);
   void populateTaskCommands();
@@ -236,6 +255,7 @@ private:
   void beginGraphicCoordinatePick();
   void updateSimulationControls();
   void initializeKinematicsCockpit();
+  void initializeHlaConnectionPanel();
   void initializeRos2Telemetry();
   void configureRos2Telemetry();
   void refreshKinematicsCockpitForEntity(const struct Entity* entity);
@@ -302,6 +322,9 @@ private:
   presentation::KinematicsCockpitWidget* _qflightCockpitWidget;
   QDockWidget* _ecamCockpitDock;
   presentation::KinematicsCockpitWidget* _ecamCockpitWidget;
+  QDockWidget* _hlaConnectionDock;
+  presentation::HlaConnectionPanel* _hlaConnectionPanel;
+  QToolButton* _hlaStatusButton;
   infrastructure::Ros2TelemetryPublisher* _ros2TelemetryPublisher;
   std::uint64_t _kinematicsTelemetrySubscriptionId;
   MapBridge* _mapBridge;
@@ -326,6 +349,8 @@ private:
   bool _simulationRunning;
   bool _simulationStopped = true;
   bool _applyingHlaSimulationControl = false;
+  bool _hlaTimeManagementActive = false;
+  bool _hlaTimeAdvancePending = false;
   QList<QToolButton*> _taskQuickButtons;
   QSet<QString> _activeMunitionTrackNames;
   QSet<QString> _activeEffectTrackNames;

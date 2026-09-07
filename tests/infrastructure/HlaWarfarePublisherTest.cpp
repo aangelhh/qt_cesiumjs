@@ -157,3 +157,28 @@ TEST(HlaWarfarePublisher, SendsEachMunitionDetonationExactlyOnce) {
       "qttest.target-01");
   EXPECT_EQ(fireMunition->value, detonationMunition->value);
 }
+
+TEST(HlaWarfarePublisher, TimestampsMunitionStateAndWeaponFireTogether) {
+  auto backend = std::make_unique<tactical::hla::MockHlaBackend>();
+  tactical::hla::MockHlaBackend* backendView = backend.get();
+  tactical::hla::HlaRuntime runtime(std::move(backend));
+  tactical::hla::SessionConfiguration configuration;
+  configuration.federationName = "timestamped-warfare-test";
+  configuration.federateName = "warfare-01";
+  configuration.federateType = "qttest";
+  ASSERT_TRUE(runtime.start(configuration).success);
+  tactical::hla::HlaWarfarePublisher publisher(runtime);
+  tactical::hla::RprWeaponFireState munition;
+  munition.stableId = "missile-01";
+
+  ASSERT_TRUE(publisher.synchronize({munition}, 4.25).success);
+
+  ASSERT_EQ(backendView->attributeUpdates().size(), 1U);
+  ASSERT_TRUE(backendView->attributeUpdates().front().logicalTimeSeconds);
+  EXPECT_DOUBLE_EQ(
+      *backendView->attributeUpdates().front().logicalTimeSeconds, 4.25);
+  ASSERT_EQ(backendView->sentInteractions().size(), 1U);
+  ASSERT_TRUE(backendView->sentInteractions().front().logicalTimeSeconds);
+  EXPECT_DOUBLE_EQ(
+      *backendView->sentInteractions().front().logicalTimeSeconds, 4.25);
+}

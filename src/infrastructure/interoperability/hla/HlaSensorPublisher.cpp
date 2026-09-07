@@ -106,7 +106,8 @@ HlaSensorPublisher::HlaSensorPublisher(HlaRuntime& runtime)
     : _runtime(runtime) {}
 
 Result HlaSensorPublisher::synchronize(
-    const std::vector<RprSensorState>& sensors) {
+    const std::vector<RprSensorState>& sensors,
+    std::optional<double> logicalTimeSeconds) {
   std::unordered_set<std::string> activeKeys;
   for (const RprSensorState& sensor : sensors) {
     if (!sensor.enabled || sensor.entityStableId.empty() ||
@@ -127,9 +128,15 @@ Result HlaSensorPublisher::synchronize(
       if (!result.success) return result;
       iterator = _registeredSensors.emplace(key, registered).first;
     }
-    result = _runtime.updateObjectAttributes(
-        iterator->second.systemInstanceId,
-        this->encodeSystem(sensor, iterator->second));
+    const std::vector<NamedValue> systemAttributes =
+        this->encodeSystem(sensor, iterator->second);
+    result = logicalTimeSeconds
+        ? _runtime.updateObjectAttributesAtTime(
+              iterator->second.systemInstanceId,
+              systemAttributes,
+              *logicalTimeSeconds)
+        : _runtime.updateObjectAttributes(
+              iterator->second.systemInstanceId, systemAttributes);
     if (!result.success) return result;
 
     if (sensor.emitting) {
@@ -139,12 +146,21 @@ Result HlaSensorPublisher::synchronize(
             iterator->second.beamInstanceId);
         if (!result.success) return result;
       }
-      result = _runtime.updateObjectAttributes(
-          iterator->second.beamInstanceId,
-          this->encodeBeam(sensor, iterator->second));
+      const std::vector<NamedValue> beamAttributes =
+          this->encodeBeam(sensor, iterator->second);
+      result = logicalTimeSeconds
+          ? _runtime.updateObjectAttributesAtTime(
+                iterator->second.beamInstanceId,
+                beamAttributes,
+                *logicalTimeSeconds)
+          : _runtime.updateObjectAttributes(
+                iterator->second.beamInstanceId, beamAttributes);
       if (!result.success) return result;
     } else if (iterator->second.beamInstanceId != 0) {
-      result = _runtime.deleteObjectInstance(iterator->second.beamInstanceId);
+      result = logicalTimeSeconds
+          ? _runtime.deleteObjectInstanceAtTime(
+                iterator->second.beamInstanceId, *logicalTimeSeconds)
+          : _runtime.deleteObjectInstance(iterator->second.beamInstanceId);
       if (!result.success) return result;
       iterator->second.beamInstanceId = 0;
     }
@@ -157,12 +173,16 @@ Result HlaSensorPublisher::synchronize(
       continue;
     }
     if (iterator->second.beamInstanceId != 0) {
-      const Result result =
-          _runtime.deleteObjectInstance(iterator->second.beamInstanceId);
+      const Result result = logicalTimeSeconds
+          ? _runtime.deleteObjectInstanceAtTime(
+                iterator->second.beamInstanceId, *logicalTimeSeconds)
+          : _runtime.deleteObjectInstance(iterator->second.beamInstanceId);
       if (!result.success) return result;
     }
-    const Result result =
-        _runtime.deleteObjectInstance(iterator->second.systemInstanceId);
+    const Result result = logicalTimeSeconds
+        ? _runtime.deleteObjectInstanceAtTime(
+              iterator->second.systemInstanceId, *logicalTimeSeconds)
+        : _runtime.deleteObjectInstance(iterator->second.systemInstanceId);
     if (!result.success) return result;
     iterator = _registeredSensors.erase(iterator);
   }

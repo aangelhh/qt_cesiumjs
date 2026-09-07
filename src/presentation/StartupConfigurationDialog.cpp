@@ -3,6 +3,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QFont>
@@ -52,6 +53,10 @@ StartupConfigurationDialog::StartupConfigurationDialog(
       _hlaFederationEdit(new QLineEdit(this)),
       _hlaFederateEdit(new QLineEdit(this)),
       _hlaFederateTypeEdit(new QLineEdit(this)),
+      _hlaSynchronizationPointEdit(new QLineEdit(this)),
+      _hlaTimeManagementCheck(new QCheckBox(
+          QStringLiteral("Enable HLA time management"), this)),
+      _hlaLookaheadSpin(new QDoubleSpinBox(this)),
       _hlaCreateCheck(new QCheckBox(
           QStringLiteral("Create federation when missing"), this)),
       _hlaFomList(new QListWidget(this)),
@@ -150,12 +155,29 @@ StartupConfigurationDialog::StartupConfigurationDialog(
   _hlaFederationEdit->setText(configuration.hla.federationName);
   _hlaFederateEdit->setText(configuration.hla.federateName);
   _hlaFederateTypeEdit->setText(configuration.hla.federateType);
+  _hlaSynchronizationPointEdit->setText(
+      configuration.hla.synchronizationPointLabel);
+  _hlaSynchronizationPointEdit->setPlaceholderText(
+      QStringLiteral("Optional, for example ReadyToRun"));
+  _hlaTimeManagementCheck->setChecked(
+      configuration.hla.timeManagementEnabled);
+  _hlaLookaheadSpin->setRange(0.001, 60.0);
+  _hlaLookaheadSpin->setDecimals(3);
+  _hlaLookaheadSpin->setSingleStep(0.01);
+  _hlaLookaheadSpin->setSuffix(QStringLiteral(" s"));
+  _hlaLookaheadSpin->setValue(configuration.hla.timeLookaheadSeconds);
+  _hlaLookaheadSpin->setEnabled(_hlaTimeManagementCheck->isChecked());
   _hlaCreateCheck->setChecked(configuration.hla.createFederationIfMissing);
   hlaForm->addRow(QStringLiteral("Backend"), _hlaBackendCombo);
   hlaForm->addRow(QStringLiteral("Local settings"), _hlaLocalSettingsEdit);
   hlaForm->addRow(QStringLiteral("Federation"), _hlaFederationEdit);
   hlaForm->addRow(QStringLiteral("Federate name"), _hlaFederateEdit);
   hlaForm->addRow(QStringLiteral("Federate type"), _hlaFederateTypeEdit);
+  hlaForm->addRow(
+      QStringLiteral("Synchronization point"),
+      _hlaSynchronizationPointEdit);
+  hlaForm->addRow(QString(), _hlaTimeManagementCheck);
+  hlaForm->addRow(QStringLiteral("Time lookahead"), _hlaLookaheadSpin);
   hlaForm->addRow(QString(), _hlaCreateCheck);
   auto* hlaStatus = new QLabel(
       QStringLiteral(
@@ -263,6 +285,11 @@ StartupConfigurationDialog::StartupConfigurationDialog(
       &QCheckBox::toggled,
       this,
       &StartupConfigurationDialog::updateIntegrationControls);
+  connect(
+      _hlaTimeManagementCheck,
+      &QCheckBox::toggled,
+      _hlaLookaheadSpin,
+      &QWidget::setEnabled);
   connect(addFomButton, &QPushButton::clicked, this, &StartupConfigurationDialog::addFomModules);
   connect(_removeFomButton, &QPushButton::clicked, this, &StartupConfigurationDialog::removeSelectedFomModules);
   connect(startButton, &QPushButton::clicked, this, &StartupConfigurationDialog::acceptConfiguration);
@@ -289,6 +316,10 @@ StartupConfigurationDialog::configuration() const {
   result.hla.federationName = _hlaFederationEdit->text().trimmed();
   result.hla.federateName = _hlaFederateEdit->text().trimmed();
   result.hla.federateType = _hlaFederateTypeEdit->text().trimmed();
+  result.hla.synchronizationPointLabel =
+      _hlaSynchronizationPointEdit->text().trimmed();
+  result.hla.timeManagementEnabled = _hlaTimeManagementCheck->isChecked();
+  result.hla.timeLookaheadSeconds = _hlaLookaheadSpin->value();
   result.hla.createFederationIfMissing = _hlaCreateCheck->isChecked();
   for (int index = 0; index < _hlaFomList->count(); ++index) {
     result.hla.fomModules.push_back(_hlaFomList->item(index)->text());

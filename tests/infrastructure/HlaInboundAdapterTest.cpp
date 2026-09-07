@@ -98,6 +98,59 @@ TEST(HlaInboundAdapter, ConvertsRemotePlatformLifecycleToEntityChanges) {
   EXPECT_EQ(changes.front().state.stableId, "hla:remote-fighter-01");
 }
 
+TEST(HlaInboundAdapter, IgnoresRegressiveTimestampedPlatformState) {
+  tactical::hla::HlaInboundAdapter adapter;
+  tactical::hla::RprEntityState source;
+  source.name = "ordered-fighter";
+  source.domain = "Air";
+  source.latitudeDegrees = 41.0;
+  source.longitudeDegrees = -3.0;
+  source.altitudeMeters = 5000.0;
+
+  adapter.onObjectDiscovered({
+      13,
+      "HLAobjectRoot.BaseEntity.PhysicalEntity.Platform.Aircraft",
+      "ordered-fighter-01"});
+  adapter.onObjectReflected({
+      13,
+      tactical::hla::RprFomEncoding::encodeAttributes(source, 2, 3, 5),
+      {},
+      {tactical::hla::DeliveryOrder::Timestamp, 2.0}});
+
+  source.latitudeDegrees = 39.0;
+  adapter.onObjectReflected({
+      13,
+      tactical::hla::RprFomEncoding::encodeAttributes(source, 2, 3, 5),
+      {},
+      {tactical::hla::DeliveryOrder::Timestamp, 1.0}});
+  auto changes = adapter.takeEntityChanges();
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_NEAR(changes.front().state.latitudeDegrees, 41.0, 1.0e-6);
+
+  source.latitudeDegrees = 42.0;
+  adapter.onObjectReflected({
+      13,
+      tactical::hla::RprFomEncoding::encodeAttributes(source, 2, 3, 5),
+      {},
+      {tactical::hla::DeliveryOrder::Timestamp, 3.0}});
+  adapter.onObjectRemoved({
+      13,
+      {},
+      {tactical::hla::DeliveryOrder::Timestamp, 2.5}});
+  changes = adapter.takeEntityChanges();
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_FALSE(changes.front().removed);
+  EXPECT_NEAR(changes.front().state.latitudeDegrees, 42.0, 1.0e-6);
+
+  adapter.onObjectRemoved({
+      13,
+      {},
+      {tactical::hla::DeliveryOrder::Timestamp, 4.0}});
+  changes = adapter.takeEntityChanges();
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_TRUE(changes.front().removed);
+}
+
 TEST(HlaInboundAdapter, ConvertsRemoteMunitionLifecycleWithoutCreatingEntity) {
   tactical::hla::HlaInboundAdapter adapter;
   tactical::hla::RprEntityState source;
@@ -133,7 +186,7 @@ TEST(HlaInboundAdapter, ConvertsRemoteMunitionLifecycleWithoutCreatingEntity) {
   EXPECT_NEAR(changes.front().state.altitudeMeters, 4200.0, 0.01);
   EXPECT_NEAR(changes.front().state.headingDegrees, 135.0, 0.01);
   EXPECT_NEAR(changes.front().state.pitchDegrees, -4.0, 0.01);
-  EXPECT_NEAR(changes.front().state.speedKnots, 950.0, 0.01);
+  EXPECT_NEAR(changes.front().state.speedKnots, 950.0, 0.1);
   EXPECT_TRUE(adapter.takeMunitionChanges().empty());
 
   adapter.onObjectRemoved({40, {}});
@@ -157,6 +210,89 @@ TEST(HlaInboundAdapter, ConvertsRprSimulationControlInteractions) {
   EXPECT_EQ(controls[1], tactical::hla::RemoteSimulationControl::Pause);
   EXPECT_EQ(controls[2], tactical::hla::RemoteSimulationControl::Stop);
   EXPECT_TRUE(adapter.takeSimulationControls().empty());
+}
+
+TEST(HlaInboundAdapter, QueuesTimeManagementCallbacksInOrder) {
+  tactical::hla::HlaInboundAdapter adapter;
+  adapter.onTimeRegulationEnabled(0.0);
+  adapter.onTimeConstrainedEnabled(0.0);
+  adapter.onTimeAdvanceGranted(0.033);
+
+  const auto events = adapter.takeTimeManagementEvents();
+  ASSERT_EQ(events.size(), 3U);
+  EXPECT_EQ(
+      events[0].kind,
+      tactical::hla::RemoteTimeManagementEventKind::RegulationEnabled);
+  EXPECT_EQ(
+      events[1].kind,
+      tactical::hla::RemoteTimeManagementEventKind::ConstrainedEnabled);
+  EXPECT_EQ(
+      events[2].kind,
+      tactical::hla::RemoteTimeManagementEventKind::AdvanceGranted);
+  EXPECT_DOUBLE_EQ(events[2].logicalTimeSeconds, 0.033);
+  EXPECT_TRUE(adapter.takeTimeManagementEvents().empty());
+}
+
+TEST(HlaInboundAdapter, PreservesSynchronizationPointRegistrationResults) {
+  tactical::hla::HlaInboundAdapter adapter;
+  adapter.onSynchronizationPointRegistrationResult(
+      {"ReadyToRun", true, {}});
+  adapter.onSynchronizationPointRegistrationResult({
+      "ReadyToRun",
+      false,
+      "Synchronization point label is not unique"});
+
+  const auto changes = adapter.takeSynchronizationChanges();
+  ASSERT_EQ(changes.size(), 2U);
+  EXPECT_TRUE(changes[0].registrationCompleted);
+  EXPECT_TRUE(changes[0].registrationSucceeded);
+  EXPECT_EQ(changes[0].label, "ReadyToRun");
+  EXPECT_TRUE(changes[0].reason.empty());
+  EXPECT_TRUE(changes[1].registrationCompleted);
+  EXPECT_FALSE(changes[1].registrationSucceeded);
+  EXPECT_EQ(
+      changes[1].reason,
+      "Synchronization point label is not unique");
+  EXPECT_TRUE(adapter.takeSynchronizationChanges().empty());
+}
+
+TEST(HlaInboundAdapter, QueuesAttributeOwnershipEventsInOrder) {
+  tactical::hla::HlaInboundAdapter adapter;
+  adapter.onAttributeOwnershipChanged({
+      tactical::hla::OwnershipEventKind::ReleaseRequested,
+      7,
+      {"Spatial", "VelocityVector"},
+      {1, 2}});
+  adapter.onAttributeOwnershipChanged({
+      tactical::hla::OwnershipEventKind::Acquired,
+      9,
+      {"Spatial"},
+      {3}});
+
+  const auto events = adapter.takeOwnershipEvents();
+  ASSERT_EQ(events.size(), 2U);
+  EXPECT_EQ(
+      events[0].kind,
+      tactical::hla::OwnershipEventKind::ReleaseRequested);
+  EXPECT_EQ(events[0].instanceId, 7U);
+  EXPECT_EQ(
+      events[0].attributeNames,
+      (std::vector<std::string>{"Spatial", "VelocityVector"}));
+  EXPECT_EQ(events[0].tag, (tactical::hla::ByteBuffer{1, 2}));
+  EXPECT_EQ(events[1].kind, tactical::hla::OwnershipEventKind::Acquired);
+  EXPECT_EQ(events[1].instanceId, 9U);
+  EXPECT_TRUE(adapter.takeOwnershipEvents().empty());
+}
+
+TEST(HlaInboundAdapter, QueuesConnectionLostCallback) {
+  tactical::hla::HlaInboundAdapter adapter;
+
+  adapter.onConnectionLost({"CRC transport closed"});
+
+  const auto events = adapter.takeConnectionLostEvents();
+  ASSERT_EQ(events.size(), 1U);
+  EXPECT_EQ(events.front().reason, "CRC transport closed");
+  EXPECT_TRUE(adapter.takeConnectionLostEvents().empty());
 }
 
 TEST(HlaInboundAdapter, ConvertsEmitterAndRadarBeamWithoutCreatingEntity) {

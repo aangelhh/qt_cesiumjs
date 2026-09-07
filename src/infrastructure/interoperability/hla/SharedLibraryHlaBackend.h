@@ -41,8 +41,17 @@ public:
       ObjectInstanceId instanceId,
       const std::vector<NamedValue>& attributes,
       const ByteBuffer& tag) override;
+  Result updateObjectAttributesAtTime(
+      ObjectInstanceId instanceId,
+      const std::vector<NamedValue>& attributes,
+      double logicalTimeSeconds,
+      const ByteBuffer& tag) override;
   Result deleteObjectInstance(
       ObjectInstanceId instanceId,
+      const ByteBuffer& tag) override;
+  Result deleteObjectInstanceAtTime(
+      ObjectInstanceId instanceId,
+      double logicalTimeSeconds,
       const ByteBuffer& tag) override;
   Result publishInteractionClass(
       const std::string& interactionClassName) override;
@@ -53,6 +62,25 @@ public:
       const std::string& interactionClassName,
       const std::vector<NamedValue>& parameters,
       const ByteBuffer& tag) override;
+  Result sendInteractionAtTime(
+      const std::string& interactionClassName,
+      const std::vector<NamedValue>& parameters,
+      double logicalTimeSeconds,
+      const ByteBuffer& tag) override;
+  Result registerSynchronizationPoint(
+      const std::string& label,
+      const ByteBuffer& tag) override;
+  Result achieveSynchronizationPoint(const std::string& label) override;
+  Result enableTimeRegulation(double lookaheadSeconds) override;
+  Result enableTimeConstrained() override;
+  Result requestTimeAdvance(double logicalTimeSeconds) override;
+  Result requestAttributeOwnershipAcquisition(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames,
+      const ByteBuffer& tag) override;
+  Result unconditionalAttributeOwnershipDivestiture(
+      ObjectInstanceId instanceId,
+      const std::vector<std::string>& attributeNames) override;
   Result poll(double maximumSeconds) override;
   void setEventSink(IHlaEventSink* eventSink) override;
   Result resign() override;
@@ -76,20 +104,61 @@ private:
       void* context,
       uint64_t instanceId,
       const QttestHlaNamedValueArrayV2* attributes,
-      const QttestHlaByteSpanV2* tag);
+      const QttestHlaByteSpanV2* tag,
+      const QttestHlaReceiveInfoV7* receiveInfo);
   static void objectRemovedCallback(
       void* context,
       uint64_t instanceId,
-      const QttestHlaByteSpanV2* tag);
+      const QttestHlaByteSpanV2* tag,
+      const QttestHlaReceiveInfoV7* receiveInfo);
   static void interactionReceivedCallback(
       void* context,
       const char* interactionClassName,
       const QttestHlaNamedValueArrayV2* parameters,
+      const QttestHlaByteSpanV2* tag,
+      const QttestHlaReceiveInfoV7* receiveInfo);
+  static void synchronizationPointRegistrationResultCallback(
+      void* context,
+      const char* label,
+      int succeeded,
+      const char* reason);
+  static void synchronizationPointAnnouncedCallback(
+      void* context,
+      const char* label,
       const QttestHlaByteSpanV2* tag);
+  static void federationSynchronizedCallback(
+      void* context,
+      const char* label);
+  static void timeRegulationEnabledCallback(
+      void* context,
+      double logicalTimeSeconds);
+  static void timeConstrainedEnabledCallback(
+      void* context,
+      double logicalTimeSeconds);
+  static void timeAdvanceGrantedCallback(
+      void* context,
+      double logicalTimeSeconds);
+  static void attributeOwnershipAcquiredCallback(
+      void* context,
+      uint64_t instanceId,
+      const QttestHlaStringArrayV1* attributeNames,
+      const QttestHlaByteSpanV2* tag);
+  static void attributeOwnershipUnavailableCallback(
+      void* context,
+      uint64_t instanceId,
+      const QttestHlaStringArrayV1* attributeNames);
+  static void attributeOwnershipReleaseRequestedCallback(
+      void* context,
+      uint64_t instanceId,
+      const QttestHlaStringArrayV1* attributeNames,
+      const QttestHlaByteSpanV2* tag);
+  static void connectionLostCallback(
+      void* context,
+      const char* faultDescription);
 
   std::string _libraryPath;
   mutable QLibrary _library;
-  const QttestHlaBackendApiV3* _api = nullptr;
+  const QttestHlaBackendApiV10* _api = nullptr;
   QttestHlaBackendHandle _handle = nullptr;
   std::string _loadError;
   IHlaEventSink* _eventSink = nullptr;

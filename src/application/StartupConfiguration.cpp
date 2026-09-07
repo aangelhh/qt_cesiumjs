@@ -4,6 +4,8 @@
 #include <QDir>
 #include <QSettings>
 
+#include <cmath>
+
 namespace application {
 namespace {
 
@@ -54,6 +56,11 @@ QString StartupConfiguration::validationError() const {
         hla.federateType.trimmed().isEmpty()) {
       return QStringLiteral(
           "HLA federation, federate name, and federate type are required.");
+    }
+    if (hla.timeManagementEnabled &&
+        (!std::isfinite(hla.timeLookaheadSeconds) ||
+         hla.timeLookaheadSeconds <= 0.0)) {
+      return QStringLiteral("HLA time lookahead must be positive.");
     }
   }
 
@@ -144,6 +151,13 @@ StartupConfiguration StartupConfiguration::load(QSettings& settings) {
   configuration.hla.federateType = settings.value(
       QStringLiteral("hla/federateType"), configuration.hla.federateType)
           .toString();
+  configuration.hla.synchronizationPointLabel = settings.value(
+      QStringLiteral("hla/synchronizationPointLabel")).toString();
+  configuration.hla.timeManagementEnabled = settings.value(
+      QStringLiteral("hla/timeManagementEnabled"), false).toBool();
+  configuration.hla.timeLookaheadSeconds = settings.value(
+      QStringLiteral("hla/timeLookaheadSeconds"),
+      configuration.hla.timeLookaheadSeconds).toDouble();
   configuration.hla.fomModules = settings.value(
       QStringLiteral("hla/fomModules")).toStringList();
   configuration.hla.createFederationIfMissing = settings.value(
@@ -183,6 +197,15 @@ void StartupConfiguration::save(QSettings& settings) const {
   settings.setValue(QStringLiteral("hla/federationName"), hla.federationName);
   settings.setValue(QStringLiteral("hla/federateName"), hla.federateName);
   settings.setValue(QStringLiteral("hla/federateType"), hla.federateType);
+  settings.setValue(
+      QStringLiteral("hla/synchronizationPointLabel"),
+      hla.synchronizationPointLabel);
+  settings.setValue(
+      QStringLiteral("hla/timeManagementEnabled"),
+      hla.timeManagementEnabled);
+  settings.setValue(
+      QStringLiteral("hla/timeLookaheadSeconds"),
+      hla.timeLookaheadSeconds);
   settings.setValue(QStringLiteral("hla/fomModules"), hla.fomModules);
   settings.setValue(
       QStringLiteral("hla/createFederationIfMissing"),

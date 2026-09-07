@@ -17,6 +17,7 @@
 #include "presentation/DetectedContactsPresenter.h"
 #include "presentation/EntityDefaultsResolver.h"
 #include "presentation/EntityPlanExecutor.h"
+#include "presentation/HlaConnectionPanel.h"
 #include "application/HlaCombatDemoScenario.h"
 #include "presentation/BombTargetMapSync.h"
 #include "presentation/MapBridgeScripts.h"
@@ -79,6 +80,7 @@
 #include <QInputDialog>
 #include <QSizePolicy>
 #include <QStandardItem>
+#include <QStyle>
 #include <cmath>
 #include <QStandardItemModel>
 #include <QScrollBar>
@@ -209,6 +211,9 @@ MainWindow::MainWindow(QWidget* parent)
       _qflightCockpitWidget(nullptr),
       _ecamCockpitDock(nullptr),
       _ecamCockpitWidget(nullptr),
+      _hlaConnectionDock(nullptr),
+      _hlaConnectionPanel(nullptr),
+      _hlaStatusButton(nullptr),
       _ros2TelemetryPublisher(nullptr),
       _kinematicsTelemetrySubscriptionId(0),
       _mapBridge(new MapBridge(this)),
@@ -299,6 +304,7 @@ MainWindow::MainWindow(QWidget* parent)
 #endif
 {
   this->_ui->setupUi(this);
+  this->initializeHlaConnectionPanel();
   const QStringList sensorProviderDiagnostics =
       infrastructure::SensorModelProviderBootstrap::registerEnabledProviders(
           *_scenarioState,
@@ -524,12 +530,16 @@ MainWindow::MainWindow(QWidget* parent)
   this->syncDetectedContactsToUi();
   _simulationTimer->setInterval(33);
   QObject::connect(_simulationTimer, &QTimer::timeout, this, [this]() {
-    this->_scenarioState->advanceSimulation(0.033);
-    this->advanceEntityPlans();
-    this->processAttackTasks(0.033);
-    this->processAutoBombingBehaviors(0.033);
-    this->processPendingBombRelease();
-    this->syncScenarioStateToUi();
+    constexpr double deltaSeconds = 0.033;
+    if (_hlaTimeManagementActive) {
+      if (!_hlaTimeAdvancePending) {
+        _hlaTimeAdvancePending = true;
+        emit hlaTimeAdvanceRequested(
+            _scenarioState->simulationTimeSeconds() + deltaSeconds);
+      }
+      return;
+    }
+    this->advanceSimulationTick(deltaSeconds);
   });
 
   QObject::connect(this->_ui->actionQuit, &QAction::triggered, this, &QWidget::close);
@@ -924,6 +934,8 @@ void MainWindow::applyHlaRemoteEntityChanges(
     entity.pitchDegrees = state.pitchDegrees;
     entity.rollDegrees = state.rollDegrees;
     entity.speedKnots = state.speedKnots;
+    entity.verticalSpeedMetersPerSecond =
+        state.verticalSpeedMetersPerSecond;
     entity.damagePercent = state.damagePercent;
     entity.destroyed = state.destroyed;
     entity.externallyControlled = true;
@@ -1098,6 +1110,127 @@ void MainWindow::applyHlaRemoteSimulationControl(
       break;
   }
   _applyingHlaSimulationControl = false;
+}
+
+void MainWindow::reportHlaSynchronizationStatus(const QString& message) {
+  this->appendLogMessage(QStringLiteral("HLA synchronization: %1").arg(message));
+}
+
+void MainWindow::initializeHlaConnectionPanel() {
+  _hlaConnectionDock = new QDockWidget(QStringLiteral("HLA Connection"), this);
+  _hlaConnectionDock->setObjectName(QStringLiteral("hlaConnectionDockWidget"));
+  _hlaConnectionDock->setAllowedAreas(
+      Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea |
+      Qt::BottomDockWidgetArea);
+  _hlaConnectionDock->setFeatures(
+      QDockWidget::DockWidgetClosable |
+      QDockWidget::DockWidgetMovable |
+      QDockWidget::DockWidgetFloatable);
+  _hlaConnectionPanel = new presentation::HlaConnectionPanel(
+      _hlaConnectionDock);
+  _hlaConnectionDock->setWidget(_hlaConnectionPanel);
+  this->addDockWidget(Qt::RightDockWidgetArea, _hlaConnectionDock);
+  _ui->menuView->addAction(_hlaConnectionDock->toggleViewAction());
+  _hlaConnectionDock->hide();
+
+  _hlaStatusButton = new QToolButton(this);
+  _hlaStatusButton->setObjectName(QStringLiteral("hlaStatusButton"));
+  _hlaStatusButton->setAutoRaise(true);
+  _hlaStatusButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+  _hlaStatusButton->setIcon(
+      this->style()->standardIcon(QStyle::SP_DriveNetIcon));
+  _hlaStatusButton->setToolTip(
+      QStringLiteral("Open HLA connection controls"));
+  _ui->statusbar->addPermanentWidget(_hlaStatusButton);
+
+  connect(_hlaStatusButton, &QToolButton::clicked, this, [this]() {
+    _hlaConnectionDock->show();
+    _hlaConnectionDock->raise();
+  });
+  connect(
+      _hlaConnectionPanel,
+      &presentation::HlaConnectionPanel::connectRequested,
+      this,
+      &MainWindow::hlaConnectRequested);
+  connect(
+      _hlaConnectionPanel,
+      &presentation::HlaConnectionPanel::disconnectRequested,
+      this,
+      &MainWindow::hlaDisconnectRequested);
+}
+
+void MainWindow::configureHlaConnection(
+    const application::HlaStartupConfiguration& configuration,
+    bool backendAvailable,
+    bool connected) {
+  _hlaConnectionPanel->configure(configuration, backendAvailable);
+  this->setHlaConnectionState(
+      connected,
+      false,
+      connected
+          ? QStringLiteral("Joined to %1 as %2 via %3.")
+                .arg(
+                    configuration.federationName,
+                    configuration.federateName,
+                    configuration.backendId)
+          : QString());
+}
+
+void MainWindow::setHlaConnectionState(
+    bool connected,
+    bool connecting,
+    const QString& detail) {
+  presentation::HlaConnectionState state =
+      presentation::HlaConnectionState::Disconnected;
+  if (connecting) {
+    state = presentation::HlaConnectionState::Connecting;
+  } else if (connected) {
+    state = presentation::HlaConnectionState::Federated;
+  } else if (!detail.trimmed().isEmpty()) {
+    state = presentation::HlaConnectionState::Error;
+  }
+  _hlaConnectionPanel->setConnectionState(state, detail);
+
+  QString label = QStringLiteral("HLA: Disconnected");
+  if (state == presentation::HlaConnectionState::Connecting) {
+    label = QStringLiteral("HLA: Connecting");
+  } else if (state == presentation::HlaConnectionState::Federated) {
+    label = QStringLiteral("HLA: Federated");
+  } else if (state == presentation::HlaConnectionState::Error) {
+    label = QStringLiteral("HLA: Error");
+  }
+  _hlaStatusButton->setText(label);
+  QString statusColor = QStringLiteral("#aab4bc");
+  if (state == presentation::HlaConnectionState::Connecting) {
+    statusColor = QStringLiteral("#e5a93d");
+  } else if (state == presentation::HlaConnectionState::Federated) {
+    statusColor = QStringLiteral("#32b76c");
+  } else if (state == presentation::HlaConnectionState::Error) {
+    statusColor = QStringLiteral("#e66a64");
+  }
+  _hlaStatusButton->setStyleSheet(
+      QStringLiteral("QToolButton { color: %1; padding: 2px 6px; }")
+          .arg(statusColor));
+  _hlaStatusButton->setToolTip(
+      detail.trimmed().isEmpty()
+          ? QStringLiteral("Open HLA connection controls")
+          : detail);
+}
+
+void MainWindow::setHlaTimeManagementActive(bool active) {
+  _hlaTimeManagementActive = active;
+  _hlaTimeAdvancePending = false;
+  this->appendLogMessage(
+      active
+          ? QStringLiteral("HLA time management active: simulation ticks require RTI grants.")
+          : QStringLiteral("HLA time management disabled: using local simulation clock."));
+}
+
+void MainWindow::applyHlaTimeAdvanceGrant(double logicalTimeSeconds) {
+  _hlaTimeAdvancePending = false;
+  const double currentTime = _scenarioState->simulationTimeSeconds();
+  if (logicalTimeSeconds <= currentTime) return;
+  this->advanceSimulationTick(logicalTimeSeconds - currentTime);
 }
 
 void MainWindow::initializeKinematicsCockpit() {
@@ -3384,6 +3517,15 @@ void MainWindow::processAttackTasks(double deltaSeconds) {
 
 void MainWindow::processAutoBombingBehaviors(double deltaSeconds) {
   _attackTaskProcessor->processAutoBombing(deltaSeconds, _simulationRunning);
+}
+
+void MainWindow::advanceSimulationTick(double deltaSeconds) {
+  this->_scenarioState->advanceSimulation(deltaSeconds);
+  this->advanceEntityPlans();
+  this->processAttackTasks(deltaSeconds);
+  this->processAutoBombingBehaviors(deltaSeconds);
+  this->processPendingBombRelease();
+  this->syncScenarioStateToUi();
 }
 
 void MainWindow::processPendingBombRelease() {

@@ -247,10 +247,27 @@ Result OpenRtiCompatibilityBackend::updateObjectAttributes(
   return _backend->updateObjectAttributes(instanceId, attributes, tag);
 }
 
+Result OpenRtiCompatibilityBackend::updateObjectAttributesAtTime(
+    ObjectInstanceId instanceId,
+    const std::vector<NamedValue>& attributes,
+    double logicalTimeSeconds,
+    const ByteBuffer& tag) {
+  return _backend->updateObjectAttributesAtTime(
+      instanceId, attributes, logicalTimeSeconds, tag);
+}
+
 Result OpenRtiCompatibilityBackend::deleteObjectInstance(
     ObjectInstanceId instanceId,
     const ByteBuffer& tag) {
   return _backend->deleteObjectInstance(instanceId, tag);
+}
+
+Result OpenRtiCompatibilityBackend::deleteObjectInstanceAtTime(
+    ObjectInstanceId instanceId,
+    double logicalTimeSeconds,
+    const ByteBuffer& tag) {
+  return _backend->deleteObjectInstanceAtTime(
+      instanceId, logicalTimeSeconds, tag);
 }
 
 Result OpenRtiCompatibilityBackend::publishInteractionClass(
@@ -270,6 +287,55 @@ Result OpenRtiCompatibilityBackend::sendInteraction(
     const std::vector<NamedValue>& parameters,
     const ByteBuffer& tag) {
   return _backend->sendInteraction(interactionClassName, parameters, tag);
+}
+
+Result OpenRtiCompatibilityBackend::sendInteractionAtTime(
+    const std::string& interactionClassName,
+    const std::vector<NamedValue>& parameters,
+    double logicalTimeSeconds,
+    const ByteBuffer& tag) {
+  return _backend->sendInteractionAtTime(
+      interactionClassName, parameters, logicalTimeSeconds, tag);
+}
+
+Result OpenRtiCompatibilityBackend::registerSynchronizationPoint(
+    const std::string& label,
+    const ByteBuffer& tag) {
+  return _backend->registerSynchronizationPoint(label, tag);
+}
+
+Result OpenRtiCompatibilityBackend::achieveSynchronizationPoint(
+    const std::string& label) {
+  return _backend->achieveSynchronizationPoint(label);
+}
+
+Result OpenRtiCompatibilityBackend::enableTimeRegulation(
+    double lookaheadSeconds) {
+  return _backend->enableTimeRegulation(lookaheadSeconds);
+}
+
+Result OpenRtiCompatibilityBackend::enableTimeConstrained() {
+  return _backend->enableTimeConstrained();
+}
+
+Result OpenRtiCompatibilityBackend::requestTimeAdvance(
+    double logicalTimeSeconds) {
+  return _backend->requestTimeAdvance(logicalTimeSeconds);
+}
+
+Result OpenRtiCompatibilityBackend::requestAttributeOwnershipAcquisition(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames,
+    const ByteBuffer& tag) {
+  return _backend->requestAttributeOwnershipAcquisition(
+      instanceId, attributeNames, tag);
+}
+
+Result OpenRtiCompatibilityBackend::unconditionalAttributeOwnershipDivestiture(
+    ObjectInstanceId instanceId,
+    const std::vector<std::string>& attributeNames) {
+  return _backend->unconditionalAttributeOwnershipDivestiture(
+      instanceId, attributeNames);
 }
 
 Result OpenRtiCompatibilityBackend::poll(double maximumSeconds) {

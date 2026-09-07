@@ -109,15 +109,24 @@ Implemented lifecycle, publication, and reception:
     directional radar state to the externally controlled host platform.
 15. Receive and deduplicate remote `WeaponFire` / `MunitionDetonation` events.
 16. Publish and receive the object identifiers tracked by each radar beam.
-17. Poll callbacks.
-18. Remove owned objects, resign, and disconnect with rollback on failure.
+17. Register, announce, achieve, and complete federation synchronization points.
+18. Optionally enable time regulation and time constrained execution using
+    `HLAfloat64Time`, then advance only after RTI grants.
+19. Poll callbacks.
+20. Remove owned objects, resign, and disconnect with rollback on failure.
 
-The plugin ABI v3 keeps RTI handles private to each plugin and exposes opaque
+The plugin ABI v10 keeps RTI handles private to each plugin and exposes opaque
 object identifiers to qttest. `HlaEntityPublisher` maps domains to RPR platform
 classes and publishes `EntityType`, `EntityIdentifier`, `Spatial`,
 `DamageState`, `ForceIdentifier`, `LiveEntityMeasuredSpeed`, and `Marking` at
 10 Hz. Instance names use stable entity UUIDs, so display names may repeat.
-WGS84 positions and local NED attitude are converted to ECEF for `Spatial`.
+`LiveEntityMeasuredSpeed` uses the RPR-defined unsigned 16-bit decimeters-per-
+second representation rather than a non-standard floating-point payload.
+WGS84 positions, local NED attitude, and velocity are converted to ECEF for
+`Spatial`. Stationary entities use the RPR `Static` variant; moving entities
+use `DRM_FPW`, allowing another federate to apply constant-velocity dead
+reckoning between updates. The receiver accepts all standard RPR spatial
+discriminants and converts world/body velocity vectors back to local motion.
 
 `HlaWarfarePublisher` owns the outbound RPR `Munition` object lifecycle and
 sends `HLAinteractionRoot.WeaponFire` with event ID,
@@ -172,9 +181,110 @@ before remote detonations may mutate local entities.
 | Pause | `HLAinteractionRoot.StopFreeze`, non-terminal reason | Pauses without clearing the scenario |
 | Stop | `HLAinteractionRoot.StopFreeze`, terminal reason | Stops the exercise using the normal lifecycle |
 
-Ownership Management, HLA Time Management, synchronization points, DDM,
-save/restore, RPR munition object lifecycle, and NETN-ETR task exchange remain
+Synchronization points are exposed by the neutral runtime and both IEEE 1516e
+plugins. At startup, an operator may optionally configure a point such as
+`ReadyToRun`. qttest requests its registration, automatically achieves it when
+the RTI announces it, and records announcement, achievement, and federation
+completion in the operational log. An empty setting leaves startup
+unsynchronized. Registration success and failure callbacks are preserved by
+the neutral adapter and reported in the operational log. Synchronization-set
+selection and multi-phase exercise orchestration remain future hardening.
+
+HLA Time Management is available as an opt-in conservative MVP. qttest enables
+time regulation first, waits for its callback, then enables time constrained
+execution. The Qt simulation timer requests one logical step at a time and
+`ScenarioState` advances only after `timeAdvanceGrant`; duplicate outstanding
+requests and regressive logical times are rejected. Receive-order execution
+remains the default. When Time Management is active, local entity, munition,
+radar/emitter, `WeaponFire`, and `MunitionDetonation` publications use
+timestamp order at `granted logical time + configured lookahead`. The
+receive-order API remains available for unmanaged sessions and immediate
+control interactions. Both IEEE 1516e plugins handle the timestamped callback
+overloads for object discovery, attribute reflection, object removal, and
+interaction reception; the neutral inbound path therefore receives TSO events
+instead of silently discarding them. Delivery order and logical timestamp are
+preserved through the C ABI and neutral event model. The inbound adapter rejects
+regressive timestamped object updates and removals, preventing stale network
+traffic from rolling a remote entity back to an older state. A two-federate
+OpenRTI integration test verifies timestamped entity delivery, timestamp
+metadata, and logical-time grants. Operator-facing time diagnostics, next-event
+requests, asynchronous delivery, and coordinated fast-time policy remain
+future work.
+
+### Attribute ownership MVP
+
+The neutral runtime and startup session expose explicit attribute acquisition
+and unconditional divestiture. The inbound adapter queues Acquired,
+Unavailable, and ReleaseRequested events, preserving object IDs, attribute
+names, and user tags. ABI v10 requires rebuilding the backend plugins.
+
+Pitch supports this lifecycle. The opt-in two-federate integration test
+requests Spatial, verifies the owner's release callback, divests the
+attribute, and verifies acquisition and publication by the new owner.
+Local and discovered object IDs occupy separate namespaces. Updates and
+ownership services resolve both kinds of objects; the RTI enforces ownership.
+
+The maintained OpenRTI submodule implements the same MVP lifecycle for IEEE
+1516e and advertises ownership-management. Its two-federate integration test
+uses the in-process thread transport and verifies transfer, publication by the
+new owner, rejection of updates by the previous owner, and final divestiture.
+The implementation remains transport-neutral and uses OpenRTI's generated
+message protocol and existing per-attribute owner routing.
+
+This is a transport/runtime API, not automatic entity control transfer.
+The caller must suspend publication of attributes before divesting them.
+Existing entity publishers do not automatically filter divested attributes.
+Operator controls, authority handover policy, acquisition cancellation,
+negotiated divestiture, and ownership queries remain future work.
+
+DDM, save/restore, and NETN-ETR task exchange remain
 subsequent Feature 19 tasks.
+
+### In-application connection control
+
+The main status bar contains a persistent HLA indicator with Disconnected,
+Connecting, Federated, and Error states. Selecting it opens the floatable
+`HLA Connection` panel, which is also available from the View menu. The panel
+shows the configured backend, RTI endpoint, federate type, FOM module count,
+Time Management/lookahead, and synchronization point. It allows the operator
+to edit the federation and federate names while disconnected.
+
+Connect starts the existing `HlaStartupSession`, including subscriptions,
+publishers, optional synchronization-point registration, and Time Management.
+Disconnect removes locally published objects, resigns, disconnects, and stops
+the HLA polling/publication timers without closing qttest or clearing the local
+scenario. The selected names are persisted for the next launch. Backend and
+endpoint selection remain startup configuration because changing an RTI SDK
+inside an active process is not part of this MVP.
+
+IEEE 1516e `connectionLost` callbacks are propagated through plugin ABI v10.
+Pitch and OpenRTI mark the backend unhealthy as soon as the RTI reports the
+loss; qttest then stops HLA publication/polling, disables Time Management, and
+changes the panel and status-bar indicator to Error with the RTI fault text.
+The operator may reconnect from the same panel after the RTI is available.
+
+### Callback scope at MVP closure
+
+The session/runtime MVP handles the callbacks required by its enabled
+services: connection loss; synchronization-point registration, announcement,
+and federation synchronization; object discovery, reflection, and removal;
+time-regulation, constrained, and advance grants; and the ownership
+acquisition/release subset exposed by the current API.
+
+The remaining IEEE 1516e callbacks are intentionally deferred rather than
+implemented as no-ops:
+
+- Save/Restore callbacks require a versioned `ScenarioState` snapshot policy.
+- DDM and attribute scope/advisory callbacks require region and update-demand
+  policies.
+- `requestRetraction` requires retractable timestamped-event semantics.
+- Federation execution reports require a federation-browser use case.
+- Ownership cancellation, queries, and negotiated divestiture belong to the
+  complete authority-transfer feature.
+
+Automatic reconnection is also deferred. Rejoining implicitly can duplicate
+object names or violate ownership, synchronization, and logical-time policy;
+the current recovery mechanism is an explicit operator reconnect.
 
 ### Graphical combat demo
 
@@ -202,7 +312,7 @@ needed, publishes one synthetic Aircraft, updates and removes it, then exits.
 ## Adding another RTI
 
 1. Add `integrations/hla/<backend>/<Backend>Plugin.cpp`.
-2. Implement every function in `QttestHlaBackendApiV3`, including callback
+2. Implement every function in `QttestHlaBackendApiV10`, including callback
    registration and object/interaction subscriptions.
 3. Keep vendor headers and libraries private to that plugin target.
 4. Return backend identity, version, capabilities, and diagnostic errors.

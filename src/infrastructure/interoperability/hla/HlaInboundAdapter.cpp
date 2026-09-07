@@ -145,6 +145,7 @@ std::string decodeMunitionType(const ByteBuffer* value) {
 
 void HlaInboundAdapter::onObjectDiscovered(
     const RemoteObjectDiscovery& event) {
+  _lastLogicalTimes.erase(event.instanceId);
   const RemoteObjectKind kind = objectKind(event.objectClassName);
   _objects[event.instanceId] = {kind, event.instanceName};
   if (kind == RemoteObjectKind::EmitterSystem) {
@@ -159,7 +160,7 @@ void HlaInboundAdapter::onObjectDiscovered(
     state.name = event.instanceName;
     state.domain = "Air";
     state.entityKind = 2;
-    _munitions[event.instanceId] = {std::move(state), true};
+    _munitions[event.instanceId] = {std::move(state), true, {}};
     return;
   }
   if (kind != RemoteObjectKind::Platform) return;
@@ -168,11 +169,12 @@ void HlaInboundAdapter::onObjectDiscovered(
   state.name = event.instanceName;
   state.domain = RprFomEncoding::domainFromObjectClassName(
       event.objectClassName);
-  _entities[event.instanceId] = {std::move(state), true};
+  _entities[event.instanceId] = {std::move(state), true, {}};
 }
 
 void HlaInboundAdapter::onObjectReflected(
     const RemoteObjectReflection& event) {
+  if (!this->shouldApply(event.instanceId, event.receiveMetadata)) return;
   const auto object = _objects.find(event.instanceId);
   if (object == _objects.end()) return;
   if (object->second.kind == RemoteObjectKind::EmitterSystem) {
@@ -244,6 +246,7 @@ void HlaInboundAdapter::onObjectReflected(
     if (RprFomEncoding::decodeAttributes(
             event.attributes, iterator->second.state).success) {
       iterator->second.dirty = true;
+      iterator->second.receiveMetadata = event.receiveMetadata;
     }
     return;
   }
@@ -253,10 +256,12 @@ void HlaInboundAdapter::onObjectReflected(
   if (RprFomEncoding::decodeAttributes(
           event.attributes, iterator->second.state).success) {
     iterator->second.dirty = true;
+    iterator->second.receiveMetadata = event.receiveMetadata;
   }
 }
 
 void HlaInboundAdapter::onObjectRemoved(const RemoteObjectRemoval& event) {
+  if (!this->shouldApply(event.instanceId, event.receiveMetadata)) return;
   const auto object = _objects.find(event.instanceId);
   if (object == _objects.end()) return;
   if (object->second.kind == RemoteObjectKind::EmitterSystem) {
@@ -272,6 +277,7 @@ void HlaInboundAdapter::onObjectRemoved(const RemoteObjectRemoval& event) {
       _emitters.erase(emitter);
     }
     _objects.erase(object);
+    _lastLogicalTimes.erase(event.instanceId);
     return;
   }
   if (object->second.kind == RemoteObjectKind::RadarBeam) {
@@ -289,22 +295,41 @@ void HlaInboundAdapter::onObjectRemoved(const RemoteObjectRemoval& event) {
       _beamEmitterIds.erase(beamEmitter);
     }
     _objects.erase(object);
+    _lastLogicalTimes.erase(event.instanceId);
     return;
   }
   if (object->second.kind == RemoteObjectKind::Munition) {
     _objects.erase(object);
+    _lastLogicalTimes.erase(event.instanceId);
     const auto iterator = _munitions.find(event.instanceId);
     if (iterator == _munitions.end()) return;
     _removedMunitions.push_back(
-        {event.instanceId, iterator->second.state, true});
+        {event.instanceId, iterator->second.state, true,
+         event.receiveMetadata});
     _munitions.erase(iterator);
     return;
   }
   _objects.erase(object);
+  _lastLogicalTimes.erase(event.instanceId);
   const auto iterator = _entities.find(event.instanceId);
   if (iterator == _entities.end()) return;
-  _removedEntities.push_back({event.instanceId, iterator->second.state, true});
+  _removedEntities.push_back(
+      {event.instanceId, iterator->second.state, true,
+       event.receiveMetadata});
   _entities.erase(iterator);
+}
+
+bool HlaInboundAdapter::shouldApply(
+    ObjectInstanceId instanceId,
+    const ReceiveMetadata& metadata) {
+  if (!metadata.logicalTimeSeconds) return true;
+  const auto iterator = _lastLogicalTimes.find(instanceId);
+  if (iterator != _lastLogicalTimes.end() &&
+      *metadata.logicalTimeSeconds < iterator->second) {
+    return false;
+  }
+  _lastLogicalTimes[instanceId] = *metadata.logicalTimeSeconds;
+  return true;
 }
 
 void HlaInboundAdapter::onInteractionReceived(
@@ -355,6 +380,57 @@ void HlaInboundAdapter::onInteractionReceived(
                : RemoteSimulationControl::Pause);
 }
 
+void HlaInboundAdapter::onSynchronizationPointAnnounced(
+    const SynchronizationPointAnnouncement& event) {
+  if (event.label.empty()) return;
+  _synchronizationChanges.push_back(
+      {event.label, event.tag, false});
+}
+
+void HlaInboundAdapter::onSynchronizationPointRegistrationResult(
+    const SynchronizationPointRegistrationResult& event) {
+  if (event.label.empty()) return;
+  RemoteSynchronizationChange change;
+  change.label = event.label;
+  change.registrationCompleted = true;
+  change.registrationSucceeded = event.succeeded;
+  change.reason = event.reason;
+  _synchronizationChanges.push_back(std::move(change));
+}
+
+void HlaInboundAdapter::onFederationSynchronized(const std::string& label) {
+  if (label.empty()) return;
+  _synchronizationChanges.push_back({label, {}, true});
+}
+
+void HlaInboundAdapter::onTimeRegulationEnabled(double logicalTimeSeconds) {
+  _timeManagementEvents.push_back({
+      RemoteTimeManagementEventKind::RegulationEnabled,
+      logicalTimeSeconds});
+}
+
+void HlaInboundAdapter::onTimeConstrainedEnabled(double logicalTimeSeconds) {
+  _timeManagementEvents.push_back({
+      RemoteTimeManagementEventKind::ConstrainedEnabled,
+      logicalTimeSeconds});
+}
+
+void HlaInboundAdapter::onTimeAdvanceGranted(double logicalTimeSeconds) {
+  _timeManagementEvents.push_back({
+      RemoteTimeManagementEventKind::AdvanceGranted,
+      logicalTimeSeconds});
+}
+
+void HlaInboundAdapter::onAttributeOwnershipChanged(
+    const AttributeOwnershipEvent& event) {
+  if (event.instanceId == 0 || event.attributeNames.empty()) return;
+  _ownershipEvents.push_back(event);
+}
+
+void HlaInboundAdapter::onConnectionLost(const ConnectionLostEvent& event) {
+  _connectionLostEvents.push_back(event);
+}
+
 std::vector<RemoteSensorChange> HlaInboundAdapter::takeSensorChanges() {
   std::vector<RemoteSensorChange> result = std::move(_sensorChanges);
   _sensorChanges.clear();
@@ -367,12 +443,45 @@ std::vector<RemoteWarfareEvent> HlaInboundAdapter::takeWarfareEvents() {
   return result;
 }
 
+std::vector<RemoteSynchronizationChange>
+HlaInboundAdapter::takeSynchronizationChanges() {
+  std::vector<RemoteSynchronizationChange> result =
+      std::move(_synchronizationChanges);
+  _synchronizationChanges.clear();
+  return result;
+}
+
+std::vector<RemoteTimeManagementEvent>
+HlaInboundAdapter::takeTimeManagementEvents() {
+  std::vector<RemoteTimeManagementEvent> result =
+      std::move(_timeManagementEvents);
+  _timeManagementEvents.clear();
+  return result;
+}
+
+std::vector<AttributeOwnershipEvent>
+HlaInboundAdapter::takeOwnershipEvents() {
+  std::vector<AttributeOwnershipEvent> result =
+      std::move(_ownershipEvents);
+  _ownershipEvents.clear();
+  return result;
+}
+
+std::vector<ConnectionLostEvent>
+HlaInboundAdapter::takeConnectionLostEvents() {
+  std::vector<ConnectionLostEvent> result =
+      std::move(_connectionLostEvents);
+  _connectionLostEvents.clear();
+  return result;
+}
+
 std::vector<RemoteEntityChange> HlaInboundAdapter::takeEntityChanges() {
   std::vector<RemoteEntityChange> result = std::move(_removedEntities);
   _removedEntities.clear();
   for (auto& item : _entities) {
     if (!item.second.dirty) continue;
-    result.push_back({item.first, item.second.state, false});
+    result.push_back({
+        item.first, item.second.state, false, item.second.receiveMetadata});
     item.second.dirty = false;
   }
   return result;
@@ -383,7 +492,8 @@ std::vector<RemoteMunitionChange> HlaInboundAdapter::takeMunitionChanges() {
   _removedMunitions.clear();
   for (auto& item : _munitions) {
     if (!item.second.dirty) continue;
-    result.push_back({item.first, item.second.state, false});
+    result.push_back({
+        item.first, item.second.state, false, item.second.receiveMetadata});
     item.second.dirty = false;
   }
   return result;

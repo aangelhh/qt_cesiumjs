@@ -51,6 +51,9 @@ TEST(StartupConfiguration, PersistsFederationAndOptionalIntegrations) {
   expected.federationMode = application::FederationMode::Dis;
   expected.dis.address = QStringLiteral("239.10.20.30");
   expected.dis.port = 3010;
+  expected.hla.synchronizationPointLabel = QStringLiteral("ReadyToRun");
+  expected.hla.timeManagementEnabled = true;
+  expected.hla.timeLookaheadSeconds = 0.025;
   expected.ros2.enabled = true;
   expected.ros2.domainId = 42;
   expected.ros2.topicPrefix = QStringLiteral("/exercise/entities");
@@ -64,6 +67,13 @@ TEST(StartupConfiguration, PersistsFederationAndOptionalIntegrations) {
   EXPECT_EQ(actual.federationMode, application::FederationMode::Dis);
   EXPECT_EQ(actual.dis.address, expected.dis.address);
   EXPECT_EQ(actual.dis.port, expected.dis.port);
+  EXPECT_EQ(
+      actual.hla.synchronizationPointLabel,
+      expected.hla.synchronizationPointLabel);
+  EXPECT_TRUE(actual.hla.timeManagementEnabled);
+  EXPECT_DOUBLE_EQ(
+      actual.hla.timeLookaheadSeconds,
+      expected.hla.timeLookaheadSeconds);
   EXPECT_TRUE(actual.ros2.enabled);
   EXPECT_EQ(actual.ros2.domainId, 42);
   EXPECT_EQ(actual.ros2.topicPrefix, expected.ros2.topicPrefix);

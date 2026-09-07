@@ -52,8 +52,21 @@ public:
       const tactical::hla::ByteBuffer&) override {
     return tactical::hla::Result::ok();
   }
+  tactical::hla::Result updateObjectAttributesAtTime(
+      tactical::hla::ObjectInstanceId,
+      const std::vector<tactical::hla::NamedValue>&,
+      double,
+      const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
   tactical::hla::Result deleteObjectInstance(
       tactical::hla::ObjectInstanceId,
+      const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result deleteObjectInstanceAtTime(
+      tactical::hla::ObjectInstanceId,
+      double,
       const tactical::hla::ByteBuffer&) override {
     return tactical::hla::Result::ok();
   }
@@ -70,6 +83,42 @@ public:
       const std::string&,
       const std::vector<tactical::hla::NamedValue>&,
       const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result sendInteractionAtTime(
+      const std::string&,
+      const std::vector<tactical::hla::NamedValue>&,
+      double,
+      const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result registerSynchronizationPoint(
+      const std::string&,
+      const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result achieveSynchronizationPoint(
+      const std::string&) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result enableTimeRegulation(double) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result enableTimeConstrained() override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result requestTimeAdvance(double) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result requestAttributeOwnershipAcquisition(
+      tactical::hla::ObjectInstanceId,
+      const std::vector<std::string>&,
+      const tactical::hla::ByteBuffer&) override {
+    return tactical::hla::Result::ok();
+  }
+  tactical::hla::Result unconditionalAttributeOwnershipDivestiture(
+      tactical::hla::ObjectInstanceId,
+      const std::vector<std::string>&) override {
     return tactical::hla::Result::ok();
   }
   tactical::hla::Result poll(double) override {
