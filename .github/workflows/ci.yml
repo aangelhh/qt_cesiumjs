@@ -1,0 +1,129 @@
+name: Qt Multiplatform CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: "6.10.2"
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-24.04
+            parallel: 2
+          - name: Windows x64
+            os: windows-2025
+            parallel: 2
+          - name: macOS ARM64
+            os: macos-15
+            parallel: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install NASM
+        uses: ilammy/setup-nasm@v1
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ninja-build \
+            pkg-config \
+            libgl1-mesa-dev \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-xinerama0 \
+            libxcb-icccm4 \
+            libxcb-keysyms1 \
+            libxcb-image0 \
+            libxcb-render-util0
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          target: desktop
+          install-deps: true
+          cache: true
+          cache-key-prefix: qt-${{ runner.os }}-${{ runner.arch }}-${{ env.QT_VERSION }}
+
+      - name: Show toolchain versions
+        shell: bash
+        run: |
+          cmake --version
+          qmake6 --version || qmake --version || true
+          c++ --version || true
+
+      - name: Configure Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DCESIUM_TESTS_ENABLED=OFF \
+            -DCESIUM_ENABLE_CLANG_TIDY=OFF
+
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 `
+            -DCESIUM_TESTS_ENABLED=OFF `
+            -DCESIUM_ENABLE_CLANG_TIDY=OFF
+
+      - name: Build Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake --build build --parallel ${{ matrix.parallel }}
+
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake --build build --config $env:CMAKE_BUILD_TYPE --parallel ${{ matrix.parallel }}
+
+      - name: Verify Linux executable
+        if: runner.os == 'Linux'
+        shell: bash
+        run: test -x build/appqt_test
+
+      - name: Verify macOS application bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: test -x build/appqt_test.app/Contents/MacOS/appqt_test
+
+      - name: Verify Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "build/$env:CMAKE_BUILD_TYPE/appqt_test.exe")) {
+            throw "appqt_test.exe was not generated"
+          }
