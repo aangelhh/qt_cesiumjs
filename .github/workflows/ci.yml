@@ -53,6 +53,8 @@ jobs:
           path: Dependencies/jsbsim
           key: jsbsim-${{ runner.os }}-${{ runner.arch }}-${{ env.JSBSIM_COMMIT }}
 
+      # OpenRTI is a private submodule and is deliberately disabled below.
+      # JSBSim is public; clone the exact revision only on a source-cache miss.
       - name: Checkout pinned JSBSim
         if: steps.jsbsim-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -67,25 +69,16 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          def replace_once(path: str, old: str, new: str, label: str):
-              file_path = Path(path)
-              text = file_path.read_text(encoding="utf-8")
-              if old not in text:
-                  raise SystemExit(f"{label} pattern not found in {path}")
-              file_path.write_text(text.replace(old, new, 1), encoding="utf-8")
-
-          # MainWindow resources: prefer the portable package root over the
-          # temporary GitHub Actions checkout embedded at compile time.
-          replace_once(
-              "src/MainWindow.cpp",
-              '''QString projectRootPath() {
+          main_window = Path("src/MainWindow.cpp")
+          text = main_window.read_text(encoding="utf-8")
+          old = '''QString projectRootPath() {
           #ifdef QTTEST_SOURCE_DIR
             return QString::fromUtf8(QTTEST_SOURCE_DIR);
           #else
             return QDir::currentPath();
           #endif
-          }''',
-              '''QString projectRootPath() {
+          }'''
+          new = '''QString projectRootPath() {
             QDir cursor(QCoreApplication::applicationDirPath());
             for (int depth = 0; depth < 6; ++depth) {
               if (QFileInfo::exists(
@@ -97,352 +90,26 @@ jobs:
               }
             }
           #ifdef QTTEST_SOURCE_DIR
-            const QDir sourceRoot(QString::fromUtf8(QTTEST_SOURCE_DIR));
-            if (QFileInfo::exists(sourceRoot.absoluteFilePath(
-                    QStringLiteral("Data/config3DModel.yaml")))) {
-              return sourceRoot.absolutePath();
-            }
-          #endif
-            return QDir::currentPath();
-          }''',
-              "MainWindow portable root")
-
-          # DIS / SISO catalog: packaged builds contain the XML in Data/, so
-          # do not keep pointing at the runner's checkout directory.
-          dis_path = Path("src/infrastructure/DisEntityCatalog.cpp")
-          dis_text = dis_path.read_text(encoding="utf-8")
-          if "#include <QCoreApplication>" not in dis_text:
-              dis_text = dis_text.replace(
-                  "#include <QDir>\n",
-                  "#include <QCoreApplication>\n#include <QDir>\n#include <QFileInfo>\n",
-                  1)
-          old_root = '''QString projectRoot() {
-          #ifdef QTTEST_SOURCE_DIR
             return QString::fromUtf8(QTTEST_SOURCE_DIR);
           #else
             return QDir::currentPath();
           #endif
           }'''
-          new_root = '''QString projectRoot() {
-            QDir cursor(QCoreApplication::applicationDirPath());
-            for (int depth = 0; depth < 6; ++depth) {
-              if (QFileInfo::exists(cursor.absoluteFilePath(
-                      QStringLiteral("Data/siso-std-010.xml")))) {
-                return cursor.absolutePath();
-              }
-              if (!cursor.cdUp()) {
-                break;
-              }
-            }
-          #ifdef QTTEST_SOURCE_DIR
-            const QDir sourceRoot(QString::fromUtf8(QTTEST_SOURCE_DIR));
-            if (QFileInfo::exists(sourceRoot.absoluteFilePath(
-                    QStringLiteral("Data/siso-std-010.xml")))) {
-              return sourceRoot.absolutePath();
-            }
-          #endif
-            return QDir::currentPath();
-          }'''
-          if old_root not in dis_text:
-              raise SystemExit("DIS/SISO projectRoot pattern not found")
-          dis_path.write_text(dis_text.replace(old_root, new_root, 1), encoding="utf-8")
-
-          # Sensor provider catalog has the same source-tree assumption.
-          sensor_catalog = Path("src/infrastructure/SensorModelProviderCatalog.cpp")
-          sensor_text = sensor_catalog.read_text(encoding="utf-8")
-          if "#include <QCoreApplication>" not in sensor_text:
-              sensor_text = sensor_text.replace(
-                  "#include <QDir>\n",
-                  "#include <QCoreApplication>\n#include <QDir>\n#include <QFileInfo>\n",
-                  1)
-          if old_root not in sensor_text:
-              raise SystemExit("Sensor provider catalog projectRoot pattern not found")
-          sensor_root = '''QString projectRoot() {
-            QDir cursor(QCoreApplication::applicationDirPath());
-            for (int depth = 0; depth < 6; ++depth) {
-              if (QFileInfo::exists(cursor.absoluteFilePath(
-                      QStringLiteral("Data/sensor_model_providers.json")))) {
-                return cursor.absolutePath();
-              }
-              if (!cursor.cdUp()) {
-                break;
-              }
-            }
-          #ifdef QTTEST_SOURCE_DIR
-            const QDir sourceRoot(QString::fromUtf8(QTTEST_SOURCE_DIR));
-            if (QFileInfo::exists(sourceRoot.absoluteFilePath(
-                    QStringLiteral("Data/sensor_model_providers.json")))) {
-              return sourceRoot.absolutePath();
-            }
-          #endif
-            return QDir::currentPath();
-          }'''
-          sensor_catalog.write_text(
-              sensor_text.replace(old_root, sensor_root, 1), encoding="utf-8")
-
-          # Sensor bootstrap must resolve Tools/ and provider libraries from the
-          # portable package as well.
-          bootstrap = Path("src/infrastructure/SensorModelProviderBootstrap.cpp")
-          bootstrap_text = bootstrap.read_text(encoding="utf-8")
-          if "#include <QCoreApplication>" not in bootstrap_text:
-              bootstrap_text = bootstrap_text.replace(
-                  "#include <QDir>\n",
-                  "#include <QCoreApplication>\n#include <QDir>\n",
-                  1)
-          old_source_root = '''QString sourceRoot() {
-          #ifdef QTTEST_SOURCE_DIR
-            return QString::fromUtf8(QTTEST_SOURCE_DIR);
-          #else
-            return QDir::currentPath();
-          #endif
-          }'''
-          new_source_root = '''QString sourceRoot() {
-            QDir cursor(QCoreApplication::applicationDirPath());
-            for (int depth = 0; depth < 6; ++depth) {
-              if (QFileInfo::exists(cursor.absoluteFilePath(
-                      QStringLiteral("Data/sensor_model_providers.json")))) {
-                return cursor.absolutePath();
-              }
-              if (!cursor.cdUp()) {
-                break;
-              }
-            }
-          #ifdef QTTEST_SOURCE_DIR
-            const QDir source(QString::fromUtf8(QTTEST_SOURCE_DIR));
-            if (QFileInfo::exists(source.absoluteFilePath(
-                    QStringLiteral("Data/sensor_model_providers.json")))) {
-              return source.absolutePath();
-            }
-          #endif
-            return QDir::currentPath();
-          }'''
-          if old_source_root not in bootstrap_text:
-              raise SystemExit("Sensor bootstrap sourceRoot pattern not found")
-          bootstrap.write_text(
-              bootstrap_text.replace(old_source_root, new_source_root, 1),
-              encoding="utf-8")
-
-          # Make radar configuration visible and useful immediately when
-          # creating a new entity. Users can still uncheck it explicitly.
-          replace_once(
-              "src/AddEntityDialog.cpp",
-              "  _addRadarCheck->setChecked(false);",
-              "  _addRadarCheck->setChecked(true);",
-              "default radar")
+          if old not in text:
+              raise SystemExit("MainWindow projectRootPath pattern not found")
+          main_window.write_text(text.replace(old, new, 1), encoding="utf-8")
 
           main_cpp = Path("main.cpp")
-          main_text = main_cpp.read_text(encoding="utf-8")
-
-          # A Qt native Windows style alone still leaves the Widgets UI looking
-          # very traditional. Use Fusion plus a compact Fluent-inspired QSS on
-          # Windows only; macOS and Linux keep their native/default styling.
+          text = main_cpp.read_text(encoding="utf-8")
           app_line = "    QApplication app(argc, argv);"
-          app_replacement = '''    QApplication app(argc, argv);
+          replacement = '''    QApplication app(argc, argv);
           #ifdef Q_OS_WIN
-              QApplication::setStyle(QStringLiteral("Fusion"));
-              app.setStyleSheet(QString::fromUtf8(R"QSS(
-          QWidget {
-            font-family: "Segoe UI";
-            font-size: 9pt;
-            color: #202020;
-          }
-          QMainWindow, QDialog { background: #f3f3f3; }
-          QMenuBar {
-            background: #fafafa;
-            border: none;
-            border-bottom: 1px solid #dddddd;
-            padding: 2px 4px;
-          }
-          QMenuBar::item {
-            background: transparent;
-            padding: 5px 9px;
-            margin: 1px;
-            border-radius: 5px;
-          }
-          QMenuBar::item:selected { background: #e8e8e8; }
-          QMenu {
-            background: #ffffff;
-            border: 1px solid #d8d8d8;
-            padding: 5px;
-          }
-          QMenu::item { padding: 6px 30px 6px 10px; }
-          QMenu::item:selected { background: #e7f1fb; }
-          QToolBar {
-            background: #fafafa;
-            border: none;
-            border-bottom: 1px solid #dddddd;
-            spacing: 4px;
-            padding: 4px 6px;
-          }
-          QToolButton, QPushButton {
-            background: #ffffff;
-            border: 1px solid #c9c9c9;
-            border-radius: 6px;
-            padding: 5px 9px;
-            min-height: 20px;
-          }
-          QToolButton:hover, QPushButton:hover {
-            background: #f0f0f0;
-            border-color: #b6b6b6;
-          }
-          QToolButton:pressed, QPushButton:pressed { background: #e5e5e5; }
-          QToolButton:checked, QPushButton:checked {
-            background: #dcecff;
-            border-color: #82b7e8;
-          }
-          QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
-            background: #ffffff;
-            border: 1px solid #c8c8c8;
-            border-radius: 6px;
-            padding: 4px 7px;
-            min-height: 22px;
-          }
-          QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
-            border: 2px solid #0067c0;
-            padding: 3px 6px;
-          }
-          QDockWidget { font-weight: 600; }
-          QDockWidget::title {
-            background: #f7f7f7;
-            padding: 6px 8px;
-            border-bottom: 1px solid #dddddd;
-          }
-          QTreeView, QListView, QTableView, QTableWidget, QPlainTextEdit {
-            background: #ffffff;
-            border: 1px solid #d6d6d6;
-            selection-background-color: #cce8ff;
-            selection-color: #202020;
-          }
-          QHeaderView::section {
-            background: #f5f5f5;
-            border: none;
-            border-right: 1px solid #dddddd;
-            border-bottom: 1px solid #dddddd;
-            padding: 5px 7px;
-          }
-          QGroupBox {
-            border: 1px solid #d4d4d4;
-            border-radius: 7px;
-            margin-top: 10px;
-            padding-top: 8px;
-          }
-          QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 9px;
-            padding: 0 4px;
-          }
-          QTabWidget::pane {
-            border: 1px solid #d4d4d4;
-            background: #ffffff;
-          }
-          QTabBar::tab {
-            background: #eeeeee;
-            border: 1px solid #d4d4d4;
-            padding: 6px 10px;
-          }
-          QTabBar::tab:selected { background: #ffffff; }
-          QStatusBar {
-            background: #f7f7f7;
-            border-top: 1px solid #dddddd;
-          }
-          )QSS"));
+              // Qt 6.10 ships the modern Windows 11 widget style as a plugin.
+              QApplication::setStyle(QStringLiteral("windows11"));
           #endif'''
-          if app_line not in main_text:
+          if app_line not in text:
               raise SystemExit("QApplication construction pattern not found")
-          main_text = main_text.replace(app_line, app_replacement, 1)
-
-          # Discover HLA plugins from the package next to qttest, instead of
-          # requiring the compile-time path on the GitHub runner.
-          old_backends = '''QVector<presentation::HlaBackendOption> availableHlaBackends() {
-            QVector<presentation::HlaBackendOption> backends;
-          #ifdef QTTEST_HLA_OPENRTI_PLUGIN_PATH
-            if (QFileInfo::exists(QStringLiteral(QTTEST_HLA_OPENRTI_PLUGIN_PATH))) {
-              backends.push_back({
-                  QStringLiteral("openrti1516e"),
-                  QStringLiteral("OpenRTI (IEEE 1516e)"),
-                  QStringLiteral(QTTEST_HLA_OPENRTI_PLUGIN_PATH)});
-            }
-          #endif
-          #ifdef QTTEST_HLA_PITCH_PLUGIN_PATH
-            if (QFileInfo::exists(QStringLiteral(QTTEST_HLA_PITCH_PLUGIN_PATH))) {
-              backends.push_back({
-                  QStringLiteral("pitch1516e"),
-                  QStringLiteral("Pitch pRTI (IEEE 1516e)"),
-                  QStringLiteral(QTTEST_HLA_PITCH_PLUGIN_PATH)});
-            }
-          #endif
-            return backends;
-          }'''
-          new_backends = '''QString hlaPluginFileName(const QString& stem) {
-          #ifdef Q_OS_WIN
-            return stem + QStringLiteral(".dll");
-          #elif defined(Q_OS_MACOS)
-            return QStringLiteral("lib") + stem + QStringLiteral(".dylib");
-          #else
-            return QStringLiteral("lib") + stem + QStringLiteral(".so");
-          #endif
-          }
-
-          QString packagedHlaPluginPath(
-              const QString& stem,
-              const QString& environmentVariable,
-              const QString& compiledPath = QString()) {
-            const QString explicitPath =
-                qEnvironmentVariable(environmentVariable.toUtf8().constData()).trimmed();
-            if (!explicitPath.isEmpty() && QFileInfo::exists(explicitPath)) {
-              return QFileInfo(explicitPath).absoluteFilePath();
-            }
-            const QString fileName = hlaPluginFileName(stem);
-            const QDir appDir(QCoreApplication::applicationDirPath());
-            const QStringList candidates = {
-                appDir.filePath(QStringLiteral("hla-plugins/%1").arg(fileName)),
-                appDir.filePath(QStringLiteral("hla-plugins/Release/%1").arg(fileName)),
-                appDir.filePath(fileName)};
-            for (const QString& candidate : candidates) {
-              if (QFileInfo::exists(candidate)) {
-                return QFileInfo(candidate).absoluteFilePath();
-              }
-            }
-            if (!compiledPath.isEmpty() && QFileInfo::exists(compiledPath)) {
-              return QFileInfo(compiledPath).absoluteFilePath();
-            }
-            return {};
-          }
-
-          QVector<presentation::HlaBackendOption> availableHlaBackends() {
-            QVector<presentation::HlaBackendOption> backends;
-            QString compiledOpenRtiPath;
-          #ifdef QTTEST_HLA_OPENRTI_PLUGIN_PATH
-            compiledOpenRtiPath = QStringLiteral(QTTEST_HLA_OPENRTI_PLUGIN_PATH);
-          #endif
-            const QString openRtiPath = packagedHlaPluginPath(
-                QStringLiteral("qttest_hla_openrti1516e_backend"),
-                QStringLiteral("QTTEST_HLA_OPENRTI_PLUGIN"),
-                compiledOpenRtiPath);
-            if (!openRtiPath.isEmpty()) {
-              backends.push_back({QStringLiteral("openrti1516e"),
-                                  QStringLiteral("OpenRTI (IEEE 1516e)"),
-                                  openRtiPath});
-            }
-
-            QString compiledPitchPath;
-          #ifdef QTTEST_HLA_PITCH_PLUGIN_PATH
-            compiledPitchPath = QStringLiteral(QTTEST_HLA_PITCH_PLUGIN_PATH);
-          #endif
-            const QString pitchPath = packagedHlaPluginPath(
-                QStringLiteral("qttest_hla_pitch1516e_backend"),
-                QStringLiteral("QTTEST_HLA_PITCH_PLUGIN"),
-                compiledPitchPath);
-            if (!pitchPath.isEmpty()) {
-              backends.push_back({QStringLiteral("pitch1516e"),
-                                  QStringLiteral("Pitch pRTI (IEEE 1516e)"),
-                                  pitchPath});
-            }
-            return backends;
-          }'''
-          if old_backends not in main_text:
-              raise SystemExit("HLA backend discovery pattern not found")
-          main_text = main_text.replace(old_backends, new_backends, 1)
+          text = text.replace(app_line, replacement, 1)
 
           old_fom = '''    startupConfiguration.addMissingHlaFomModules(
                   QDir(QStringLiteral(QTTEST_SOURCE_DIR))
@@ -459,9 +126,9 @@ jobs:
               const QString hlaFomPath = packagedFomPath;
           #endif
               startupConfiguration.addMissingHlaFomModules(hlaFomPath);'''
-          if old_fom not in main_text:
+          if old_fom not in text:
               raise SystemExit("HLA FOM source path pattern not found")
-          main_cpp.write_text(main_text.replace(old_fom, new_fom, 1), encoding="utf-8")
+          main_cpp.write_text(text.replace(old_fom, new_fom, 1), encoding="utf-8")
           PY
 
       - name: Install Linux system dependencies
@@ -578,15 +245,12 @@ jobs:
           mkdir -p "$package_root"
           cp build/qttest "$package_root/qttest"
 
-          for directory in Data models vendor LICENSES Tools; do
+          for directory in Data models vendor LICENSES; do
             if [ -e "$directory" ]; then
               cp -a "$directory" "$package_root/$directory"
             fi
           done
 
-          if [ -d build/hla-plugins ]; then
-            cp -a build/hla-plugins "$package_root/hla-plugins"
-          fi
           if [ -d src/infrastructure/hla/FOM ]; then
             mkdir -p "$package_root/src/infrastructure/hla"
             cp -a src/infrastructure/hla/FOM "$package_root/src/infrastructure/hla/FOM"
@@ -601,7 +265,10 @@ jobs:
           if [ -d Dependencies/jsbsim-models ]; then
             cp -a Dependencies/jsbsim-models "$package_root/Dependencies/jsbsim-models"
           fi
-          [ ! -f ATTRIBUTIONS.md ] || cp ATTRIBUTIONS.md "$package_root/ATTRIBUTIONS.md"
+
+          if [ -f ATTRIBUTIONS.md ]; then
+            cp ATTRIBUTIONS.md "$package_root/ATTRIBUTIONS.md"
+          fi
 
           cat > "$package_root/cesium.conf.example" <<'EOF'
           # Cesium Ion configuration for packaged builds.
@@ -620,20 +287,25 @@ jobs:
           mkdir -p "$package_root/lib" "$package_root/plugins" \
                    "$package_root/libexec" "$package_root/resources" \
                    "$package_root/translations"
+
           find "$qt_libs" -maxdepth 1 -type f \( -name 'libQt6*.so*' -o -name 'libicu*.so*' \) \
             -exec cp -L {} "$package_root/lib/" \;
           cp -a "$qt_plugins/." "$package_root/plugins/"
+
           if [ -x "$qt_libexec/QtWebEngineProcess" ]; then
             cp -L "$qt_libexec/QtWebEngineProcess" "$package_root/libexec/QtWebEngineProcess"
             chmod +x "$package_root/libexec/QtWebEngineProcess"
           fi
+
           for resources_dir in "$qt_data/resources" "$qt_prefix/resources"; do
             if [ -d "$resources_dir" ]; then
               cp -a "$resources_dir/." "$package_root/resources/"
               break
             fi
           done
-          [ ! -d "$qt_translations" ] || cp -a "$qt_translations/." "$package_root/translations/"
+          if [ -d "$qt_translations" ]; then
+            cp -a "$qt_translations/." "$package_root/translations/"
+          fi
 
           cat > "$package_root/run_qttest.sh" <<'EOF'
           #!/usr/bin/env bash
@@ -648,6 +320,7 @@ jobs:
           exec "$HERE/qttest" "$@"
           EOF
           chmod +x "$package_root/qttest" "$package_root/run_qttest.sh"
+
           tar -czf qttest-linux-x64.tar.gz -C package qttest-linux-x64
           du -sh "$package_root" qttest-linux-x64.tar.gz
 
@@ -657,16 +330,14 @@ jobs:
         run: |
           set -euo pipefail
           macdeployqt build/qttest.app -always-overwrite -qmldir="$PWD"
-          runtime_root="$PWD/build/qttest.app/Contents/MacOS"
 
-          for directory in Data models vendor LICENSES Tools; do
+          runtime_root="$PWD/build/qttest.app/Contents/MacOS"
+          for directory in Data models vendor LICENSES; do
             if [ -e "$directory" ]; then
               cp -a "$directory" "$runtime_root/$directory"
             fi
           done
-          if [ -d build/hla-plugins ]; then
-            cp -a build/hla-plugins "$runtime_root/hla-plugins"
-          fi
+
           if [ -d src/infrastructure/hla/FOM ]; then
             mkdir -p "$runtime_root/src/infrastructure/hla"
             cp -a src/infrastructure/hla/FOM "$runtime_root/src/infrastructure/hla/FOM"
@@ -681,7 +352,10 @@ jobs:
           if [ -d Dependencies/jsbsim-models ]; then
             cp -a Dependencies/jsbsim-models "$runtime_root/Dependencies/jsbsim-models"
           fi
-          [ ! -f ATTRIBUTIONS.md ] || cp ATTRIBUTIONS.md "$runtime_root/ATTRIBUTIONS.md"
+
+          if [ -f ATTRIBUTIONS.md ]; then
+            cp ATTRIBUTIONS.md "$runtime_root/ATTRIBUTIONS.md"
+          fi
 
           cat > "$runtime_root/cesium.conf.example" <<'EOF'
           # Cesium Ion configuration for packaged builds.
@@ -697,6 +371,7 @@ jobs:
           exec "$HERE/qttest-bin" "$@"
           EOF
           chmod +x "$runtime_root/qttest" "$runtime_root/qttest-bin"
+
           ditto -c -k --sequesterRsrc --keepParent build/qttest.app qttest-macos-arm64.zip
           du -sh build/qttest.app qttest-macos-arm64.zip
 
@@ -707,22 +382,30 @@ jobs:
           $ErrorActionPreference = "Stop"
           $packageRoot = Join-Path $PWD "package/qttest-windows-x64"
           New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
+
           Copy-Item "build/$env:CMAKE_BUILD_TYPE/qttest.exe" (Join-Path $packageRoot "qttest.exe")
 
           $deployQt = Get-Command windeployqt.exe -ErrorAction Stop
-          & $deployQt.Source --release --compiler-runtime --qmldir "$PWD" (Join-Path $packageRoot "qttest.exe")
+          & $deployQt.Source `
+            --release `
+            --compiler-runtime `
+            --qmldir "$PWD" `
+            (Join-Path $packageRoot "qttest.exe")
           if ($LASTEXITCODE -ne 0) {
             throw "windeployqt failed with exit code $LASTEXITCODE"
           }
 
-          foreach ($directory in @("Data", "models", "vendor", "LICENSES", "Tools")) {
+          $modernStyle = Join-Path $packageRoot "styles/qmodernwindowsstyle.dll"
+          if (-not (Test-Path $modernStyle)) {
+            throw "Qt modern Windows style plugin was not deployed"
+          }
+
+          foreach ($directory in @("Data", "models", "vendor", "LICENSES")) {
             if (Test-Path $directory) {
               Copy-Item $directory (Join-Path $packageRoot $directory) -Recurse
             }
           }
-          if (Test-Path "build/hla-plugins") {
-            Copy-Item "build/hla-plugins" (Join-Path $packageRoot "hla-plugins") -Recurse
-          }
+
           if (Test-Path "src/infrastructure/hla/FOM") {
             $fomTarget = Join-Path $packageRoot "src/infrastructure/hla/FOM"
             New-Item -ItemType Directory -Force -Path $fomTarget | Out-Null
@@ -740,6 +423,7 @@ jobs:
           if (Test-Path "Dependencies/jsbsim-models") {
             Copy-Item "Dependencies/jsbsim-models" (Join-Path $packageRoot "Dependencies/jsbsim-models") -Recurse
           }
+
           if (Test-Path "ATTRIBUTIONS.md") {
             Copy-Item "ATTRIBUTIONS.md" (Join-Path $packageRoot "ATTRIBUTIONS.md")
           }
@@ -753,15 +437,9 @@ jobs:
           @'
           @echo off
           cd /d "%~dp0"
-          qttest.exe %*
+          qttest.exe -style windows11 %*
           '@ | Set-Content -Path (Join-Path $packageRoot "run_qttest.cmd") -Encoding ascii
 
-          if (-not (Test-Path (Join-Path $packageRoot "Data/siso-std-010.xml"))) {
-            throw "SISO catalog missing from Windows package"
-          }
-          if (-not (Test-Path (Join-Path $packageRoot "Data/sensor_model_providers.json"))) {
-            throw "Sensor provider configuration missing from Windows package"
-          }
           Write-Host "Windows package contents:"
           Get-ChildItem $packageRoot | Select-Object Name, Length
 
