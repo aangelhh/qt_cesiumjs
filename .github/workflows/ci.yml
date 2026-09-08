@@ -80,7 +80,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           target: desktop
-          modules: "qtwebengine qtwebchannel qtpositioning qtdeclarative qtsvg"
+          modules: "qtwebengine qtwebchannel qtpositioning"
           cache: true
           cache-key-prefix: qttest-qt-${{ runner.os }}-${{ runner.arch }}-${{ env.QT_VERSION }}
 
