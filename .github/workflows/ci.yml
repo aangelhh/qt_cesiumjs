@@ -222,11 +222,15 @@ jobs:
             Copy-Item "Dependencies/jsbsim-models" (Join-Path $packageRoot "Dependencies/jsbsim-models") -Recurse
           }
 
-          foreach ($file in @("cesium.conf", "ATTRIBUTIONS.md")) {
-            if (Test-Path $file) {
-              Copy-Item $file (Join-Path $packageRoot $file)
-            }
+          if (Test-Path "ATTRIBUTIONS.md") {
+            Copy-Item "ATTRIBUTIONS.md" (Join-Path $packageRoot "ATTRIBUTIONS.md")
           }
+
+          @'
+          # Cesium Ion configuration for packaged builds.
+          # Prefer setting CESIUM_ION_TOKEN in the environment.
+          # ion_access_token=''
+          '@ | Set-Content -Path (Join-Path $packageRoot "cesium.conf.example") -Encoding ascii
 
           @'
           @echo off
