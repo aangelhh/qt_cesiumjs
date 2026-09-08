@@ -20,6 +20,7 @@ env:
   QT_VERSION: "6.10.2"
   CMAKE_BUILD_TYPE: Release
   JSBSIM_COMMIT: "506773ad3790a5a621445631613faf51a15284e7"
+  SCCACHE_GHA_ENABLED: "true"
 
 jobs:
   build:
@@ -43,11 +44,19 @@ jobs:
 
     steps:
       - name: Checkout qttest
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Restore JSBSim source cache
+        id: jsbsim-cache
+        uses: actions/cache@v6
+        with:
+          path: Dependencies/jsbsim
+          key: jsbsim-${{ runner.os }}-${{ runner.arch }}-${{ env.JSBSIM_COMMIT }}
 
       # OpenRTI is a private submodule and is deliberately disabled below.
-      # JSBSim is public, so fetch the exact revision pinned by develop.
+      # JSBSim is public; clone the exact revision only on a source-cache miss.
       - name: Checkout pinned JSBSim
+        if: steps.jsbsim-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           rm -rf Dependencies/jsbsim
@@ -84,12 +93,16 @@ jobs:
           cache: true
           cache-key-prefix: qttest-qt-${{ runner.os }}-${{ runner.arch }}-${{ env.QT_VERSION }}
 
+      - name: Enable C/C++ compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
       - name: Show toolchain
         shell: bash
         run: |
           cmake --version
           qmake6 --version || qmake --version || true
           c++ --version || true
+          sccache --version
 
       - name: Configure Linux/macOS
         if: runner.os != 'Windows'
@@ -97,6 +110,8 @@ jobs:
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=OFF \
             -DQTTEST_ENABLE_PITCH_HLA_BACKEND=OFF \
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF \
@@ -110,6 +125,8 @@ jobs:
         shell: pwsh
         run: |
           cmake -S . -B build -A x64 `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=OFF `
             -DQTTEST_ENABLE_PITCH_HLA_BACKEND=OFF `
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF `
@@ -127,6 +144,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: cmake --build build --config $env:CMAKE_BUILD_TYPE --parallel ${{ matrix.parallel }}
+
+      - name: Show compilation cache statistics
+        if: always()
+        shell: bash
+        run: sccache --show-stats || true
 
       - name: Verify Linux executable
         if: runner.os == 'Linux'
