@@ -63,74 +63,6 @@ jobs:
           git clone --filter=blob:none https://github.com/JSBSim-Team/jsbsim.git Dependencies/jsbsim
           git -C Dependencies/jsbsim checkout "${JSBSIM_COMMIT}"
 
-      - name: Prepare portable packaged runtime
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          main_window = Path("src/MainWindow.cpp")
-          text = main_window.read_text(encoding="utf-8")
-          old = '''QString projectRootPath() {
-          #ifdef QTTEST_SOURCE_DIR
-            return QString::fromUtf8(QTTEST_SOURCE_DIR);
-          #else
-            return QDir::currentPath();
-          #endif
-          }'''
-          new = '''QString projectRootPath() {
-            QDir cursor(QCoreApplication::applicationDirPath());
-            for (int depth = 0; depth < 6; ++depth) {
-              if (QFileInfo::exists(
-                      cursor.absoluteFilePath(QStringLiteral("Data/config3DModel.yaml")))) {
-                return cursor.absolutePath();
-              }
-              if (!cursor.cdUp()) {
-                break;
-              }
-            }
-          #ifdef QTTEST_SOURCE_DIR
-            return QString::fromUtf8(QTTEST_SOURCE_DIR);
-          #else
-            return QDir::currentPath();
-          #endif
-          }'''
-          if old not in text:
-              raise SystemExit("MainWindow projectRootPath pattern not found")
-          main_window.write_text(text.replace(old, new, 1), encoding="utf-8")
-
-          main_cpp = Path("main.cpp")
-          text = main_cpp.read_text(encoding="utf-8")
-          app_line = "    QApplication app(argc, argv);"
-          replacement = '''    QApplication app(argc, argv);
-          #ifdef Q_OS_WIN
-              // Qt 6.10 ships the modern Windows 11 widget style as a plugin.
-              QApplication::setStyle(QStringLiteral("windows11"));
-          #endif'''
-          if app_line not in text:
-              raise SystemExit("QApplication construction pattern not found")
-          text = text.replace(app_line, replacement, 1)
-
-          old_fom = '''    startupConfiguration.addMissingHlaFomModules(
-                  QDir(QStringLiteral(QTTEST_SOURCE_DIR))
-                      .filePath(QStringLiteral("src/infrastructure/hla/FOM")));'''
-          new_fom = '''    const QString packagedFomPath =
-              QDir(QCoreApplication::applicationDirPath())
-                  .filePath(QStringLiteral("src/infrastructure/hla/FOM"));
-          #ifdef QTTEST_SOURCE_DIR
-              const QString hlaFomPath = QFileInfo::exists(packagedFomPath)
-                  ? packagedFomPath
-                  : QDir(QStringLiteral(QTTEST_SOURCE_DIR))
-                        .filePath(QStringLiteral("src/infrastructure/hla/FOM"));
-          #else
-              const QString hlaFomPath = packagedFomPath;
-          #endif
-              startupConfiguration.addMissingHlaFomModules(hlaFomPath);'''
-          if old_fom not in text:
-              raise SystemExit("HLA FOM source path pattern not found")
-          main_cpp.write_text(text.replace(old_fom, new_fom, 1), encoding="utf-8")
-          PY
-
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         shell: bash
@@ -183,7 +115,7 @@ jobs:
             -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=OFF \
             -DQTTEST_ENABLE_PITCH_HLA_BACKEND=OFF \
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF \
-            -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=OFF \
+            -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON \
             -DQTTEST_ENABLE_JSBSIM=ON \
             -DQTTEST_BUILD_TESTS=OFF \
             -DQTTEST_BUILD_BENCHMARKS=OFF
@@ -198,7 +130,7 @@ jobs:
             -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=OFF `
             -DQTTEST_ENABLE_PITCH_HLA_BACKEND=OFF `
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF `
-            -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=OFF `
+            -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON `
             -DQTTEST_ENABLE_JSBSIM=ON `
             -DQTTEST_BUILD_TESTS=OFF `
             -DQTTEST_BUILD_BENCHMARKS=OFF
@@ -321,6 +253,10 @@ jobs:
           EOF
           chmod +x "$package_root/qttest" "$package_root/run_qttest.sh"
 
+          mkdir -p "$package_root/sensor-plugins"
+          cp build/sensor-plugins/libqttest_mixr_sensor.so "$package_root/sensor-plugins/"
+          LD_LIBRARY_PATH="$package_root/lib" build/qttest_mixr_smoke "$package_root/sensor-plugins/libqttest_mixr_sensor.so"
+          python Tools/write_runtime_capabilities.py "$package_root"
           tar -czf qttest-linux-x64.tar.gz -C package qttest-linux-x64
           du -sh "$package_root" qttest-linux-x64.tar.gz
 
@@ -372,6 +308,10 @@ jobs:
           EOF
           chmod +x "$runtime_root/qttest" "$runtime_root/qttest-bin"
 
+          mkdir -p "$runtime_root/sensor-plugins"
+          cp build/sensor-plugins/libqttest_mixr_sensor.dylib "$runtime_root/sensor-plugins/"
+          build/qttest_mixr_smoke "$runtime_root/sensor-plugins/libqttest_mixr_sensor.dylib"
+          python Tools/write_runtime_capabilities.py "$runtime_root"
           ditto -c -k --sequesterRsrc --keepParent build/qttest.app qttest-macos-arm64.zip
           du -sh build/qttest.app qttest-macos-arm64.zip
 
@@ -440,6 +380,12 @@ jobs:
           qttest.exe -style windows11 %*
           '@ | Set-Content -Path (Join-Path $packageRoot "run_qttest.cmd") -Encoding ascii
 
+          New-Item -ItemType Directory -Force -Path "$packageRoot/sensor-plugins" | Out-Null
+          Copy-Item "build/sensor-plugins/qttest_mixr_sensor.dll" "$packageRoot/sensor-plugins/"
+          & "build/$env:CMAKE_BUILD_TYPE/qttest_mixr_smoke.exe" "$packageRoot/sensor-plugins/qttest_mixr_sensor.dll"
+          if ($LASTEXITCODE -ne 0) { throw "MIXR load/evaluation smoke test failed" }
+          python Tools/write_runtime_capabilities.py "$packageRoot"
+          if ($LASTEXITCODE -ne 0) { throw "Runtime audit failed" }
           Write-Host "Windows package contents:"
           Get-ChildItem $packageRoot | Select-Object Name, Length
 

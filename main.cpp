@@ -43,6 +43,10 @@ QVector<presentation::HlaBackendOption> availableHlaBackends() {
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+#ifdef Q_OS_WIN
+    // Qt 6.10 ships the modern Windows 11 widget style as a plugin.
+    QApplication::setStyle(QStringLiteral("windows11"));
+#endif
     QCoreApplication::setOrganizationName(QStringLiteral("qttest"));
     QCoreApplication::setApplicationName(QStringLiteral("qttest"));
 
@@ -70,9 +74,18 @@ int main(int argc, char *argv[])
     QSettings settings;
     application::StartupConfiguration startupConfiguration =
         application::StartupConfiguration::load(settings);
-    startupConfiguration.addMissingHlaFomModules(
-        QDir(QStringLiteral(QTTEST_SOURCE_DIR))
-            .filePath(QStringLiteral("src/infrastructure/hla/FOM")));
+    const QString packagedFomPath =
+    QDir(QCoreApplication::applicationDirPath())
+        .filePath(QStringLiteral("src/infrastructure/hla/FOM"));
+#ifdef QTTEST_SOURCE_DIR
+    const QString hlaFomPath = QFileInfo::exists(packagedFomPath)
+        ? packagedFomPath
+        : QDir(QStringLiteral(QTTEST_SOURCE_DIR))
+              .filePath(QStringLiteral("src/infrastructure/hla/FOM"));
+#else
+    const QString hlaFomPath = packagedFomPath;
+#endif
+    startupConfiguration.addMissingHlaFomModules(hlaFomPath);
     application::HlaStartupSession hlaSession;
     const QVector<presentation::HlaBackendOption> hlaBackends =
         availableHlaBackends();

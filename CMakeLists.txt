@@ -331,7 +331,7 @@ endif()
 
 option(
     QTTEST_ENABLE_MIXR_SENSOR_PROVIDER
-    "Build the optional MIXR radar sensor provider on macOS"
+    "Build the MIXR radar sensor provider"
     ON
 )
 set(QTTEST_MIXR_GIT_TAG
@@ -339,78 +339,8 @@ set(QTTEST_MIXR_GIT_TAG
     CACHE STRING "Pinned MIXR revision"
 )
 
-if(QTTEST_ENABLE_MIXR_SENSOR_PROVIDER AND APPLE)
-    include(ExternalProject)
-    find_package(Git REQUIRED)
-    find_package(Threads REQUIRED)
-    find_program(QTTEST_MAKE_EXECUTABLE NAMES gmake make REQUIRED)
-
-    set(QTTEST_MIXR_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/mixr-src)
-    set(QTTEST_MIXR_LIBRARY_DIR ${QTTEST_MIXR_SOURCE_DIR}/lib)
-    set(QTTEST_MIXR_PLUGIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/sensor-plugins)
-    set(QTTEST_MIXR_PLUGIN_PATH
-        ${QTTEST_MIXR_PLUGIN_DIR}/libqttest_mixr_sensor.dylib)
-
-    ExternalProject_Add(qttest_mixr_external
-        EXCLUDE_FROM_ALL TRUE
-        PREFIX ${CMAKE_CURRENT_BINARY_DIR}/mixr-build
-        SOURCE_DIR ${QTTEST_MIXR_SOURCE_DIR}
-        GIT_REPOSITORY https://github.com/doughodson/mixr.git
-        GIT_TAG ${QTTEST_MIXR_GIT_TAG}
-        GIT_SHALLOW FALSE
-        UPDATE_DISCONNECTED TRUE
-        PATCH_COMMAND
-            ${CMAKE_COMMAND}
-            -DMIXR_SOURCE_DIR=<SOURCE_DIR>
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyMixrPatch.cmake
-        CONFIGURE_COMMAND ""
-        BUILD_COMMAND
-            ${CMAKE_COMMAND} -E env
-            MIXR_ROOT=<SOURCE_DIR>
-            MIXR_3RD_PARTY_ROOT=<SOURCE_DIR>/thirdparty
-            ${QTTEST_MAKE_EXECUTABLE} -C <SOURCE_DIR>/src/base -j2
-        COMMAND
-            ${CMAKE_COMMAND} -E env
-            MIXR_ROOT=<SOURCE_DIR>
-            MIXR_3RD_PARTY_ROOT=<SOURCE_DIR>/thirdparty
-            ${QTTEST_MAKE_EXECUTABLE} -C <SOURCE_DIR>/src/simulation -j2
-        COMMAND
-            ${CMAKE_COMMAND} -E env
-            MIXR_ROOT=<SOURCE_DIR>
-            MIXR_3RD_PARTY_ROOT=<SOURCE_DIR>/thirdparty
-            ${QTTEST_MAKE_EXECUTABLE} -C <SOURCE_DIR>/src/models -j2
-        INSTALL_COMMAND ""
-        BUILD_BYPRODUCTS
-            ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_base.a
-            ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_simulation.a
-            ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_models.a
-    )
-
-    add_library(qttest_mixr_sensor SHARED EXCLUDE_FROM_ALL
-        integrations/mixr/MixrSensorPlugin.cpp
-        src/infrastructure/sensors/SensorModelPluginApi.h
-    )
-    add_dependencies(qttest_mixr_sensor qttest_mixr_external)
-    target_include_directories(qttest_mixr_sensor PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${QTTEST_MIXR_SOURCE_DIR}/include
-    )
-    target_link_libraries(qttest_mixr_sensor PRIVATE
-        ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_models.a
-        ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_simulation.a
-        ${QTTEST_MIXR_LIBRARY_DIR}/libmixr_base.a
-        Threads::Threads
-    )
-    target_compile_definitions(qttest_mixr_sensor PRIVATE
-        QTTEST_MIXR_PROVIDER_VERSION="${QTTEST_MIXR_GIT_TAG}"
-    )
-    set_target_properties(qttest_mixr_sensor PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY ${QTTEST_MIXR_PLUGIN_DIR}
-        OUTPUT_NAME qttest_mixr_sensor
-    )
-    # Keep the provider opt-in through QTTEST_ENABLE_MIXR_SENSOR_PROVIDER, but
-    # build it with the default target whenever that option is enabled.
-    add_custom_target(qttest_setup_mixr ALL DEPENDS qttest_mixr_sensor)
+if(QTTEST_ENABLE_MIXR_SENSOR_PROVIDER)
+    include(cmake/MixrSensorProvider.cmake)
 endif()
 
 qt_standard_project_setup()
