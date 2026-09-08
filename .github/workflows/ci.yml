@@ -63,6 +63,76 @@ jobs:
           git clone --filter=blob:none https://github.com/JSBSim-Team/jsbsim.git Dependencies/jsbsim
           git -C Dependencies/jsbsim checkout "${JSBSIM_COMMIT}"
 
+      - name: Prepare portable packaged runtime
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          main_window = Path("src/MainWindow.cpp")
+          text = main_window.read_text(encoding="utf-8")
+          old = '''QString projectRootPath() {
+          #ifdef QTTEST_SOURCE_DIR
+            return QString::fromUtf8(QTTEST_SOURCE_DIR);
+          #else
+            return QDir::currentPath();
+          #endif
+          }'''
+          new = '''QString projectRootPath() {
+            QDir cursor(QCoreApplication::applicationDirPath());
+            for (int depth = 0; depth < 6; ++depth) {
+              if (QFileInfo::exists(
+                      cursor.absoluteFilePath(QStringLiteral("Data/config3DModel.yaml")))) {
+                return cursor.absolutePath();
+              }
+              if (!cursor.cdUp()) {
+                break;
+              }
+            }
+          #ifdef QTTEST_SOURCE_DIR
+            return QString::fromUtf8(QTTEST_SOURCE_DIR);
+          #else
+            return QDir::currentPath();
+          #endif
+          }'''
+          if old not in text:
+              raise SystemExit("MainWindow projectRootPath pattern not found")
+          main_window.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          main_cpp = Path("src/main.cpp")
+          text = main_cpp.read_text(encoding="utf-8")
+          app_line = "    QApplication app(argc, argv);"
+          replacement = '''    QApplication app(argc, argv);
+          #ifdef Q_OS_WIN
+              // Qt 6.10 ships the modern Windows 11 widget style as a plugin.
+              // Force it for packaged Windows builds instead of falling back
+              // to the legacy/classic Windows widget appearance.
+              QApplication::setStyle(QStringLiteral("windows11"));
+          #endif'''
+          if app_line not in text:
+              raise SystemExit("QApplication construction pattern not found")
+          text = text.replace(app_line, replacement, 1)
+
+          old_fom = '''    startupConfiguration.addMissingHlaFomModules(
+                  QDir(QStringLiteral(QTTEST_SOURCE_DIR))
+                      .filePath(QStringLiteral("src/infrastructure/hla/FOM")));'''
+          new_fom = '''    QString packagedFomRoot = QCoreApplication::applicationDirPath();
+              const QString packagedFomPath = QDir(packagedFomRoot).filePath(
+                  QStringLiteral("src/infrastructure/hla/FOM"));
+          #ifdef QTTEST_SOURCE_DIR
+              const QString hlaFomPath = QFileInfo::exists(packagedFomPath)
+                  ? packagedFomPath
+                  : QDir(QStringLiteral(QTTEST_SOURCE_DIR))
+                        .filePath(QStringLiteral("src/infrastructure/hla/FOM"));
+          #else
+              const QString hlaFomPath = packagedFomPath;
+          #endif
+              startupConfiguration.addMissingHlaFomModules(hlaFomPath);'''
+          if old_fom not in text:
+              raise SystemExit("HLA FOM source path pattern not found")
+          main_cpp.write_text(text.replace(old_fom, new_fom, 1), encoding="utf-8")
+          PY
+
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         shell: bash
@@ -168,15 +238,144 @@ jobs:
             throw "qttest.exe was not generated"
           }
 
-      - name: Package Linux binary
+      - name: Package complete Linux runtime
         if: runner.os == 'Linux'
         shell: bash
-        run: tar -czf qttest-linux-x64.tar.gz -C build qttest
+        run: |
+          set -euo pipefail
+          package_root="$PWD/package/qttest-linux-x64"
+          mkdir -p "$package_root"
+          cp build/qttest "$package_root/qttest"
 
-      - name: Package macOS application
+          for directory in Data models vendor LICENSES; do
+            if [ -e "$directory" ]; then
+              cp -a "$directory" "$package_root/$directory"
+            fi
+          done
+
+          if [ -d src/infrastructure/hla/FOM ]; then
+            mkdir -p "$package_root/src/infrastructure/hla"
+            cp -a src/infrastructure/hla/FOM "$package_root/src/infrastructure/hla/FOM"
+          fi
+
+          mkdir -p "$package_root/Dependencies/jsbsim"
+          for directory in aircraft engine systems; do
+            if [ -d "Dependencies/jsbsim/$directory" ]; then
+              cp -a "Dependencies/jsbsim/$directory" "$package_root/Dependencies/jsbsim/$directory"
+            fi
+          done
+          if [ -d Dependencies/jsbsim-models ]; then
+            cp -a Dependencies/jsbsim-models "$package_root/Dependencies/jsbsim-models"
+          fi
+
+          if [ -f ATTRIBUTIONS.md ]; then
+            cp ATTRIBUTIONS.md "$package_root/ATTRIBUTIONS.md"
+          fi
+
+          cat > "$package_root/cesium.conf.example" <<'EOF'
+          # Cesium Ion configuration for packaged builds.
+          # Prefer setting CESIUM_ION_TOKEN in the environment.
+          # ion_access_token=''
+          EOF
+
+          qmake_cmd="$(command -v qmake6 || command -v qmake)"
+          qt_libs="$($qmake_cmd -query QT_INSTALL_LIBS)"
+          qt_plugins="$($qmake_cmd -query QT_INSTALL_PLUGINS)"
+          qt_libexec="$($qmake_cmd -query QT_INSTALL_LIBEXECS)"
+          qt_data="$($qmake_cmd -query QT_INSTALL_DATA)"
+          qt_translations="$($qmake_cmd -query QT_INSTALL_TRANSLATIONS)"
+          qt_prefix="$($qmake_cmd -query QT_INSTALL_PREFIX)"
+
+          mkdir -p "$package_root/lib" "$package_root/plugins" \
+                   "$package_root/libexec" "$package_root/resources" \
+                   "$package_root/translations"
+
+          find "$qt_libs" -maxdepth 1 -type f \( -name 'libQt6*.so*' -o -name 'libicu*.so*' \) \
+            -exec cp -L {} "$package_root/lib/" \;
+          cp -a "$qt_plugins/." "$package_root/plugins/"
+
+          if [ -x "$qt_libexec/QtWebEngineProcess" ]; then
+            cp -L "$qt_libexec/QtWebEngineProcess" "$package_root/libexec/QtWebEngineProcess"
+            chmod +x "$package_root/libexec/QtWebEngineProcess"
+          fi
+
+          for resources_dir in "$qt_data/resources" "$qt_prefix/resources"; do
+            if [ -d "$resources_dir" ]; then
+              cp -a "$resources_dir/." "$package_root/resources/"
+              break
+            fi
+          done
+          if [ -d "$qt_translations" ]; then
+            cp -a "$qt_translations/." "$package_root/translations/"
+          fi
+
+          cat > "$package_root/run_qttest.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -e
+          HERE="$(cd "$(dirname "$0")" && pwd)"
+          export LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export QT_PLUGIN_PATH="$HERE/plugins"
+          export QTWEBENGINEPROCESS_PATH="$HERE/libexec/QtWebEngineProcess"
+          export QTWEBENGINE_RESOURCES_PATH="$HERE/resources"
+          export QTWEBENGINE_LOCALES_PATH="$HERE/translations/qtwebengine_locales"
+          cd "$HERE"
+          exec "$HERE/qttest" "$@"
+          EOF
+          chmod +x "$package_root/qttest" "$package_root/run_qttest.sh"
+
+          tar -czf qttest-linux-x64.tar.gz -C package qttest-linux-x64
+          du -sh "$package_root" qttest-linux-x64.tar.gz
+
+      - name: Package complete macOS application
         if: runner.os == 'macOS'
         shell: bash
-        run: ditto -c -k --sequesterRsrc --keepParent build/qttest.app qttest-macos-arm64.zip
+        run: |
+          set -euo pipefail
+          macdeployqt build/qttest.app -always-overwrite -qmldir="$PWD"
+
+          runtime_root="$PWD/build/qttest.app/Contents/MacOS"
+          for directory in Data models vendor LICENSES; do
+            if [ -e "$directory" ]; then
+              cp -a "$directory" "$runtime_root/$directory"
+            fi
+          done
+
+          if [ -d src/infrastructure/hla/FOM ]; then
+            mkdir -p "$runtime_root/src/infrastructure/hla"
+            cp -a src/infrastructure/hla/FOM "$runtime_root/src/infrastructure/hla/FOM"
+          fi
+
+          mkdir -p "$runtime_root/Dependencies/jsbsim"
+          for directory in aircraft engine systems; do
+            if [ -d "Dependencies/jsbsim/$directory" ]; then
+              cp -a "Dependencies/jsbsim/$directory" "$runtime_root/Dependencies/jsbsim/$directory"
+            fi
+          done
+          if [ -d Dependencies/jsbsim-models ]; then
+            cp -a Dependencies/jsbsim-models "$runtime_root/Dependencies/jsbsim-models"
+          fi
+
+          if [ -f ATTRIBUTIONS.md ]; then
+            cp ATTRIBUTIONS.md "$runtime_root/ATTRIBUTIONS.md"
+          fi
+
+          cat > "$runtime_root/cesium.conf.example" <<'EOF'
+          # Cesium Ion configuration for packaged builds.
+          # Prefer setting CESIUM_ION_TOKEN in the environment.
+          # ion_access_token=''
+          EOF
+
+          mv "$runtime_root/qttest" "$runtime_root/qttest-bin"
+          cat > "$runtime_root/qttest" <<'EOF'
+          #!/bin/bash
+          HERE="$(cd "$(dirname "$0")" && pwd)"
+          cd "$HERE"
+          exec "$HERE/qttest-bin" "$@"
+          EOF
+          chmod +x "$runtime_root/qttest" "$runtime_root/qttest-bin"
+
+          ditto -c -k --sequesterRsrc --keepParent build/qttest.app qttest-macos-arm64.zip
+          du -sh build/qttest.app qttest-macos-arm64.zip
 
       - name: Package complete Windows runtime
         if: runner.os == 'Windows'
@@ -196,6 +395,11 @@ jobs:
             (Join-Path $packageRoot "qttest.exe")
           if ($LASTEXITCODE -ne 0) {
             throw "windeployqt failed with exit code $LASTEXITCODE"
+          }
+
+          $modernStyle = Join-Path $packageRoot "styles/qmodernwindowsstyle.dll"
+          if (-not (Test-Path $modernStyle)) {
+            throw "Qt modern Windows style plugin was not deployed"
           }
 
           foreach ($directory in @("Data", "models", "vendor", "LICENSES")) {
@@ -235,7 +439,7 @@ jobs:
           @'
           @echo off
           cd /d "%~dp0"
-          qttest.exe %*
+          qttest.exe -style windows11 %*
           '@ | Set-Content -Path (Join-Path $packageRoot "run_qttest.cmd") -Encoding ascii
 
           Write-Host "Windows package contents:"
