@@ -178,10 +178,71 @@ jobs:
         shell: bash
         run: ditto -c -k --sequesterRsrc --keepParent build/qttest.app qttest-macos-arm64.zip
 
-      - name: Package Windows binary
+      - name: Package complete Windows runtime
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "build/$env:CMAKE_BUILD_TYPE/qttest.exe" -DestinationPath qttest-windows-x64.zip
+        run: |
+          $ErrorActionPreference = "Stop"
+          $packageRoot = Join-Path $PWD "package/qttest-windows-x64"
+          New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
+
+          Copy-Item "build/$env:CMAKE_BUILD_TYPE/qttest.exe" (Join-Path $packageRoot "qttest.exe")
+
+          $deployQt = Get-Command windeployqt.exe -ErrorAction Stop
+          & $deployQt.Source `
+            --release `
+            --compiler-runtime `
+            --qmldir "$PWD" `
+            (Join-Path $packageRoot "qttest.exe")
+          if ($LASTEXITCODE -ne 0) {
+            throw "windeployqt failed with exit code $LASTEXITCODE"
+          }
+
+          foreach ($directory in @("Data", "models", "vendor", "LICENSES")) {
+            if (Test-Path $directory) {
+              Copy-Item $directory (Join-Path $packageRoot $directory) -Recurse
+            }
+          }
+
+          if (Test-Path "src/infrastructure/hla/FOM") {
+            $fomTarget = Join-Path $packageRoot "src/infrastructure/hla/FOM"
+            New-Item -ItemType Directory -Force -Path $fomTarget | Out-Null
+            Copy-Item "src/infrastructure/hla/FOM/*" $fomTarget -Recurse
+          }
+
+          $jsbsimRoot = Join-Path $packageRoot "Dependencies/jsbsim"
+          New-Item -ItemType Directory -Force -Path $jsbsimRoot | Out-Null
+          foreach ($directory in @("aircraft", "engine", "systems")) {
+            $source = Join-Path "Dependencies/jsbsim" $directory
+            if (Test-Path $source) {
+              Copy-Item $source (Join-Path $jsbsimRoot $directory) -Recurse
+            }
+          }
+          if (Test-Path "Dependencies/jsbsim-models") {
+            Copy-Item "Dependencies/jsbsim-models" (Join-Path $packageRoot "Dependencies/jsbsim-models") -Recurse
+          }
+
+          foreach ($file in @("cesium.conf", "ATTRIBUTIONS.md")) {
+            if (Test-Path $file) {
+              Copy-Item $file (Join-Path $packageRoot $file)
+            }
+          }
+
+          @'
+          @echo off
+          cd /d "%~dp0"
+          qttest.exe %*
+          '@ | Set-Content -Path (Join-Path $packageRoot "run_qttest.cmd") -Encoding ascii
+
+          $zipPath = Join-Path $PWD "qttest-windows-x64.zip"
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+          Compress-Archive -Path "$packageRoot/*" -DestinationPath $zipPath -CompressionLevel Optimal
+
+          Write-Host "Windows package contents:"
+          Get-ChildItem $packageRoot | Select-Object Name, Length
+          Write-Host "Archive size: $((Get-Item $zipPath).Length) bytes"
 
       - name: Upload Linux artifact
         if: runner.os == 'Linux'
