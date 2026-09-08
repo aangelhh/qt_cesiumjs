@@ -238,15 +238,8 @@ jobs:
           qttest.exe %*
           '@ | Set-Content -Path (Join-Path $packageRoot "run_qttest.cmd") -Encoding ascii
 
-          $zipPath = Join-Path $PWD "qttest-windows-x64.zip"
-          if (Test-Path $zipPath) {
-            Remove-Item $zipPath -Force
-          }
-          Compress-Archive -Path "$packageRoot/*" -DestinationPath $zipPath -CompressionLevel Optimal
-
           Write-Host "Windows package contents:"
           Get-ChildItem $packageRoot | Select-Object Name, Length
-          Write-Host "Archive size: $((Get-Item $zipPath).Length) bytes"
 
       - name: Upload Linux artifact
         if: runner.os == 'Linux'
@@ -271,6 +264,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: qttest-windows-x64
-          path: qttest-windows-x64.zip
+          path: package/qttest-windows-x64
           if-no-files-found: error
           retention-days: 14
