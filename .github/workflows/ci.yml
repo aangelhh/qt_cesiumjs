@@ -20,7 +20,7 @@ env:
   QT_VERSION: "6.10.2"
   CMAKE_BUILD_TYPE: Release
   JSBSIM_COMMIT: "506773ad3790a5a621445631613faf51a15284e7"
-  OPENRTI_COMMIT: "1b580583a4436d21ee53a22b8535988122b76bf1"
+  OPENRTI_COMMIT: "6e31e0cd50de1852813a98679e8731ad2c97e54b"
   SCCACHE_GHA_ENABLED: "true"
 
 jobs:
@@ -62,20 +62,16 @@ jobs:
           git clone --filter=blob:none https://github.com/JSBSim-Team/jsbsim.git Dependencies/jsbsim
           git -C Dependencies/jsbsim checkout "${JSBSIM_COMMIT}"
 
-      # The qttest repository may be public while the OpenRTI fork is still private.
-      # Do not fail the normal build in that case. As soon as this fork is public
-      # (or otherwise made accessible to Actions), the pinned backend is built.
-      - name: Checkout pinned OpenRTI when accessible
+      # Build from the public OpenRTI upstream at the exact parent commit of
+      # our private ownership-MVP fork. This keeps CI reproducible without
+      # exposing the private fork or requiring cross-repository credentials.
+      - name: Checkout pinned OpenRTI public upstream
         shell: bash
         run: |
           rm -rf Dependencies/OpenRTI
-          if GIT_TERMINAL_PROMPT=0 git clone --filter=blob:none https://github.com/aangelhh/openrti_aangelhh.git Dependencies/OpenRTI; then
-            git -C Dependencies/OpenRTI checkout "${OPENRTI_COMMIT}"
-            echo "OpenRTI source is available to this build."
-          else
-            rm -rf Dependencies/OpenRTI
-            echo "::warning::OpenRTI source is not accessible to GitHub Actions; the OpenRTI adapter will not be packaged in this run."
-          fi
+          git clone --filter=blob:none https://github.com/onox/OpenRTI.git Dependencies/OpenRTI
+          git -C Dependencies/OpenRTI checkout "${OPENRTI_COMMIT}"
+          echo "OpenRTI source pinned at ${OPENRTI_COMMIT}."
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
