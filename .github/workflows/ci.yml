@@ -20,6 +20,7 @@ env:
   QT_VERSION: "6.10.2"
   CMAKE_BUILD_TYPE: Release
   JSBSIM_COMMIT: "506773ad3790a5a621445631613faf51a15284e7"
+  OPENRTI_COMMIT: "1b580583a4436d21ee53a22b8535988122b76bf1"
   SCCACHE_GHA_ENABLED: "true"
 
 jobs:
@@ -53,8 +54,6 @@ jobs:
           path: Dependencies/jsbsim
           key: jsbsim-${{ runner.os }}-${{ runner.arch }}-${{ env.JSBSIM_COMMIT }}
 
-      # OpenRTI is a private submodule and is deliberately disabled below.
-      # JSBSim is public; clone the exact revision only on a source-cache miss.
       - name: Checkout pinned JSBSim
         if: steps.jsbsim-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -62,6 +61,21 @@ jobs:
           rm -rf Dependencies/jsbsim
           git clone --filter=blob:none https://github.com/JSBSim-Team/jsbsim.git Dependencies/jsbsim
           git -C Dependencies/jsbsim checkout "${JSBSIM_COMMIT}"
+
+      # The qttest repository may be public while the OpenRTI fork is still private.
+      # Do not fail the normal build in that case. As soon as this fork is public
+      # (or otherwise made accessible to Actions), the pinned backend is built.
+      - name: Checkout pinned OpenRTI when accessible
+        shell: bash
+        run: |
+          rm -rf Dependencies/OpenRTI
+          if GIT_TERMINAL_PROMPT=0 git clone --filter=blob:none https://github.com/aangelhh/openrti_aangelhh.git Dependencies/OpenRTI; then
+            git -C Dependencies/OpenRTI checkout "${OPENRTI_COMMIT}"
+            echo "OpenRTI source is available to this build."
+          else
+            rm -rf Dependencies/OpenRTI
+            echo "::warning::OpenRTI source is not accessible to GitHub Actions; the OpenRTI adapter will not be packaged in this run."
+          fi
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -112,8 +126,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
             -DCMAKE_C_COMPILER_LAUNCHER=sccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
-            -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=OFF \
-            -DQTTEST_ENABLE_PITCH_HLA_BACKEND=OFF \
+            -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=ON \
+            -DQTTEST_ENABLE_PITCH_HLA_BACKEND=ON \
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF \
             -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON \
             -DQTTEST_ENABLE_JSBSIM=ON \
@@ -127,8 +141,8 @@ jobs:
           cmake -S . -B build -A x64 `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
-            -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=OFF `
-            -DQTTEST_ENABLE_PITCH_HLA_BACKEND=OFF `
+            -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=ON `
+            -DQTTEST_ENABLE_PITCH_HLA_BACKEND=ON `
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF `
             -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON `
             -DQTTEST_ENABLE_JSBSIM=ON `
@@ -256,6 +270,14 @@ jobs:
           mkdir -p "$package_root/sensor-plugins"
           cp build/sensor-plugins/libqttest_mixr_sensor.so "$package_root/sensor-plugins/"
           LD_LIBRARY_PATH="$package_root/lib" build/qttest_mixr_smoke "$package_root/sensor-plugins/libqttest_mixr_sensor.so"
+
+          mkdir -p "$package_root/hla-plugins"
+          find build/hla-plugins -maxdepth 3 -type f -name '*qttest_hla_*backend*.so' \
+            -exec cp -L {} "$package_root/hla-plugins/" \; 2>/dev/null || true
+          if [ -d build/openrti-install/lib ]; then
+            cp -a build/openrti-install/lib/*.so* "$package_root/lib/" 2>/dev/null || true
+          fi
+
           python Tools/write_runtime_capabilities.py "$package_root"
           tar -czf qttest-linux-x64.tar.gz -C package qttest-linux-x64
           du -sh "$package_root" qttest-linux-x64.tar.gz
@@ -303,6 +325,7 @@ jobs:
           cat > "$runtime_root/qttest" <<'EOF'
           #!/bin/bash
           HERE="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$HERE/hla-runtime/openrti${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
           cd "$HERE"
           exec "$HERE/qttest-bin" "$@"
           EOF
@@ -311,6 +334,14 @@ jobs:
           mkdir -p "$runtime_root/sensor-plugins"
           cp build/sensor-plugins/libqttest_mixr_sensor.dylib "$runtime_root/sensor-plugins/"
           build/qttest_mixr_smoke "$runtime_root/sensor-plugins/libqttest_mixr_sensor.dylib"
+
+          mkdir -p "$runtime_root/hla-plugins" "$runtime_root/hla-runtime/openrti"
+          find build/hla-plugins -maxdepth 3 -type f -name '*qttest_hla_*backend*.dylib' \
+            -exec cp -L {} "$runtime_root/hla-plugins/" \; 2>/dev/null || true
+          if [ -d build/openrti-install/lib ]; then
+            cp -a build/openrti-install/lib/*.dylib* "$runtime_root/hla-runtime/openrti/" 2>/dev/null || true
+          fi
+
           python Tools/write_runtime_capabilities.py "$runtime_root"
           ditto -c -k --sequesterRsrc --keepParent build/qttest.app qttest-macos-arm64.zip
           du -sh build/qttest.app qttest-macos-arm64.zip
@@ -346,6 +377,10 @@ jobs:
             }
           }
 
+          if (-not (Test-Path (Join-Path $packageRoot "Data/windows-modern.qss"))) {
+            throw "Windows modern stylesheet was not packaged"
+          }
+
           if (Test-Path "src/infrastructure/hla/FOM") {
             $fomTarget = Join-Path $packageRoot "src/infrastructure/hla/FOM"
             New-Item -ItemType Directory -Force -Path $fomTarget | Out-Null
@@ -374,16 +409,48 @@ jobs:
           # ion_access_token=''
           '@ | Set-Content -Path (Join-Path $packageRoot "cesium.conf.example") -Encoding ascii
 
-          @'
-          @echo off
-          cd /d "%~dp0"
-          qttest.exe -style windows11 %*
-          '@ | Set-Content -Path (Join-Path $packageRoot "run_qttest.cmd") -Encoding ascii
-
           New-Item -ItemType Directory -Force -Path "$packageRoot/sensor-plugins" | Out-Null
           Copy-Item "build/sensor-plugins/qttest_mixr_sensor.dll" "$packageRoot/sensor-plugins/"
           & "build/$env:CMAKE_BUILD_TYPE/qttest_mixr_smoke.exe" "$packageRoot/sensor-plugins/qttest_mixr_sensor.dll"
           if ($LASTEXITCODE -ne 0) { throw "MIXR load/evaluation smoke test failed" }
+
+          $hlaPluginRoot = Join-Path $packageRoot "hla-plugins"
+          New-Item -ItemType Directory -Force -Path $hlaPluginRoot | Out-Null
+          if (Test-Path "build/hla-plugins") {
+            Get-ChildItem "build/hla-plugins" -Recurse -File -Filter "*.dll" |
+              Where-Object { $_.Name -like "qttest_hla_*backend*.dll" } |
+              ForEach-Object { Copy-Item $_.FullName $hlaPluginRoot -Force }
+          }
+
+          $openRtiRuntime = Join-Path $packageRoot "hla-runtime/openrti"
+          New-Item -ItemType Directory -Force -Path $openRtiRuntime | Out-Null
+          if (Test-Path "build/openrti-install") {
+            Get-ChildItem "build/openrti-install" -Recurse -File -Filter "*.dll" |
+              ForEach-Object { Copy-Item $_.FullName $openRtiRuntime -Force }
+          }
+
+          # Pitch is commercial, so the SDK/runtime is not redistributed. Package
+          # only the adapter source and a one-command local setup helper.
+          Copy-Item "Tools/pitch-backend/setup_pitch_backend.cmd" (Join-Path $packageRoot "setup_pitch_backend.cmd")
+          $pitchSourceRoot = Join-Path $packageRoot "pitch-backend-source"
+          New-Item -ItemType Directory -Force -Path "$pitchSourceRoot/integrations/hla/pitch1516e" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$pitchSourceRoot/src/infrastructure/interoperability/hla" | Out-Null
+          Copy-Item "Tools/pitch-backend/CMakeLists.txt" (Join-Path $pitchSourceRoot "CMakeLists.txt")
+          Copy-Item "integrations/hla/pitch1516e/Pitch1516eBackendPlugin.cpp" "$pitchSourceRoot/integrations/hla/pitch1516e/"
+          Copy-Item "src/infrastructure/interoperability/hla/HlaBackendPluginApi.h" "$pitchSourceRoot/src/infrastructure/interoperability/hla/"
+
+          @'
+          @echo off
+          cd /d "%~dp0"
+          if exist "%~dp0hla-runtime\openrti" set "PATH=%~dp0hla-runtime\openrti;%PATH%"
+          if defined PitchRTI_ROOT (
+            if exist "%PitchRTI_ROOT%\bin" set "PATH=%PitchRTI_ROOT%\bin;%PATH%"
+            if exist "%PitchRTI_ROOT%\lib" set "PATH=%PitchRTI_ROOT%\lib;%PATH%"
+            if exist "%PitchRTI_ROOT%\jre\bin\server" set "PATH=%PitchRTI_ROOT%\jre\bin\server;%PATH%"
+          )
+          qttest.exe -style windows11 -stylesheet "Data/windows-modern.qss" %*
+          '@ | Set-Content -Path (Join-Path $packageRoot "run_qttest.cmd") -Encoding ascii
+
           python Tools/write_runtime_capabilities.py "$packageRoot"
           if ($LASTEXITCODE -ne 0) { throw "Runtime audit failed" }
           Write-Host "Windows package contents:"
