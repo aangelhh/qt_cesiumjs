@@ -20,7 +20,7 @@ env:
   QT_VERSION: "6.10.2"
   CMAKE_BUILD_TYPE: Release
   JSBSIM_COMMIT: "506773ad3790a5a621445631613faf51a15284e7"
-  OPENRTI_COMMIT: "6e31e0cd50de1852813a98679e8731ad2c97e54b"
+  OPENRTI_COMMIT: "1b580583a4436d21ee53a22b8535988122b76bf1"
   SCCACHE_GHA_ENABLED: "true"
 
 jobs:
@@ -62,16 +62,15 @@ jobs:
           git clone --filter=blob:none https://github.com/JSBSim-Team/jsbsim.git Dependencies/jsbsim
           git -C Dependencies/jsbsim checkout "${JSBSIM_COMMIT}"
 
-      # Build from the public OpenRTI upstream at the exact parent commit of
-      # our private ownership-MVP fork. This keeps CI reproducible without
-      # exposing the private fork or requiring cross-repository credentials.
-      - name: Checkout pinned OpenRTI public upstream
+      # The fork is public and contains qttest's IEEE 1516e ownership additions.
+      # Pin the exact revision so all three runners build the same RTI implementation.
+      - name: Checkout pinned qttest OpenRTI fork
         shell: bash
         run: |
           rm -rf Dependencies/OpenRTI
-          git clone --filter=blob:none https://github.com/onox/OpenRTI.git Dependencies/OpenRTI
+          git clone --filter=blob:none https://github.com/aangelhh/openrti_aangelhh.git Dependencies/OpenRTI
           git -C Dependencies/OpenRTI checkout "${OPENRTI_COMMIT}"
-          echo "OpenRTI source pinned at ${OPENRTI_COMMIT}."
+          echo "Qttest OpenRTI fork pinned at ${OPENRTI_COMMIT}."
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
