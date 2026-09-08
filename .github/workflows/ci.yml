@@ -1,0 +1,147 @@
+name: Qttest Multiplatform CI
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qttest-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: "6.10.2"
+  CMAKE_BUILD_TYPE: Release
+  JSBSIM_COMMIT: "506773ad3790a5a621445631613faf51a15284e7"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-24.04
+            parallel: 4
+          - name: Windows x64
+            os: windows-2025
+            parallel: 4
+          - name: macOS ARM64
+            os: macos-15
+            parallel: 2
+
+    steps:
+      - name: Checkout qttest
+        uses: actions/checkout@v4
+
+      # OpenRTI is a private submodule and is deliberately disabled below.
+      # JSBSim is public, so fetch the exact revision pinned by develop.
+      - name: Checkout pinned JSBSim
+        shell: bash
+        run: |
+          rm -rf Dependencies/jsbsim
+          git clone --filter=blob:none https://github.com/JSBSim-Team/jsbsim.git Dependencies/jsbsim
+          git -C Dependencies/jsbsim checkout "${JSBSIM_COMMIT}"
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ninja-build \
+            pkg-config \
+            libgl1-mesa-dev \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-xinerama0 \
+            libxcb-icccm4 \
+            libxcb-keysyms1 \
+            libxcb-image0 \
+            libxcb-render-util0 \
+            libnss3 \
+            libdbus-1-3 \
+            libfontconfig1
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          target: desktop
+          modules: "qtwebengine qtwebchannel qtpositioning qtdeclarative qtsvg"
+          cache: true
+          cache-key-prefix: qttest-qt-${{ runner.os }}-${{ runner.arch }}-${{ env.QT_VERSION }}
+
+      - name: Show toolchain
+        shell: bash
+        run: |
+          cmake --version
+          qmake6 --version || qmake --version || true
+          c++ --version || true
+
+      - name: Configure Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=OFF \
+            -DQTTEST_ENABLE_PITCH_HLA_BACKEND=OFF \
+            -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF \
+            -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=OFF \
+            -DQTTEST_ENABLE_JSBSIM=ON \
+            -DQTTEST_BUILD_TESTS=OFF \
+            -DQTTEST_BUILD_BENCHMARKS=OFF
+
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 `
+            -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=OFF `
+            -DQTTEST_ENABLE_PITCH_HLA_BACKEND=OFF `
+            -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF `
+            -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=OFF `
+            -DQTTEST_ENABLE_JSBSIM=ON `
+            -DQTTEST_BUILD_TESTS=OFF `
+            -DQTTEST_BUILD_BENCHMARKS=OFF
+
+      - name: Build Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cmake --build build --parallel ${{ matrix.parallel }}
+
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake --build build --config $env:CMAKE_BUILD_TYPE --parallel ${{ matrix.parallel }}
+
+      - name: Verify Linux executable
+        if: runner.os == 'Linux'
+        shell: bash
+        run: test -x build/qttest
+
+      - name: Verify macOS application bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: test -x build/qttest.app/Contents/MacOS/qttest
+
+      - name: Verify Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "build/$env:CMAKE_BUILD_TYPE/qttest.exe")) {
+            throw "qttest.exe was not generated"
+          }
