@@ -4,6 +4,7 @@
 #include "infrastructure/sensors/SharedLibrarySensorModel.h"
 #include "infrastructure/sensors/StoneSoupSensorModel.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QProcessEnvironment>
@@ -16,11 +17,26 @@ namespace infrastructure {
 namespace {
 
 QString sourceRoot() {
+  QDir cursor(QCoreApplication::applicationDirPath());
+  for (int depth = 0; depth < 6; ++depth) {
+    if (QFileInfo::exists(cursor.absoluteFilePath(
+            QStringLiteral("Data/sensor_model_providers.json")))) {
+      return cursor.absolutePath();
+    }
+    if (!cursor.cdUp()) {
+      break;
+    }
+  }
+
 #ifdef QTTEST_SOURCE_DIR
-  return QString::fromUtf8(QTTEST_SOURCE_DIR);
-#else
-  return QDir::currentPath();
+  const QDir source(QString::fromUtf8(QTTEST_SOURCE_DIR));
+  if (QFileInfo::exists(source.absoluteFilePath(
+          QStringLiteral("Data/sensor_model_providers.json")))) {
+    return source.absolutePath();
+  }
 #endif
+
+  return QDir::currentPath();
 }
 
 QString absoluteProviderPath(const QString& configuredPath) {
