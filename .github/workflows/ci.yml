@@ -167,3 +167,45 @@ jobs:
           if (-not (Test-Path "build/$env:CMAKE_BUILD_TYPE/qttest.exe")) {
             throw "qttest.exe was not generated"
           }
+
+      - name: Package Linux binary
+        if: runner.os == 'Linux'
+        shell: bash
+        run: tar -czf qttest-linux-x64.tar.gz -C build qttest
+
+      - name: Package macOS application
+        if: runner.os == 'macOS'
+        shell: bash
+        run: ditto -c -k --sequesterRsrc --keepParent build/qttest.app qttest-macos-arm64.zip
+
+      - name: Package Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "build/$env:CMAKE_BUILD_TYPE/qttest.exe" -DestinationPath qttest-windows-x64.zip
+
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qttest-linux-x64
+          path: qttest-linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qttest-macos-arm64
+          path: qttest-macos-arm64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qttest-windows-x64
+          path: qttest-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
