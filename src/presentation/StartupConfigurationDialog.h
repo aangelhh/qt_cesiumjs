@@ -47,8 +47,10 @@ private:
   QStackedWidget* _modeStack;
   QLineEdit* _disAddressEdit;
   QSpinBox* _disPortSpin;
+  QSpinBox* _disExerciseSpin;
   QSpinBox* _disSiteSpin;
   QSpinBox* _disApplicationSpin;
+  QDoubleSpinBox* _disTimeoutSpin;
   QComboBox* _hlaBackendCombo;
   QLineEdit* _hlaLocalSettingsEdit;
   QLineEdit* _hlaFederationEdit;

@@ -16,8 +16,10 @@ enum class FederationMode {
 struct DisStartupConfiguration {
   QString address = QStringLiteral("239.1.2.3");
   int port = 3000;
+  int exerciseId = 1;
   int siteId = 1;
   int applicationId = 1;
+  double remoteEntityTimeoutSeconds = 12.0;
 };
 
 struct HlaStartupConfiguration {

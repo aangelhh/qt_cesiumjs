@@ -2,6 +2,9 @@
 
 #include <QMainWindow>
 #include "infrastructure/interoperability/hla/HlaInboundAdapter.h"
+#ifdef QTTEST_HAS_DIS
+#include "infrastructure/interoperability/dis/DisTypes.h"
+#endif
 #include <QHash>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -65,6 +68,7 @@ class EntityPlanDialog;
 class EntityPlanExecutor;
 class EntityVisualStateManager;
 class GraphicPickCoordinator;
+class DisConnectionPanel;
 class HlaConnectionPanel;
 class KinematicsCockpitWidget;
 class PlanStepConfigurator;
@@ -90,6 +94,26 @@ public:
   void startHlaCombatDemo();
   void applyHlaRemoteEntityChanges(
       const std::vector<tactical::hla::RemoteEntityChange>& changes);
+#ifdef QTTEST_HAS_DIS
+  void applyDisRemoteEntityChanges(
+      const std::vector<tactical::dis::RemoteEntityChange>& changes);
+  void applyDisRemoteWarfareEvents(
+      const std::vector<tactical::dis::WarfareEvent>& events);
+  void configureDisConnection(
+      const application::DisStartupConfiguration& configuration,
+      bool backendAvailable,
+      bool connected,
+      bool blockedByHla);
+  void setDisConnectionState(
+      bool connected,
+      bool connecting,
+      const QString& detail = QString());
+  void updateDisStatistics(
+      std::uint64_t transmittedPdus,
+      std::uint64_t receivedPdus,
+      qsizetype remoteEntities);
+  void setDisBlockedByHla(bool blocked);
+#endif
   void applyHlaRemoteMunitionChanges(
       const std::vector<tactical::hla::RemoteMunitionChange>& changes);
   void applyHlaRemoteSensorChanges(
@@ -98,6 +122,12 @@ public:
       const std::vector<tactical::hla::RemoteWarfareEvent>& events);
   void applyHlaRemoteSimulationControl(
       tactical::hla::RemoteSimulationControl control);
+#ifdef QTTEST_HAS_DIS
+  void applyDisRemoteRadarEmissions(const std::vector<tactical::dis::RadarEmission>& emissions);
+  bool applyDisEntityManagement(const tactical::dis::EntityManagementRequest& request);
+  void applyDisInteractions(const std::vector<tactical::dis::IffState>& iff,
+      const std::vector<tactical::dis::CollisionEvent>& collisions);
+#endif
   void reportHlaSynchronizationStatus(const QString& message);
   void setHlaTimeManagementActive(bool active);
   void applyHlaTimeAdvanceGrant(double logicalTimeSeconds);
@@ -109,6 +139,7 @@ public:
       bool connected,
       bool connecting,
       const QString& detail = QString());
+  void setHlaBlockedByDis(bool blocked);
 
 signals:
   void hlaSimulationControlRequested(
@@ -119,6 +150,16 @@ signals:
       const QString& federationName,
       const QString& federateName);
   void hlaDisconnectRequested();
+#ifdef QTTEST_HAS_DIS
+  void disConnectRequested(
+      const application::DisStartupConfiguration& configuration);
+  void disDisconnectRequested();
+  void disEntityManagementRequested(const tactical::dis::EntityManagementRequest& request);
+  void disIffRequested(const tactical::dis::IffState& state);
+  void disCollisionRequested(const tactical::dis::CollisionEvent& event);
+  void disTestEntityStateRequested(
+      const tactical::dis::EntityState& state);
+#endif
 
 protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -256,6 +297,9 @@ private:
   void updateSimulationControls();
   void initializeKinematicsCockpit();
   void initializeHlaConnectionPanel();
+#ifdef QTTEST_HAS_DIS
+  void initializeDisConnectionPanel();
+#endif
   void initializeRos2Telemetry();
   void configureRos2Telemetry();
   void refreshKinematicsCockpitForEntity(const struct Entity* entity);
@@ -325,6 +369,11 @@ private:
   QDockWidget* _hlaConnectionDock;
   presentation::HlaConnectionPanel* _hlaConnectionPanel;
   QToolButton* _hlaStatusButton;
+#ifdef QTTEST_HAS_DIS
+  QDockWidget* _disConnectionDock;
+  presentation::DisConnectionPanel* _disConnectionPanel;
+  QToolButton* _disStatusButton;
+#endif
   infrastructure::Ros2TelemetryPublisher* _ros2TelemetryPublisher;
   std::uint64_t _kinematicsTelemetrySubscriptionId;
   MapBridge* _mapBridge;
@@ -349,6 +398,9 @@ private:
   bool _simulationRunning;
   bool _simulationStopped = true;
   bool _applyingHlaSimulationControl = false;
+#ifdef QTTEST_HAS_DIS
+  QHash<QString, QString> _disManagedOwners;
+#endif
   bool _hlaTimeManagementActive = false;
   bool _hlaTimeAdvancePending = false;
   QList<QToolButton*> _taskQuickButtons;

@@ -1,5 +1,8 @@
 #include "src/MainWindow.h"
 #include "application/HlaStartupSession.h"
+#ifdef QTTEST_HAS_DIS
+#include "application/DisStartupSession.h"
+#endif
 #include "application/StartupConfiguration.h"
 #include "presentation/StartupConfigurationDialog.h"
 
@@ -74,6 +77,9 @@ int main(int argc, char *argv[])
         QDir(QStringLiteral(QTTEST_SOURCE_DIR))
             .filePath(QStringLiteral("src/infrastructure/hla/FOM")));
     application::HlaStartupSession hlaSession;
+#ifdef QTTEST_HAS_DIS
+    application::DisStartupSession disSession;
+#endif
     const QVector<presentation::HlaBackendOption> hlaBackends =
         availableHlaBackends();
     if (hlaCombatDemo) {
@@ -126,10 +132,35 @@ int main(int argc, char *argv[])
         startupConfiguration = startupDialog.configuration();
         startupConfiguration.save(settings);
 
-        if (startupConfiguration.federationMode !=
-            application::FederationMode::Hla) {
+        if (startupConfiguration.federationMode ==
+            application::FederationMode::Standalone) {
           break;
         }
+
+#ifdef QTTEST_HAS_DIS
+        if (startupConfiguration.federationMode ==
+            application::FederationMode::Dis) {
+          const tactical::dis::Result disResult =
+              disSession.start(startupConfiguration.dis);
+          if (disResult.success) {
+            qInfo().noquote()
+                << "DIS gateway active:"
+                << startupConfiguration.dis.address
+                << "port=" << startupConfiguration.dis.port
+                << "exercise=" << startupConfiguration.dis.exerciseId
+                << "site/application="
+                << QStringLiteral("%1/%2")
+                       .arg(startupConfiguration.dis.siteId)
+                       .arg(startupConfiguration.dis.applicationId);
+            break;
+          }
+          QMessageBox::critical(
+              &startupDialog,
+              QStringLiteral("DIS startup failed"),
+              disResult.message);
+          continue;
+        }
+#endif
 
         const tactical::hla::Result hlaResult =
             hlaSession.start(startupConfiguration.hla);
@@ -413,12 +444,23 @@ int main(int argc, char *argv[])
           startupConfiguration.hla,
           hlaBackendAvailable,
           hlaSession.isActive());
+#ifdef QTTEST_HAS_DIS
+      if (disSession.isActive()) window.setHlaBlockedByDis(true);
+#endif
 
       QObject::connect(
           &window,
           &MainWindow::hlaConnectRequested,
           &window,
           [&](const QString& federationName, const QString& federateName) {
+#ifdef QTTEST_HAS_DIS
+            if (disSession.isActive()) {
+              window.setHlaConnectionState(
+                  false, false,
+                  QStringLiteral("Disconnect DIS before connecting HLA."));
+              return;
+            }
+#endif
             hlaPollTimer.stop();
             hlaPublishTimer.stop();
             lastPublishedEntityCount = -1;
@@ -466,6 +508,9 @@ int main(int argc, char *argv[])
                 hlaSession.isTimeManagementActive());
             window.configureHlaConnection(
                 startupConfiguration.hla, true, true);
+#ifdef QTTEST_HAS_DIS
+            window.setDisBlockedByHla(true);
+#endif
             hlaPollTimer.start();
             hlaPublishTimer.start();
             qInfo().noquote()
@@ -497,12 +542,179 @@ int main(int argc, char *argv[])
                 false,
                 false,
                 QString());
+#ifdef QTTEST_HAS_DIS
+            window.setDisBlockedByHla(false);
+#endif
             window.reportHlaSynchronizationStatus(
                 QStringLiteral("disconnected from federation"));
           });
     }
 
+#ifdef QTTEST_HAS_DIS
+    QTimer disPollTimer;
+    QTimer disPublishTimer;
+    disSession.setEntityManagementHandler([&](const auto& request) {
+      return window.applyDisEntityManagement(request);
+    });
+    QObject::connect(&window, &MainWindow::disEntityManagementRequested, &window, [&](const auto& request) {
+      const auto result = disSession.publishEntityManagement(request);
+      if (!result.success) window.setDisConnectionState(disSession.isActive(), false, result.message);
+    });
+    QObject::connect(&window, &MainWindow::disIffRequested, &window, [&](const auto& state) {
+      const auto result = disSession.publishIff(state);
+      if (!result.success) window.setDisConnectionState(disSession.isActive(), false, result.message);
+    });
+    QObject::connect(&window, &MainWindow::disCollisionRequested, &window, [&](const auto& event) {
+      const auto result = disSession.publishCollision(event);
+      if (!result.success) window.setDisConnectionState(disSession.isActive(), false, result.message);
+    });
+    QObject::connect(&window, &MainWindow::hlaSimulationControlRequested,
+        &window, [&](tactical::hla::RemoteSimulationControl control, double time) {
+          if (!disSession.isActive()) return;
+          tactical::dis::SimulationControl mapped;
+          switch (control) {
+            case tactical::hla::RemoteSimulationControl::StartResume: mapped = tactical::dis::SimulationControl::StartResume; break;
+            case tactical::hla::RemoteSimulationControl::Pause: mapped = tactical::dis::SimulationControl::Pause; break;
+            case tactical::hla::RemoteSimulationControl::Stop: mapped = tactical::dis::SimulationControl::Stop; break;
+          }
+          const auto result = disSession.publishSimulationControl(mapped, time);
+          if (!result.success) qWarning().noquote() << "DIS control publication failed:" << result.message;
+        });
+    window.configureDisConnection(
+        startupConfiguration.dis,
+        true,
+        disSession.isActive(),
+        hlaSession.isActive());
+    if (hlaSession.isActive()) window.setDisBlockedByHla(true);
+    if (disSession.isActive()) window.setHlaBlockedByDis(true);
+
+    disPollTimer.setInterval(20);
+    QObject::connect(&disPollTimer, &QTimer::timeout, &window, [&]() {
+      if (!disSession.isActive()) return;
+      const tactical::dis::Result result = disSession.poll();
+      if (!result.success) {
+        qWarning().noquote() << "DIS receive failed:" << result.message;
+        return;
+      }
+      const auto changes = disSession.takeRemoteEntityChanges();
+      for (const auto& ack : disSession.takeRemoteAcknowledgements()) {
+        qInfo().noquote() << "DIS control acknowledgement:" << ack.source.key()
+                         << "request=" << ack.requestId << "response=" << ack.responseFlag;
+      }
+      for (const auto control : disSession.takeRemoteSimulationControls()) {
+        switch (control) {
+          case tactical::dis::SimulationControl::StartResume:
+            window.applyHlaRemoteSimulationControl(tactical::hla::RemoteSimulationControl::StartResume); break;
+          case tactical::dis::SimulationControl::Pause:
+            window.applyHlaRemoteSimulationControl(tactical::hla::RemoteSimulationControl::Pause); break;
+          case tactical::dis::SimulationControl::Stop:
+            window.applyHlaRemoteSimulationControl(tactical::hla::RemoteSimulationControl::Stop); break;
+        }
+      }
+      window.applyDisRemoteEntityChanges(changes);
+      window.applyDisRemoteRadarEmissions(disSession.takeRemoteRadarEmissions());
+      window.applyDisInteractions(disSession.takeRemoteIffStates(), disSession.takeRemoteCollisions());
+      window.applyDisRemoteWarfareEvents(
+          disSession.takeRemoteWarfareEvents());
+      window.updateDisStatistics(
+          disSession.publishedPduCount(),
+          disSession.receivedPduCount(),
+          disSession.remoteEntityCount());
+    });
+    if (disSession.isActive()) disPollTimer.start();
+
+    disPublishTimer.setInterval(100);
+    QObject::connect(&disPublishTimer, &QTimer::timeout, &window, [&]() {
+      if (!disSession.isActive()) return;
+      tactical::dis::Result result =
+          disSession.publishEntities(window.entitySnapshot());
+      if (result.success) result = disSession.publishSensors(window.entitySnapshot());
+      if (result.success) {
+        result = disSession.publishMunitions(window.activeMunitionSnapshot());
+      }
+      if (result.success) {
+        result = disSession.publishDetonations(
+            window.transientEffectSnapshot());
+      }
+      if (!result.success) {
+        qWarning().noquote() << "DIS publication failed:" << result.message;
+      }
+      window.updateDisStatistics(
+          disSession.publishedPduCount(),
+          disSession.receivedPduCount(),
+          disSession.remoteEntityCount());
+    });
+    if (disSession.isActive()) disPublishTimer.start();
+
+    QObject::connect(
+        &window,
+        &MainWindow::disConnectRequested,
+        &window,
+        [&](const application::DisStartupConfiguration& configuration) {
+          if (hlaSession.isActive()) {
+            window.setDisConnectionState(
+                false, false,
+                QStringLiteral("Disconnect HLA before connecting DIS."));
+            return;
+          }
+          disPollTimer.stop();
+          disPublishTimer.stop();
+          disSession.stop();
+          window.setDisConnectionState(
+              false, true,
+              QStringLiteral("Opening DIS UDP session at %1:%2...")
+                  .arg(configuration.address)
+                  .arg(configuration.port));
+          const tactical::dis::Result result = disSession.start(configuration);
+          if (!result.success) {
+            window.setDisConnectionState(false, false, result.message);
+            return;
+          }
+          startupConfiguration.federationMode = application::FederationMode::Dis;
+          startupConfiguration.dis = configuration;
+          startupConfiguration.save(settings);
+          window.configureDisConnection(configuration, true, true, false);
+          window.setHlaBlockedByDis(true);
+          disPollTimer.start();
+          disPublishTimer.start();
+        });
+
+    QObject::connect(
+        &window,
+        &MainWindow::disDisconnectRequested,
+        &window,
+        [&]() {
+          disPollTimer.stop();
+          disPublishTimer.stop();
+          const tactical::dis::Result result = disSession.stop();
+          window.updateDisStatistics(0, 0, 0);
+          window.setDisConnectionState(
+              false, false, result.success ? QString() : result.message);
+          window.setHlaBlockedByDis(false);
+        });
+
+    QObject::connect(
+        &window,
+        &MainWindow::disTestEntityStateRequested,
+        &window,
+        [&](const tactical::dis::EntityState& state) {
+          const tactical::dis::Result result =
+              disSession.publishTestEntity(state);
+          if (!result.success) {
+            window.setDisConnectionState(true, false, result.message);
+            return;
+          }
+          window.updateDisStatistics(
+              disSession.publishedPduCount(),
+              disSession.receivedPduCount(),
+              disSession.remoteEntityCount());
+        });
+#endif
+
     const int result = app.exec();
+#ifdef QTTEST_HAS_DIS
+    disSession.stop();
+#endif
     hlaSession.stop();
     return result;
 }

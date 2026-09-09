@@ -51,6 +51,10 @@ TEST(StartupConfiguration, PersistsFederationAndOptionalIntegrations) {
   expected.federationMode = application::FederationMode::Dis;
   expected.dis.address = QStringLiteral("239.10.20.30");
   expected.dis.port = 3010;
+  expected.dis.exerciseId = 17;
+  expected.dis.siteId = 12;
+  expected.dis.applicationId = 34;
+  expected.dis.remoteEntityTimeoutSeconds = 9.5;
   expected.hla.synchronizationPointLabel = QStringLiteral("ReadyToRun");
   expected.hla.timeManagementEnabled = true;
   expected.hla.timeLookaheadSeconds = 0.025;
@@ -67,6 +71,12 @@ TEST(StartupConfiguration, PersistsFederationAndOptionalIntegrations) {
   EXPECT_EQ(actual.federationMode, application::FederationMode::Dis);
   EXPECT_EQ(actual.dis.address, expected.dis.address);
   EXPECT_EQ(actual.dis.port, expected.dis.port);
+  EXPECT_EQ(actual.dis.exerciseId, expected.dis.exerciseId);
+  EXPECT_EQ(actual.dis.siteId, expected.dis.siteId);
+  EXPECT_EQ(actual.dis.applicationId, expected.dis.applicationId);
+  EXPECT_DOUBLE_EQ(
+      actual.dis.remoteEntityTimeoutSeconds,
+      expected.dis.remoteEntityTimeoutSeconds);
   EXPECT_EQ(
       actual.hla.synchronizationPointLabel,
       expected.hla.synchronizationPointLabel);

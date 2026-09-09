@@ -175,13 +175,25 @@ void HlaConnectionPanel::setConnectionState(
       QStringLiteral("background-color: %1; border-radius: 6px;")
           .arg(stateColor(state)));
   QString effectiveDetail = detail.trimmed();
-  if (effectiveDetail.isEmpty() && !_backendAvailable) {
+  if (_blockedByDis) {
+    effectiveDetail = QStringLiteral(
+        "HLA is unavailable while the DIS gateway is active.");
+  } else if (effectiveDetail.isEmpty() && !_backendAvailable) {
     effectiveDetail = QStringLiteral(
         "No HLA backend is available in this build configuration.");
   }
   _detailLabel->setText(effectiveDetail);
   _detailLabel->setVisible(!effectiveDetail.isEmpty());
   this->updateControls();
+}
+
+void HlaConnectionPanel::setBlockedByDis(bool blocked) {
+  _blockedByDis = blocked;
+  this->setConnectionState(
+      blocked ? HlaConnectionState::Disconnected : _state,
+      blocked
+          ? QStringLiteral("HLA is unavailable while the DIS gateway is active.")
+          : QString());
 }
 
 HlaConnectionState HlaConnectionPanel::connectionState() const {
@@ -215,12 +227,12 @@ void HlaConnectionPanel::requestConnection() {
 void HlaConnectionPanel::updateControls() {
   const bool busy = _state == HlaConnectionState::Connecting;
   const bool connected = _state == HlaConnectionState::Federated;
-  _federationEdit->setEnabled(!busy && !connected);
-  _federateEdit->setEnabled(!busy && !connected);
+  _federationEdit->setEnabled(!_blockedByDis && !busy && !connected);
+  _federateEdit->setEnabled(!_blockedByDis && !busy && !connected);
   _connectButton->setEnabled(
-      _backendAvailable && !busy && !connected &&
+      _backendAvailable && !_blockedByDis && !busy && !connected &&
       !this->federationName().isEmpty() && !this->federateName().isEmpty());
-  _disconnectButton->setEnabled(connected);
+  _disconnectButton->setEnabled(!_blockedByDis && connected);
 }
 
 } // namespace presentation

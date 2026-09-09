@@ -29,6 +29,7 @@ public:
   void setConnectionState(
       HlaConnectionState state,
       const QString& detail = QString());
+  void setBlockedByDis(bool blocked);
 
   HlaConnectionState connectionState() const;
   QString federationName() const;
@@ -59,6 +60,7 @@ private:
   QPushButton* _disconnectButton;
   HlaConnectionState _state = HlaConnectionState::Disconnected;
   bool _backendAvailable = false;
+  bool _blockedByDis = false;
 };
 
 } // namespace presentation
