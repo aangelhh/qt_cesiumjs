@@ -1,6 +1,11 @@
 name: Build OpenRTI dependency
 
 on:
+  push:
+    branches:
+      - ci/github-actions-develop
+    paths:
+      - .github/workflows/build-openrti-dependency.yml
   workflow_dispatch:
 
 permissions:
