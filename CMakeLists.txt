@@ -107,9 +107,19 @@ set(QTTEST_OPENRTI_SOURCE_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}/Dependencies/OpenRTI
     CACHE PATH "OpenRTI source tree"
 )
+set(QTTEST_OPENRTI_ROOT
+    "$ENV{QTTEST_OPENRTI_ROOT}"
+    CACHE PATH "Prebuilt OpenRTI installation"
+)
 
-if(QTTEST_ENABLE_OPENRTI_HLA_BACKEND AND
-   EXISTS "${QTTEST_OPENRTI_SOURCE_DIR}/CMakeLists.txt")
+set(QTTEST_OPENRTI_AVAILABLE OFF)
+set(QTTEST_OPENRTI_EXTERNAL_TARGET "")
+if(QTTEST_ENABLE_OPENRTI_HLA_BACKEND AND QTTEST_OPENRTI_ROOT)
+    set(QTTEST_OPENRTI_INSTALL_DIR ${QTTEST_OPENRTI_ROOT})
+    set(QTTEST_OPENRTI_AVAILABLE ON)
+    set(QTTEST_OPENRTI_ORIGIN "prebuilt installation ${QTTEST_OPENRTI_ROOT}")
+elseif(QTTEST_ENABLE_OPENRTI_HLA_BACKEND AND
+       EXISTS "${QTTEST_OPENRTI_SOURCE_DIR}/CMakeLists.txt")
     include(ExternalProject)
     set(QTTEST_OPENRTI_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/openrti-install)
     set(QTTEST_OPENRTI_LIBRARY_DIR ${QTTEST_OPENRTI_INSTALL_DIR}/lib)
@@ -148,12 +158,42 @@ if(QTTEST_ENABLE_OPENRTI_HLA_BACKEND AND
         TEST_COMMAND ""
         UPDATE_COMMAND ""
     )
+    set(QTTEST_OPENRTI_AVAILABLE ON)
+    set(QTTEST_OPENRTI_EXTERNAL_TARGET qttest_openrti_external)
+    set(QTTEST_OPENRTI_ORIGIN "source tree ${QTTEST_OPENRTI_SOURCE_DIR}")
+endif()
+
+if(QTTEST_OPENRTI_AVAILABLE)
+    set(QTTEST_OPENRTI_LIBRARY_DIR ${QTTEST_OPENRTI_INSTALL_DIR}/lib)
+    if(WIN32)
+        set(QTTEST_OPENRTI_RTI1516E_LIBRARY
+            ${QTTEST_OPENRTI_LIBRARY_DIR}/rti1516e.lib)
+        set(QTTEST_OPENRTI_FEDTIME1516E_LIBRARY
+            ${QTTEST_OPENRTI_LIBRARY_DIR}/fedtime1516e.lib)
+    else()
+        set(QTTEST_OPENRTI_RTI1516E_LIBRARY
+            ${QTTEST_OPENRTI_LIBRARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}rti1516e${CMAKE_SHARED_LIBRARY_SUFFIX})
+        set(QTTEST_OPENRTI_FEDTIME1516E_LIBRARY
+            ${QTTEST_OPENRTI_LIBRARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}fedtime1516e${CMAKE_SHARED_LIBRARY_SUFFIX})
+    endif()
+
+    if(QTTEST_OPENRTI_ROOT)
+        if(NOT EXISTS "${QTTEST_OPENRTI_INSTALL_DIR}/include/rti1516e/RTI/RTI1516.h" OR
+           NOT EXISTS "${QTTEST_OPENRTI_RTI1516E_LIBRARY}" OR
+           NOT EXISTS "${QTTEST_OPENRTI_FEDTIME1516E_LIBRARY}")
+            message(FATAL_ERROR
+                "QTTEST_OPENRTI_ROOT does not contain the required OpenRTI headers and libraries: "
+                "${QTTEST_OPENRTI_ROOT}")
+        endif()
+    endif()
 
     add_library(qttest_hla_openrti1516e_backend SHARED
         integrations/hla/pitch1516e/Pitch1516eBackendPlugin.cpp
         src/infrastructure/interoperability/hla/HlaBackendPluginApi.h
     )
-    add_dependencies(qttest_hla_openrti1516e_backend qttest_openrti_external)
+    if(QTTEST_OPENRTI_EXTERNAL_TARGET)
+        add_dependencies(qttest_hla_openrti1516e_backend ${QTTEST_OPENRTI_EXTERNAL_TARGET})
+    endif()
     target_include_directories(qttest_hla_openrti1516e_backend PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${QTTEST_OPENRTI_INSTALL_DIR}/include/rti1516e
@@ -182,9 +222,9 @@ if(QTTEST_ENABLE_OPENRTI_HLA_BACKEND AND
     )
     set(QTTEST_HLA_OPENRTI_PLUGIN_PATH
         ${QTTEST_HLA_PLUGIN_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}qttest_hla_openrti1516e_backend${CMAKE_SHARED_LIBRARY_SUFFIX})
-    message(STATUS "OpenRTI IEEE 1516e backend enabled from ${QTTEST_OPENRTI_SOURCE_DIR}")
+    message(STATUS "OpenRTI IEEE 1516e backend enabled from ${QTTEST_OPENRTI_ORIGIN}")
 else()
-    message(STATUS "OpenRTI IEEE 1516e backend disabled: source tree not found")
+    message(STATUS "OpenRTI IEEE 1516e backend disabled: installation or source tree not found")
 endif()
 
 option(

@@ -20,9 +20,9 @@ env:
   QT_VERSION: "6.10.2"
   CMAKE_BUILD_TYPE: Release
   JSBSIM_COMMIT: "506773ad3790a5a621445631613faf51a15284e7"
-  OPENRTI_COMMIT: "1b580583a4436d21ee53a22b8535988122b76bf1"
   PITCH_DEPS_REPOSITORY: "aangelhh/tacticalenviroment-private-deps"
   PITCH_DEPS_TAG: "pitch-sdk-v1"
+  OPENRTI_DEPS_TAG: "openrti-1b580583a443"
   SCCACHE_GHA_ENABLED: "true"
 
 jobs:
@@ -39,56 +39,79 @@ jobs:
             os: ubuntu-24.04
             parallel: 4
             pitch_asset: pitch-prti1516e-linux-x64.tar.gz
+            openrti_asset: openrti-linux-x64.tar.gz
           - name: Windows x64
             os: windows-2025
             parallel: 4
             pitch_asset: pitch-prti1516e-windows-x64.zip
+            openrti_asset: openrti-windows-x64.zip
           - name: macOS ARM64
             os: macos-15
             parallel: 2
             pitch_asset: pitch-prti1516e-macos-arm64.tar.gz
+            openrti_asset: openrti-macos-arm64.tar.gz
 
     steps:
       - name: Checkout qttest
         uses: actions/checkout@v6
 
-      - name: Download Pitch pRTI SDK on Linux/macOS
+      - name: Download HLA SDKs on Linux/macOS
         if: runner.os != 'Windows'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.PITCH_DEPS_TOKEN }}
         run: |
           test -n "${GH_TOKEN:-}" || { echo "PITCH_DEPS_TOKEN is not configured" >&2; exit 1; }
-          mkdir -p pitch-sdk Dependencies/PitchRTI
+          mkdir -p pitch-sdk openrti-sdk Dependencies/PitchRTI Dependencies/OpenRTIPrebuilt
           gh release download "${PITCH_DEPS_TAG}" \
             --repo "${PITCH_DEPS_REPOSITORY}" \
             --pattern "${{ matrix.pitch_asset }}" \
             --dir pitch-sdk
+          gh release download "${OPENRTI_DEPS_TAG}" \
+            --repo "${PITCH_DEPS_REPOSITORY}" \
+            --pattern "${{ matrix.openrti_asset }}" \
+            --dir openrti-sdk
           tar -xzf "pitch-sdk/${{ matrix.pitch_asset }}" -C Dependencies/PitchRTI
+          tar -xzf "openrti-sdk/${{ matrix.openrti_asset }}" -C Dependencies/OpenRTIPrebuilt
           test -f Dependencies/PitchRTI/cmake/PitchRTIConfig.cmake
+          test -f Dependencies/OpenRTIPrebuilt/openrti/include/rti1516e/RTI/RTI1516.h
           echo "PitchRTI_ROOT=$PWD/Dependencies/PitchRTI" >> "$GITHUB_ENV"
+          echo "QTTEST_OPENRTI_ROOT=$PWD/Dependencies/OpenRTIPrebuilt/openrti" >> "$GITHUB_ENV"
 
-      - name: Download Pitch pRTI SDK on Windows
+      - name: Download HLA SDKs on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.PITCH_DEPS_TOKEN }}
         run: |
           if (-not $env:GH_TOKEN) { throw "PITCH_DEPS_TOKEN is not configured" }
-          New-Item -ItemType Directory -Force -Path pitch-sdk, Dependencies/PitchRTI | Out-Null
+          New-Item -ItemType Directory -Force -Path pitch-sdk, openrti-sdk, Dependencies/PitchRTI, Dependencies/OpenRTIPrebuilt | Out-Null
           gh release download $env:PITCH_DEPS_TAG `
             --repo $env:PITCH_DEPS_REPOSITORY `
             --pattern "${{ matrix.pitch_asset }}" `
             --dir pitch-sdk
+          gh release download $env:OPENRTI_DEPS_TAG `
+            --repo $env:PITCH_DEPS_REPOSITORY `
+            --pattern "${{ matrix.openrti_asset }}" `
+            --dir openrti-sdk
           Expand-Archive `
             -Path "pitch-sdk/${{ matrix.pitch_asset }}" `
             -DestinationPath Dependencies/PitchRTI `
             -Force
+          Expand-Archive `
+            -Path "openrti-sdk/${{ matrix.openrti_asset }}" `
+            -DestinationPath Dependencies/OpenRTIPrebuilt `
+            -Force
           $pitchRoot = (Resolve-Path Dependencies/PitchRTI).Path
+          $openRtiRoot = (Resolve-Path Dependencies/OpenRTIPrebuilt/openrti).Path
           if (-not (Test-Path "$pitchRoot/cmake/PitchRTIConfig.cmake")) {
             throw "PitchRTIConfig.cmake was not extracted"
           }
+          if (-not (Test-Path "$openRtiRoot/include/rti1516e/RTI/RTI1516.h")) {
+            throw "OpenRTI headers were not extracted"
+          }
           "PitchRTI_ROOT=$pitchRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "QTTEST_OPENRTI_ROOT=$openRtiRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Restore JSBSim source cache
         id: jsbsim-cache
@@ -104,16 +127,6 @@ jobs:
           rm -rf Dependencies/jsbsim
           git clone --filter=blob:none https://github.com/JSBSim-Team/jsbsim.git Dependencies/jsbsim
           git -C Dependencies/jsbsim checkout "${JSBSIM_COMMIT}"
-
-      # The fork is public and contains qttest's IEEE 1516e ownership additions.
-      # Pin the exact revision so all three runners build the same RTI implementation.
-      - name: Checkout pinned qttest OpenRTI fork
-        shell: bash
-        run: |
-          rm -rf Dependencies/OpenRTI
-          git clone --filter=blob:none https://github.com/aangelhh/openrti_aangelhh.git Dependencies/OpenRTI
-          git -C Dependencies/OpenRTI checkout "${OPENRTI_COMMIT}"
-          echo "Qttest OpenRTI fork pinned at ${OPENRTI_COMMIT}."
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -165,6 +178,7 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=sccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=ON \
+            -DQTTEST_OPENRTI_ROOT="$QTTEST_OPENRTI_ROOT" \
             -DQTTEST_ENABLE_PITCH_HLA_BACKEND=ON \
             -DQTTEST_PITCH_RTI_ROOT="$PitchRTI_ROOT" \
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF \
@@ -181,6 +195,7 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=sccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=ON `
+            -DQTTEST_OPENRTI_ROOT="$env:QTTEST_OPENRTI_ROOT" `
             -DQTTEST_ENABLE_PITCH_HLA_BACKEND=ON `
             -DQTTEST_PITCH_RTI_ROOT="$env:PitchRTI_ROOT" `
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF `
@@ -189,15 +204,15 @@ jobs:
             -DQTTEST_BUILD_TESTS=OFF `
             -DQTTEST_BUILD_BENCHMARKS=OFF
 
-      - name: Build required Pitch backend on Linux/macOS
+      - name: Build required HLA backends on Linux/macOS
         if: runner.os != 'Windows'
         shell: bash
-        run: cmake --build build --target qttest_hla_pitch1516e_backend --parallel ${{ matrix.parallel }}
+        run: cmake --build build --target qttest_hla_openrti1516e_backend qttest_hla_pitch1516e_backend --parallel ${{ matrix.parallel }}
 
-      - name: Build required Pitch backend on Windows
+      - name: Build required HLA backends on Windows
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cmake --build build --config $env:CMAKE_BUILD_TYPE --target qttest_hla_pitch1516e_backend --parallel ${{ matrix.parallel }}
+        run: cmake --build build --config $env:CMAKE_BUILD_TYPE --target qttest_hla_openrti1516e_backend qttest_hla_pitch1516e_backend --parallel ${{ matrix.parallel }}
 
       - name: Build Linux/macOS
         if: runner.os != 'Windows'
@@ -324,8 +339,8 @@ jobs:
           mkdir -p "$package_root/hla-plugins"
           find build/hla-plugins -maxdepth 3 -type f -name '*qttest_hla_*backend*.so' \
             -exec cp -L {} "$package_root/hla-plugins/" \; 2>/dev/null || true
-          if [ -d build/openrti-install/lib ]; then
-            cp -a build/openrti-install/lib/*.so* "$package_root/lib/" 2>/dev/null || true
+          if [ -d "$QTTEST_OPENRTI_ROOT/lib" ]; then
+            cp -a "$QTTEST_OPENRTI_ROOT"/lib/*.so* "$package_root/lib/" 2>/dev/null || true
           fi
 
           python Tools/write_runtime_capabilities.py "$package_root"
@@ -388,8 +403,8 @@ jobs:
           mkdir -p "$runtime_root/hla-plugins" "$runtime_root/hla-runtime/openrti"
           find build/hla-plugins -maxdepth 3 -type f -name '*qttest_hla_*backend*.dylib' \
             -exec cp -L {} "$runtime_root/hla-plugins/" \; 2>/dev/null || true
-          if [ -d build/openrti-install/lib ]; then
-            cp -a build/openrti-install/lib/*.dylib* "$runtime_root/hla-runtime/openrti/" 2>/dev/null || true
+          if [ -d "$QTTEST_OPENRTI_ROOT/lib" ]; then
+            cp -a "$QTTEST_OPENRTI_ROOT"/lib/*.dylib* "$runtime_root/hla-runtime/openrti/" 2>/dev/null || true
           fi
 
           python Tools/write_runtime_capabilities.py "$runtime_root"
@@ -474,8 +489,8 @@ jobs:
 
           $openRtiRuntime = Join-Path $packageRoot "hla-runtime/openrti"
           New-Item -ItemType Directory -Force -Path $openRtiRuntime | Out-Null
-          if (Test-Path "build/openrti-install") {
-            Get-ChildItem "build/openrti-install" -Recurse -File -Filter "*.dll" |
+          if (Test-Path $env:QTTEST_OPENRTI_ROOT) {
+            Get-ChildItem $env:QTTEST_OPENRTI_ROOT -Recurse -File -Filter "*.dll" |
               ForEach-Object { Copy-Item $_.FullName $openRtiRuntime -Force }
           }
 
