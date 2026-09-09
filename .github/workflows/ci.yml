@@ -21,6 +21,8 @@ env:
   CMAKE_BUILD_TYPE: Release
   JSBSIM_COMMIT: "506773ad3790a5a621445631613faf51a15284e7"
   OPENRTI_COMMIT: "1b580583a4436d21ee53a22b8535988122b76bf1"
+  PITCH_DEPS_REPOSITORY: "aangelhh/tacticalenviroment-private-deps"
+  PITCH_DEPS_TAG: "pitch-sdk-v1"
   SCCACHE_GHA_ENABLED: "true"
 
 jobs:
@@ -36,16 +38,57 @@ jobs:
           - name: Linux x64
             os: ubuntu-24.04
             parallel: 4
+            pitch_asset: pitch-prti1516e-linux-x64.tar.gz
           - name: Windows x64
             os: windows-2025
             parallel: 4
+            pitch_asset: pitch-prti1516e-windows-x64.zip
           - name: macOS ARM64
             os: macos-15
             parallel: 2
+            pitch_asset: pitch-prti1516e-macos-arm64.tar.gz
 
     steps:
       - name: Checkout qttest
         uses: actions/checkout@v6
+
+      - name: Download Pitch pRTI SDK on Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PITCH_DEPS_TOKEN }}
+        run: |
+          test -n "${GH_TOKEN:-}" || { echo "PITCH_DEPS_TOKEN is not configured" >&2; exit 1; }
+          mkdir -p pitch-sdk Dependencies/PitchRTI
+          gh release download "${PITCH_DEPS_TAG}" \
+            --repo "${PITCH_DEPS_REPOSITORY}" \
+            --pattern "${{ matrix.pitch_asset }}" \
+            --dir pitch-sdk
+          tar -xzf "pitch-sdk/${{ matrix.pitch_asset }}" -C Dependencies/PitchRTI
+          test -f Dependencies/PitchRTI/cmake/PitchRTIConfig.cmake
+          echo "PitchRTI_ROOT=$PWD/Dependencies/PitchRTI" >> "$GITHUB_ENV"
+
+      - name: Download Pitch pRTI SDK on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.PITCH_DEPS_TOKEN }}
+        run: |
+          if (-not $env:GH_TOKEN) { throw "PITCH_DEPS_TOKEN is not configured" }
+          New-Item -ItemType Directory -Force -Path pitch-sdk, Dependencies/PitchRTI | Out-Null
+          gh release download $env:PITCH_DEPS_TAG `
+            --repo $env:PITCH_DEPS_REPOSITORY `
+            --pattern "${{ matrix.pitch_asset }}" `
+            --dir pitch-sdk
+          Expand-Archive `
+            -Path "pitch-sdk/${{ matrix.pitch_asset }}" `
+            -DestinationPath Dependencies/PitchRTI `
+            -Force
+          $pitchRoot = (Resolve-Path Dependencies/PitchRTI).Path
+          if (-not (Test-Path "$pitchRoot/cmake/PitchRTIConfig.cmake")) {
+            throw "PitchRTIConfig.cmake was not extracted"
+          }
+          "PitchRTI_ROOT=$pitchRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Restore JSBSim source cache
         id: jsbsim-cache
@@ -123,6 +166,7 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=ON \
             -DQTTEST_ENABLE_PITCH_HLA_BACKEND=ON \
+            -DQTTEST_PITCH_RTI_ROOT="$PitchRTI_ROOT" \
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF \
             -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON \
             -DQTTEST_ENABLE_JSBSIM=ON \
@@ -138,11 +182,22 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=ON `
             -DQTTEST_ENABLE_PITCH_HLA_BACKEND=ON `
+            -DQTTEST_PITCH_RTI_ROOT="$env:PitchRTI_ROOT" `
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF `
             -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON `
             -DQTTEST_ENABLE_JSBSIM=ON `
             -DQTTEST_BUILD_TESTS=OFF `
             -DQTTEST_BUILD_BENCHMARKS=OFF
+
+      - name: Build required Pitch backend on Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cmake --build build --target qttest_hla_pitch1516e_backend --parallel ${{ matrix.parallel }}
+
+      - name: Build required Pitch backend on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake --build build --config $env:CMAKE_BUILD_TYPE --target qttest_hla_pitch1516e_backend --parallel ${{ matrix.parallel }}
 
       - name: Build Linux/macOS
         if: runner.os != 'Windows'
