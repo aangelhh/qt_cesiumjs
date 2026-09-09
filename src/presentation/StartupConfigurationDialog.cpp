@@ -46,8 +46,10 @@ StartupConfigurationDialog::StartupConfigurationDialog(
       _modeStack(new QStackedWidget(this)),
       _disAddressEdit(new QLineEdit(this)),
       _disPortSpin(new QSpinBox(this)),
+      _disExerciseSpin(new QSpinBox(this)),
       _disSiteSpin(new QSpinBox(this)),
       _disApplicationSpin(new QSpinBox(this)),
+      _disTimeoutSpin(new QDoubleSpinBox(this)),
       _hlaBackendCombo(new QComboBox(this)),
       _hlaLocalSettingsEdit(new QLineEdit(this)),
       _hlaFederationEdit(new QLineEdit(this)),
@@ -107,17 +109,25 @@ StartupConfigurationDialog::StartupConfigurationDialog(
   _disAddressEdit->setText(configuration.dis.address);
   _disPortSpin->setRange(1, 65535);
   _disPortSpin->setValue(configuration.dis.port);
+  _disExerciseSpin->setRange(0, 255);
+  _disExerciseSpin->setValue(configuration.dis.exerciseId);
   _disSiteSpin->setRange(0, 65535);
   _disSiteSpin->setValue(configuration.dis.siteId);
   _disApplicationSpin->setRange(0, 65535);
   _disApplicationSpin->setValue(configuration.dis.applicationId);
+  _disTimeoutSpin->setRange(1.0, 300.0);
+  _disTimeoutSpin->setDecimals(1);
+  _disTimeoutSpin->setSuffix(QStringLiteral(" s"));
+  _disTimeoutSpin->setValue(configuration.dis.remoteEntityTimeoutSeconds);
   disForm->addRow(QStringLiteral("Address"), _disAddressEdit);
   disForm->addRow(QStringLiteral("Port"), _disPortSpin);
+  disForm->addRow(QStringLiteral("Exercise ID"), _disExerciseSpin);
   disForm->addRow(QStringLiteral("Site ID"), _disSiteSpin);
   disForm->addRow(QStringLiteral("Application ID"), _disApplicationSpin);
+  disForm->addRow(QStringLiteral("Remote timeout"), _disTimeoutSpin);
   auto* disStatus = new QLabel(
       QStringLiteral(
-          "Configuration is stored; the DIS runtime adapter is pending."),
+          "Entity State PDUs are published and received over UDP at 10 Hz."),
       disPage);
   disStatus->setWordWrap(true);
   disForm->addRow(QString(), disStatus);
@@ -306,8 +316,10 @@ StartupConfigurationDialog::configuration() const {
       _modeCombo->currentData().toInt());
   result.dis.address = _disAddressEdit->text().trimmed();
   result.dis.port = _disPortSpin->value();
+  result.dis.exerciseId = _disExerciseSpin->value();
   result.dis.siteId = _disSiteSpin->value();
   result.dis.applicationId = _disApplicationSpin->value();
+  result.dis.remoteEntityTimeoutSeconds = _disTimeoutSpin->value();
 
   result.hla.backendId = _hlaBackendCombo->currentData().toString();
   result.hla.backendLibraryPath = _hlaBackendCombo->currentData(

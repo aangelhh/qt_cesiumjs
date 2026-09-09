@@ -41,6 +41,17 @@ QString StartupConfiguration::validationError() const {
     if (dis.port < 1 || dis.port > 65535) {
       return QStringLiteral("DIS port must be between 1 and 65535.");
     }
+    if (dis.exerciseId < 0 || dis.exerciseId > 255) {
+      return QStringLiteral("DIS exercise ID must be between 0 and 255.");
+    }
+    if (dis.siteId < 0 || dis.siteId > 65535 ||
+        dis.applicationId < 0 || dis.applicationId > 65535) {
+      return QStringLiteral("DIS site and application IDs must be between 0 and 65535.");
+    }
+    if (!std::isfinite(dis.remoteEntityTimeoutSeconds) ||
+        dis.remoteEntityTimeoutSeconds <= 0.0) {
+      return QStringLiteral("DIS remote entity timeout must be positive.");
+    }
   }
 
   if (federationMode == FederationMode::Hla) {
@@ -131,10 +142,15 @@ StartupConfiguration StartupConfiguration::load(QSettings& settings) {
       QStringLiteral("dis/address"), configuration.dis.address).toString();
   configuration.dis.port = settings.value(
       QStringLiteral("dis/port"), configuration.dis.port).toInt();
+  configuration.dis.exerciseId = settings.value(
+      QStringLiteral("dis/exerciseId"), configuration.dis.exerciseId).toInt();
   configuration.dis.siteId = settings.value(
       QStringLiteral("dis/siteId"), configuration.dis.siteId).toInt();
   configuration.dis.applicationId = settings.value(
       QStringLiteral("dis/applicationId"), configuration.dis.applicationId).toInt();
+  configuration.dis.remoteEntityTimeoutSeconds = settings.value(
+      QStringLiteral("dis/remoteEntityTimeoutSeconds"),
+      configuration.dis.remoteEntityTimeoutSeconds).toDouble();
 
   configuration.hla.backendId = settings.value(
       QStringLiteral("hla/backendId")).toString();
@@ -186,8 +202,12 @@ void StartupConfiguration::save(QSettings& settings) const {
   settings.setValue(QStringLiteral("federationMode"), modeKey(federationMode));
   settings.setValue(QStringLiteral("dis/address"), dis.address);
   settings.setValue(QStringLiteral("dis/port"), dis.port);
+  settings.setValue(QStringLiteral("dis/exerciseId"), dis.exerciseId);
   settings.setValue(QStringLiteral("dis/siteId"), dis.siteId);
   settings.setValue(QStringLiteral("dis/applicationId"), dis.applicationId);
+  settings.setValue(
+      QStringLiteral("dis/remoteEntityTimeoutSeconds"),
+      dis.remoteEntityTimeoutSeconds);
   settings.setValue(QStringLiteral("hla/backendId"), hla.backendId);
   settings.setValue(
       QStringLiteral("hla/backendLibraryPath"), hla.backendLibraryPath);

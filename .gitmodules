@@ -4,3 +4,6 @@
 [submodule "Dependencies/OpenRTI"]
 	path = Dependencies/OpenRTI
 	url = https://github.com/aangelhh/openrti_aangelhh.git
+[submodule "Dependencies/KDIS"]
+	path = Dependencies/KDIS
+	url = https://github.com/karljj1/kdis.git

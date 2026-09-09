@@ -9,7 +9,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Xml)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Xml Network)
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebEngineCore WebChannel Positioning)
 
 add_library(qttest_geodesic STATIC
@@ -34,6 +34,56 @@ target_link_libraries(qttest_geospatial PUBLIC
     qttest_geodesic
     Qt6::Core
 )
+
+# ---------------------------------------------------------------------------
+# DIS 7 runtime (IEEE 1278.1-2012)
+# ---------------------------------------------------------------------------
+option(QTTEST_ENABLE_DIS "Build the DIS 7 UDP gateway" ON)
+if(QTTEST_ENABLE_DIS AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Dependencies/KDIS/CMakeLists.txt")
+    set(_QTTEST_CXX_STANDARD ${CMAKE_CXX_STANDARD})
+    set(DIS_VERSION 7 CACHE STRING "KDIS protocol version" FORCE)
+    set(KDIS_USE_ENUM_DESCRIPTORS OFF CACHE BOOL "" FORCE)
+    set(KDIS_DEPRECATED_NET OFF CACHE BOOL "" FORCE)
+    set(KDIS_BUILD_INSTALL OFF CACHE BOOL "" FORCE)
+    set(KDIS_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    set(KDIS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(KDIS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(Dependencies/KDIS EXCLUDE_FROM_ALL)
+    set(CMAKE_CXX_STANDARD ${_QTTEST_CXX_STANDARD})
+
+    # KDIS selects the header layout with DIS_VERSION but keeps the definition
+    # private; consumers of its public headers need the same value.
+    target_compile_definitions(KDIS PUBLIC DIS_VERSION=7)
+
+    add_library(qttest_dis_core STATIC
+        src/infrastructure/interoperability/dis/DisSimulationControlCodec.cpp
+        src/infrastructure/interoperability/dis/DisEmissionCodec.cpp
+        src/infrastructure/interoperability/dis/DisInteractionCodec.cpp
+        src/infrastructure/interoperability/dis/DisEntityStateCodec.cpp
+        src/infrastructure/interoperability/dis/DisEntityStateCodec.h
+        src/infrastructure/interoperability/dis/DisGateway.cpp
+        src/infrastructure/interoperability/dis/DisGateway.h
+        src/infrastructure/interoperability/dis/DisRemoteEntityRegistry.cpp
+        src/infrastructure/interoperability/dis/DisRemoteEntityRegistry.h
+        src/infrastructure/interoperability/dis/DisWarfareCodec.cpp
+        src/infrastructure/interoperability/dis/DisWarfareCodec.h
+        src/infrastructure/interoperability/dis/DisTypes.h
+    )
+    target_include_directories(qttest_dis_core PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(qttest_dis_core PUBLIC
+        KDIS::KDIS
+        qttest_geospatial
+        Qt6::Core
+        Qt6::Network
+    )
+    target_compile_definitions(qttest_dis_core PUBLIC QTTEST_HAS_DIS=1)
+    add_executable(qttest_dis_pdu_tester Tools/dis/DisPduTester.cpp)
+    target_link_libraries(qttest_dis_pdu_tester PRIVATE qttest_dis_core Qt6::Widgets)
+endif()
 
 # ---------------------------------------------------------------------------
 # Open-source HLA runtime abstraction
@@ -605,6 +655,18 @@ target_link_libraries(qttest
         Qt6::Widgets
         Qt6::Gui
 )
+
+if(TARGET qttest_dis_core)
+    target_sources(qttest PRIVATE
+        src/application/DisStartupSession.cpp
+        src/application/DisStartupSession.h
+        src/presentation/DisConnectionPanel.cpp
+        src/presentation/DisConnectionPanel.h
+    )
+    target_link_libraries(qttest PRIVATE qttest_dis_core)
+    add_dependencies(qttest qttest_dis_pdu_tester)
+    target_compile_definitions(qttest PRIVATE QTTEST_DIS_TESTER_PATH="$<TARGET_FILE:qttest_dis_pdu_tester>")
+endif()
 
 if(QTTEST_ENABLE_ROS2_TELEMETRY)
     target_link_libraries(qttest PRIVATE

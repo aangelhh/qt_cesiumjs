@@ -97,5 +97,14 @@ int main(int argc, char** argv) {
   federationEdit->clear();
   if (connectButton->isEnabled()) return 8;
 
+  federationEdit->setText(configuration.federationName);
+  panel.setBlockedByDis(true);
+  if (federationEdit->isEnabled() || federateEdit->isEnabled() ||
+      connectButton->isEnabled() || disconnectButton->isEnabled()) {
+    return 10;
+  }
+  panel.setBlockedByDis(false);
+  if (!federationEdit->isEnabled() || !connectButton->isEnabled()) return 11;
+
   return 0;
 }

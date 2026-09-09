@@ -18,6 +18,10 @@
 #include "presentation/EntityDefaultsResolver.h"
 #include "presentation/EntityPlanExecutor.h"
 #include "presentation/HlaConnectionPanel.h"
+#ifdef QTTEST_HAS_DIS
+#include <QProcess>
+#include "presentation/DisConnectionPanel.h"
+#endif
 #include "application/HlaCombatDemoScenario.h"
 #include "presentation/BombTargetMapSync.h"
 #include "presentation/MapBridgeScripts.h"
@@ -214,6 +218,11 @@ MainWindow::MainWindow(QWidget* parent)
       _hlaConnectionDock(nullptr),
       _hlaConnectionPanel(nullptr),
       _hlaStatusButton(nullptr),
+#ifdef QTTEST_HAS_DIS
+      _disConnectionDock(nullptr),
+      _disConnectionPanel(nullptr),
+      _disStatusButton(nullptr),
+#endif
       _ros2TelemetryPublisher(nullptr),
       _kinematicsTelemetrySubscriptionId(0),
       _mapBridge(new MapBridge(this)),
@@ -305,6 +314,9 @@ MainWindow::MainWindow(QWidget* parent)
 {
   this->_ui->setupUi(this);
   this->initializeHlaConnectionPanel();
+#ifdef QTTEST_HAS_DIS
+  this->initializeDisConnectionPanel();
+#endif
   const QStringList sensorProviderDiagnostics =
       infrastructure::SensorModelProviderBootstrap::registerEnabledProviders(
           *_scenarioState,
@@ -944,6 +956,78 @@ void MainWindow::applyHlaRemoteEntityChanges(
   this->syncScenarioStateToUi();
 }
 
+#ifdef QTTEST_HAS_DIS
+void MainWindow::applyDisRemoteEntityChanges(
+    const std::vector<tactical::dis::RemoteEntityChange>& changes) {
+  if (changes.empty()) return;
+  _disConnectionPanel->recordRemoteEntityChanges(changes);
+  for (const tactical::dis::RemoteEntityChange& change : changes) {
+    const tactical::dis::EntityState& state = change.state;
+    const QString stableId = state.identifier.key();
+    if (change.removed) {
+      _scenarioState->removeExternalEntity(stableId);
+      continue;
+    }
+    Entity entity;
+    entity.entityId = stableId;
+    entity.name = state.marking.isEmpty() ? stableId : state.marking;
+    switch (state.entityDomain) {
+      case 1: entity.domain = QStringLiteral("Ground"); break;
+      case 2: entity.domain = QStringLiteral("Air"); break;
+      case 3: entity.domain = QStringLiteral("Surface"); break;
+      case 4: entity.domain = QStringLiteral("Subsurface"); break;
+      case 5: entity.domain = QStringLiteral("Space"); break;
+      default: entity.domain = QStringLiteral("Other"); break;
+    }
+    entity.type = entity.domain == QStringLiteral("Air")
+        ? QStringLiteral("Aircraft") : entity.domain;
+    entity.category = QStringLiteral("DIS Remote");
+    entity.entityKind = state.entityKind;
+    entity.entityDomain = state.entityDomain;
+    entity.entityCountry = state.country;
+    entity.entityCategory = state.category;
+    entity.entitySubcategory = state.subcategory;
+    entity.entitySpecific = state.specific;
+    entity.entityExtra = state.extra;
+    entity.refreshEntityTypeCode();
+    entity.forceIdentifier = state.forceIdentifier;
+    entity.latitude = state.latitudeDegrees;
+    entity.longitude = state.longitudeDegrees;
+    entity.altitude = qRound(state.altitudeMeters);
+    entity.headingDegrees = state.headingDegrees;
+    entity.pitchDegrees = state.pitchDegrees;
+    entity.rollDegrees = state.rollDegrees;
+    entity.speedKnots = state.speedKnots;
+    entity.verticalSpeedMetersPerSecond =
+        state.verticalSpeedMetersPerSecond;
+    entity.damagePercent = state.damagePercent;
+    entity.destroyed = state.destroyed;
+    entity.externallyControlled = true;
+    _scenarioState->upsertExternalEntity(entity);
+  }
+  this->syncScenarioStateToUi();
+}
+
+void MainWindow::applyDisRemoteWarfareEvents(
+    const std::vector<tactical::dis::WarfareEvent>& events) {
+  if (events.empty()) return;
+  _disConnectionPanel->recordRemoteWarfareEvents(events);
+  for (const tactical::dis::WarfareEvent& event : events) {
+    const QString kind = event.kind == tactical::dis::WarfareEventKind::Fire
+        ? QStringLiteral("Fire") : QStringLiteral("Detonation");
+    qInfo().noquote()
+        << QStringLiteral("DIS %1 PDU: event=%2 munition=%3 type=%4 at %5, %6, %7 m")
+               .arg(kind,
+                    event.eventIdentifier.key(),
+                    event.munitionEntity.key(),
+                    event.munitionType)
+               .arg(event.latitudeDegrees, 0, 'f', 6)
+               .arg(event.longitudeDegrees, 0, 'f', 6)
+               .arg(event.altitudeMeters, 0, 'f', 1);
+  }
+}
+#endif
+
 void MainWindow::applyHlaRemoteMunitionChanges(
     const std::vector<tactical::hla::RemoteMunitionChange>& changes) {
   for (const tactical::hla::RemoteMunitionChange& change : changes) {
@@ -969,6 +1053,81 @@ void MainWindow::applyHlaRemoteMunitionChanges(
         presentation::makeMunitionTrackSummary(munition), false);
   }
 }
+
+#ifdef QTTEST_HAS_DIS
+bool MainWindow::applyDisEntityManagement(const tactical::dis::EntityManagementRequest& request) {
+  const auto key = QStringLiteral("managed:") + request.destination.key();
+  const auto owner = request.source.key();
+  if (_disManagedOwners.contains(key) && _disManagedOwners.value(key) != owner) return false;
+  const auto entities = entitySnapshot();
+  const bool exists = std::any_of(entities.cbegin(), entities.cend(), [&](const auto& entity) { return entity.entityId == key; });
+  if (request.remove) {
+    if (!_disManagedOwners.contains(key)) return false;
+    if (exists) _scenarioState->removeEntity(key);
+  } else {
+    if (exists && !_disManagedOwners.contains(key)) return false;
+    if (!exists) {
+      // Create Entity carries no placement/type data: use a neutral, static placeholder.
+      Entity entity;
+      entity.entityId = key;
+      entity.name = key;
+      entity.domain = QStringLiteral("Ground");
+      entity.type = QStringLiteral("Entity");
+      entity.category = QStringLiteral("Other");
+      entity.forceIdentifier = 0;
+      entity.speedKnots = 0;
+      _scenarioState->addEntity(entity);
+    }
+    _disManagedOwners.insert(key, owner);
+  }
+  this->syncScenarioStateToUi();
+  return true;
+}
+
+void MainWindow::applyDisInteractions(const std::vector<tactical::dis::IffState>& iff,
+    const std::vector<tactical::dis::CollisionEvent>& collisions) {
+  _disConnectionPanel->recordInteractions(iff, collisions);
+  for (const auto& event : collisions)
+    qInfo().noquote() << "DIS collision:" << event.source.key() << event.target.key() << event.event.key();
+}
+
+void MainWindow::applyDisRemoteRadarEmissions(const std::vector<tactical::dis::RadarEmission>& emissions) {
+  for (const auto& emission : emissions) {
+    const auto hostId = emission.host.key();
+    const auto snapshot = entitySnapshot();
+    for (const auto& entity : snapshot) {
+      if (entity.entityId != hostId || !entity.externallyControlled) continue;
+      for (const auto& sensor : entity.sensors) {
+        if (sensor.modelProviderId != QStringLiteral("dis")) continue;
+        bool replaced = !emission.changedData;
+        for (const auto& beam : emission.beams) {
+          if (sensor.id.startsWith(QStringLiteral("dis-radar:%1:").arg(beam.systemId))) replaced = true;
+        }
+        if (replaced) _scenarioState->removeExternalSensor(hostId, sensor.id);
+      }
+    }
+    for (const auto& beam : emission.beams) {
+      if (!beam.beamId) continue;
+      SensorDefinition sensor;
+      sensor.id = QStringLiteral("dis-radar:%1:%2").arg(beam.systemId).arg(beam.beamId);
+      sensor.name = QStringLiteral("DIS Radar %1/%2").arg(beam.systemId).arg(beam.beamId);
+      sensor.modelProviderId = QStringLiteral("dis");
+      sensor.emitting = beam.emitting;
+      // DIS emissions do not convey detection range or receiver parameters.
+      sensor.maxRangeMeters = 0;
+      sensor.azimuthCenterDegrees = beam.azimuthCenterDegrees;
+      sensor.azimuthWidthDegrees = beam.azimuthWidthDegrees;
+      sensor.elevationCenterDegrees = beam.elevationCenterDegrees;
+      sensor.elevationWidthDegrees = beam.elevationWidthDegrees;
+      sensor.radarProfile.frequencyHertz = beam.frequencyHertz;
+      sensor.radarProfile.bandwidthHertz = beam.bandwidthHertz;
+      sensor.radarProfile.antennaGainDecibels = 0;
+      sensor.radarProfile.peakPowerWatts = std::pow(10.0, beam.effectiveRadiatedPowerDbm / 10.0) / 1000;
+      _scenarioState->upsertExternalSensor(hostId, sensor);
+    }
+  }
+}
+#endif
 
 void MainWindow::applyHlaRemoteSensorChanges(
     const std::vector<tactical::hla::RemoteSensorChange>& changes) {
@@ -1159,6 +1318,152 @@ void MainWindow::initializeHlaConnectionPanel() {
       &MainWindow::hlaDisconnectRequested);
 }
 
+#ifdef QTTEST_HAS_DIS
+void MainWindow::initializeDisConnectionPanel() {
+  _disConnectionDock = new QDockWidget(QStringLiteral("DIS Gateway"), this);
+  _disConnectionDock->setObjectName(QStringLiteral("disConnectionDockWidget"));
+  _disConnectionDock->setAllowedAreas(
+      Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea |
+      Qt::BottomDockWidgetArea);
+  _disConnectionDock->setFeatures(
+      QDockWidget::DockWidgetClosable |
+      QDockWidget::DockWidgetMovable |
+      QDockWidget::DockWidgetFloatable);
+  _disConnectionPanel = new presentation::DisConnectionPanel(
+      _disConnectionDock);
+  _disConnectionDock->setWidget(_disConnectionPanel);
+#ifdef QTTEST_DIS_TESTER_PATH
+  auto* testerAction = _ui->menuView->addAction(QStringLiteral("DIS PDU Tester"));
+  connect(testerAction, &QAction::triggered, this, [this]() {
+    const auto config = _disConnectionPanel->configuration();
+    const QStringList arguments{QStringLiteral("--address"), config.address,
+        QStringLiteral("--port"), QString::number(config.port),
+        QStringLiteral("--exercise"), QString::number(config.exerciseId),
+        QStringLiteral("--site"), QString::number(config.siteId),
+        QStringLiteral("--application"), QString::number(config.applicationId % 65534 + 1),
+        QStringLiteral("--target-site"), QString::number(config.siteId),
+        QStringLiteral("--target-application"), QString::number(config.applicationId)};
+    if (!QProcess::startDetached(QStringLiteral(QTTEST_DIS_TESTER_PATH), arguments))
+      this->reportMapStatus(QStringLiteral("Could not launch DIS PDU Tester."));
+  });
+#endif
+  connect(_disConnectionPanel, &presentation::DisConnectionPanel::entityManagementRequested,
+      this, &MainWindow::disEntityManagementRequested);
+  connect(_disConnectionPanel, &presentation::DisConnectionPanel::iffRequested,
+      this, &MainWindow::disIffRequested);
+  connect(_disConnectionPanel, &presentation::DisConnectionPanel::collisionRequested,
+      this, &MainWindow::disCollisionRequested);
+  this->addDockWidget(Qt::RightDockWidgetArea, _disConnectionDock);
+  _ui->menuView->addAction(_disConnectionDock->toggleViewAction());
+  _disConnectionDock->hide();
+
+  _disStatusButton = new QToolButton(this);
+  _disStatusButton->setObjectName(QStringLiteral("disStatusButton"));
+  _disStatusButton->setAutoRaise(true);
+  _disStatusButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+  _disStatusButton->setIcon(
+      this->style()->standardIcon(QStyle::SP_DriveNetIcon));
+  _disStatusButton->setToolTip(QStringLiteral("Open DIS gateway controls"));
+  _ui->statusbar->addPermanentWidget(_disStatusButton);
+
+  connect(_disStatusButton, &QToolButton::clicked, this, [this]() {
+    _disConnectionDock->show();
+    _disConnectionDock->raise();
+  });
+  connect(
+      _disConnectionPanel,
+      &presentation::DisConnectionPanel::connectRequested,
+      this,
+      &MainWindow::disConnectRequested);
+  connect(
+      _disConnectionPanel,
+      &presentation::DisConnectionPanel::disconnectRequested,
+      this,
+      &MainWindow::disDisconnectRequested);
+  connect(
+      _disConnectionPanel,
+      &presentation::DisConnectionPanel::testEntityStateRequested,
+      this,
+      &MainWindow::disTestEntityStateRequested);
+}
+
+void MainWindow::configureDisConnection(
+    const application::DisStartupConfiguration& configuration,
+    bool backendAvailable,
+    bool connected,
+    bool blockedByHla) {
+  _disConnectionPanel->configure(
+      configuration, backendAvailable, blockedByHla);
+  setDisConnectionState(
+      connected,
+      false,
+      connected
+          ? QStringLiteral("DIS %1:%2, exercise %3, site/application %4/%5.")
+                .arg(configuration.address)
+                .arg(configuration.port)
+                .arg(configuration.exerciseId)
+                .arg(configuration.siteId)
+                .arg(configuration.applicationId)
+          : QString());
+}
+
+void MainWindow::setDisConnectionState(
+    bool connected,
+    bool connecting,
+    const QString& detail) {
+  presentation::DisConnectionState state =
+      presentation::DisConnectionState::Disconnected;
+  if (connecting) {
+    state = presentation::DisConnectionState::Connecting;
+  } else if (connected) {
+    state = presentation::DisConnectionState::Active;
+  } else if (!detail.trimmed().isEmpty()) {
+    state = presentation::DisConnectionState::Error;
+  }
+  _disConnectionPanel->setConnectionState(state, detail);
+
+  QString label = QStringLiteral("DIS: Disconnected");
+  QString color = QStringLiteral("#aab4bc");
+  if (state == presentation::DisConnectionState::Connecting) {
+    label = QStringLiteral("DIS: Connecting");
+    color = QStringLiteral("#e5a93d");
+  } else if (state == presentation::DisConnectionState::Active) {
+    label = QStringLiteral("DIS: Active");
+    color = QStringLiteral("#32b76c");
+  } else if (state == presentation::DisConnectionState::Error) {
+    label = QStringLiteral("DIS: Error");
+    color = QStringLiteral("#e66a64");
+  }
+  _disStatusButton->setText(label);
+  _disStatusButton->setStyleSheet(
+      QStringLiteral("QToolButton { color: %1; padding: 2px 6px; }")
+          .arg(color));
+  _disStatusButton->setToolTip(
+      detail.trimmed().isEmpty()
+          ? QStringLiteral("Open DIS gateway controls")
+          : detail);
+}
+
+void MainWindow::updateDisStatistics(
+    std::uint64_t transmittedPdus,
+    std::uint64_t receivedPdus,
+    qsizetype remoteEntities) {
+  _disConnectionPanel->updateStatistics(
+      transmittedPdus, receivedPdus, remoteEntities);
+}
+
+void MainWindow::setDisBlockedByHla(bool blocked) {
+  _disConnectionPanel->setBlockedByHla(blocked);
+  if (blocked) {
+    _disStatusButton->setText(QStringLiteral("DIS: HLA active"));
+    _disStatusButton->setStyleSheet(
+        QStringLiteral("QToolButton { color: #7a8791; padding: 2px 6px; }"));
+  } else {
+    setDisConnectionState(false, false, QString());
+  }
+}
+#endif
+
 void MainWindow::configureHlaConnection(
     const application::HlaStartupConfiguration& configuration,
     bool backendAvailable,
@@ -1215,6 +1520,17 @@ void MainWindow::setHlaConnectionState(
       detail.trimmed().isEmpty()
           ? QStringLiteral("Open HLA connection controls")
           : detail);
+}
+
+void MainWindow::setHlaBlockedByDis(bool blocked) {
+  _hlaConnectionPanel->setBlockedByDis(blocked);
+  if (blocked) {
+    _hlaStatusButton->setText(QStringLiteral("HLA: DIS active"));
+    _hlaStatusButton->setStyleSheet(
+        QStringLiteral("QToolButton { color: #7a8791; padding: 2px 6px; }"));
+  } else {
+    setHlaConnectionState(false, false, QString());
+  }
 }
 
 void MainWindow::setHlaTimeManagementActive(bool active) {

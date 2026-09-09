@@ -192,6 +192,16 @@ target_link_libraries(qttest_unit_tests
         GTest::gtest_main
 )
 
+if(TARGET qttest_dis_core)
+    add_dependencies(qttest_unit_tests qttest_dis_pdu_tester)
+    target_compile_definitions(qttest_unit_tests PRIVATE QTTEST_DIS_TESTER_PATH="$<TARGET_FILE:qttest_dis_pdu_tester>")
+    target_sources(qttest_unit_tests PRIVATE
+        application/DisStartupSessionTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/application/DisStartupSession.cpp
+    )
+    target_link_libraries(qttest_unit_tests PRIVATE qttest_dis_core)
+endif()
+
 add_dependencies(qttest_unit_tests qttest_hla_mock_backend)
 if(TARGET qttest_hla_pitch1516e_backend)
     add_dependencies(qttest_unit_tests qttest_hla_pitch1516e_backend)
@@ -305,6 +315,28 @@ set_tests_properties(
     HlaConnectionPanel.ManagesFederationControls
     PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+if(TARGET qttest_dis_core)
+    add_executable(qttest_dis_connection_panel_smoke
+        presentation/DisConnectionPanelSmoke.cpp
+        ${CMAKE_SOURCE_DIR}/src/presentation/DisConnectionPanel.cpp
+    )
+    target_include_directories(qttest_dis_connection_panel_smoke PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(qttest_dis_connection_panel_smoke PRIVATE
+        qttest_dis_core
+        Qt6::Widgets
+    )
+    add_test(
+        NAME DisConnectionPanel.ManagesGatewayAndPduTester
+        COMMAND qttest_dis_connection_panel_smoke
+    )
+    set_tests_properties(
+        DisConnectionPanel.ManagesGatewayAndPduTester
+        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+endif()
 
 if(TARGET libJSBSim)
     add_executable(qttest_jsbsim_control_smoke
