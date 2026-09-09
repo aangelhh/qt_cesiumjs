@@ -65,6 +65,10 @@ public:
   };
 
   struct RemoteObject {
+    RemoteObject() = default;
+    RemoteObject(uint64_t value, rti1516e::ObjectClassHandle handle)
+        : id(value), classHandle(handle) {}
+
     uint64_t id = 0;
     rti1516e::ObjectClassHandle classHandle;
   };
