@@ -606,6 +606,10 @@ qt_add_resources(qttest "windows_theme"
     FILES Data/windows-modern.qss
 )
 
+if(TARGET qttest_mixr_sensor)
+    add_dependencies(qttest qttest_mixr_sensor)
+endif()
+
 if(QTTEST_HAS_MODERN_PFD)
     target_sources(qttest PRIVATE ${KINEMATICS_PFD_RESOURCE})
     target_link_libraries(qttest PRIVATE Qt6::Quick Qt6::QuickWidgets Qt6::Qml)
