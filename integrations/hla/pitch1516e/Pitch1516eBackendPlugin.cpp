@@ -1,5 +1,7 @@
 #include "infrastructure/interoperability/hla/HlaBackendPluginApi.h"
 
+#include <memory>
+
 #include <RTI/Exception.h>
 #include <RTI/NullFederateAmbassador.h>
 #include <RTI/RTIambassador.h>
@@ -11,7 +13,6 @@
 #include <chrono>
 #include <locale>
 #include <map>
-#include <memory>
 #include <set>
 #include <string>
 #include <thread>
@@ -64,6 +65,10 @@ public:
   };
 
   struct RemoteObject {
+    RemoteObject() = default;
+    RemoteObject(uint64_t value, rti1516e::ObjectClassHandle handle)
+        : id(value), classHandle(handle) {}
+
     uint64_t id = 0;
     rti1516e::ObjectClassHandle classHandle;
   };

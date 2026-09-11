@@ -6,6 +6,8 @@
 #include "domain/Munition.h"
 
 #include <QDir>
+#include <QCoreApplication>
+#include <QFileInfo>
 #include <QUrl>
 #include <QtMath>
 
@@ -37,6 +39,12 @@ constexpr double kBombSmokeTtlSeconds = 3.0;
 // ─── Model URI helpers ────────────────────────────────────────────────────────
 
 QString projectRoot() {
+  QDir cursor(QCoreApplication::applicationDirPath());
+  for (int depth = 0; depth < 6; ++depth) {
+    if (QFileInfo::exists(cursor.filePath(QStringLiteral("Data/config3DModel.yaml"))))
+      return cursor.absolutePath();
+    if (!cursor.cdUp()) break;
+  }
 #ifdef QTTEST_SOURCE_DIR
   return QString::fromUtf8(QTTEST_SOURCE_DIR);
 #else

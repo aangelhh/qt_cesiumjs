@@ -1,0 +1,109 @@
+name: Build JSBSim dependency
+
+on:
+  push:
+    branches:
+      - ci/github-actions-develop
+    paths:
+      - .github/workflows/build-jsbsim-dependency.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  JSBSIM_COMMIT: "506773ad3790a5a621445631613faf51a15284e7"
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-24.04
+            artifact: jsbsim-linux-x64
+            archive: jsbsim-linux-x64.tar.gz
+          - name: Windows x64
+            os: windows-2025
+            artifact: jsbsim-windows-x64
+            archive: jsbsim-windows-x64.zip
+          - name: macOS ARM64
+            os: macos-15
+            artifact: jsbsim-macos-arm64
+            archive: jsbsim-macos-arm64.tar.gz
+
+    steps:
+      - name: Checkout qttest
+        uses: actions/checkout@v6
+
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build
+
+      - name: Checkout pinned JSBSim
+        shell: bash
+        run: |
+          git clone --filter=blob:none https://github.com/JSBSim-Team/jsbsim.git jsbsim-source
+          git -C jsbsim-source checkout "${JSBSIM_COMMIT}"
+
+      - name: Configure and package JSBSim on Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S jsbsim-source -B jsbsim-build \
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DCMAKE_INSTALL_PREFIX="$PWD/jsbsim-install" \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_DOCS=OFF \
+            -DBUILD_PYTHON_MODULE=OFF \
+            -DBUILD_JULIA_PACKAGE=OFF \
+            -DBUILD_MATLAB_SFUNCTION=OFF
+          cmake --build jsbsim-build --target install --parallel 4
+
+          mkdir -p package/jsbsim
+          cp -a jsbsim-install/include jsbsim-install/lib package/jsbsim/
+          cp -a jsbsim-source/aircraft jsbsim-source/engine jsbsim-source/systems package/jsbsim/
+          test -f package/jsbsim/include/JSBSim/FGFDMExec.h
+          test -f package/jsbsim/lib/libJSBSim.a
+          tar -czf "${{ matrix.archive }}" -C package jsbsim
+
+      - name: Configure and package JSBSim on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S jsbsim-source -B jsbsim-build -A x64 `
+            -DCMAKE_INSTALL_PREFIX="$PWD/jsbsim-install" `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DBUILD_DOCS=OFF `
+            -DBUILD_PYTHON_MODULE=OFF `
+            -DBUILD_JULIA_PACKAGE=OFF `
+            -DBUILD_MATLAB_SFUNCTION=OFF
+          cmake --build jsbsim-build --config $env:CMAKE_BUILD_TYPE --target INSTALL --parallel 4
+
+          New-Item -ItemType Directory -Force -Path package/jsbsim | Out-Null
+          Copy-Item jsbsim-install/include, jsbsim-install/lib package/jsbsim -Recurse
+          Copy-Item jsbsim-source/aircraft, jsbsim-source/engine, jsbsim-source/systems package/jsbsim -Recurse
+          if (-not (Test-Path package/jsbsim/include/JSBSim/FGFDMExec.h)) {
+            throw "JSBSim headers were not installed"
+          }
+          if (-not (Test-Path package/jsbsim/lib/JSBSim.lib)) {
+            throw "JSBSim static library was not installed"
+          }
+          Compress-Archive -Path package/jsbsim -DestinationPath "${{ matrix.archive }}"
+
+      - name: Upload dependency artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 7

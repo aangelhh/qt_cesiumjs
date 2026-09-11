@@ -2,6 +2,7 @@
 
 #include "infrastructure/ModelOrientation.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -11,12 +12,31 @@
 
 namespace {
 
+bool isPackagedProjectRoot(const QDir& root) {
+  return QFileInfo::exists(
+             root.absoluteFilePath(QStringLiteral("Data/config3DModel.yaml"))) &&
+      root.exists(QStringLiteral("models"));
+}
+
 QString projectRoot() {
+  QDir cursor(QCoreApplication::applicationDirPath());
+  for (int depth = 0; depth < 6; ++depth) {
+    if (isPackagedProjectRoot(cursor)) {
+      return cursor.absolutePath();
+    }
+    if (!cursor.cdUp()) {
+      break;
+    }
+  }
+
 #ifdef QTTEST_SOURCE_DIR
-  return QString::fromUtf8(QTTEST_SOURCE_DIR);
-#else
-  return QDir::currentPath();
+  const QDir sourceRoot(QString::fromUtf8(QTTEST_SOURCE_DIR));
+  if (isPackagedProjectRoot(sourceRoot)) {
+    return sourceRoot.absolutePath();
+  }
 #endif
+
+  return QDir::currentPath();
 }
 
 QString configPath() {

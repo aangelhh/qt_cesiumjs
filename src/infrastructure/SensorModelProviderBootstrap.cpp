@@ -4,6 +4,7 @@
 #include "infrastructure/sensors/SharedLibrarySensorModel.h"
 #include "infrastructure/sensors/StoneSoupSensorModel.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QProcessEnvironment>
@@ -16,11 +17,26 @@ namespace infrastructure {
 namespace {
 
 QString sourceRoot() {
+  QDir cursor(QCoreApplication::applicationDirPath());
+  for (int depth = 0; depth < 6; ++depth) {
+    if (QFileInfo::exists(cursor.absoluteFilePath(
+            QStringLiteral("Data/sensor_model_providers.json")))) {
+      return cursor.absolutePath();
+    }
+    if (!cursor.cdUp()) {
+      break;
+    }
+  }
+
 #ifdef QTTEST_SOURCE_DIR
-  return QString::fromUtf8(QTTEST_SOURCE_DIR);
-#else
-  return QDir::currentPath();
+  const QDir source(QString::fromUtf8(QTTEST_SOURCE_DIR));
+  if (QFileInfo::exists(source.absoluteFilePath(
+          QStringLiteral("Data/sensor_model_providers.json")))) {
+    return source.absolutePath();
+  }
 #endif
+
+  return QDir::currentPath();
 }
 
 QString absoluteProviderPath(const QString& configuredPath) {
@@ -37,6 +53,24 @@ QString sharedLibraryPath(const SensorModelProviderEntry& provider) {
       provider.id == QStringLiteral("mixr")) {
     configuredPath = QProcessEnvironment::systemEnvironment().value(
         QStringLiteral("QTTEST_MIXR_SENSOR_PLUGIN"));
+  }
+  if (configuredPath.trimmed().isEmpty() && provider.id == QStringLiteral("mixr")) {
+#ifdef Q_OS_WIN
+    const QString name = QStringLiteral("qttest_mixr_sensor.dll");
+#elif defined(Q_OS_MACOS)
+    const QString name = QStringLiteral("libqttest_mixr_sensor.dylib");
+#else
+    const QString name = QStringLiteral("libqttest_mixr_sensor.so");
+#endif
+    const QString packaged = QDir(QCoreApplication::applicationDirPath())
+        .filePath(QStringLiteral("sensor-plugins/") + name);
+    if (QFileInfo::exists(packaged)) return packaged;
+#ifdef QTTEST_BINARY_DIR
+    const QString development = QDir(QString::fromUtf8(QTTEST_BINARY_DIR))
+        .filePath(QStringLiteral("sensor-plugins/") + name);
+    if (QFileInfo::exists(development)) return development;
+#endif
+    return packaged;
   }
   return absoluteProviderPath(configuredPath);
 }

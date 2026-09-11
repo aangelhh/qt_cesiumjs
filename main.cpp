@@ -7,38 +7,186 @@
 #include "presentation/StartupConfigurationDialog.h"
 
 #include <QApplication>
+#include <QColor>
 #include <QCommandLineParser>
+#include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QPalette>
 #include <QSettings>
 #include <QSet>
+#include <QStringList>
+#include <QStyleFactory>
 #include <QTimer>
 
 #include <algorithm>
 
 namespace {
 
+QString firstExistingFile(const QStringList& candidates) {
+  for (const QString& candidate : candidates) {
+    if (candidate.trimmed().isEmpty()) continue;
+    const QFileInfo info(candidate);
+    if (info.exists() && info.isFile()) return info.absoluteFilePath();
+  }
+  return {};
+}
+
+QString firstExistingDirectory(const QStringList& candidates) {
+  for (const QString& candidate : candidates) {
+    if (candidate.trimmed().isEmpty()) continue;
+    const QFileInfo info(candidate);
+    if (info.exists() && info.isDir()) return info.absoluteFilePath();
+  }
+  return {};
+}
+
+QString runtimeFile(const QString& relativePath) {
+  QStringList candidates;
+  QDir cursor(QCoreApplication::applicationDirPath());
+  for (int depth = 0; depth < 6; ++depth) {
+    candidates.push_back(cursor.absoluteFilePath(relativePath));
+    if (!cursor.cdUp()) break;
+  }
+#ifdef QTTEST_SOURCE_DIR
+  candidates.push_back(
+      QDir(QStringLiteral(QTTEST_SOURCE_DIR)).absoluteFilePath(relativePath));
+#endif
+  candidates.push_back(QDir::current().absoluteFilePath(relativePath));
+  return firstExistingFile(candidates);
+}
+
+QString runtimeDirectory(const QString& relativePath) {
+  QStringList candidates;
+  QDir cursor(QCoreApplication::applicationDirPath());
+  for (int depth = 0; depth < 6; ++depth) {
+    candidates.push_back(cursor.absoluteFilePath(relativePath));
+    if (!cursor.cdUp()) break;
+  }
+#ifdef QTTEST_SOURCE_DIR
+  candidates.push_back(
+      QDir(QStringLiteral(QTTEST_SOURCE_DIR)).absoluteFilePath(relativePath));
+#endif
+  candidates.push_back(QDir::current().absoluteFilePath(relativePath));
+  return firstExistingDirectory(candidates);
+}
+
+QString hlaPluginFileName(const QString& targetName) {
+#ifdef Q_OS_WIN
+  return targetName + QStringLiteral(".dll");
+#elif defined(Q_OS_MACOS)
+  return QStringLiteral("lib") + targetName + QStringLiteral(".dylib");
+#else
+  return QStringLiteral("lib") + targetName + QStringLiteral(".so");
+#endif
+}
+
+QString locateHlaPlugin(
+    const char* environmentVariable,
+    const QString& targetName,
+    const QString& developmentFallback = {}) {
+  QStringList candidates;
+  const QByteArray environmentValue = qgetenv(environmentVariable);
+  if (!environmentValue.isEmpty()) {
+    candidates.push_back(QString::fromLocal8Bit(environmentValue));
+  }
+
+  const QString pluginFileName = hlaPluginFileName(targetName);
+  QDir cursor(QCoreApplication::applicationDirPath());
+  for (int depth = 0; depth < 6; ++depth) {
+    candidates.push_back(
+        cursor.absoluteFilePath(QStringLiteral("hla-plugins/%1").arg(pluginFileName)));
+    if (!cursor.cdUp()) break;
+  }
+  candidates.push_back(
+      QDir::current().absoluteFilePath(
+          QStringLiteral("hla-plugins/%1").arg(pluginFileName)));
+  if (!developmentFallback.trimmed().isEmpty()) {
+    candidates.push_back(developmentFallback);
+  }
+  return firstExistingFile(candidates);
+}
+
 QVector<presentation::HlaBackendOption> availableHlaBackends() {
   QVector<presentation::HlaBackendOption> backends;
+
+  QString openRtiDevelopmentFallback;
 #ifdef QTTEST_HLA_OPENRTI_PLUGIN_PATH
-  if (QFileInfo::exists(QStringLiteral(QTTEST_HLA_OPENRTI_PLUGIN_PATH))) {
+  openRtiDevelopmentFallback = QStringLiteral(QTTEST_HLA_OPENRTI_PLUGIN_PATH);
+#endif
+  const QString openRtiPlugin = locateHlaPlugin(
+      "QTTEST_HLA_OPENRTI_PLUGIN",
+      QStringLiteral("qttest_hla_openrti1516e_backend"),
+      openRtiDevelopmentFallback);
+  if (!openRtiPlugin.isEmpty()) {
     backends.push_back({
         QStringLiteral("openrti1516e"),
         QStringLiteral("OpenRTI (IEEE 1516e)"),
-        QStringLiteral(QTTEST_HLA_OPENRTI_PLUGIN_PATH)});
+        openRtiPlugin});
   }
-#endif
+
+  QString pitchDevelopmentFallback;
 #ifdef QTTEST_HLA_PITCH_PLUGIN_PATH
-  if (QFileInfo::exists(QStringLiteral(QTTEST_HLA_PITCH_PLUGIN_PATH))) {
+  pitchDevelopmentFallback = QStringLiteral(QTTEST_HLA_PITCH_PLUGIN_PATH);
+#endif
+  const QString pitchPlugin = locateHlaPlugin(
+      "QTTEST_HLA_PITCH_PLUGIN",
+      QStringLiteral("qttest_hla_pitch1516e_backend"),
+      pitchDevelopmentFallback);
+  if (!pitchPlugin.isEmpty()) {
     backends.push_back({
         QStringLiteral("pitch1516e"),
         QStringLiteral("Pitch pRTI (IEEE 1516e)"),
-        QStringLiteral(QTTEST_HLA_PITCH_PLUGIN_PATH)});
+        pitchPlugin});
   }
-#endif
+
   return backends;
+}
+
+void applyWindowsTheme(QApplication& app) {
+#ifdef Q_OS_WIN
+  const QStringList availableStyles = QStyleFactory::keys();
+  QString selectedStyle = QStringLiteral("Fusion");
+  for (const QString& style : availableStyles) {
+    if (style.compare(QStringLiteral("windows11"), Qt::CaseInsensitive) == 0) {
+      selectedStyle = style;
+      break;
+    }
+  }
+  app.setStyle(QStyleFactory::create(selectedStyle));
+  QPalette palette = app.palette();
+  palette.setColor(QPalette::Window, QColor(QStringLiteral("#f7f9fc")));
+  palette.setColor(QPalette::WindowText, QColor(QStringLiteral("#172033")));
+  palette.setColor(QPalette::Base, QColor(QStringLiteral("#ffffff")));
+  palette.setColor(QPalette::AlternateBase, QColor(QStringLiteral("#f4f7fb")));
+  palette.setColor(QPalette::Text, QColor(QStringLiteral("#172033")));
+  palette.setColor(QPalette::Button, QColor(QStringLiteral("#ffffff")));
+  palette.setColor(QPalette::ButtonText, QColor(QStringLiteral("#172033")));
+  palette.setColor(QPalette::Highlight, QColor(QStringLiteral("#0f6cbd")));
+  palette.setColor(QPalette::HighlightedText, QColor(QStringLiteral("#ffffff")));
+  app.setPalette(palette);
+  qInfo() << "Windows UI style:" << selectedStyle
+          << "available styles:" << availableStyles;
+
+  QString styleSheetPath = QStringLiteral(":/Data/windows-modern.qss");
+  if (!QFileInfo::exists(styleSheetPath)) {
+    styleSheetPath = runtimeFile(QStringLiteral("Data/windows-modern.qss"));
+  }
+  if (styleSheetPath.isEmpty() || !QFileInfo::exists(styleSheetPath)) {
+    qWarning() << "Windows modern stylesheet not found; using Qt style only";
+    return;
+  }
+
+  QFile styleSheetFile(styleSheetPath);
+  if (!styleSheetFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    qWarning() << "Unable to open Windows modern stylesheet:" << styleSheetPath;
+    return;
+  }
+  app.setStyleSheet(QString::fromUtf8(styleSheetFile.readAll()));
+#endif
 }
 
 } // namespace
@@ -46,6 +194,7 @@ QVector<presentation::HlaBackendOption> availableHlaBackends() {
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    applyWindowsTheme(app);
     QCoreApplication::setOrganizationName(QStringLiteral("qttest"));
     QCoreApplication::setApplicationName(QStringLiteral("qttest"));
 
@@ -73,9 +222,12 @@ int main(int argc, char *argv[])
     QSettings settings;
     application::StartupConfiguration startupConfiguration =
         application::StartupConfiguration::load(settings);
-    startupConfiguration.addMissingHlaFomModules(
-        QDir(QStringLiteral(QTTEST_SOURCE_DIR))
-            .filePath(QStringLiteral("src/infrastructure/hla/FOM")));
+    QString hlaFomPath = runtimeDirectory(QStringLiteral("src/infrastructure/hla/FOM"));
+    if (hlaFomPath.isEmpty()) {
+      hlaFomPath = QDir(QCoreApplication::applicationDirPath())
+                       .absoluteFilePath(QStringLiteral("src/infrastructure/hla/FOM"));
+    }
+    startupConfiguration.addMissingHlaFomModules(hlaFomPath);
     application::HlaStartupSession hlaSession;
 #ifdef QTTEST_HAS_DIS
     application::DisStartupSession disSession;

@@ -1,0 +1,109 @@
+name: Build OpenRTI dependency
+
+on:
+  push:
+    branches:
+      - ci/github-actions-develop
+    paths:
+      - .github/workflows/build-openrti-dependency.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPENRTI_COMMIT: "1b580583a4436d21ee53a22b8535988122b76bf1"
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-24.04
+            artifact: openrti-linux-x64
+            archive: openrti-linux-x64.tar.gz
+          - name: Windows x64
+            os: windows-2025
+            artifact: openrti-windows-x64
+            archive: openrti-windows-x64.zip
+          - name: macOS ARM64
+            os: macos-15
+            artifact: openrti-macos-arm64
+            archive: openrti-macos-arm64.tar.gz
+
+    steps:
+      - name: Checkout qttest
+        uses: actions/checkout@v6
+
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build
+
+      - name: Checkout pinned OpenRTI
+        shell: bash
+        run: |
+          git clone --filter=blob:none https://github.com/aangelhh/openrti_aangelhh.git openrti-source
+          git -C openrti-source checkout "${OPENRTI_COMMIT}"
+
+      - name: Configure and install OpenRTI on Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S openrti-source -B openrti-build \
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DCMAKE_CXX_STANDARD=11 \
+            -DCMAKE_INSTALL_PREFIX="$PWD/package/openrti" \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_INSTALL_INCLUDEDIR=include \
+            -DOPENRTI_BUILD_SHARED=ON \
+            -DOPENRTI_ENABLE_RTI13=OFF \
+            -DOPENRTI_ENABLE_RTI1516=OFF \
+            -DOPENRTI_ENABLE_RTI1516E=ON \
+            -DOPENRTI_ENABLE_PYTHON_BINDINGS=OFF \
+            -DOPENRTI_INSTALL_WITH_RPATH=OFF
+          cmake --build openrti-build --target install --parallel 4
+          test -f package/openrti/include/rti1516e/RTI/RTIambassador.h
+          test -n "$(find package/openrti/lib -maxdepth 1 -type f -name '*rti1516e*' -print -quit)"
+          tar -czf "${{ matrix.archive }}" -C package openrti
+
+      - name: Configure and install OpenRTI on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S openrti-source -B openrti-build -A x64 `
+            -DCMAKE_CXX_STANDARD=11 `
+            -DCMAKE_INSTALL_PREFIX="$PWD/package/openrti" `
+            -DCMAKE_INSTALL_LIBDIR=lib `
+            -DCMAKE_INSTALL_INCLUDEDIR=include `
+            -DOPENRTI_BUILD_SHARED=ON `
+            -DOPENRTI_ENABLE_RTI13=OFF `
+            -DOPENRTI_ENABLE_RTI1516=OFF `
+            -DOPENRTI_ENABLE_RTI1516E=ON `
+            -DOPENRTI_ENABLE_PYTHON_BINDINGS=OFF `
+            -DOPENRTI_INSTALL_WITH_RPATH=OFF
+          cmake --build openrti-build --config $env:CMAKE_BUILD_TYPE --target INSTALL --parallel 4
+          if (-not (Test-Path package/openrti/include/rti1516e/RTI/RTIambassador.h)) {
+            throw "OpenRTI headers were not installed"
+          }
+          if (-not (Get-ChildItem package/openrti -Recurse -File -Filter '*rti1516e*')) {
+            throw "OpenRTI libraries were not installed"
+          }
+          Compress-Archive -Path package/openrti -DestinationPath "${{ matrix.archive }}"
+
+      - name: Upload dependency artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 7

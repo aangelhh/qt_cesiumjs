@@ -1,0 +1,560 @@
+name: Qttest Multiplatform CI
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qttest-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: "6.10.2"
+  CMAKE_BUILD_TYPE: Release
+  PITCH_DEPS_REPOSITORY: "aangelhh/tacticalenviroment-private-deps"
+  PITCH_DEPS_TAG: "pitch-sdk-v1"
+  OPENRTI_DEPS_TAG: "openrti-1b580583a443"
+  JSBSIM_DEPS_TAG: "jsbsim-506773ad3790"
+  SCCACHE_GHA_ENABLED: "true"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-24.04
+            parallel: 4
+            pitch_asset: pitch-prti1516e-linux-x64.tar.gz
+            openrti_asset: openrti-linux-x64.tar.gz
+            jsbsim_asset: jsbsim-linux-x64.tar.gz
+          - name: Windows x64
+            os: windows-2025
+            parallel: 4
+            pitch_asset: pitch-prti1516e-windows-x64.zip
+            openrti_asset: openrti-windows-x64.zip
+            jsbsim_asset: jsbsim-windows-x64.zip
+          - name: macOS ARM64
+            os: macos-15
+            parallel: 2
+            pitch_asset: pitch-prti1516e-macos-arm64.tar.gz
+            openrti_asset: openrti-macos-arm64.tar.gz
+            jsbsim_asset: jsbsim-macos-arm64.tar.gz
+
+    steps:
+      - name: Checkout qttest
+        uses: actions/checkout@v6
+
+      - name: Download HLA SDKs on Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PITCH_DEPS_TOKEN }}
+        run: |
+          test -n "${GH_TOKEN:-}" || { echo "PITCH_DEPS_TOKEN is not configured" >&2; exit 1; }
+          mkdir -p pitch-sdk openrti-sdk jsbsim-sdk \
+            Dependencies/PitchRTI Dependencies/OpenRTIPrebuilt Dependencies/JSBSimPrebuilt
+          gh release download "${PITCH_DEPS_TAG}" \
+            --repo "${PITCH_DEPS_REPOSITORY}" \
+            --pattern "${{ matrix.pitch_asset }}" \
+            --dir pitch-sdk
+          gh release download "${OPENRTI_DEPS_TAG}" \
+            --repo "${PITCH_DEPS_REPOSITORY}" \
+            --pattern "${{ matrix.openrti_asset }}" \
+            --dir openrti-sdk
+          gh release download "${JSBSIM_DEPS_TAG}" \
+            --repo "${PITCH_DEPS_REPOSITORY}" \
+            --pattern "${{ matrix.jsbsim_asset }}" \
+            --dir jsbsim-sdk
+          tar -xzf "pitch-sdk/${{ matrix.pitch_asset }}" -C Dependencies/PitchRTI
+          tar -xzf "openrti-sdk/${{ matrix.openrti_asset }}" -C Dependencies/OpenRTIPrebuilt
+          tar -xzf "jsbsim-sdk/${{ matrix.jsbsim_asset }}" -C Dependencies/JSBSimPrebuilt
+          test -f Dependencies/PitchRTI/cmake/PitchRTIConfig.cmake
+          test -f Dependencies/OpenRTIPrebuilt/openrti/include/rti1516e/RTI/RTI1516.h
+          test -f Dependencies/JSBSimPrebuilt/jsbsim/include/JSBSim/FGFDMExec.h
+          echo "PitchRTI_ROOT=$PWD/Dependencies/PitchRTI" >> "$GITHUB_ENV"
+          echo "QTTEST_OPENRTI_ROOT=$PWD/Dependencies/OpenRTIPrebuilt/openrti" >> "$GITHUB_ENV"
+          echo "QTTEST_JSBSIM_ROOT=$PWD/Dependencies/JSBSimPrebuilt/jsbsim" >> "$GITHUB_ENV"
+
+      - name: Download HLA SDKs on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.PITCH_DEPS_TOKEN }}
+        run: |
+          if (-not $env:GH_TOKEN) { throw "PITCH_DEPS_TOKEN is not configured" }
+          New-Item -ItemType Directory -Force -Path pitch-sdk, openrti-sdk, jsbsim-sdk, Dependencies/PitchRTI, Dependencies/OpenRTIPrebuilt, Dependencies/JSBSimPrebuilt | Out-Null
+          gh release download $env:PITCH_DEPS_TAG `
+            --repo $env:PITCH_DEPS_REPOSITORY `
+            --pattern "${{ matrix.pitch_asset }}" `
+            --dir pitch-sdk
+          gh release download $env:OPENRTI_DEPS_TAG `
+            --repo $env:PITCH_DEPS_REPOSITORY `
+            --pattern "${{ matrix.openrti_asset }}" `
+            --dir openrti-sdk
+          gh release download $env:JSBSIM_DEPS_TAG `
+            --repo $env:PITCH_DEPS_REPOSITORY `
+            --pattern "${{ matrix.jsbsim_asset }}" `
+            --dir jsbsim-sdk
+          Expand-Archive `
+            -Path "pitch-sdk/${{ matrix.pitch_asset }}" `
+            -DestinationPath Dependencies/PitchRTI `
+            -Force
+          Expand-Archive `
+            -Path "openrti-sdk/${{ matrix.openrti_asset }}" `
+            -DestinationPath Dependencies/OpenRTIPrebuilt `
+            -Force
+          Expand-Archive `
+            -Path "jsbsim-sdk/${{ matrix.jsbsim_asset }}" `
+            -DestinationPath Dependencies/JSBSimPrebuilt `
+            -Force
+          $pitchRoot = (Resolve-Path Dependencies/PitchRTI).Path
+          $openRtiRoot = (Resolve-Path Dependencies/OpenRTIPrebuilt/openrti).Path
+          $jsbsimRoot = (Resolve-Path Dependencies/JSBSimPrebuilt/jsbsim).Path
+          if (-not (Test-Path "$pitchRoot/cmake/PitchRTIConfig.cmake")) {
+            throw "PitchRTIConfig.cmake was not extracted"
+          }
+          if (-not (Test-Path "$openRtiRoot/include/rti1516e/RTI/RTI1516.h")) {
+            throw "OpenRTI headers were not extracted"
+          }
+          if (-not (Test-Path "$jsbsimRoot/include/JSBSim/FGFDMExec.h")) {
+            throw "JSBSim headers were not extracted"
+          }
+          "PitchRTI_ROOT=$pitchRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "QTTEST_OPENRTI_ROOT=$openRtiRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "QTTEST_JSBSIM_ROOT=$jsbsimRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ninja-build \
+            pkg-config \
+            libgl1-mesa-dev \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-xinerama0 \
+            libxcb-icccm4 \
+            libxcb-keysyms1 \
+            libxcb-image0 \
+            libxcb-render-util0 \
+            libnss3 \
+            libdbus-1-3 \
+            libfontconfig1
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          target: desktop
+          modules: "qtwebengine qtwebchannel qtpositioning"
+          cache: true
+          cache-key-prefix: qttest-qt-${{ runner.os }}-${{ runner.arch }}-${{ env.QT_VERSION }}
+
+      - name: Enable C/C++ compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Show toolchain
+        shell: bash
+        run: |
+          cmake --version
+          qmake6 --version || qmake --version || true
+          c++ --version || true
+          sccache --version
+
+      - name: Configure Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=ON \
+            -DQTTEST_OPENRTI_ROOT="$QTTEST_OPENRTI_ROOT" \
+            -DQTTEST_ENABLE_PITCH_HLA_BACKEND=ON \
+            -DQTTEST_PITCH_RTI_ROOT="$PitchRTI_ROOT" \
+            -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF \
+            -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON \
+            -DQTTEST_ENABLE_JSBSIM=ON \
+            -DQTTEST_JSBSIM_ROOT="$QTTEST_JSBSIM_ROOT" \
+            -DQTTEST_BUILD_TESTS=OFF \
+            -DQTTEST_BUILD_BENCHMARKS=OFF
+
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DQTTEST_ENABLE_OPENRTI_HLA_BACKEND=ON `
+            -DQTTEST_OPENRTI_ROOT="$env:QTTEST_OPENRTI_ROOT" `
+            -DQTTEST_ENABLE_PITCH_HLA_BACKEND=ON `
+            -DQTTEST_PITCH_RTI_ROOT="$env:PitchRTI_ROOT" `
+            -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF `
+            -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON `
+            -DQTTEST_ENABLE_JSBSIM=ON `
+            -DQTTEST_JSBSIM_ROOT="$env:QTTEST_JSBSIM_ROOT" `
+            -DQTTEST_BUILD_TESTS=OFF `
+            -DQTTEST_BUILD_BENCHMARKS=OFF
+
+      - name: Build required HLA backends on Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cmake --build build --target qttest_hla_openrti1516e_backend qttest_hla_pitch1516e_backend --parallel ${{ matrix.parallel }}
+
+      - name: Build required HLA backends on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake --build build --config $env:CMAKE_BUILD_TYPE --target qttest_hla_openrti1516e_backend qttest_hla_pitch1516e_backend --parallel ${{ matrix.parallel }}
+
+      - name: Build Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cmake --build build --parallel ${{ matrix.parallel }}
+
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake --build build --config $env:CMAKE_BUILD_TYPE --parallel ${{ matrix.parallel }}
+
+      - name: Show compilation cache statistics
+        if: always()
+        shell: bash
+        run: sccache --show-stats || true
+
+      - name: Verify Linux executable
+        if: runner.os == 'Linux'
+        shell: bash
+        run: test -x build/qttest
+
+      - name: Verify macOS application bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: test -x build/qttest.app/Contents/MacOS/qttest
+
+      - name: Verify Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "build/$env:CMAKE_BUILD_TYPE/qttest.exe")) {
+            throw "qttest.exe was not generated"
+          }
+
+      - name: Package complete Linux runtime
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_root="$PWD/package/qttest-linux-x64"
+          mkdir -p "$package_root"
+          cp build/qttest "$package_root/qttest"
+
+          for directory in Data models vendor LICENSES; do
+            if [ -e "$directory" ]; then
+              cp -a "$directory" "$package_root/$directory"
+            fi
+          done
+
+          if [ -d src/infrastructure/hla/FOM ]; then
+            mkdir -p "$package_root/src/infrastructure/hla"
+            cp -a src/infrastructure/hla/FOM "$package_root/src/infrastructure/hla/FOM"
+          fi
+
+          mkdir -p "$package_root/Dependencies/jsbsim"
+          for directory in aircraft engine systems; do
+            if [ -d "$QTTEST_JSBSIM_ROOT/$directory" ]; then
+              cp -a "$QTTEST_JSBSIM_ROOT/$directory" "$package_root/Dependencies/jsbsim/$directory"
+            fi
+          done
+          if [ -d Dependencies/jsbsim-models ]; then
+            cp -a Dependencies/jsbsim-models "$package_root/Dependencies/jsbsim-models"
+          fi
+
+          if [ -f ATTRIBUTIONS.md ]; then
+            cp ATTRIBUTIONS.md "$package_root/ATTRIBUTIONS.md"
+          fi
+
+          cat > "$package_root/cesium.conf.example" <<'EOF'
+          # Cesium Ion configuration for packaged builds.
+          # Prefer setting CESIUM_ION_TOKEN in the environment.
+          # ion_access_token=''
+          EOF
+
+          qmake_cmd="$(command -v qmake6 || command -v qmake)"
+          qt_libs="$($qmake_cmd -query QT_INSTALL_LIBS)"
+          qt_plugins="$($qmake_cmd -query QT_INSTALL_PLUGINS)"
+          qt_libexec="$($qmake_cmd -query QT_INSTALL_LIBEXECS)"
+          qt_data="$($qmake_cmd -query QT_INSTALL_DATA)"
+          qt_translations="$($qmake_cmd -query QT_INSTALL_TRANSLATIONS)"
+          qt_prefix="$($qmake_cmd -query QT_INSTALL_PREFIX)"
+
+          mkdir -p "$package_root/lib" "$package_root/plugins" \
+                   "$package_root/libexec" "$package_root/resources" \
+                   "$package_root/translations"
+
+          find "$qt_libs" -maxdepth 1 -type f \( -name 'libQt6*.so*' -o -name 'libicu*.so*' \) \
+            -exec cp -L {} "$package_root/lib/" \;
+          cp -a "$qt_plugins/." "$package_root/plugins/"
+
+          if [ -x "$qt_libexec/QtWebEngineProcess" ]; then
+            cp -L "$qt_libexec/QtWebEngineProcess" "$package_root/libexec/QtWebEngineProcess"
+            chmod +x "$package_root/libexec/QtWebEngineProcess"
+          fi
+
+          for resources_dir in "$qt_data/resources" "$qt_prefix/resources"; do
+            if [ -d "$resources_dir" ]; then
+              cp -a "$resources_dir/." "$package_root/resources/"
+              break
+            fi
+          done
+          if [ -d "$qt_translations" ]; then
+            cp -a "$qt_translations/." "$package_root/translations/"
+          fi
+
+          cat > "$package_root/run_qttest.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -e
+          HERE="$(cd "$(dirname "$0")" && pwd)"
+          export LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export QT_PLUGIN_PATH="$HERE/plugins"
+          export QTWEBENGINEPROCESS_PATH="$HERE/libexec/QtWebEngineProcess"
+          export QTWEBENGINE_RESOURCES_PATH="$HERE/resources"
+          export QTWEBENGINE_LOCALES_PATH="$HERE/translations/qtwebengine_locales"
+          cd "$HERE"
+          exec "$HERE/qttest" "$@"
+          EOF
+          chmod +x "$package_root/qttest" "$package_root/run_qttest.sh"
+
+          mkdir -p "$package_root/sensor-plugins"
+          cp build/sensor-plugins/libqttest_mixr_sensor.so "$package_root/sensor-plugins/"
+          LD_LIBRARY_PATH="$package_root/lib" build/qttest_mixr_smoke "$package_root/sensor-plugins/libqttest_mixr_sensor.so"
+
+          mkdir -p "$package_root/hla-plugins"
+          find build/hla-plugins -maxdepth 3 -type f -name '*qttest_hla_*backend*.so' \
+            -exec cp -L {} "$package_root/hla-plugins/" \; 2>/dev/null || true
+          if [ -d "$QTTEST_OPENRTI_ROOT/lib" ]; then
+            cp -a "$QTTEST_OPENRTI_ROOT"/lib/*.so* "$package_root/lib/" 2>/dev/null || true
+          fi
+
+          python Tools/write_runtime_capabilities.py "$package_root"
+          tar -czf qttest-linux-x64.tar.gz -C package qttest-linux-x64
+          du -sh "$package_root" qttest-linux-x64.tar.gz
+
+      - name: Package complete macOS application
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          macdeployqt build/qttest.app -always-overwrite -qmldir="$PWD"
+
+          runtime_root="$PWD/build/qttest.app/Contents/MacOS"
+          for directory in Data models vendor LICENSES; do
+            if [ -e "$directory" ]; then
+              cp -a "$directory" "$runtime_root/$directory"
+            fi
+          done
+
+          if [ -d src/infrastructure/hla/FOM ]; then
+            mkdir -p "$runtime_root/src/infrastructure/hla"
+            cp -a src/infrastructure/hla/FOM "$runtime_root/src/infrastructure/hla/FOM"
+          fi
+
+          mkdir -p "$runtime_root/Dependencies/jsbsim"
+          for directory in aircraft engine systems; do
+            if [ -d "$QTTEST_JSBSIM_ROOT/$directory" ]; then
+              cp -a "$QTTEST_JSBSIM_ROOT/$directory" "$runtime_root/Dependencies/jsbsim/$directory"
+            fi
+          done
+          if [ -d Dependencies/jsbsim-models ]; then
+            cp -a Dependencies/jsbsim-models "$runtime_root/Dependencies/jsbsim-models"
+          fi
+
+          if [ -f ATTRIBUTIONS.md ]; then
+            cp ATTRIBUTIONS.md "$runtime_root/ATTRIBUTIONS.md"
+          fi
+
+          cat > "$runtime_root/cesium.conf.example" <<'EOF'
+          # Cesium Ion configuration for packaged builds.
+          # Prefer setting CESIUM_ION_TOKEN in the environment.
+          # ion_access_token=''
+          EOF
+
+          mv "$runtime_root/qttest" "$runtime_root/qttest-bin"
+          cat > "$runtime_root/qttest" <<'EOF'
+          #!/bin/bash
+          HERE="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$HERE/hla-runtime/openrti${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+          cd "$HERE"
+          exec "$HERE/qttest-bin" "$@"
+          EOF
+          chmod +x "$runtime_root/qttest" "$runtime_root/qttest-bin"
+
+          mkdir -p "$runtime_root/sensor-plugins"
+          cp build/sensor-plugins/libqttest_mixr_sensor.dylib "$runtime_root/sensor-plugins/"
+          build/qttest_mixr_smoke "$runtime_root/sensor-plugins/libqttest_mixr_sensor.dylib"
+
+          mkdir -p "$runtime_root/hla-plugins" "$runtime_root/hla-runtime/openrti"
+          find build/hla-plugins -maxdepth 3 -type f -name '*qttest_hla_*backend*.dylib' \
+            -exec cp -L {} "$runtime_root/hla-plugins/" \; 2>/dev/null || true
+          if [ -d "$QTTEST_OPENRTI_ROOT/lib" ]; then
+            cp -a "$QTTEST_OPENRTI_ROOT"/lib/*.dylib* "$runtime_root/hla-runtime/openrti/" 2>/dev/null || true
+          fi
+
+          python Tools/write_runtime_capabilities.py "$runtime_root"
+          ditto -c -k --sequesterRsrc --keepParent build/qttest.app qttest-macos-arm64.zip
+          du -sh build/qttest.app qttest-macos-arm64.zip
+
+      - name: Package complete Windows runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $packageRoot = Join-Path $PWD "package/qttest-windows-x64"
+          New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
+
+          Copy-Item "build/$env:CMAKE_BUILD_TYPE/qttest.exe" (Join-Path $packageRoot "qttest.exe")
+
+          $deployQt = Get-Command windeployqt.exe -ErrorAction Stop
+          & $deployQt.Source `
+            --release `
+            --compiler-runtime `
+            --qmldir "$PWD" `
+            (Join-Path $packageRoot "qttest.exe")
+          if ($LASTEXITCODE -ne 0) {
+            throw "windeployqt failed with exit code $LASTEXITCODE"
+          }
+
+          $modernStyle = Join-Path $packageRoot "styles/qmodernwindowsstyle.dll"
+          if (-not (Test-Path $modernStyle)) {
+            throw "Qt modern Windows style plugin was not deployed"
+          }
+
+          foreach ($directory in @("Data", "models", "vendor", "LICENSES")) {
+            if (Test-Path $directory) {
+              Copy-Item $directory (Join-Path $packageRoot $directory) -Recurse
+            }
+          }
+
+          if (-not (Test-Path (Join-Path $packageRoot "Data/windows-modern.qss"))) {
+            throw "Windows modern stylesheet was not packaged"
+          }
+
+          if (Test-Path "src/infrastructure/hla/FOM") {
+            $fomTarget = Join-Path $packageRoot "src/infrastructure/hla/FOM"
+            New-Item -ItemType Directory -Force -Path $fomTarget | Out-Null
+            Copy-Item "src/infrastructure/hla/FOM/*" $fomTarget -Recurse
+          }
+
+          $jsbsimRoot = Join-Path $packageRoot "Dependencies/jsbsim"
+          New-Item -ItemType Directory -Force -Path $jsbsimRoot | Out-Null
+          foreach ($directory in @("aircraft", "engine", "systems")) {
+            $source = Join-Path $env:QTTEST_JSBSIM_ROOT $directory
+            if (Test-Path $source) {
+              Copy-Item $source (Join-Path $jsbsimRoot $directory) -Recurse
+            }
+          }
+          if (Test-Path "Dependencies/jsbsim-models") {
+            Copy-Item "Dependencies/jsbsim-models" (Join-Path $packageRoot "Dependencies/jsbsim-models") -Recurse
+          }
+
+          if (Test-Path "ATTRIBUTIONS.md") {
+            Copy-Item "ATTRIBUTIONS.md" (Join-Path $packageRoot "ATTRIBUTIONS.md")
+          }
+
+          @'
+          # Cesium Ion configuration for packaged builds.
+          # Prefer setting CESIUM_ION_TOKEN in the environment.
+          # ion_access_token=''
+          '@ | Set-Content -Path (Join-Path $packageRoot "cesium.conf.example") -Encoding ascii
+
+          New-Item -ItemType Directory -Force -Path "$packageRoot/sensor-plugins" | Out-Null
+          Copy-Item "build/sensor-plugins/qttest_mixr_sensor.dll" "$packageRoot/sensor-plugins/"
+          & "build/$env:CMAKE_BUILD_TYPE/qttest_mixr_smoke.exe" "$packageRoot/sensor-plugins/qttest_mixr_sensor.dll"
+          if ($LASTEXITCODE -ne 0) { throw "MIXR load/evaluation smoke test failed" }
+
+          $hlaPluginRoot = Join-Path $packageRoot "hla-plugins"
+          New-Item -ItemType Directory -Force -Path $hlaPluginRoot | Out-Null
+          if (Test-Path "build/hla-plugins") {
+            Get-ChildItem "build/hla-plugins" -Recurse -File -Filter "*.dll" |
+              Where-Object { $_.Name -like "qttest_hla_*backend*.dll" } |
+              ForEach-Object { Copy-Item $_.FullName $hlaPluginRoot -Force }
+          }
+
+          $openRtiRuntime = Join-Path $packageRoot "hla-runtime/openrti"
+          New-Item -ItemType Directory -Force -Path $openRtiRuntime | Out-Null
+          if (Test-Path $env:QTTEST_OPENRTI_ROOT) {
+            Get-ChildItem $env:QTTEST_OPENRTI_ROOT -Recurse -File -Filter "*.dll" |
+              ForEach-Object { Copy-Item $_.FullName $openRtiRuntime -Force }
+          }
+
+          # Pitch is commercial, so the SDK/runtime is not redistributed. Package
+          # only the adapter source and a one-command local setup helper.
+          Copy-Item "Tools/pitch-backend/setup_pitch_backend.cmd" (Join-Path $packageRoot "setup_pitch_backend.cmd")
+          $pitchSourceRoot = Join-Path $packageRoot "pitch-backend-source"
+          New-Item -ItemType Directory -Force -Path "$pitchSourceRoot/integrations/hla/pitch1516e" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$pitchSourceRoot/src/infrastructure/interoperability/hla" | Out-Null
+          Copy-Item "Tools/pitch-backend/CMakeLists.txt" (Join-Path $pitchSourceRoot "CMakeLists.txt")
+          Copy-Item "integrations/hla/pitch1516e/Pitch1516eBackendPlugin.cpp" "$pitchSourceRoot/integrations/hla/pitch1516e/"
+          Copy-Item "src/infrastructure/interoperability/hla/HlaBackendPluginApi.h" "$pitchSourceRoot/src/infrastructure/interoperability/hla/"
+
+          @'
+          @echo off
+          cd /d "%~dp0"
+          if exist "%~dp0hla-runtime\openrti" set "PATH=%~dp0hla-runtime\openrti;%PATH%"
+          if defined PitchRTI_ROOT (
+            if exist "%PitchRTI_ROOT%\bin" set "PATH=%PitchRTI_ROOT%\bin;%PATH%"
+            if exist "%PitchRTI_ROOT%\lib" set "PATH=%PitchRTI_ROOT%\lib;%PATH%"
+            if exist "%PitchRTI_ROOT%\jre\bin\server" set "PATH=%PitchRTI_ROOT%\jre\bin\server;%PATH%"
+          )
+          qttest.exe -style windows11 -stylesheet "Data/windows-modern.qss" %*
+          '@ | Set-Content -Path (Join-Path $packageRoot "run_qttest.cmd") -Encoding ascii
+
+          python Tools/write_runtime_capabilities.py "$packageRoot"
+          if ($LASTEXITCODE -ne 0) { throw "Runtime audit failed" }
+          Write-Host "Windows package contents:"
+          Get-ChildItem $packageRoot | Select-Object Name, Length
+
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qttest-linux-x64
+          path: qttest-linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qttest-macos-arm64
+          path: qttest-macos-arm64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qttest-windows-x64
+          path: package/qttest-windows-x64
+          if-no-files-found: error
+          retention-days: 14
