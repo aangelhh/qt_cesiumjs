@@ -393,13 +393,45 @@ endif()
 qt_standard_project_setup()
 
 option(QTTEST_ENABLE_JSBSIM "Enable JSBSim flight dynamics backend when available" ON)
+set(QTTEST_JSBSIM_ROOT
+    "$ENV{QTTEST_JSBSIM_ROOT}"
+    CACHE PATH "Prebuilt JSBSim installation"
+)
 
-if(QTTEST_ENABLE_JSBSIM AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Dependencies/jsbsim/CMakeLists.txt")
+if(QTTEST_ENABLE_JSBSIM AND QTTEST_JSBSIM_ROOT)
+    if(WIN32)
+        set(QTTEST_JSBSIM_LIBRARY "${QTTEST_JSBSIM_ROOT}/lib/JSBSim.lib")
+    else()
+        set(QTTEST_JSBSIM_LIBRARY "${QTTEST_JSBSIM_ROOT}/lib/libJSBSim.a")
+    endif()
+    if(NOT EXISTS "${QTTEST_JSBSIM_ROOT}/include/JSBSim/FGFDMExec.h" OR
+       NOT EXISTS "${QTTEST_JSBSIM_LIBRARY}")
+        message(FATAL_ERROR
+            "QTTEST_JSBSIM_ROOT does not contain the required JSBSim headers and library: "
+            "${QTTEST_JSBSIM_ROOT}")
+    endif()
+
+    add_library(libJSBSim STATIC IMPORTED GLOBAL)
+    set_target_properties(libJSBSim PROPERTIES
+        IMPORTED_LOCATION "${QTTEST_JSBSIM_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${QTTEST_JSBSIM_ROOT}/include/JSBSim"
+    )
+    if(WIN32)
+        target_compile_definitions(libJSBSim INTERFACE JSBSIM_STATIC_LINK _USE_MATH_DEFINES)
+        target_link_libraries(libJSBSim INTERFACE wsock32 ws2_32)
+    elseif(UNIX)
+        target_link_libraries(libJSBSim INTERFACE m)
+    endif()
+    message(STATUS "JSBSim enabled from prebuilt installation ${QTTEST_JSBSIM_ROOT}")
+elseif(QTTEST_ENABLE_JSBSIM AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Dependencies/jsbsim/CMakeLists.txt")
     set(BUILD_DOCS OFF CACHE BOOL "" FORCE)
     set(BUILD_PYTHON_MODULE OFF CACHE BOOL "" FORCE)
     set(BUILD_JULIA_PACKAGE OFF CACHE BOOL "" FORCE)
     set(BUILD_MATLAB_SFUNCTION OFF CACHE BOOL "" FORCE)
     add_subdirectory(Dependencies/jsbsim EXCLUDE_FROM_ALL)
+    message(STATUS "JSBSim enabled from source tree ${CMAKE_CURRENT_SOURCE_DIR}/Dependencies/jsbsim")
+else()
+    message(STATUS "JSBSim disabled: installation or source tree not found")
 endif()
 
 qt_add_executable(qttest

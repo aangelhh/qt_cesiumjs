@@ -19,10 +19,10 @@ concurrency:
 env:
   QT_VERSION: "6.10.2"
   CMAKE_BUILD_TYPE: Release
-  JSBSIM_COMMIT: "506773ad3790a5a621445631613faf51a15284e7"
   PITCH_DEPS_REPOSITORY: "aangelhh/tacticalenviroment-private-deps"
   PITCH_DEPS_TAG: "pitch-sdk-v1"
   OPENRTI_DEPS_TAG: "openrti-1b580583a443"
+  JSBSIM_DEPS_TAG: "jsbsim-506773ad3790"
   SCCACHE_GHA_ENABLED: "true"
 
 jobs:
@@ -40,16 +40,19 @@ jobs:
             parallel: 4
             pitch_asset: pitch-prti1516e-linux-x64.tar.gz
             openrti_asset: openrti-linux-x64.tar.gz
+            jsbsim_asset: jsbsim-linux-x64.tar.gz
           - name: Windows x64
             os: windows-2025
             parallel: 4
             pitch_asset: pitch-prti1516e-windows-x64.zip
             openrti_asset: openrti-windows-x64.zip
+            jsbsim_asset: jsbsim-windows-x64.zip
           - name: macOS ARM64
             os: macos-15
             parallel: 2
             pitch_asset: pitch-prti1516e-macos-arm64.tar.gz
             openrti_asset: openrti-macos-arm64.tar.gz
+            jsbsim_asset: jsbsim-macos-arm64.tar.gz
 
     steps:
       - name: Checkout qttest
@@ -62,7 +65,8 @@ jobs:
           GH_TOKEN: ${{ secrets.PITCH_DEPS_TOKEN }}
         run: |
           test -n "${GH_TOKEN:-}" || { echo "PITCH_DEPS_TOKEN is not configured" >&2; exit 1; }
-          mkdir -p pitch-sdk openrti-sdk Dependencies/PitchRTI Dependencies/OpenRTIPrebuilt
+          mkdir -p pitch-sdk openrti-sdk jsbsim-sdk \
+            Dependencies/PitchRTI Dependencies/OpenRTIPrebuilt Dependencies/JSBSimPrebuilt
           gh release download "${PITCH_DEPS_TAG}" \
             --repo "${PITCH_DEPS_REPOSITORY}" \
             --pattern "${{ matrix.pitch_asset }}" \
@@ -71,12 +75,19 @@ jobs:
             --repo "${PITCH_DEPS_REPOSITORY}" \
             --pattern "${{ matrix.openrti_asset }}" \
             --dir openrti-sdk
+          gh release download "${JSBSIM_DEPS_TAG}" \
+            --repo "${PITCH_DEPS_REPOSITORY}" \
+            --pattern "${{ matrix.jsbsim_asset }}" \
+            --dir jsbsim-sdk
           tar -xzf "pitch-sdk/${{ matrix.pitch_asset }}" -C Dependencies/PitchRTI
           tar -xzf "openrti-sdk/${{ matrix.openrti_asset }}" -C Dependencies/OpenRTIPrebuilt
+          tar -xzf "jsbsim-sdk/${{ matrix.jsbsim_asset }}" -C Dependencies/JSBSimPrebuilt
           test -f Dependencies/PitchRTI/cmake/PitchRTIConfig.cmake
           test -f Dependencies/OpenRTIPrebuilt/openrti/include/rti1516e/RTI/RTI1516.h
+          test -f Dependencies/JSBSimPrebuilt/jsbsim/include/JSBSim/FGFDMExec.h
           echo "PitchRTI_ROOT=$PWD/Dependencies/PitchRTI" >> "$GITHUB_ENV"
           echo "QTTEST_OPENRTI_ROOT=$PWD/Dependencies/OpenRTIPrebuilt/openrti" >> "$GITHUB_ENV"
+          echo "QTTEST_JSBSIM_ROOT=$PWD/Dependencies/JSBSimPrebuilt/jsbsim" >> "$GITHUB_ENV"
 
       - name: Download HLA SDKs on Windows
         if: runner.os == 'Windows'
@@ -85,7 +96,7 @@ jobs:
           GH_TOKEN: ${{ secrets.PITCH_DEPS_TOKEN }}
         run: |
           if (-not $env:GH_TOKEN) { throw "PITCH_DEPS_TOKEN is not configured" }
-          New-Item -ItemType Directory -Force -Path pitch-sdk, openrti-sdk, Dependencies/PitchRTI, Dependencies/OpenRTIPrebuilt | Out-Null
+          New-Item -ItemType Directory -Force -Path pitch-sdk, openrti-sdk, jsbsim-sdk, Dependencies/PitchRTI, Dependencies/OpenRTIPrebuilt, Dependencies/JSBSimPrebuilt | Out-Null
           gh release download $env:PITCH_DEPS_TAG `
             --repo $env:PITCH_DEPS_REPOSITORY `
             --pattern "${{ matrix.pitch_asset }}" `
@@ -94,6 +105,10 @@ jobs:
             --repo $env:PITCH_DEPS_REPOSITORY `
             --pattern "${{ matrix.openrti_asset }}" `
             --dir openrti-sdk
+          gh release download $env:JSBSIM_DEPS_TAG `
+            --repo $env:PITCH_DEPS_REPOSITORY `
+            --pattern "${{ matrix.jsbsim_asset }}" `
+            --dir jsbsim-sdk
           Expand-Archive `
             -Path "pitch-sdk/${{ matrix.pitch_asset }}" `
             -DestinationPath Dependencies/PitchRTI `
@@ -102,31 +117,25 @@ jobs:
             -Path "openrti-sdk/${{ matrix.openrti_asset }}" `
             -DestinationPath Dependencies/OpenRTIPrebuilt `
             -Force
+          Expand-Archive `
+            -Path "jsbsim-sdk/${{ matrix.jsbsim_asset }}" `
+            -DestinationPath Dependencies/JSBSimPrebuilt `
+            -Force
           $pitchRoot = (Resolve-Path Dependencies/PitchRTI).Path
           $openRtiRoot = (Resolve-Path Dependencies/OpenRTIPrebuilt/openrti).Path
+          $jsbsimRoot = (Resolve-Path Dependencies/JSBSimPrebuilt/jsbsim).Path
           if (-not (Test-Path "$pitchRoot/cmake/PitchRTIConfig.cmake")) {
             throw "PitchRTIConfig.cmake was not extracted"
           }
           if (-not (Test-Path "$openRtiRoot/include/rti1516e/RTI/RTI1516.h")) {
             throw "OpenRTI headers were not extracted"
           }
+          if (-not (Test-Path "$jsbsimRoot/include/JSBSim/FGFDMExec.h")) {
+            throw "JSBSim headers were not extracted"
+          }
           "PitchRTI_ROOT=$pitchRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "QTTEST_OPENRTI_ROOT=$openRtiRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Restore JSBSim source cache
-        id: jsbsim-cache
-        uses: actions/cache@v6
-        with:
-          path: Dependencies/jsbsim
-          key: jsbsim-${{ runner.os }}-${{ runner.arch }}-${{ env.JSBSIM_COMMIT }}
-
-      - name: Checkout pinned JSBSim
-        if: steps.jsbsim-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          rm -rf Dependencies/jsbsim
-          git clone --filter=blob:none https://github.com/JSBSim-Team/jsbsim.git Dependencies/jsbsim
-          git -C Dependencies/jsbsim checkout "${JSBSIM_COMMIT}"
+          "QTTEST_JSBSIM_ROOT=$jsbsimRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -184,6 +193,7 @@ jobs:
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF \
             -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON \
             -DQTTEST_ENABLE_JSBSIM=ON \
+            -DQTTEST_JSBSIM_ROOT="$QTTEST_JSBSIM_ROOT" \
             -DQTTEST_BUILD_TESTS=OFF \
             -DQTTEST_BUILD_BENCHMARKS=OFF
 
@@ -201,6 +211,7 @@ jobs:
             -DQTTEST_ENABLE_ROS2_TELEMETRY=OFF `
             -DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON `
             -DQTTEST_ENABLE_JSBSIM=ON `
+            -DQTTEST_JSBSIM_ROOT="$env:QTTEST_JSBSIM_ROOT" `
             -DQTTEST_BUILD_TESTS=OFF `
             -DQTTEST_BUILD_BENCHMARKS=OFF
 
@@ -269,8 +280,8 @@ jobs:
 
           mkdir -p "$package_root/Dependencies/jsbsim"
           for directory in aircraft engine systems; do
-            if [ -d "Dependencies/jsbsim/$directory" ]; then
-              cp -a "Dependencies/jsbsim/$directory" "$package_root/Dependencies/jsbsim/$directory"
+            if [ -d "$QTTEST_JSBSIM_ROOT/$directory" ]; then
+              cp -a "$QTTEST_JSBSIM_ROOT/$directory" "$package_root/Dependencies/jsbsim/$directory"
             fi
           done
           if [ -d Dependencies/jsbsim-models ]; then
@@ -368,8 +379,8 @@ jobs:
 
           mkdir -p "$runtime_root/Dependencies/jsbsim"
           for directory in aircraft engine systems; do
-            if [ -d "Dependencies/jsbsim/$directory" ]; then
-              cp -a "Dependencies/jsbsim/$directory" "$runtime_root/Dependencies/jsbsim/$directory"
+            if [ -d "$QTTEST_JSBSIM_ROOT/$directory" ]; then
+              cp -a "$QTTEST_JSBSIM_ROOT/$directory" "$runtime_root/Dependencies/jsbsim/$directory"
             fi
           done
           if [ -d Dependencies/jsbsim-models ]; then
@@ -455,7 +466,7 @@ jobs:
           $jsbsimRoot = Join-Path $packageRoot "Dependencies/jsbsim"
           New-Item -ItemType Directory -Force -Path $jsbsimRoot | Out-Null
           foreach ($directory in @("aircraft", "engine", "systems")) {
-            $source = Join-Path "Dependencies/jsbsim" $directory
+            $source = Join-Path $env:QTTEST_JSBSIM_ROOT $directory
             if (Test-Path $source) {
               Copy-Item $source (Join-Path $jsbsimRoot $directory) -Recurse
             }
