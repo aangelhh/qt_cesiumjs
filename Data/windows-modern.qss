@@ -2,16 +2,24 @@
 QWidget {
     font-family: "Segoe UI Variable", "Segoe UI";
     font-size: 10pt;
-    color: #1f1f1f;
+    color: #172033;
 }
 
-QMainWindow, QDialog {
-    background: #f3f3f3;
+QMainWindow {
+    background: #f7f9fc;
+}
+
+QDialog {
+    background: #ffffff;
+}
+
+QScrollArea, QScrollArea > QWidget > QWidget {
+    background: #ffffff;
 }
 
 QMenuBar {
-    background: #f7f7f7;
-    border-bottom: 1px solid #e0e0e0;
+    background: #ffffff;
+    border-bottom: 1px solid #dfe4ec;
     padding: 3px 6px;
 }
 
@@ -190,8 +198,8 @@ QCheckBox, QRadioButton {
 }
 
 QStatusBar {
-    background: #f7f7f7;
-    border-top: 1px solid #e1e1e1;
+    background: #ffffff;
+    border-top: 1px solid #dfe4ec;
 }
 
 QToolTip {

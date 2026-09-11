@@ -82,6 +82,51 @@
             "detail": "Construye el proyecto desde la carpeta build de macOS en modo Debug"
         },
         {
+            "label": "CMake Configure Windows",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-S",
+                ".",
+                "-B",
+                "build-windows",
+                "-A",
+                "x64",
+                "-DCMAKE_PREFIX_PATH=C:/Qt/6.10.2/msvc2022_64",
+                "-DQTTEST_ENABLE_MIXR_SENSOR_PROVIDER=ON",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$msCompile"
+            ],
+            "detail": "Configura Windows con Qt 6.10.2 para MSVC y habilita MIXR"
+        },
+        {
+            "label": "CMake Build Windows",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "CMake Configure Windows"
+            ],
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "build-windows",
+                "--config",
+                "Release",
+                "--target",
+                "qttest",
+                "--parallel",
+                "4"
+            ],
+            "group": "build",
+            "problemMatcher": [
+                "$msCompile"
+            ],
+            "detail": "Construye qttest y el plugin MIXR para Windows"
+        },
+        {
             "label": "CMake Run Tests",
             "type": "shell",
             "command": "ctest",

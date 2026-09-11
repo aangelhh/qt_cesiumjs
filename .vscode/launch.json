@@ -5,6 +5,24 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Launch qttest (Windows)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}\\build-windows\\Release\\qttest.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "environment": [
+                {
+                    "name": "QTTEST_MIXR_SENSOR_PLUGIN",
+                    "value": "${workspaceFolder}\\build-windows\\sensor-plugins\\qttest_mixr_sensor.dll"
+                }
+            ],
+            "externalConsole": false,
+            "preLaunchTask": "CMake Build Windows",
+            "visualizerFile": "/Users/angelconde/Library/Application Support/Code/User/workspaceStorage/f47bb2143408e3406aebae287f31b343/tonka3000.qtvsctools/qt.natvis.xml"
+        },
+        {
             "name": "Launch qttest",
             "type": "cppdbg",
             "request": "launch",
