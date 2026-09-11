@@ -13,8 +13,45 @@ QDialog {
     background: #ffffff;
 }
 
+QWidget#centralwidget,
+QWidget#objectsDockContents,
+QWidget#contactsDockContents,
+QWidget#controlDockContents,
+QWidget#propertiesTab,
+QWidget#tasksTab,
+QWidget#logTab {
+    background: #ffffff;
+}
+
 QScrollArea, QScrollArea > QWidget > QWidget {
     background: #ffffff;
+}
+
+QFrame#topStatusFrame {
+    background: #ffffff;
+    border: 1px solid #dfe4ec;
+    border-radius: 6px;
+}
+
+QFrame#viewerFrame {
+    background: #101722;
+    border: 1px solid #cbd3df;
+    border-radius: 4px;
+}
+
+QLabel#statusLabel {
+    color: #46566f;
+}
+
+QDockWidget {
+    background: #ffffff;
+    color: #172033;
+}
+
+QDockWidget::title {
+    background: #f4f7fb;
+    border-bottom: 1px solid #dfe4ec;
+    padding: 7px 8px;
 }
 
 QMenuBar {

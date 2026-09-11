@@ -4,6 +4,7 @@
 #include "presentation/StartupConfigurationDialog.h"
 
 #include <QApplication>
+#include <QColor>
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QDebug>
@@ -11,6 +12,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QPalette>
 #include <QSettings>
 #include <QSet>
 #include <QStringList>
@@ -152,6 +154,17 @@ void applyWindowsTheme(QApplication& app) {
     }
   }
   app.setStyle(QStyleFactory::create(selectedStyle));
+  QPalette palette = app.palette();
+  palette.setColor(QPalette::Window, QColor(QStringLiteral("#f7f9fc")));
+  palette.setColor(QPalette::WindowText, QColor(QStringLiteral("#172033")));
+  palette.setColor(QPalette::Base, QColor(QStringLiteral("#ffffff")));
+  palette.setColor(QPalette::AlternateBase, QColor(QStringLiteral("#f4f7fb")));
+  palette.setColor(QPalette::Text, QColor(QStringLiteral("#172033")));
+  palette.setColor(QPalette::Button, QColor(QStringLiteral("#ffffff")));
+  palette.setColor(QPalette::ButtonText, QColor(QStringLiteral("#172033")));
+  palette.setColor(QPalette::Highlight, QColor(QStringLiteral("#0f6cbd")));
+  palette.setColor(QPalette::HighlightedText, QColor(QStringLiteral("#ffffff")));
+  app.setPalette(palette);
   qInfo() << "Windows UI style:" << selectedStyle
           << "available styles:" << availableStyles;
 
