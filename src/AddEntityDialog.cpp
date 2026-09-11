@@ -18,6 +18,7 @@
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QTabWidget>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -172,17 +173,32 @@ AddEntityDialog::AddEntityDialog(
   layout->setContentsMargins(8, 8, 8, 8);
   layout->setSpacing(6);
 
-  auto* scrollArea = new QScrollArea(this);
-  scrollArea->setWidgetResizable(true);
-  scrollArea->setFrameShape(QFrame::NoFrame);
+  auto* tabs = new QTabWidget(this);
 
-  auto* formContainer = new QWidget(scrollArea);
+  auto* generalScrollArea = new QScrollArea(tabs);
+  generalScrollArea->setWidgetResizable(true);
+  generalScrollArea->setFrameShape(QFrame::NoFrame);
+
+  auto* formContainer = new QWidget(generalScrollArea);
   auto* formLayout = new QFormLayout(formContainer);
   formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
   formLayout->setContentsMargins(4, 4, 4, 4);
   formLayout->setHorizontalSpacing(10);
   formLayout->setVerticalSpacing(6);
-  scrollArea->setWidget(formContainer);
+  generalScrollArea->setWidget(formContainer);
+  tabs->addTab(generalScrollArea, QStringLiteral("General"));
+
+  auto* radarScrollArea = new QScrollArea(tabs);
+  radarScrollArea->setWidgetResizable(true);
+  radarScrollArea->setFrameShape(QFrame::NoFrame);
+  auto* radarContainer = new QWidget(radarScrollArea);
+  auto* radarLayout = new QFormLayout(radarContainer);
+  radarLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  radarLayout->setContentsMargins(8, 8, 8, 8);
+  radarLayout->setHorizontalSpacing(10);
+  radarLayout->setVerticalSpacing(6);
+  radarScrollArea->setWidget(radarContainer);
+  tabs->addTab(radarScrollArea, QStringLiteral("Radar / MIXR"));
 
   _latitudeSpin->setRange(-90.0, 90.0);
   _latitudeSpin->setDecimals(6);
@@ -263,6 +279,27 @@ AddEntityDialog::AddEntityDialog(
   }
   _radarModelProviderCombo->setObjectName(
       QStringLiteral("radarModelProviderCombo"));
+
+  QStringList providerStatuses;
+  for (const infrastructure::SensorModelProviderEntry& provider :
+       _sensorModelProviders) {
+    if (!provider.enabled || provider.id == QStringLiteral("native")) {
+      continue;
+    }
+    const QString name = provider.displayName.trimmed().isEmpty()
+        ? provider.id
+        : provider.displayName;
+    providerStatuses.push_back(QStringLiteral("%1: %2")
+        .arg(name, provider.available
+            ? QStringLiteral("loaded")
+            : QStringLiteral("unavailable; native fallback")));
+  }
+  if (!providerStatuses.isEmpty()) {
+    auto* providerStatusLabel = new QLabel(providerStatuses.join(QLatin1Char('\n')), this);
+    providerStatusLabel->setWordWrap(true);
+    providerStatusLabel->setObjectName(QStringLiteral("radarProviderStatusLabel"));
+    radarLayout->addRow(QStringLiteral("Provider Status"), providerStatusLabel);
+  }
 
   _radarProfileCombo->addItem(
       QStringLiteral("Generic Radar"), QStringLiteral("generic"));
@@ -558,28 +595,28 @@ AddEntityDialog::AddEntityDialog(
   formLayout->addRow(QStringLiteral("Initial Task Speed"), _taskSpeedSpin);
   formLayout->addRow(QStringLiteral("Weapons"), _attachMissilesCheck);
   formLayout->addRow(QStringLiteral("Missile Count"), _missileCountSpin);
-  formLayout->addRow(QStringLiteral("Sensor"), _addRadarCheck);
-  formLayout->addRow(QStringLiteral("Radar Name"), _radarNameEdit);
-  formLayout->addRow(QStringLiteral("Radar Model Provider"), _radarModelProviderCombo);
-  formLayout->addRow(QStringLiteral("Radar Profile"), _radarProfileCombo);
-  formLayout->addRow(QStringLiteral("Radar Range"), _radarRangeSpin);
-  formLayout->addRow(QStringLiteral("Radar Azimuth"), _radarAzimuthSpin);
-  formLayout->addRow(QStringLiteral("Elevation Center"), _radarElevationCenterSpin);
-  formLayout->addRow(QStringLiteral("Elevation Width"), _radarElevationWidthSpin);
-  formLayout->addRow(QStringLiteral("Radar Detection Probability"), _radarDetectionProbabilitySpin);
-  formLayout->addRow(QStringLiteral("Radar Max Tracks"), _radarMaxTracksSpin);
-  formLayout->addRow(QStringLiteral("Radar Peak Power"), _radarPeakPowerSpin);
-  formLayout->addRow(QStringLiteral("Radar Duty Cycle"), _radarDutyCycleSpin);
-  formLayout->addRow(QStringLiteral("Radar Bandwidth"), _radarBandwidthSpin);
-  formLayout->addRow(QStringLiteral("Receiver Noise"), _radarReceiverNoiseSpin);
-  formLayout->addRow(QStringLiteral("Radar Frequency"), _radarFrequencySpin);
-  formLayout->addRow(QStringLiteral("Antenna Gain"), _radarAntennaGainSpin);
-  formLayout->addRow(QStringLiteral("Beam Width"), _radarBeamWidthSpin);
-  formLayout->addRow(QStringLiteral("Pulses per Evaluation"), _radarNumberPulsesSpin);
-  formLayout->addRow(QStringLiteral("System Loss"), _radarSystemLossSpin);
-  formLayout->addRow(QStringLiteral("Probability False Alarm"), _radarFalseAlarmProbabilitySpin);
-  formLayout->addRow(QStringLiteral("RCS Scale"), _radarRcsScaleSpin);
-  formLayout->addRow(QStringLiteral("Radar Signature"), _radarSignatureSpin);
+  radarLayout->addRow(QStringLiteral("Enabled"), _addRadarCheck);
+  radarLayout->addRow(QStringLiteral("Name"), _radarNameEdit);
+  radarLayout->addRow(QStringLiteral("Model Provider"), _radarModelProviderCombo);
+  radarLayout->addRow(QStringLiteral("Profile"), _radarProfileCombo);
+  radarLayout->addRow(QStringLiteral("Range"), _radarRangeSpin);
+  radarLayout->addRow(QStringLiteral("Azimuth"), _radarAzimuthSpin);
+  radarLayout->addRow(QStringLiteral("Elevation Center"), _radarElevationCenterSpin);
+  radarLayout->addRow(QStringLiteral("Elevation Width"), _radarElevationWidthSpin);
+  radarLayout->addRow(QStringLiteral("Detection Probability"), _radarDetectionProbabilitySpin);
+  radarLayout->addRow(QStringLiteral("Max Tracks"), _radarMaxTracksSpin);
+  radarLayout->addRow(QStringLiteral("Peak Power"), _radarPeakPowerSpin);
+  radarLayout->addRow(QStringLiteral("Duty Cycle"), _radarDutyCycleSpin);
+  radarLayout->addRow(QStringLiteral("Bandwidth"), _radarBandwidthSpin);
+  radarLayout->addRow(QStringLiteral("Receiver Noise"), _radarReceiverNoiseSpin);
+  radarLayout->addRow(QStringLiteral("Frequency"), _radarFrequencySpin);
+  radarLayout->addRow(QStringLiteral("Antenna Gain"), _radarAntennaGainSpin);
+  radarLayout->addRow(QStringLiteral("Beam Width"), _radarBeamWidthSpin);
+  radarLayout->addRow(QStringLiteral("Pulses per Evaluation"), _radarNumberPulsesSpin);
+  radarLayout->addRow(QStringLiteral("System Loss"), _radarSystemLossSpin);
+  radarLayout->addRow(QStringLiteral("Probability False Alarm"), _radarFalseAlarmProbabilitySpin);
+  radarLayout->addRow(QStringLiteral("RCS Scale"), _radarRcsScaleSpin);
+  radarLayout->addRow(QStringLiteral("Radar Signature"), _radarSignatureSpin);
   formLayout->addRow(QStringLiteral("Thermal Signature"), _thermalSignatureSpin);
   formLayout->addRow(QStringLiteral("Visual Signature"), _visualSignatureSpin);
   formLayout->addRow(QStringLiteral("Latitude"), _latitudeSpin);
@@ -600,7 +637,7 @@ AddEntityDialog::AddEntityDialog(
   _taskHeadingSpin->setEnabled(_enableFlightTaskCheck->isChecked());
   _taskAltitudeSpin->setEnabled(_enableFlightTaskCheck->isChecked());
   _taskSpeedSpin->setEnabled(_enableFlightTaskCheck->isChecked());
-  layout->addWidget(scrollArea);
+  layout->addWidget(tabs);
 
   auto* buttons = new QDialogButtonBox(
       QDialogButtonBox::Ok | QDialogButtonBox::Cancel,

@@ -144,14 +144,22 @@ QVector<presentation::HlaBackendOption> availableHlaBackends() {
 void applyWindowsTheme(QApplication& app) {
 #ifdef Q_OS_WIN
   const QStringList availableStyles = QStyleFactory::keys();
-  if (availableStyles.contains(QStringLiteral("windows11"), Qt::CaseInsensitive)) {
-    QApplication::setStyle(QStringLiteral("windows11"));
-  } else {
-    QApplication::setStyle(QStringLiteral("Fusion"));
+  QString selectedStyle = QStringLiteral("Fusion");
+  for (const QString& style : availableStyles) {
+    if (style.compare(QStringLiteral("windows11"), Qt::CaseInsensitive) == 0) {
+      selectedStyle = style;
+      break;
+    }
   }
+  app.setStyle(QStyleFactory::create(selectedStyle));
+  qInfo() << "Windows UI style:" << selectedStyle
+          << "available styles:" << availableStyles;
 
-  const QString styleSheetPath = runtimeFile(QStringLiteral("Data/windows-modern.qss"));
-  if (styleSheetPath.isEmpty()) {
+  QString styleSheetPath = QStringLiteral(":/Data/windows-modern.qss");
+  if (!QFileInfo::exists(styleSheetPath)) {
+    styleSheetPath = runtimeFile(QStringLiteral("Data/windows-modern.qss"));
+  }
+  if (styleSheetPath.isEmpty() || !QFileInfo::exists(styleSheetPath)) {
     qWarning() << "Windows modern stylesheet not found; using Qt style only";
     return;
   }
