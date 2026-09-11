@@ -1143,8 +1143,6 @@ void AddEntityDialog::syncRadarControls() {
   const bool enabled = _addRadarCheck->isChecked();
   const QList<QWidget*> controls{
       _radarNameEdit,
-      _radarModelProviderCombo,
-      _radarProfileCombo,
       _radarRangeSpin,
       _radarAzimuthSpin,
       _radarElevationCenterSpin,
@@ -1166,6 +1164,8 @@ void AddEntityDialog::syncRadarControls() {
   for (QWidget* control : controls) {
     control->setEnabled(enabled);
   }
+  _radarModelProviderCombo->setEnabled(true);
+  _radarProfileCombo->setEnabled(true);
 }
 
 void AddEntityDialog::applyRadarProfilePreset(const QString& profileId) {
